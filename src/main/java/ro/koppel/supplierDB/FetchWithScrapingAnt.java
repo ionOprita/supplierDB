@@ -8,6 +8,9 @@ import org.jsoup.select.Elements;
 import java.io.IOException;
 import java.net.URLEncoder;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static ro.koppel.supplierDB.HelperMethods.buildScrapingAntURL;
+
 public class FetchWithScrapingAnt {
     public static void main(String[] args) throws IOException {
         var found = false;
@@ -15,8 +18,9 @@ public class FetchWithScrapingAnt {
         do {
             page++;
             System.out.println("PAGE " + page);
-            String earchTerm = URLEncoder.encode("smartwatch camera");
-            String url = buildScrapingAntURL("https://www.globalsources.com/searchList/suppliers?keyWord=" + earchTerm + "&pageNum=" + page, "8e2b076fd0a742a4abbc1a52bec5a456");
+            String searchTerm = URLEncoder.encode("smartwatch camera", UTF_8);
+            String url = buildScrapingAntURL("https://www.globalsources.com/searchList/suppliers?keyWord=" + searchTerm + "&pageNum=" + page,
+                    "8e2b076fd0a742a4abbc1a52bec5a456");
             System.out.println(url);
             Document document = Jsoup.connect(url).timeout(2 * 60 * 1000).get();
             Elements supplierElements = document.select(".mod-supp-info");
@@ -42,7 +46,4 @@ public class FetchWithScrapingAnt {
 
     }
 
-    public static String buildScrapingAntURL(String url, String apiKey) {
-        return "https://api.scrapingant.com/v2/general?url=" + URLEncoder.encode(url) + "&x-api-key=" + apiKey + "&proxy_copuntry=CN";
-    }
 }

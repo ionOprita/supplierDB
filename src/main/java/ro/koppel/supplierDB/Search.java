@@ -1,17 +1,23 @@
 package ro.koppel.supplierDB;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.ManyToMany;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 public class Search {
     @ManyToMany(mappedBy = "searchList")
-    List<Supplier> supplierList = new ArrayList<>();
+    public Set<Supplier> supplierList = new HashSet<>();
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    Long id;
+    public Long id;
 
-    String searchTerms;
+    @Column(unique = true)
+    public String searchTerms;
 }

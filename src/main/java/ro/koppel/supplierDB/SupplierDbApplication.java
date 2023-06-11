@@ -5,16 +5,11 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-import java.util.ArrayList;
-
 @SpringBootApplication
 public class SupplierDbApplication implements CommandLineRunner {
 
     @Autowired
-    SupplierRepository supplierRepository;
-
-    @Autowired
-    SearchRepository searchRepository;
+    FetchSupplierDetails supplierFetcher;
 
     public static void main(String[] args) {
         SpringApplication.run(SupplierDbApplication.class, args);
@@ -22,14 +17,6 @@ public class SupplierDbApplication implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        Search search1 = new Search();
-        search1.searchTerms = "smartwatch";
-        Supplier supplier1 = new Supplier();
-        supplier1.name = "Shenzen";
-        search1.supplierList.add(supplier1);
-        supplier1.searchList.add(search1);
-        supplierRepository.save(supplier1);
-        searchRepository.save(search1);
-
+        supplierFetcher.retrieveAndStoreSupplier("https://smartwatch-n.manufacturer.globalsources.com/homepage_6008850873897.htm", "smartwatch camera");
     }
 }
