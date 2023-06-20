@@ -125,8 +125,8 @@ public class FetchSupplierDetails {
                 case "Number of R & D Staff" -> {
                     var range = Range.fromString(value.text().trim());
                     if (range != null) {
-                        supplier.minRnDStuff = range.min;
-                        supplier.maxRnDStuff = range.max;
+                        supplier.minRnDStaff = range.min;
+                        supplier.maxRnDStaff = range.max;
                     }
                 }
                 case "Year Established" -> {

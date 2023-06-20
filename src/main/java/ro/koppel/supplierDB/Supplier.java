@@ -19,7 +19,7 @@ import static jakarta.persistence.CascadeType.MERGE;
 public class Supplier {
     @Column(unique = true)
     public String name;
-    @Column
+    @Column(unique = true)
     public URL link;
     @Column
     public int minEmployees;
@@ -36,9 +36,9 @@ public class Supplier {
     @Column
     public int maxQcStaff;
     @Column
-    public int minRnDStuff;
+    public int minRnDStaff;
     @Column
-    public int maxRnDStuff;
+    public int maxRnDStaff;
     @Column
     public int yearEstablished;
     @Column
