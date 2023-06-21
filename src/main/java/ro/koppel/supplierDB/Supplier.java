@@ -20,7 +20,7 @@ public class Supplier {
     @Column(unique = true)
     public String name;
     @Column(unique = true)
-    public URL link;
+    public String link;
     @Column
     public int minEmployees;
     @Column

@@ -1,17 +1,23 @@
 package ro.koppel.supplierDB;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
+import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Objects;
 
 @SpringBootApplication
 public class SupplierDbApplication implements CommandLineRunner {
 
+    private final Logger logger = LoggerFactory.getLogger(SupplierDbApplication.class);
+
     @Autowired
-    FetchSupplierDetails supplierFetcher;
+    FetchSuppliers supplierSearcher;
 
     @Autowired
     ExcelCreator excelCreator;
@@ -22,7 +28,15 @@ public class SupplierDbApplication implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        supplierFetcher.retrieveAndStoreSupplier("https://smartwatch-n.manufacturer.globalsources.com/homepage_6008850873897.htm", "smartwatch camera");
-        excelCreator.createExcel(Paths.get("/tmp/supplier.xlsx"));
+        if (args.length != 1) {
+            logger.atError().log("Please give the name of a text file having on each line a search to perform.");
+        } else {
+            var inputPath = Paths.get(args[0]);
+            Files.readAllLines(inputPath).stream().filter(Objects::nonNull).map(String::trim).forEach(search -> {
+                logger.atInfo().log("Searching suppliers for {}", search);
+                supplierSearcher.searchSuppliers(search);
+            });
+            excelCreator.createExcel(Paths.get("/tmp/supplier.xlsx"));
+        }
     }
 }

@@ -5,6 +5,8 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +18,7 @@ import java.nio.file.Path;
 @Component
 public class ExcelCreator {
 
+    private final Logger logger = LoggerFactory.getLogger(ExcelCreator.class);
     @Autowired
     SearchRepository searchRepository;
 
@@ -58,7 +61,7 @@ public class ExcelCreator {
                     var cell = row.createCell(columnIndex++);
                     cell.setCellValue(supplier.name);
                     cell = row.createCell(columnIndex++);
-                    cell.setCellValue(supplier.link.toExternalForm());
+                    cell.setCellValue(supplier.link);
                     cell = row.createCell(columnIndex++);
                     cell.setCellValue(supplier.verified);
                     cell = row.createCell(columnIndex++);
@@ -89,10 +92,10 @@ public class ExcelCreator {
             // Save to a file
             try (OutputStream outputStream = Files.newOutputStream(path)) {
                 workbook.write(outputStream);
-                System.out.printf("Excel file %s created successfully.%n", path);
+                logger.atWarn().log("Excel file {} created successfully.", path);
             }
         } catch (IOException e) {
-            System.out.printf("Error creating Excel file %s: %s%n", path, e);
+            logger.atError().log("Error creating Excel file {}: {}", path, e);
         }
     }
 }
