@@ -2,10 +2,8 @@ package ro.koppel.supplierDB;
 
 import jakarta.persistence.*;
 
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @Entity
 public class Supplier {
@@ -46,9 +44,26 @@ public class Supplier {
     @JoinTable(name = "search_result", joinColumns = @JoinColumn(name = "supplier_id"), inverseJoinColumns = @JoinColumn(name = "search_id"))
     List<Search> searchList = new ArrayList<>();
 
+    @Override
+    public String toString() {
+        return "Supplier{" +
+                "name='" + name + '\'' +
+                ", link='" + link + '\'' +
+                ", minEmployees=" + minEmployees +
+                ", maxEmployees=" + maxEmployees +
+                ", email='" + email + '\'' +
+                ", verified=" + verified +
+                ", productionLines=" + productionLines +
+                ", minQcStaff=" + minQcStaff +
+                ", maxQcStaff=" + maxQcStaff +
+                ", minRnDStaff=" + minRnDStaff +
+                ", maxRnDStaff=" + maxRnDStaff +
+                ", yearEstablished=" + yearEstablished +
+                ", minAnnualSales=" + minAnnualSales +
+                ", maxAnnualSales=" + maxAnnualSales +
+                ", factorySize=" + factorySize +
+                ", id=" + id +
+                ", searchList=" + searchList +
+                '}';
+    }
 }
-//(cascade = {
-//            CascadeType.PERSIST,
-//            CascadeType.MERGE
-//    })
-//

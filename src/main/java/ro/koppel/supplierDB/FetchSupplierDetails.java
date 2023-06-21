@@ -173,5 +173,6 @@ public class FetchSupplierDetails {
         search.supplierList.add(supplier);
         supplierRepository.save(supplier);
         searchRepository.save(search);
+        logger.atDebug().log(supplier.toString());
     }
 }

@@ -36,7 +36,7 @@ public class SupplierDbApplication implements CommandLineRunner {
                 logger.atInfo().log("Searching suppliers for {}", search);
                 supplierSearcher.searchSuppliers(search);
             });
-            excelCreator.createExcel(Paths.get("/tmp/supplier.xlsx"));
+            excelCreator.createExcel(Paths.get("C:\\Users\\Oprita\\Desktop\\supplierDB\\supplierDB\\SupplierListTest.xlsx"));
         }
     }
 }
