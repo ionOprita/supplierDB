@@ -1,19 +1,11 @@
 package ro.koppel.supplierDB;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.JoinTable;
-import jakarta.persistence.ManyToMany;
+import jakarta.persistence.*;
 
 import java.net.URL;
-import java.util.HashSet;
-import java.util.Set;
-
-import static jakarta.persistence.CascadeType.MERGE;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
 @Entity
 public class Supplier {
@@ -47,12 +39,12 @@ public class Supplier {
     public int maxAnnualSales;
     @Column
     public int factorySize;
-    @ManyToMany(cascade = MERGE)
-    @JoinTable(name = "search_result", joinColumns = @JoinColumn(name = "supplier_id"), inverseJoinColumns = @JoinColumn(name = "search_id"))
-    public Set<Search> searchList = new HashSet<>();
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     public Long id;
+    @ManyToMany(cascade = CascadeType.ALL)
+    @JoinTable(name = "search_result", joinColumns = @JoinColumn(name = "supplier_id"), inverseJoinColumns = @JoinColumn(name = "search_id"))
+    List<Search> searchList = new ArrayList<>();
 
 }
 //(cascade = {
