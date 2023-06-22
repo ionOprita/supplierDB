@@ -1,4 +1,4 @@
-Database creation instructions for Claudio Nieder
+Database creation instructions from Ion Oprita
 =
 
 As user 'claudio' is already defined as superuser instead of postgres
