@@ -1,3 +1,26 @@
+API-Key
+=
+
+The scrpingant api-key needs to be configured in the application.properties by
+adding a line like this:
+
+```
+ro.koppel.apiKey=ff7320bfe38e2b076fd0a7aa42a4abbc
+```
+The value behind the = sign needs to be your actual api-key obtained from the
+scrapingant web site.
+
+Command line arguments
+=
+Exactly two arguments are required.
+
+The first argument is an absolute or relative
+path to the text file containing the search terms. Each line is an individual search
+and can contain one or several words separated by a blank.
+
+The second argument is an absolute or relative path for the Excel file to be created
+or modified (TODO).
+
 Database creation instructions from Ion Oprita
 =
 
@@ -40,3 +63,4 @@ spring.datasource.url=jdbc:postgresql://localhost:5432/supplierdb
 spring.datasource.username=supplierdb
 spring.datasource.password=supplierdb
 ```
+

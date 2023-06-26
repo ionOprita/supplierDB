@@ -28,15 +28,15 @@ public class SupplierDbApplication implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        if (args.length != 1) {
-            logger.atError().log("Please give the name of a text file having on each line a search to perform.");
+        if (args.length != 2) {
+            logger.atError().log("Required arguments: search_file excel");
         } else {
             var inputPath = Paths.get(args[0]);
             Files.readAllLines(inputPath).stream().filter(Objects::nonNull).map(String::trim).forEach(search -> {
                 logger.atInfo().log("Searching suppliers for {}", search);
                 supplierSearcher.searchSuppliers(search);
             });
-            excel.createExcel(Paths.get("C:\\Users\\Oprita\\Desktop\\supplierDB\\supplierDB\\SupplierListTest.xlsx"));
+            excel.createExcel(Paths.get(args[1]));
         }
     }
 }
