@@ -10,9 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.net.URLEncoder;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static ro.koppel.supplierDB.HelperMethods.buildScrapingAntURL;
 
 @Component
@@ -43,11 +41,16 @@ public class FetchSuppliers {
 
     private boolean retrievePage(String url, String searchTerm) {
         boolean found;
+        Document document = null;
         try {
-            Document document = Jsoup.connect(url).timeout(2 * 60 * 1000).get();
+            document = Jsoup.connect(url).timeout(3 * 60 * 1000).get();
             Elements supplierElements = document.select(".mod-supp-info");
             found = supplierElements.size() > 0;
+            if (!found) {
+                logger.atDebug().log(document.text());
+            }
             // Extract the supplier names
+            var artificialLimit = 3;
             for (Element element : supplierElements) {
                 var aTags = element.children().stream().filter(x -> x.tag().getName().equals("a")).toList();
                 if (aTags.size() == 0) {
@@ -64,9 +67,17 @@ public class FetchSuppliers {
                 var link = "https:" + titleTags.get(0).attr("href");
                 logger.atDebug().log("LINK = " + link);
                 supplierFetcher.retrieveAndStoreSupplier(link, searchTerm);
+                artificialLimit--;
+                if (artificialLimit == 0) {
+                    found = false;
+                    break;
+                }
             }
         } catch (IOException e) {
-            logger.atWarn().log("While retrieving {} the exception {} occurred.", url, e);
+            logger.atWarn().log("While retrieving {} the exception {} occurred.", new Object[]{url, e.getMessage()});
+            if (document != null) {
+                logger.atDebug().log(document.text());
+            }
             found = false;
         }
         return found;
