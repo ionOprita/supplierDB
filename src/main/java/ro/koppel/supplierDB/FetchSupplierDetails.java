@@ -14,8 +14,6 @@ import java.util.Currency;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static ro.koppel.supplierDB.HelperMethods.buildScrapingAntURL;
-
 @Component
 public class FetchSupplierDetails {
 
@@ -25,6 +23,8 @@ public class FetchSupplierDetails {
     SearchRepository searchRepository;
     @Autowired
     SupplierRepository supplierRepository;
+    @Autowired
+    HelperMethods helper;
 
     record Range(int min, int max, String unit, Currency currency) {
 
@@ -103,7 +103,7 @@ public class FetchSupplierDetails {
         var fetched = false;
         do {
             try {
-                document = Jsoup.connect(buildScrapingAntURL(profileUrl)).timeout(5 * 60 * 1000).get();
+                document = Jsoup.connect(helper.buildScrapingAntURL(profileUrl)).timeout(5 * 60 * 1000).get();
                 fetched = true;
 
             } catch (IOException e) {

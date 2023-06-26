@@ -11,8 +11,6 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
-import static ro.koppel.supplierDB.HelperMethods.buildScrapingAntURL;
-
 @Component
 public class FetchSuppliers {
 
@@ -20,6 +18,9 @@ public class FetchSuppliers {
 
     @Autowired
     FetchSupplierDetails supplierFetcher;
+
+    @Autowired
+    HelperMethods helper;
 
     public void searchSuppliers(String searchTerm) {
         var found = false;
@@ -44,7 +45,7 @@ public class FetchSuppliers {
             var fetched = false;
             do {
                 try {
-                    String scrapingAntURL = buildScrapingAntURL(url);
+                    String scrapingAntURL = helper.buildScrapingAntURL(url);
                     logger.atDebug().log(scrapingAntURL);
                     document = Jsoup.connect(scrapingAntURL).timeout(5 * 60 * 1000).get();
                     fetched = true;
