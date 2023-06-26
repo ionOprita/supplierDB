@@ -31,10 +31,8 @@ public class FetchSuppliers {
 //                    + "=" + page, "8e2b076fd0a742a4abbc1a52bec5a456");
             String globalsourcesURL = "https://www.globalsources.com/searchList/suppliers?keyWord=" + searchTerm + "&pageNum"
                     + "=" + page;
-            String url = buildScrapingAntURL(globalsourcesURL);
-            logger.atDebug().log(url);
             logger.atDebug().log(globalsourcesURL);
-            found = retrievePage(url, searchTerm);
+            found = retrievePage(globalsourcesURL, searchTerm);
         } while (found);
 
     }
@@ -43,7 +41,17 @@ public class FetchSuppliers {
         boolean found;
         Document document = null;
         try {
-            document = Jsoup.connect(url).timeout(3 * 60 * 1000).get();
+            var fetched = false;
+            do {
+                try {
+                    String scrapingAntURL = buildScrapingAntURL(url);
+                    logger.atDebug().log(scrapingAntURL);
+                    document = Jsoup.connect(scrapingAntURL).timeout(5 * 60 * 1000).get();
+                    fetched = true;
+                } catch (IOException e) {
+                    HelperMethods.replaceProxy();
+                }
+            } while (!fetched);
             Elements supplierElements = document.select(".mod-supp-info");
             found = supplierElements.size() > 0;
             if (!found) {

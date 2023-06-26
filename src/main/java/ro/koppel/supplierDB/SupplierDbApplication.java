@@ -20,7 +20,7 @@ public class SupplierDbApplication implements CommandLineRunner {
     FetchSuppliers supplierSearcher;
 
     @Autowired
-    ExcelCreator excelCreator;
+    Excel excel;
 
     public static void main(String[] args) {
         SpringApplication.run(SupplierDbApplication.class, args);
@@ -36,7 +36,7 @@ public class SupplierDbApplication implements CommandLineRunner {
                 logger.atInfo().log("Searching suppliers for {}", search);
                 supplierSearcher.searchSuppliers(search);
             });
-            excelCreator.createExcel(Paths.get("C:\\Users\\Oprita\\Desktop\\supplierDB\\supplierDB\\SupplierListTest.xlsx"));
+            excel.createExcel(Paths.get("C:\\Users\\Oprita\\Desktop\\supplierDB\\supplierDB\\SupplierListTest.xlsx"));
         }
     }
 }

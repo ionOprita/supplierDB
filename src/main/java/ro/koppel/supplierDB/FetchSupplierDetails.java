@@ -81,7 +81,7 @@ public class FetchSupplierDetails {
         if (search == null) {
             search = new Search();
             search.searchTerms = searchTerm;
-            searchRepository.save(search);
+            search = searchRepository.save(search);
         }
         var supplier = supplierRepository.findByLink(supplierUrl);
         if (supplier != null) {
@@ -89,8 +89,8 @@ public class FetchSupplierDetails {
             if (supplier.searchList.add(search)) {
                 logger.atDebug().log("But not yet with search '{}', thus adding search and updating in DB", searchTerm);
                 supplierRepository.save(supplier);
-                search.supplierList.add(supplier);
-                searchRepository.save(search);
+//                search.supplierList.add(supplier);
+//                searchRepository.save(search);
             }
         } else {
             addSupplier(supplierUrl, search);
@@ -99,7 +99,17 @@ public class FetchSupplierDetails {
 
     private void addSupplier(String supplierUrl, Search search) throws IOException {
         var profileUrl = supplierUrl.replace("homepage_", "company-profile_");
-        Document document = Jsoup.connect(buildScrapingAntURL(profileUrl)).timeout(2 * 60 * 1000).get();
+        Document document = null;
+        var fetched = false;
+        do {
+            try {
+                document = Jsoup.connect(buildScrapingAntURL(profileUrl)).timeout(5 * 60 * 1000).get();
+                fetched = true;
+
+            } catch (IOException e) {
+                HelperMethods.replaceProxy();
+            }
+        } while (!fetched);
         Elements names = document.getElementsByClass("supplier-name");
         if (names.size() == 0) {
             logger.atWarn().log("The supplier name was not found on {}. Ignoring this entry.", profileUrl);
@@ -170,9 +180,9 @@ public class FetchSupplierDetails {
             }
         }
         supplier.searchList.add(search);
-        search.supplierList.add(supplier);
+//        search.supplierList.add(supplier);
         supplierRepository.save(supplier);
-        searchRepository.save(search);
+//        searchRepository.save(search);
         logger.atDebug().log(supplier.toString());
     }
 }

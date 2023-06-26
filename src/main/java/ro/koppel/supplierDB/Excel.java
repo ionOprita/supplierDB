@@ -16,9 +16,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 @Component
-public class ExcelCreator {
+public class Excel {
 
-    private final Logger logger = LoggerFactory.getLogger(ExcelCreator.class);
+    private final Logger logger = LoggerFactory.getLogger(Excel.class);
     @Autowired
     SearchRepository searchRepository;
 
@@ -73,6 +73,7 @@ public class ExcelCreator {
                 rowIndex = sheet.getLastRowNum();
             }
             var suppliers = searchTerm.supplierList;
+            //TODO: check if supplier already on sheet
             for (Supplier supplier : suppliers) {
                 rowIndex++;
                 addRow(sheet, rowIndex, supplier);
