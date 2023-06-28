@@ -31,7 +31,7 @@ public class FetchSuppliers {
 //            String url = buildScrapingAntURL("https://www.globalsources.com/searchList/suppliers?keyWord=" + URLEncoder.encode(searchTerm, UTF_8) + "&pageNum"
 //                    + "=" + page, "8e2b076fd0a742a4abbc1a52bec5a456");
             String globalsourcesURL = "https://www.globalsources.com/searchList/suppliers?keyWord=" + searchTerm + "&pageNum"
-                    + "=" + page;
+                    + "=" + page +"&vbTypes=Manufacturer";
             logger.atDebug().log(globalsourcesURL);
             found = retrievePage(globalsourcesURL, searchTerm);
         } while (found);

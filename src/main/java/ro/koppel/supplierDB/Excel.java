@@ -72,12 +72,12 @@ public class Excel {
             } else {
                 rowIndex = sheet.getLastRowNum();
             }
-            var suppliers = searchTerm.supplierList;
-            //TODO: check if supplier already on sheet
-            for (Supplier supplier : suppliers) {
-                rowIndex++;
-                addRow(sheet, rowIndex, supplier);
-            }
+//            var suppliers = searchTerm.supplierList;
+//            //TODO: check if supplier already on sheet
+//            for (Supplier supplier : suppliers) {
+//                rowIndex++;
+//                addRow(sheet, rowIndex, supplier);
+//            }
         }
     }
 

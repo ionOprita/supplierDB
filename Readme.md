@@ -21,7 +21,7 @@ and can contain one or several words separated by a blank.
 The second argument is an absolute or relative path for the Excel file to be created
 or modified (TODO).
 
-Database creation instructions from Ion Oprita
+Database creation instructions
 =
 
 As user 'claudio' is already defined as superuser instead of postgres
