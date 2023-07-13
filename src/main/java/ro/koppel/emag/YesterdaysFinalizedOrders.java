@@ -2,14 +2,13 @@ package ro.koppel.emag;
 
 import com.google.gson.Gson;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
+import java.util.Base64;
 
 public class YesterdaysFinalizedOrders {
 
@@ -21,8 +20,13 @@ public class YesterdaysFinalizedOrders {
 
     private static final DateTimeFormatter emagFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:");
 
-
     public static void main(String[] args) throws Exception {
+        if (args.length < 2) {
+            System.out.println("Please supply username and password as arguments.");
+            System.exit(1);
+        }
+        var username = args[0];
+        var password = args[1];
         var today00 = LocalDate.now().atTime(0, 0, 0, 0);
         var yesterday00 = today00.minusDays(1);
         String inputJSON = """
@@ -32,13 +36,16 @@ public class YesterdaysFinalizedOrders {
                     "modifiedAfter": "%s"
                 }
                 """.formatted(today00.format(emagFormat), yesterday00.format(emagFormat));
-        var connection = URI.create(readOrder).toURL().openConnection();
-        try (var writer = new PrintWriter(connection.getOutputStream())) {
-            writer.println(inputJSON);
-            writer.flush();
-        }
-        try (var reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), UTF_8))) {
-            new Gson().fromJson(reader, OrderResult.class);
-        }
+        var credentials = Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
+        var httpClient = HttpClient.newHttpClient();
+        var httpRequest = HttpRequest.newBuilder()
+                .uri(URI.create(readOrder))
+                .header("Authorization", "Basic " + credentials)
+                .POST(HttpRequest.BodyPublishers.ofString(inputJSON))
+                .build();
+        var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+        System.out.println("RC = " + httpResponse.statusCode());
+        var response = new Gson().fromJson(httpResponse.body(), Response.class);
+        System.out.println(response);
     }
 }
