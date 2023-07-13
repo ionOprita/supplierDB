@@ -1,18 +1,18 @@
 package ro.koppel.emag;
 
-import java.util.List;
+import java.util.Arrays;
 
 public class Response {
     public boolean isError;
-    public List<String> messages;
-    public List<OrderResult> results;
+    public String[] messages;
+    public OrderResult[] results;
 
     @Override
     public String toString() {
         return "Response{" +
                 "isError=" + isError +
-                ", messages=" + messages +
-                ", results=" + results +
+                ", messages=" + Arrays.toString(messages) +
+                ", results=" + Arrays.toString(results) +
                 '}';
     }
 }
