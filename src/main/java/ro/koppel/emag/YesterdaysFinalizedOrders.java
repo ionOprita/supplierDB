@@ -37,9 +37,9 @@ public class YesterdaysFinalizedOrders {
         var password = args[1];
         var today00 = LocalDate.now().atTime(0, 0, 0, 0);
         var yesterday00 = today00.minusDays(1);
-        var startDate = LocalDate.of(2023,7,12)
-                .atTime(0,0);
-        var endDate = LocalDate.of(2023,7,20).plusDays(1).atStartOfDay();
+        var startTime = LocalDate.of(2023,7,12)
+                .atStartOfDay();
+        var endTime = LocalDate.of(2023,7,20).plusDays(1).atStartOfDay();
         String inputJSON = """
                 "data": {
                     "status": 4,
