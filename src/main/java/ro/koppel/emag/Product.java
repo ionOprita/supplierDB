@@ -9,6 +9,7 @@ public class Product {
     public VoucherSplit[] product_voucher_split;
     public int status;
     public String part_number;
+    public String part_number_key;
     public String created;
     public String modified;
     public String currency;
@@ -24,6 +25,7 @@ public class Product {
                 ", product_voucher_split=" + Arrays.toString(product_voucher_split) +
                 ", status=" + status +
                 ", part_number='" + part_number + '\'' +
+                ", part_number_key='" + part_number_key + '\'' +
                 ", created='" + created + '\'' +
                 ", modified='" + modified + '\'' +
                 ", currency='" + currency + '\'' +
