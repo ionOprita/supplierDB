@@ -59,14 +59,29 @@ public class SheetsQuickstart {
         return new AuthorizationCodeInstalledApp(flow, receiver).authorize("user");
     }
 
-    private static void update() {
-
+    public static void update(List<List<Object>> values, String range) throws GeneralSecurityException, IOException {
+        final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
+        final String spreadsheetId = "17GjPvU_NqbkiUjfjiIgGOnxB9LgqJYpiJb2B1L9w_Cg";
+        Sheets service =
+                new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT))
+                        .setApplicationName(APPLICATION_NAME)
+                        .build();
+        ValueRange body = new ValueRange()
+                .setValues(values);
+        UpdateValuesResponse response = service.spreadsheets().values().update(spreadsheetId, range, body)
+                .setValueInputOption("RAW")
+                .execute();
+        int cellsChanged = response.getUpdatedCells();
+        System.out.println(cellsChanged);
+        if (values == null || values.isEmpty()) {
+            System.out.println("No data found.");
+        } else {
+            for (List row : values) {
+                System.out.printf("%s, \n", row.get(0));
+            }
+        }
     }
 
-    /**
-     * Prints the names and majors of students in a sample spreadsheet:
-     * https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit
-     */
     public static void main(String... args) throws IOException, GeneralSecurityException {
         final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
         final String spreadsheetId = "17GjPvU_NqbkiUjfjiIgGOnxB9LgqJYpiJb2B1L9w_Cg";
