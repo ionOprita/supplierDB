@@ -12,10 +12,12 @@ import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.SheetsScopes;
+import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
 
 import java.io.*;
 import java.security.GeneralSecurityException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -66,22 +68,24 @@ public class SheetsQuickstart {
      * https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit
      */
     public static void main(String... args) throws IOException, GeneralSecurityException {
-        // Build a new authorized API client service.
         final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
         final String spreadsheetId = "17GjPvU_NqbkiUjfjiIgGOnxB9LgqJYpiJb2B1L9w_Cg";
-        final String range = "Data!A1:A3";
+        final String range = "Data!A1:C1";
         Sheets service =
                 new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT))
                         .setApplicationName(APPLICATION_NAME)
                         .build();
-        ValueRange response = service.spreadsheets().values()
-                .get(spreadsheetId, range)
+        List<List<Object>> values = Arrays.asList(Arrays.asList(1,2,3));
+        ValueRange body = new ValueRange()
+                .setValues(values);
+        UpdateValuesResponse response = service.spreadsheets().values().update(spreadsheetId, range, body)
+                .setValueInputOption("RAW")
                 .execute();
-        List<List<Object>> values = response.getValues();
+        int cellsChanged = response.getUpdatedCells();
+        System.out.println(cellsChanged);
         if (values == null || values.isEmpty()) {
             System.out.println("No data found.");
         } else {
-            System.out.println("Name, Major");
             for (List row : values) {
                 System.out.printf("%s, \n", row.get(0));
             }
