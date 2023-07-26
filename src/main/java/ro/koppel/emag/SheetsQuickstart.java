@@ -12,8 +12,6 @@ import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.SheetsScopes;
-import com.google.api.services.sheets.v4.model.Spreadsheet;
-import com.google.api.services.sheets.v4.model.SpreadsheetProperties;
 import com.google.api.services.sheets.v4.model.ValueRange;
 
 import java.io.*;
@@ -31,7 +29,7 @@ public class SheetsQuickstart {
      * If modifying these scopes, delete your previously saved tokens/ folder.
      */
     private static final List<String> SCOPES =
-            Collections.singletonList(SheetsScopes.SPREADSHEETS_READONLY);
+            Collections.singletonList(SheetsScopes.SPREADSHEETS);
     private static final String CREDENTIALS_FILE_PATH = "C:\\Users\\Oprita\\Desktop\\supplierDB\\ExcelEMAG\\client_secret_871267262769-9htv70p5fe3k8ndji15d0ki65l114b7o.apps.googleusercontent.com.json";
 
     /**
@@ -43,8 +41,6 @@ public class SheetsQuickstart {
      */
     private static Credential getCredentials(final NetHttpTransport HTTP_TRANSPORT)
             throws IOException {
-        // Load client secrets.
-//        InputStream in = SheetsQuickstart.class.getResourceAsStream(CREDENTIALS_FILE_PATH);
         InputStream in = new FileInputStream(CREDENTIALS_FILE_PATH);
         if (in == null) {
             throw new FileNotFoundException("Resource not found: " + CREDENTIALS_FILE_PATH);
@@ -61,6 +57,10 @@ public class SheetsQuickstart {
         return new AuthorizationCodeInstalledApp(flow, receiver).authorize("user");
     }
 
+    private static void update() {
+
+    }
+
     /**
      * Prints the names and majors of students in a sample spreadsheet:
      * https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit
@@ -68,23 +68,14 @@ public class SheetsQuickstart {
     public static void main(String... args) throws IOException, GeneralSecurityException {
         // Build a new authorized API client service.
         final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
-        final String spreadsheetId = "1QOFVTvwZMQ_l6xZkHTX2287jiyBkso2R";
-        final String range = "Class Data!A2:E";
+        final String spreadsheetId = "17GjPvU_NqbkiUjfjiIgGOnxB9LgqJYpiJb2B1L9w_Cg";
+        final String range = "Data!A1:A3";
         Sheets service =
                 new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT))
                         .setApplicationName(APPLICATION_NAME)
                         .build();
-        Spreadsheet spreadsheet = new Spreadsheet()
-                .setProperties(new SpreadsheetProperties()
-                        .setTitle("Title"));
-        spreadsheet = service.spreadsheets().create(spreadsheet)
-                .setFields("spreadsheetId")
-                .execute();
-        // Prints the new spreadsheet id
-        String newId = spreadsheet.getSpreadsheetId();
-        System.out.println("Spreadsheet ID: " + spreadsheet.getSpreadsheetId());
         ValueRange response = service.spreadsheets().values()
-                .get(newId, range)
+                .get(spreadsheetId, range)
                 .execute();
         List<List<Object>> values = response.getValues();
         if (values == null || values.isEmpty()) {
@@ -92,8 +83,7 @@ public class SheetsQuickstart {
         } else {
             System.out.println("Name, Major");
             for (List row : values) {
-                // Print columns A and E, which correspond to indices 0 and 4.
-                System.out.printf("%s, %s\n", row.get(0), row.get(4));
+                System.out.printf("%s, \n", row.get(0));
             }
         }
     }
