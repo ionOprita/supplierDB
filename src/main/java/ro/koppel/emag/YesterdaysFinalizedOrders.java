@@ -44,7 +44,7 @@ public class YesterdaysFinalizedOrders {
         var endTime = LocalDate.of(2023,7,20).plusDays(1).atStartOfDay();
         String inputJSON = """
                 "data": {
-                    "status": 1,
+                    "status": 4,
                     "createdBefore": "%s",
                     "createdAfter": "%s"
                 }
@@ -86,21 +86,57 @@ public class YesterdaysFinalizedOrders {
         for(var orderResult: results){
             for(Product product: orderResult.products){
                 List<Object> row = new ArrayList<>();
+                row.add(dayConversion(orderResult.date));
+                row.add(dayAndHourConversion(orderResult.date));
+                row.add(monthConversion(orderResult.date));
+                row.add(weekConversion(orderResult.date));
                 row.add(orderResult.id);
+                row.add(orderResult.customer.name);
+                //ToDO: Model
                 row.add(product.part_number_key);
-                row.add(orderResult.date);
-                row.add(dateConversion(orderResult.date));
+                //ToDO: Company
+                row.add(orderResult.products.length);
+                row.add("TRUE");
+                row.add("TRUE");
+                row.add("TRUE");
+                row.add("FALSE");
+                row.add(orderResult.customer.shipping_phone);
+                //ToDO: Platform
                 values.add(row);
             }
         }
-        SheetsQuickstart.update(values, "A1:D" + values.size());
+        SheetsQuickstart.update(values, "A1:P" + values.size());
     }
 
-    private static String dateConversion(String date) {
+    private static String dayAndHourConversion(String date) {
         DateTimeFormatter emag;
         DateTimeFormatter excel;
         emag = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         excel = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss");
+        return LocalDateTime.parse(date, emag).format(excel);
+    }
+
+    private static String dayConversion(String date) {
+        DateTimeFormatter emag;
+        DateTimeFormatter excel;
+        emag = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        excel = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+        return LocalDateTime.parse(date, emag).format(excel);
+    }
+
+    private static String monthConversion(String date) {
+        DateTimeFormatter emag;
+        DateTimeFormatter excel;
+        emag = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        excel = DateTimeFormatter.ofPattern("01.MM.yyyy HH:mm:ss");
+        return LocalDateTime.parse(date, emag).format(excel);
+    }
+
+    private static String weekConversion(String date) {
+        DateTimeFormatter emag;
+        DateTimeFormatter excel;
+        emag = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        excel = DateTimeFormatter.ofPattern("01.MM.yyyy HH:mm:ss");
         return LocalDateTime.parse(date, emag).format(excel);
     }
 }

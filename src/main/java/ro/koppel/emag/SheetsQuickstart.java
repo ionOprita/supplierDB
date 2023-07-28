@@ -61,16 +61,16 @@ public class SheetsQuickstart {
 
     public static void update(List<List<Object>> values, String range) throws GeneralSecurityException, IOException {
         final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
-        final String spreadsheetId = "17GjPvU_NqbkiUjfjiIgGOnxB9LgqJYpiJb2B1L9w_Cg";
+        final String spreadsheetId = "1vkziANK2jdC16sJKIjvdm1dC_TxAAw0BsQhC2VTyCIs";
         Sheets service =
                 new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT))
                         .setApplicationName(APPLICATION_NAME)
                         .build();
         ValueRange body = new ValueRange()
                 .setValues(values);
-        UpdateValuesResponse response = service.spreadsheets().values().update(spreadsheetId, range, body)
+        UpdateValuesResponse response = service.spreadsheets().values().append(spreadsheetId, range, body)
                 .setValueInputOption("RAW")
-                .execute();
+                .execute().getUpdates();
         int cellsChanged = response.getUpdatedCells();
         System.out.println(cellsChanged);
         if (values == null || values.isEmpty()) {
@@ -85,7 +85,7 @@ public class SheetsQuickstart {
     public static void main(String... args) throws IOException, GeneralSecurityException {
         final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
         final String spreadsheetId = "17GjPvU_NqbkiUjfjiIgGOnxB9LgqJYpiJb2B1L9w_Cg";
-        final String range = "Data!A1:C1";
+        final String range = "Data!A1:P1";
         Sheets service =
                 new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT))
                         .setApplicationName(APPLICATION_NAME)
