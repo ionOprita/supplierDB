@@ -61,7 +61,7 @@ public class SheetsQuickstart {
 
     public static void update(List<List<Object>> values, String range) throws GeneralSecurityException, IOException {
         final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
-        final String spreadsheetId = "1vkziANK2jdC16sJKIjvdm1dC_TxAAw0BsQhC2VTyCIs";
+        final String spreadsheetId = "1fN3hjTHiwnDTsem0_o99bdt_SUyw-9s3hYgBI4it-rY";
         Sheets service =
                 new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT))
                         .setApplicationName(APPLICATION_NAME)
@@ -71,31 +71,6 @@ public class SheetsQuickstart {
         UpdateValuesResponse response = service.spreadsheets().values().append(spreadsheetId, range, body)
                 .setValueInputOption("RAW")
                 .execute().getUpdates();
-        int cellsChanged = response.getUpdatedCells();
-        System.out.println(cellsChanged);
-        if (values == null || values.isEmpty()) {
-            System.out.println("No data found.");
-        } else {
-            for (List row : values) {
-                System.out.printf("%s, \n", row.get(0));
-            }
-        }
-    }
-
-    public static void main(String... args) throws IOException, GeneralSecurityException {
-        final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
-        final String spreadsheetId = "17GjPvU_NqbkiUjfjiIgGOnxB9LgqJYpiJb2B1L9w_Cg";
-        final String range = "Data!A1:P1";
-        Sheets service =
-                new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT))
-                        .setApplicationName(APPLICATION_NAME)
-                        .build();
-        List<List<Object>> values = Arrays.asList(Arrays.asList(1,2,3));
-        ValueRange body = new ValueRange()
-                .setValues(values);
-        UpdateValuesResponse response = service.spreadsheets().values().update(spreadsheetId, range, body)
-                .setValueInputOption("RAW")
-                .execute();
         int cellsChanged = response.getUpdatedCells();
         System.out.println(cellsChanged);
         if (values == null || values.isEmpty()) {

@@ -6,6 +6,7 @@ public class Voucher {
     public Integer voucher_id;
     public String modified;
     public String created;
+
     public Integer status;
     public BigDecimal sale_price_vat;
     public BigDecimal sale_price;

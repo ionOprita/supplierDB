@@ -12,6 +12,22 @@ public class OrderResult {
     public String delivery_payment_mode;
     public String delivery_mode;
 
+    public LockerDetails details;
+    public String date;
+    public Integer payment_status;
+    public BigDecimal cashed_co;
+    public BigDecimal cashed_cod;
+    public BigDecimal shipping_tax;
+    public VoucherSplit[] shipping_tax_voucher_split;
+
+    public Customer customer;
+
+    public Product[] products;
+    public Attachment[] attachments;
+    public Voucher[] vouchers;
+    public boolean is_storno;
+    public Integer cancellation_reason;
+
     @Override
     public String toString() {
         return "OrderResult{" +
@@ -37,20 +53,4 @@ public class OrderResult {
                 ", cancellation_reason=" + cancellation_reason +
                 '}';
     }
-
-    public LockerDetails details;
-    public String date;
-    public Integer payment_status;
-    public BigDecimal cashed_co;
-    public BigDecimal cashed_cod;
-    public BigDecimal shipping_tax;
-    public VoucherSplit[] shipping_tax_voucher_split;
-
-    public Customer customer;
-    public Product[] products;
-    public Attachment[] attachments;
-    public Voucher[] vouchers;
-    public boolean is_storno;
-    public Integer cancellation_reason;
-
 }

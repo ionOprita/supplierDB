@@ -7,6 +7,7 @@ public class Product {
     public int id;
     public Integer product_id;
     public VoucherSplit[] product_voucher_split;
+
     public int status;
     public String part_number;
     public String part_number_key;
@@ -15,6 +16,7 @@ public class Product {
     public String currency;
     public int quantity;
     public BigDecimal sale_price;
+
     public String[] details;
 
     @Override
