@@ -12,10 +12,7 @@ import java.security.GeneralSecurityException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.List;
+import java.util.*;
 import java.util.logging.Logger;
 
 import static java.net.HttpURLConnection.HTTP_OK;
@@ -90,44 +87,83 @@ public class YesterdaysFinalizedOrders {
     }
 
     private static void processResponse(OrderResult[] results) throws GeneralSecurityException, IOException {
-        List<List<Object>> values = new ArrayList<>();
-        List<String> orderResults = new ArrayList<>();
+        List<List<Object>> valuesToAdd = new ArrayList<>();
+        var splittedResults = splitOutDuplicates(results);
         for (var orderResult : results) {
             for (Product product : orderResult.products) {
-                List<Object> row = new ArrayList<>();
-                row.add(dayConversion(orderResult.date));
-                row.add(dayAndHourConversion(orderResult.date));
-                row.add(monthConversion(orderResult.date));
-                row.add(weekConversion(orderResult.date));
-                row.add(orderResult.id);
-                row.add(orderResult.customer.name);
-                addModel(product, row);
-                row.add(product.part_number_key);
-                row.add("");
-                row.add("");
-                row.add("");
-                for (String order : orderResults) {
-                    if (order.equals(orderResult.id)) {
-                        row.add("Atentie");
-                    }
-                }
-                row.add("");
-                row.add("");
-                addCompany(product, row);
-                row.add(orderResult.products.length);
-                row.add("");
-                row.add("TRUE");
-                row.add("TRUE");
-                row.add("TRUE");
-                row.add("FALSE");
-                row.add(orderResult.customer.shipping_phone);
-                row.add("FBE");
-                values.add(row);
+                List<Object> row = createSheetRow(orderResult, product);
+                valuesToAdd.add(row);
             }
         }
-        SheetsQuickstart.update(values, "Date!A:W" + values.size());
+        SheetsQuickstart.update(valuesToAdd, "Date!A:W" + valuesToAdd.size());
     }
 
+    private static record SplittedResult(List<OrderResult> duplicates, List<OrderResult> clean) {}
+
+    private static SplittedResult splitOutDuplicates(OrderResult[] results) {
+        var duplicateOrders = new ArrayList<OrderResult>();
+        var singleOrders = new ArrayList<OrderResult>();
+        var ordersGRoupedById = new TreeMap<String,List<OrderResult>>();
+        for (var result:results) {
+            var orderId=result.id;
+            var list = ordersGRoupedById.getOrDefault(orderId, new ArrayList<>());
+            list.add(result);
+            ordersGRoupedById.put(orderId,list);
+        }
+        for (var orders:ordersGRoupedById.values()) {
+            if (orders.size()==1) {
+                singleOrders.add(orders.get(0));
+            } else {
+                duplicateOrders.addAll(orders);
+            }
+        }
+        return new SplittedResult(duplicateOrders,singleOrders);
+    }
+
+    private static List<Object> createSheetRow(OrderResult orderResult, Product product) {
+        List<Object> row = new ArrayList<>();
+        row.add(dayConversion(orderResult.date));
+        row.add(dayAndHourConversion(orderResult.date));
+        row.add(monthConversion(orderResult.date));
+        row.add(weekConversion(orderResult.date));
+        row.add(orderResult.id);
+        row.add(orderResult.customer.name);
+        addModel(product, row);
+        row.add(product.part_number_key);
+        row.add("");
+        row.add("");
+        row.add("");
+        row.add("");
+        row.add("");
+        addCompany(product, row);
+        row.add(orderResult.products.length);
+        row.add("");
+        row.add("TRUE");
+        row.add("TRUE");
+        row.add("TRUE");
+        row.add("FALSE");
+        row.add(orderResult.customer.shipping_phone);
+        row.add("FBE");
+        return row;
+    }
+
+    //TODO: Instead of having methods that add to the row directly it would
+    // be nicer to have just a conversion procedure, and also do it with a switch,
+    // something like
+    // Then in the processResponse method you can do a
+    // row.add(productNameOf(product))
+    // This way you separate the functionality of converting name from
+    // the usage, which is now row.add, but maybe in other context it is different.
+
+    private static String productNameOf(Product product) {
+        return switch (product.part_number_key) {
+            case "D9LYDSBBM" -> "01/ 1+1 alb";
+            case "DG20C1BBM" -> "02/ 1+1 negru";
+            case "DRM7KSBBM" -> "03/ 1+2 alb";
+            // etc.
+            default -> "Product %s unknown.".formatted(product.part_number_key);
+        };
+    }
     private static void addModel(Product product, List<Object> row) {
         if ("D9LYDSBBM".equals(product.part_number_key)) {
             row.add("01/ 1+1 alb");
