@@ -87,15 +87,23 @@ public class YesterdaysFinalizedOrders {
     }
 
     private static void processResponse(OrderResult[] results) throws GeneralSecurityException, IOException {
-        List<List<Object>> valuesToAdd = new ArrayList<>();
         var splittedResults = splitOutDuplicates(results);
-        for (var orderResult : results) {
-            for (Product product : orderResult.products) {
-                List<Object> row = createSheetRow(orderResult, product);
-                valuesToAdd.add(row);
-            }
-        }
-        SheetsQuickstart.update(valuesToAdd, "Date!A:W" + valuesToAdd.size());
+        SheetsQuickstart.append("Date", linearizeOrderProductList(splittedResults.clean));
+        SheetsQuickstart.insertAtTop("Date", linearizeOrderProductList(splittedResults.duplicates));
+    }
+
+    /**
+     * Convert the list of order where each order can have multiple products to single list having an entry
+     * for each product in each order. The list items are already converted into a row for the spreadsheet,
+     * thus the resulting list elements are of type List-of-Object.
+     *
+     * @param orderResults
+     * @return
+     */
+    private static List<List<Object>> linearizeOrderProductList(List<OrderResult> orderResults) {
+        return orderResults.stream()
+                .flatMap(orderResult -> Arrays.stream(orderResult.products).map(product -> createSheetRow(orderResult,product))
+                ).toList();
     }
 
     private static record SplittedResult(List<OrderResult> duplicates, List<OrderResult> clean) {}

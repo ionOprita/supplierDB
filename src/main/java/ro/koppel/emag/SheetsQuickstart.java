@@ -12,11 +12,11 @@ import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.SheetsScopes;
-import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
-import com.google.api.services.sheets.v4.model.ValueRange;
+import com.google.api.services.sheets.v4.model.*;
 
 import java.io.*;
 import java.security.GeneralSecurityException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -58,6 +58,14 @@ public class SheetsQuickstart {
         return new AuthorizationCodeInstalledApp(flow, receiver).authorize("user");
     }
 
+    public static Sheets setupSheetsService() throws GeneralSecurityException, IOException {
+        final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
+        return new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT))
+                .setApplicationName(APPLICATION_NAME)
+                .build();
+
+    }
+
     public static void update(List<List<Object>> values, String range) throws GeneralSecurityException, IOException {
         final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
         final String spreadsheetId = "1fN3hjTHiwnDTsem0_o99bdt_SUyw-9s3hYgBI4it-rY";
@@ -79,5 +87,64 @@ public class SheetsQuickstart {
                 System.out.printf("%s, \n", row.get(0));
             }
         }
+    }
+
+    public static record BlockDimension(int rowCount, int columnCount) {
+    }
+
+    private static BlockDimension getSize(List<List<Object>> values) {
+        var rowCount = values.size();
+        if (rowCount == 0) {
+            throw new IllegalArgumentException("You must supply at least one row");
+        }
+        var columnCount = values.get(0).size();
+        if (columnCount == 0) {
+            throw new IllegalArgumentException("Rows must have at least one cell");
+        }
+        for (var row : values) {
+            if (row.size() != columnCount) {
+                throw new IllegalArgumentException("All rows must have the same number of cells");
+            }
+        }
+        return new BlockDimension(rowCount, columnCount);
+    }
+
+    /**
+     * Append the values at the bottom of the sheet.
+     *
+     * @param sheetId name of the sheet to which to append the rows.
+     * @param values  organized as a list of rows holding a list of cells.
+     */
+    public static void append(String sheetId, List<List<Object>> values) throws GeneralSecurityException, IOException {
+        var dimension = getSize(values);
+        var service = setupSheetsService();
+        var requests = new ArrayList<Request>();
+        requests.add(
+                new Request().setAppendCells(
+                        new AppendCellsRequest().setSheetId(sheetId).setFields()
+                )
+        );
+        var body =
+                new BatchUpdateSpreadsheetRequest().setRequests(requests);
+        var response = service.spreadsheets().batchUpdate(sheetId, body).execute();
+    }
+
+    /**
+     * Insert tge values between lines 1 and 2 of the sheet, i.e. after the title but before the
+     * first line having data.
+     *
+     * @param sheetId name of the sheet into which to insert the rows.
+     * @param values  organized as a list of rows holding a list of cells.
+     */
+    public static void insertAtTop(String sheetId, List<List<Object>> values) throws GeneralSecurityException, IOException {
+        var dimension = getSize(values);
+        var service = setupSheetsService();
+        var requests = new ArrayList<Request>();
+        requests.add(
+                new Request().setInsertRange().
+        );
+        var body =
+                new BatchUpdateSpreadsheetRequest().setRequests(requests);
+        var response = service.spreadsheets().batchUpdate(sheetId, body).execute();
     }
 }
