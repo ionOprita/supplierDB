@@ -38,32 +38,33 @@ public class YesterdaysFinalizedOrders {
             System.err.println("Please supply username and password as arguments.");
             System.exit(1);
         }
-        List<List<String>> usernameAndPassList = Arrays.asList(Arrays.asList(args[0],args[1]), Arrays.asList(args[2],args[3]), Arrays.asList(args[4],args[5]), Arrays.asList(args[6],args[7]), Arrays.asList(args[8],args[9]));
-        for(List<String> username : usernameAndPassList) {
-            System.out.println("Username is: "+ username.get(0));
+
+        List<String> argsList = new ArrayList<>();
+        argsList.addAll(Arrays.asList(args));
+        List<List<String>> usernameAndPassList = new ArrayList<>();
+// 4
+        for (int i = 0; i < argsList.size(); i = i + 2) {
+            usernameAndPassList.add(Arrays.asList(argsList.get(i), argsList.get(i + 1)));
+        }
+
+        for (List<String> username : usernameAndPassList) {
+            System.out.println("Username is: " + username.get(0));
             run(username.get(0), username.get(1));
         }
     }
 
     private static void run(String username, String password) throws IOException, InterruptedException, GeneralSecurityException {
-        var startTime = LocalDate.now().minusDays(1)
-                .atStartOfDay();
+        var startTime = LocalDate.now().minusDays(1).atStartOfDay();
         var endTime = LocalDate.now().atStartOfDay();
         String inputJSON = """
-                "data": {
-                    "status": 4,
-                    "createdBefore": "%s",
-                    "createdAfter": "%s"
+                {
+                "id" : "315519409"
                 }
-                """.formatted(endTime.format(emagFormat), startTime.format(emagFormat));
+                """.formatted(startTime.format(emagFormat));
         System.out.println(inputJSON);
         var credentials = Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
         var httpClient = HttpClient.newHttpClient();
-        var httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(readOrder))
-                .header("Authorization", "Basic " + credentials)
-                .POST(HttpRequest.BodyPublishers.ofString(inputJSON))
-                .build();
+        var httpRequest = HttpRequest.newBuilder().uri(URI.create(readOrder)).header("Authorization", "Basic " + credentials).POST(HttpRequest.BodyPublishers.ofString(inputJSON)).build();
         logger.log(FINE, "Sending request %s to %s".formatted(inputJSON, readOrder));
         var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
         int statusCode = httpResponse.statusCode();
@@ -94,7 +95,6 @@ public class YesterdaysFinalizedOrders {
         for (var orderResult : results) {
             for (Product product : orderResult.products) {
                 List<Object> row = new ArrayList<>();
-                orderResults.add(orderResult.id);
                 row.add(dayConversion(orderResult.date));
                 row.add(dayAndHourConversion(orderResult.date));
                 row.add(monthConversion(orderResult.date));
@@ -106,8 +106,8 @@ public class YesterdaysFinalizedOrders {
                 row.add("");
                 row.add("");
                 row.add("");
-                for(String order : orderResults) {
-                    if(order.equals(orderResult.id)){
+                for (String order : orderResults) {
+                    if (order.equals(orderResult.id)) {
                         row.add("Atentie");
                     }
                 }
