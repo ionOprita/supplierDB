@@ -31,7 +31,8 @@ public class SheetsQuickstart {
      */
     private static final List<String> SCOPES =
             Collections.singletonList(SheetsScopes.SPREADSHEETS);
-    private static final String CREDENTIALS_FILE_PATH = "C:\\Users\\Oprita\\Desktop\\supplierDB\\ExcelEMAG\\client_secret_871267262769-9htv70p5fe3k8ndji15d0ki65l114b7o.apps.googleusercontent.com.json";
+    private static final String CREDENTIALS_FILE_PATH = "C:\\Users\\Oprita\\Desktop\\supplierDB\\ExcelEMAG\\client_secret_2_871267262769-9htv70p5fe3k8ndji15d0ki65l114b7o.apps.googleusercontent.com.json";
+    public static final int sheetId = 1099867703;
 
     /**
      * Creates an authorized Credential object.
@@ -89,10 +90,7 @@ public class SheetsQuickstart {
         }
     }
 
-    public static record BlockDimension(int rowCount, int columnCount) {
-    }
-
-    private static BlockDimension getSize(List<List<Object>> values) {
+    private static BlockDimension getSize(List<RowData> values) {
         var rowCount = values.size();
         if (rowCount == 0) {
             throw new IllegalArgumentException("You must supply at least one row");
@@ -112,39 +110,56 @@ public class SheetsQuickstart {
     /**
      * Append the values at the bottom of the sheet.
      *
-     * @param sheetId name of the sheet to which to append the rows.
+     * @param spreadSheetId name of the sheet to which to append the rows.
      * @param values  organized as a list of rows holding a list of cells.
      */
-    public static void append(String sheetId, List<List<Object>> values) throws GeneralSecurityException, IOException {
-        var dimension = getSize(values);
+    public static void append(String spreadSheetId, List<RowData> values) throws GeneralSecurityException, IOException {
         var service = setupSheetsService();
         var requests = new ArrayList<Request>();
         requests.add(
                 new Request().setAppendCells(
-                        new AppendCellsRequest().setSheetId(sheetId).setFields()
+                        new AppendCellsRequest().setSheetId(sheetId).setRows(values).setFields("*")
                 )
         );
         var body =
                 new BatchUpdateSpreadsheetRequest().setRequests(requests);
-        var response = service.spreadsheets().batchUpdate(sheetId, body).execute();
+        var response = service.spreadsheets().batchUpdate(spreadSheetId, body).execute();
+        System.out.println(response);
     }
 
     /**
-     * Insert tge values between lines 1 and 2 of the sheet, i.e. after the title but before the
+     * Insert the values between lines 1 and 2 of the sheet, i.e. after the title but before the
      * first line having data.
      *
-     * @param sheetId name of the sheet into which to insert the rows.
+     * @param spreadSheetId name of the sheet into which to insert the rows.
      * @param values  organized as a list of rows holding a list of cells.
      */
-    public static void insertAtTop(String sheetId, List<List<Object>> values) throws GeneralSecurityException, IOException {
+    public static void insertAtTop(String spreadSheetId, List<RowData> values) throws GeneralSecurityException, IOException {
         var dimension = getSize(values);
         var service = setupSheetsService();
         var requests = new ArrayList<Request>();
+        GridRange gridRange = new GridRange()
+                .setSheetId(sheetId)
+                .setStartColumnIndex(1)
+                .setStartRowIndex(2)
+                .setEndColumnIndex(dimension.columnCount())
+                .setEndRowIndex(dimension.rowCount());
         requests.add(
-                new Request().setInsertRange().
+                new Request().setInsertRange(
+                        new InsertRangeRequest().setShiftDimension("ROW").setRange(gridRange)
+                )
+        );
+        requests.add(
+                new Request().setUpdateCells(
+                        new UpdateCellsRequest().setRange(gridRange).setRows(values).setFields("*")
+                )
         );
         var body =
                 new BatchUpdateSpreadsheetRequest().setRequests(requests);
-        var response = service.spreadsheets().batchUpdate(sheetId, body).execute();
+        var response = service.spreadsheets().batchUpdate(spreadSheetId, body).execute();
+        System.out.println(response);
+    }
+
+    public static record BlockDimension(int rowCount, int columnCount) {
     }
 }

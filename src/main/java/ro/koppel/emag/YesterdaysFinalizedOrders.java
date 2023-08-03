@@ -1,5 +1,7 @@
 package ro.koppel.emag;
 
+import com.google.api.services.sheets.v4.model.CellData;
+import com.google.api.services.sheets.v4.model.RowData;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 
@@ -21,6 +23,8 @@ import static java.util.logging.Level.*;
 public class YesterdaysFinalizedOrders {
 
     private static final String emagRO = "https://marketplace-api.emag.ro/api-3";
+
+    private static final String spreadsheetId = "1fN3hjTHiwnDTsem0_o99bdt_SUyw-9s3hYgBI4it-rY";
 
     private static final String orderURI = emagRO + "/order";
 
@@ -88,8 +92,12 @@ public class YesterdaysFinalizedOrders {
 
     private static void processResponse(OrderResult[] results) throws GeneralSecurityException, IOException {
         var splittedResults = splitOutDuplicates(results);
-        SheetsQuickstart.append("Date", linearizeOrderProductList(splittedResults.clean));
-        SheetsQuickstart.insertAtTop("Date", linearizeOrderProductList(splittedResults.duplicates));
+        if (!splittedResults.clean.isEmpty()) {
+            SheetsQuickstart.append(spreadsheetId, linearizeOrderProductList(splittedResults.clean, false));
+        }
+        if (!splittedResults.duplicates.isEmpty()) {
+            SheetsQuickstart.insertAtTop(spreadsheetId, linearizeOrderProductList(splittedResults.duplicates, true));
+        }
     }
 
     /**
@@ -100,10 +108,11 @@ public class YesterdaysFinalizedOrders {
      * @param orderResults
      * @return
      */
-    private static List<List<Object>> linearizeOrderProductList(List<OrderResult> orderResults) {
+    private static List<RowData> linearizeOrderProductList(List<OrderResult> orderResults, boolean duplicate) {
         return orderResults.stream()
-                .flatMap(orderResult -> Arrays.stream(orderResult.products).map(product -> createSheetRow(orderResult,product))
-                ).toList();
+                .flatMap(orderResult -> Arrays.stream(orderResult.products).map(product -> createSheetRow(orderResult,product,duplicate))
+                )
+                .toList();
     }
 
     private static record SplittedResult(List<OrderResult> duplicates, List<OrderResult> clean) {}
@@ -111,14 +120,14 @@ public class YesterdaysFinalizedOrders {
     private static SplittedResult splitOutDuplicates(OrderResult[] results) {
         var duplicateOrders = new ArrayList<OrderResult>();
         var singleOrders = new ArrayList<OrderResult>();
-        var ordersGRoupedById = new TreeMap<String,List<OrderResult>>();
+        var ordersGroupedById = new TreeMap<String,List<OrderResult>>();
         for (var result:results) {
             var orderId=result.id;
-            var list = ordersGRoupedById.getOrDefault(orderId, new ArrayList<>());
+            var list = ordersGroupedById.getOrDefault(orderId, new ArrayList<>());
             list.add(result);
-            ordersGRoupedById.put(orderId,list);
+            ordersGroupedById.put(orderId,list);
         }
-        for (var orders:ordersGRoupedById.values()) {
+        for (var orders:ordersGroupedById.values()) {
             if (orders.size()==1) {
                 singleOrders.add(orders.get(0));
             } else {
@@ -128,8 +137,8 @@ public class YesterdaysFinalizedOrders {
         return new SplittedResult(duplicateOrders,singleOrders);
     }
 
-    private static List<Object> createSheetRow(OrderResult orderResult, Product product) {
-        List<Object> row = new ArrayList<>();
+    private static RowData createSheetRow(OrderResult orderResult, Product product, boolean duplicate) {
+        List<String> row = new ArrayList<>();
         row.add(dayConversion(orderResult.date));
         row.add(dayAndHourConversion(orderResult.date));
         row.add(monthConversion(orderResult.date));
@@ -141,10 +150,15 @@ public class YesterdaysFinalizedOrders {
         row.add("");
         row.add("");
         row.add("");
+        if (duplicate) {
+            row.add("Comanda dubla");
+        } else {
+            row.add("");
+        }
         row.add("");
         row.add("");
         addCompany(product, row);
-        row.add(orderResult.products.length);
+        row.add(Objects.toString(orderResult.products.length));
         row.add("");
         row.add("TRUE");
         row.add("TRUE");
@@ -152,7 +166,7 @@ public class YesterdaysFinalizedOrders {
         row.add("FALSE");
         row.add(orderResult.customer.shipping_phone);
         row.add("FBE");
-        return row;
+        return new RowData().setValues(row.stream().map(cell -> new CellData().setFormattedValue(cell)).toList());
     }
 
     //TODO: Instead of having methods that add to the row directly it would
@@ -172,7 +186,7 @@ public class YesterdaysFinalizedOrders {
             default -> "Product %s unknown.".formatted(product.part_number_key);
         };
     }
-    private static void addModel(Product product, List<Object> row) {
+    private static void addModel(Product product, List<String> row) {
         if ("D9LYDSBBM".equals(product.part_number_key)) {
             row.add("01/ 1+1 alb");
         } else if ("DG20C1BBM".equals(product.part_number_key)) {
@@ -391,7 +405,7 @@ public class YesterdaysFinalizedOrders {
 //                    row.add("539/ AMMO negru");
     }
 
-    private static void addCompany(Product product, List<Object> row) {
+    private static void addCompany(Product product, List<String> row) {
         if ("D9LYDSBBM".equals(product.part_number_key)) {
             row.add("Zoopie Solutions");
         } else if ("DG20C1BBM".equals(product.part_number_key)) {
