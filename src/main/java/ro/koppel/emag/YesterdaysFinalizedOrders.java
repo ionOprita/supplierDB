@@ -59,15 +59,15 @@ public class YesterdaysFinalizedOrders {
 
     private static void run(String username, String password) throws IOException, InterruptedException, GeneralSecurityException {
         var accumulatedResponses = new ArrayList<OrderResult>();
-        var startTime = LocalDate.now().minusDays(1).atStartOfDay();
-        var endTime = LocalDate.now().atStartOfDay();
+        var startTime = LocalDate.of(2023,7,20).atStartOfDay(); //LocalDate.now().minusDays(1).atStartOfDay();
+        var endTime = LocalDate.of(2023,7,21+1).atStartOfDay(); //LocalDate.now().atStartOfDay();
         var credentials = Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
         var httpClient = HttpClient.newHttpClient();
         var page=0;
         var finished=false;
         while (!finished) {
-            System.out.println("Requesting page "+page);
             page++;
+            System.out.println("Requesting page "+page);
             var httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(readOrder + "?date=2023-03-10"))
                     .header("Authorization", "Basic " + credentials)
@@ -130,9 +130,12 @@ public class YesterdaysFinalizedOrders {
      * @param orderResults
      * @return
      */
-    private static List<RowData> linearizeOrderProductList(List<OrderResult> orderResults, boolean duplicate) {
+    private static List<RowData> linearizeOrderProductList(List<OrderResult> orderResults, boolean reallyDuplicatedOrders) {
         return orderResults.stream()
-                .flatMap(orderResult -> Arrays.stream(orderResult.products).map(product -> createSheetRow(orderResult, product, duplicate))
+                .flatMap(orderResult -> {
+                            boolean duplicate = orderResult.products.length>1;
+                            return Arrays.stream(orderResult.products).map(product -> createSheetRow(orderResult, product, duplicate));
+                        }
                 )
                 .toList();
     }
