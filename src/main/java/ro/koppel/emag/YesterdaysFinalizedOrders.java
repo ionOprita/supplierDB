@@ -1,15 +1,18 @@
 package ro.koppel.emag;
 
 import com.google.api.services.sheets.v4.model.CellData;
+import com.google.api.services.sheets.v4.model.ExtendedValue;
 import com.google.api.services.sheets.v4.model.RowData;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -18,6 +21,7 @@ import java.util.*;
 import java.util.logging.Logger;
 
 import static java.net.HttpURLConnection.HTTP_OK;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.logging.Level.*;
 
 public class YesterdaysFinalizedOrders {
@@ -58,14 +62,31 @@ public class YesterdaysFinalizedOrders {
         var startTime = LocalDate.now().minusDays(1).atStartOfDay();
         var endTime = LocalDate.now().atStartOfDay();
         String inputJSON = """
-                {
-                "id" : "315519409"
-                }
-                """.formatted(startTime.format(emagFormat));
+                "data": {
+                                    "status": 4,
+                                    "modifiedBefore": "%s",
+                                    "modifiedAfter": "%s"
+                                }
+                """.formatted(startTime.format(emagFormat), endTime.format(emagFormat));
         System.out.println(inputJSON);
         var credentials = Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
         var httpClient = HttpClient.newHttpClient();
-        var httpRequest = HttpRequest.newBuilder().uri(URI.create(readOrder)).header("Authorization", "Basic " + credentials).POST(HttpRequest.BodyPublishers.ofString(inputJSON)).build();
+        var httpRequest = HttpRequest.newBuilder()
+                .uri(URI.create(readOrder+"?date=2023-03-10"))
+                .header("Authorization", "Basic " + credentials)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+
+                //.header("Content-Type", "application/json")
+                .POST(
+//                        HttpRequest.BodyPublishers.ofString(inputJSON)
+                        HttpRequest.BodyPublishers.ofString(
+                                "status=4&modifiedAfter=%s&modifiedAfter=%s"
+                                        .formatted(
+                                                URLEncoder.encode(startTime.format(emagFormat), UTF_8) ,
+                                                URLEncoder.encode(endTime.format(emagFormat), UTF_8)
+                                        )
+                        )
+                ).build();
         logger.log(FINE, "Sending request %s to %s".formatted(inputJSON, readOrder));
         var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
         int statusCode = httpResponse.statusCode();
@@ -110,35 +131,33 @@ public class YesterdaysFinalizedOrders {
      */
     private static List<RowData> linearizeOrderProductList(List<OrderResult> orderResults, boolean duplicate) {
         return orderResults.stream()
-                .flatMap(orderResult -> Arrays.stream(orderResult.products).map(product -> createSheetRow(orderResult,product,duplicate))
+                .flatMap(orderResult -> Arrays.stream(orderResult.products).map(product -> createSheetRow(orderResult, product, duplicate))
                 )
                 .toList();
     }
 
-    private static record SplittedResult(List<OrderResult> duplicates, List<OrderResult> clean) {}
-
     private static SplittedResult splitOutDuplicates(OrderResult[] results) {
         var duplicateOrders = new ArrayList<OrderResult>();
         var singleOrders = new ArrayList<OrderResult>();
-        var ordersGroupedById = new TreeMap<String,List<OrderResult>>();
-        for (var result:results) {
-            var orderId=result.id;
+        var ordersGroupedById = new TreeMap<String, List<OrderResult>>();
+        for (var result : results) {
+            var orderId = result.id;
             var list = ordersGroupedById.getOrDefault(orderId, new ArrayList<>());
             list.add(result);
-            ordersGroupedById.put(orderId,list);
+            ordersGroupedById.put(orderId, list);
         }
-        for (var orders:ordersGroupedById.values()) {
-            if (orders.size()==1) {
+        for (var orders : ordersGroupedById.values()) {
+            if (orders.size() == 1) {
                 singleOrders.add(orders.get(0));
             } else {
                 duplicateOrders.addAll(orders);
             }
         }
-        return new SplittedResult(duplicateOrders,singleOrders);
+        return new SplittedResult(duplicateOrders, singleOrders);
     }
 
     private static RowData createSheetRow(OrderResult orderResult, Product product, boolean duplicate) {
-        List<String> row = new ArrayList<>();
+        List<Object> row = new ArrayList<>();
         row.add(dayConversion(orderResult.date));
         row.add(dayAndHourConversion(orderResult.date));
         row.add(monthConversion(orderResult.date));
@@ -158,24 +177,26 @@ public class YesterdaysFinalizedOrders {
         row.add("");
         row.add("");
         addCompany(product, row);
-        row.add(Objects.toString(orderResult.products.length));
+        row.add(orderResult.products.length);
         row.add("");
-        row.add("TRUE");
-        row.add("TRUE");
-        row.add("TRUE");
-        row.add("FALSE");
+        row.add(true);
+        row.add(true);
+        row.add(true);
+        row.add(false);
         row.add(orderResult.customer.shipping_phone);
         row.add("FBE");
-        return new RowData().setValues(row.stream().map(cell -> new CellData().setFormattedValue(cell)).toList());
+        return new RowData().setValues(row.stream().map(value -> toCellData(value)).toList());
     }
 
-    //TODO: Instead of having methods that add to the row directly it would
-    // be nicer to have just a conversion procedure, and also do it with a switch,
-    // something like
-    // Then in the processResponse method you can do a
-    // row.add(productNameOf(product))
-    // This way you separate the functionality of converting name from
-    // the usage, which is now row.add, but maybe in other context it is different.
+    private static CellData toCellData(Object value) {
+        if (value instanceof Number n) {
+            return new CellData().setUserEnteredValue(new ExtendedValue().setNumberValue(n.doubleValue()));
+        } else if (value instanceof Boolean b) {
+            return new CellData().setUserEnteredValue(new ExtendedValue().setBoolValue(b));
+        } else {
+            return new CellData().setUserEnteredValue(new ExtendedValue().setStringValue(value.toString()));
+        }
+    }
 
     private static String productNameOf(Product product) {
         return switch (product.part_number_key) {
@@ -186,7 +207,16 @@ public class YesterdaysFinalizedOrders {
             default -> "Product %s unknown.".formatted(product.part_number_key);
         };
     }
-    private static void addModel(Product product, List<String> row) {
+
+    //TODO: Instead of having methods that add to the row directly it would
+    // be nicer to have just a conversion procedure, and also do it with a switch,
+    // something like
+    // Then in the processResponse method you can do a
+    // row.add(productNameOf(product))
+    // This way you separate the functionality of converting name from
+    // the usage, which is now row.add, but maybe in other context it is different.
+
+    private static void addModel(Product product, List<Object> row) {
         if ("D9LYDSBBM".equals(product.part_number_key)) {
             row.add("01/ 1+1 alb");
         } else if ("DG20C1BBM".equals(product.part_number_key)) {
@@ -405,7 +435,7 @@ public class YesterdaysFinalizedOrders {
 //                    row.add("539/ AMMO negru");
     }
 
-    private static void addCompany(Product product, List<String> row) {
+    private static void addCompany(Product product, List<Object> row) {
         if ("D9LYDSBBM".equals(product.part_number_key)) {
             row.add("Zoopie Solutions");
         } else if ("DG20C1BBM".equals(product.part_number_key)) {
@@ -645,5 +675,8 @@ public class YesterdaysFinalizedOrders {
         emag = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         excel = DateTimeFormatter.ofPattern("ww.MM.yyyy HH:mm:ss");
         return LocalDateTime.parse(date, emag).format(excel);
+    }
+
+    private static record SplittedResult(List<OrderResult> duplicates, List<OrderResult> clean) {
     }
 }
