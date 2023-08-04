@@ -12,7 +12,6 @@ import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -59,59 +58,61 @@ public class YesterdaysFinalizedOrders {
     }
 
     private static void run(String username, String password) throws IOException, InterruptedException, GeneralSecurityException {
+        var accumulatedResponses = new ArrayList<OrderResult>();
         var startTime = LocalDate.now().minusDays(1).atStartOfDay();
         var endTime = LocalDate.now().atStartOfDay();
-        String inputJSON = """
-                "data": {
-                                    "status": 4,
-                                    "modifiedBefore": "%s",
-                                    "modifiedAfter": "%s"
-                                }
-                """.formatted(startTime.format(emagFormat), endTime.format(emagFormat));
-        System.out.println(inputJSON);
         var credentials = Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
         var httpClient = HttpClient.newHttpClient();
-        var httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(readOrder+"?date=2023-03-10"))
-                .header("Authorization", "Basic " + credentials)
-                .header("Content-Type", "application/x-www-form-urlencoded")
-
-                //.header("Content-Type", "application/json")
-                .POST(
-//                        HttpRequest.BodyPublishers.ofString(inputJSON)
-                        HttpRequest.BodyPublishers.ofString(
-                                "status=4&modifiedAfter=%s&modifiedAfter=%s"
-                                        .formatted(
-                                                URLEncoder.encode(startTime.format(emagFormat), UTF_8) ,
-                                                URLEncoder.encode(endTime.format(emagFormat), UTF_8)
-                                        )
-                        )
-                ).build();
-        logger.log(FINE, "Sending request %s to %s".formatted(inputJSON, readOrder));
-        var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-        int statusCode = httpResponse.statusCode();
-        logger.log(FINE, "Status code = " + statusCode);
-        if (statusCode == HTTP_OK) {
-            String receivedJSON = httpResponse.body();
-            logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
-            try {
-                Response response = new Gson().fromJson(receivedJSON, Response.class);
-                if (response.isError) {
-                    logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
-                } else {
-                    logger.log(INFO, "Decoded JSON: " + response);
-                    processResponse(response.results);
+        var page=0;
+        var finished=false;
+        while (!finished) {
+            System.out.println("Requesting page "+page);
+            page++;
+            var httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(readOrder + "?date=2023-03-10"))
+                    .header("Authorization", "Basic " + credentials)
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(
+                            HttpRequest.BodyPublishers.ofString(
+                                    "currentPage=%d&status=4&modifiedAfter=%s&modifiedAfter=%s"
+                                            .formatted(
+                                                    page,
+                                                    URLEncoder.encode(startTime.format(emagFormat), UTF_8),
+                                                    URLEncoder.encode(endTime.format(emagFormat), UTF_8)
+                                            )
+                            )
+                    ).build();
+            var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            int statusCode = httpResponse.statusCode();
+            logger.log(FINE, "Status code = " + statusCode);
+            if (statusCode == HTTP_OK) {
+                String receivedJSON = httpResponse.body();
+                logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
+                try {
+                    Response response = new Gson().fromJson(receivedJSON, Response.class);
+                    if (response.isError) {
+                        logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
+                    } else {
+                        logger.log(INFO, "Decoded JSON: " + response);
+                        System.out.printf("Received %d results%n",response.results.length);
+                        if (response.results.length>0) {
+                            accumulatedResponses.addAll(Arrays.asList(response.results));
+                        } else {
+                            finished=true;
+                        }
+                    }
+                } catch (JsonSyntaxException e) {
+                    logger.log(SEVERE, "JSON decoded ended with error %s".formatted(e.getMessage()));
+                    logger.log(INFO, receivedJSON);
                 }
-            } catch (JsonSyntaxException e) {
-                logger.log(SEVERE, "JSON decoded ended with error %s".formatted(e.getMessage()));
-                logger.log(INFO, receivedJSON);
+            } else {
+                logger.log(SEVERE, "Received error status %s".formatted(statusCode));
             }
-        } else {
-            logger.log(SEVERE, "Received error status %s".formatted(statusCode));
         }
+        if (!accumulatedResponses.isEmpty()) processResponse(accumulatedResponses);
     }
 
-    private static void processResponse(OrderResult[] results) throws GeneralSecurityException, IOException {
+    private static void processResponse(List<OrderResult> results) throws GeneralSecurityException, IOException {
         var splittedResults = splitOutDuplicates(results);
         if (!splittedResults.clean.isEmpty()) {
             SheetsQuickstart.append(spreadsheetId, linearizeOrderProductList(splittedResults.clean, false));
@@ -136,7 +137,7 @@ public class YesterdaysFinalizedOrders {
                 .toList();
     }
 
-    private static SplittedResult splitOutDuplicates(OrderResult[] results) {
+    private static SplittedResult splitOutDuplicates(List<OrderResult> results) {
         var duplicateOrders = new ArrayList<OrderResult>();
         var singleOrders = new ArrayList<OrderResult>();
         var ordersGroupedById = new TreeMap<String, List<OrderResult>>();
