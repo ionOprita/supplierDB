@@ -59,15 +59,15 @@ public class YesterdaysFinalizedOrders {
 
     private static void run(String username, String password) throws IOException, InterruptedException, GeneralSecurityException {
         var accumulatedResponses = new ArrayList<OrderResult>();
-        var startTime = LocalDate.of(2023,7,20).atStartOfDay(); //LocalDate.now().minusDays(1).atStartOfDay();
-        var endTime = LocalDate.of(2023,7,21+1).atStartOfDay(); //LocalDate.now().atStartOfDay();
+        var startTime = LocalDate.of(2023, 7, 20).atStartOfDay(); //LocalDate.now().minusDays(1).atStartOfDay();
+        var endTime = LocalDate.of(2023, 7, 21 + 1).atStartOfDay(); //LocalDate.now().atStartOfDay();
         var credentials = Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
         var httpClient = HttpClient.newHttpClient();
-        var page=0;
-        var finished=false;
+        var page = 0;
+        var finished = false;
         while (!finished) {
             page++;
-            System.out.println("Requesting page "+page);
+            System.out.println("Requesting page " + page);
             var httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(readOrder + "?date=2023-03-10"))
                     .header("Authorization", "Basic " + credentials)
@@ -94,11 +94,11 @@ public class YesterdaysFinalizedOrders {
                         logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
                     } else {
                         logger.log(INFO, "Decoded JSON: " + response);
-                        System.out.printf("Received %d results%n",response.results.length);
-                        if (response.results.length>0) {
+                        System.out.printf("Received %d results%n", response.results.length);
+                        if (response.results.length > 0) {
                             accumulatedResponses.addAll(Arrays.asList(response.results));
                         } else {
-                            finished=true;
+                            finished = true;
                         }
                     }
                 } catch (JsonSyntaxException e) {
@@ -130,12 +130,11 @@ public class YesterdaysFinalizedOrders {
      * @param orderResults
      * @return
      */
-    private static List<RowData> linearizeOrderProductList(List<OrderResult> orderResults, boolean reallyDuplicatedOrders) {
+    private static List<RowData> linearizeOrderProductList(List<OrderResult> orderResults, boolean duplicate) {
         return orderResults.stream()
-                .flatMap(orderResult -> {
-                            boolean duplicate = orderResult.products.length>1;
-                            return Arrays.stream(orderResult.products).map(product -> createSheetRow(orderResult, product, duplicate));
-                        }
+                .flatMap(
+                        orderResult -> Arrays.stream(orderResult.products)
+                                .map(product -> createSheetRow(orderResult, product, duplicate))
                 )
                 .toList();
     }
@@ -151,7 +150,7 @@ public class YesterdaysFinalizedOrders {
             ordersGroupedById.put(orderId, list);
         }
         for (var orders : ordersGroupedById.values()) {
-            if (orders.size() == 1) {
+            if (orders.size() == 1 && orders.get(0).products.length == 1) {
                 singleOrders.add(orders.get(0));
             } else {
                 duplicateOrders.addAll(orders);
