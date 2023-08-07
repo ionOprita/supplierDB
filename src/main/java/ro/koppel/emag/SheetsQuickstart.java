@@ -67,29 +67,6 @@ public class SheetsQuickstart {
 
     }
 
-    public static void update(List<List<Object>> values, String range) throws GeneralSecurityException, IOException {
-        final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
-        final String spreadsheetId = "1fN3hjTHiwnDTsem0_o99bdt_SUyw-9s3hYgBI4it-rY";
-        Sheets service =
-                new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT))
-                        .setApplicationName(APPLICATION_NAME)
-                        .build();
-        ValueRange body = new ValueRange()
-                .setValues(values);
-        UpdateValuesResponse response = service.spreadsheets().values().append(spreadsheetId, range, body)
-                .setValueInputOption("RAW")
-                .execute().getUpdates();
-        int cellsChanged = response.getUpdatedCells();
-        System.out.println(cellsChanged);
-        if (values == null || values.isEmpty()) {
-            System.out.println("No data found.");
-        } else {
-            for (List row : values) {
-                System.out.printf("%s, \n", row.get(0));
-            }
-        }
-    }
-
     private static BlockDimension getSize(List<RowData> values) {
         var rowCount = values.size();
         if (rowCount == 0) {
