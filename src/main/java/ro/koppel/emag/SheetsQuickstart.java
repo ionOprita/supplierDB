@@ -72,12 +72,12 @@ public class SheetsQuickstart {
         if (rowCount == 0) {
             throw new IllegalArgumentException("You must supply at least one row");
         }
-        var columnCount = values.get(0).size();
+        var columnCount = values.get(0).getValues().size();
         if (columnCount == 0) {
             throw new IllegalArgumentException("Rows must have at least one cell");
         }
         for (var row : values) {
-            if (row.size() != columnCount) {
+            if (row.getValues().size() != columnCount) {
                 throw new IllegalArgumentException("All rows must have the same number of cells");
             }
         }
@@ -117,13 +117,13 @@ public class SheetsQuickstart {
         var requests = new ArrayList<Request>();
         GridRange gridRange = new GridRange()
                 .setSheetId(sheetId)
-                .setStartColumnIndex(1)
-                .setStartRowIndex(2)
+                .setStartColumnIndex(0)
                 .setEndColumnIndex(dimension.columnCount())
-                .setEndRowIndex(dimension.rowCount());
+                .setStartRowIndex(1)
+                .setEndRowIndex(dimension.rowCount()+1);
         requests.add(
                 new Request().setInsertRange(
-                        new InsertRangeRequest().setShiftDimension("ROW").setRange(gridRange)
+                        new InsertRangeRequest().setShiftDimension("ROWS").setRange(gridRange)
                 )
         );
         requests.add(

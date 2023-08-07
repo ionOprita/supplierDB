@@ -114,11 +114,11 @@ public class YesterdaysFinalizedOrders {
 
     private static void processResponse(List<OrderResult> results) throws GeneralSecurityException, IOException {
         var splittedResults = splitOutDuplicates(results);
-        if (!splittedResults.clean.isEmpty()) {
-            SheetsQuickstart.append(spreadsheetId, linearizeOrderProductList(splittedResults.clean, false));
-        }
-        if (!splittedResults.duplicates.isEmpty()) {
-            SheetsQuickstart.insertAtTop(spreadsheetId, linearizeOrderProductList(splittedResults.duplicates, true));
+        List<RowData> allRows = new ArrayList<>();
+        allRows.addAll(linearizeOrderProductList(splittedResults.duplicates, true));
+        allRows.addAll(linearizeOrderProductList(splittedResults.clean, false));
+        if (!allRows.isEmpty()) {
+            SheetsQuickstart.append(spreadsheetId, allRows);
         }
     }
 
