@@ -6,6 +6,8 @@ import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.http.HttpRequest;
+import com.google.api.client.http.HttpRequestInitializer;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
@@ -32,7 +34,7 @@ public class SheetsQuickstart {
     private static final List<String> SCOPES =
             Collections.singletonList(SheetsScopes.SPREADSHEETS);
     private static final String CREDENTIALS_FILE_PATH = "C:\\Users\\Oprita\\Desktop\\supplierDB\\ExcelEMAG\\client_secret_2_871267262769-9htv70p5fe3k8ndji15d0ki65l114b7o.apps.googleusercontent.com.json";
-    public static final int sheetId = 1099867703;
+    public static final int sheetId = 0;
 
     /**
      * Creates an authorized Credential object.
@@ -59,12 +61,23 @@ public class SheetsQuickstart {
         return new AuthorizationCodeInstalledApp(flow, receiver).authorize("user");
     }
 
+    private static HttpRequestInitializer setHttpTimeout(final HttpRequestInitializer requestInitializer) {
+        return new HttpRequestInitializer() {
+            @Override
+            public void initialize(HttpRequest httpRequest) throws IOException {
+                requestInitializer.initialize(httpRequest);
+                httpRequest.setConnectTimeout(3 * 60000);  // 3 minutes connect timeout
+                httpRequest.setReadTimeout(3 * 60000);  // 3 minutes read timeout
+            }
+        };
+    }
+
     public static Sheets setupSheetsService() throws GeneralSecurityException, IOException {
         final NetHttpTransport HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
-        return new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT))
-                .setApplicationName(APPLICATION_NAME)
+        Sheets.Builder builder = new Sheets.Builder(HTTP_TRANSPORT, JSON_FACTORY, getCredentials(HTTP_TRANSPORT));
+        builder.setHttpRequestInitializer(setHttpTimeout(builder.getHttpRequestInitializer()));
+        return builder.setApplicationName(APPLICATION_NAME)
                 .build();
-
     }
 
     private static BlockDimension getSize(List<RowData> values) {

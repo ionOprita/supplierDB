@@ -13,21 +13,24 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.security.GeneralSecurityException;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.TemporalAdjusters;
 import java.util.*;
 import java.util.logging.Logger;
 
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.time.DayOfWeek.SUNDAY;
 import static java.util.logging.Level.*;
 
 public class YesterdaysFinalizedOrders {
 
     private static final String emagRO = "https://marketplace-api.emag.ro/api-3";
 
-    private static final String spreadsheetId = "1fN3hjTHiwnDTsem0_o99bdt_SUyw-9s3hYgBI4it-rY";
+    private static final String spreadsheetId = "1mSgTFnZhANIoNyqJNVse1s6eABnIFERIheIQD7V3AE8";
 
     private static final String orderURI = emagRO + "/order";
 
@@ -59,8 +62,8 @@ public class YesterdaysFinalizedOrders {
 
     private static void run(String username, String password) throws IOException, InterruptedException, GeneralSecurityException {
         var accumulatedResponses = new ArrayList<OrderResult>();
-        var startTime = LocalDate.of(2023, 7, 20).atStartOfDay(); //LocalDate.now().minusDays(1).atStartOfDay();
-        var endTime = LocalDate.of(2023, 7, 21 + 1).atStartOfDay(); //LocalDate.now().atStartOfDay();
+        var startTime = LocalDate.now().minusDays(1).atStartOfDay();
+        var endTime = LocalDate.now().atStartOfDay();
         var credentials = Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
         var httpClient = HttpClient.newHttpClient();
         var page = 0;
@@ -69,14 +72,15 @@ public class YesterdaysFinalizedOrders {
             page++;
             System.out.println("Requesting page " + page);
             var httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(readOrder + "?date=2023-03-10"))
+                    .uri(URI.create(readOrder))
                     .header("Authorization", "Basic " + credentials)
                     .header("Content-Type", "application/x-www-form-urlencoded")
                     .POST(
                             HttpRequest.BodyPublishers.ofString(
-                                    "currentPage=%d&status=4&modifiedAfter=%s&modifiedAfter=%s"
+                                    "currentPage=%d&status=4&modified=%s&modified=%s"
                                             .formatted(
                                                     page,
+//                                                    URLEncoder.encode("08/08/2023 - 08/08/2023")
                                                     URLEncoder.encode(startTime.format(emagFormat), UTF_8),
                                                     URLEncoder.encode(endTime.format(emagFormat), UTF_8)
                                             )
@@ -161,10 +165,10 @@ public class YesterdaysFinalizedOrders {
 
     private static RowData createSheetRow(OrderResult orderResult, Product product, boolean duplicate) {
         List<Object> row = new ArrayList<>();
-        row.add(dayConversion(orderResult.date));
-        row.add(dayAndHourConversion(orderResult.date));
-        row.add(monthConversion(orderResult.date));
-        row.add(weekConversion(orderResult.date));
+        row.add(dayAndHourConversion(product.modified));
+        row.add(dayConversion(product.modified));
+        row.add(monthConversion(product.modified));
+        row.add(weekConversion(product.modified));
         row.add(orderResult.id);
         row.add(orderResult.customer.name);
         addModel(product, row);
@@ -180,7 +184,7 @@ public class YesterdaysFinalizedOrders {
         row.add("");
         row.add("");
         addCompany(product, row);
-        row.add(orderResult.products.length);
+        row.add(product.quantity);
         row.add("");
         row.add(true);
         row.add(true);
@@ -660,7 +664,7 @@ public class YesterdaysFinalizedOrders {
         DateTimeFormatter emag;
         DateTimeFormatter excel;
         emag = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-        excel = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+        excel = DateTimeFormatter.ofPattern("dd/MM/yyyy");
         return LocalDateTime.parse(date, emag).format(excel);
     }
 
@@ -668,7 +672,7 @@ public class YesterdaysFinalizedOrders {
         DateTimeFormatter emag;
         DateTimeFormatter excel;
         emag = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-        excel = DateTimeFormatter.ofPattern("01.MM.yyyy HH:mm:ss");
+        excel = DateTimeFormatter.ofPattern("01/MM/yyyy");
         return LocalDateTime.parse(date, emag).format(excel);
     }
 
@@ -676,8 +680,8 @@ public class YesterdaysFinalizedOrders {
         DateTimeFormatter emag;
         DateTimeFormatter excel;
         emag = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-        excel = DateTimeFormatter.ofPattern("ww.MM.yyyy HH:mm:ss");
-        return LocalDateTime.parse(date, emag).format(excel);
+        excel = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
+        return LocalDateTime.parse(date, emag).with(TemporalAdjusters.nextOrSame(SUNDAY)).format(excel);
     }
 
     private static record SplittedResult(List<OrderResult> duplicates, List<OrderResult> clean) {
