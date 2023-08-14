@@ -22,6 +22,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * This class interfaces to the google sheet API.
+ */
 public class SheetsQuickstart {
     private static final String APPLICATION_NAME = "emagapp";
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
@@ -151,5 +154,13 @@ public class SheetsQuickstart {
     }
 
     public static record BlockDimension(int rowCount, int columnCount) {
+    }
+
+    public static List<List<Object>> getSheetData(String spreadSheetId) throws GeneralSecurityException, IOException {
+        var service = setupSheetsService();
+        ValueRange response = service.spreadsheets().values()
+                .get(spreadSheetId, "Sheetname!A2:W5000")   //TODO: Adjust names
+                .execute();
+        return response.getValues();
     }
 }
