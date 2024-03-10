@@ -2,10 +2,10 @@ package ro.koppel.emag;
 
 import java.util.Arrays;
 
-public class Response {
+public class Response<T> {
     public boolean isError;
     public String[] messages;
-    public OrderResult[] results;
+    public T[] results;
 
     @Override
     public String toString() {
