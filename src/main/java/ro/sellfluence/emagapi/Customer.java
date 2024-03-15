@@ -1,4 +1,4 @@
-package ro.koppel.emag;
+package ro.sellfluence.emagapi;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;

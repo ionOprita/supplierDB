@@ -1,9 +1,9 @@
-package ro.koppel.app;
+package ro.sellfluence.app;
 
-import ro.koppel.emag.EmagApi;
-import ro.koppel.emag.OrderResult;
-import ro.koppel.emag.Product;
-import ro.koppel.support.UserPassword;
+import ro.sellfluence.emagapi.EmagApi;
+import ro.sellfluence.emagapi.OrderResult;
+import ro.sellfluence.emagapi.Product;
+import ro.sellfluence.support.UserPassword;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 import static java.time.LocalDate.now;
+import static ro.sellfluence.emagapi.EmagApi.statusFinalized;
 
 public class GetCustomerData {
 
@@ -44,7 +45,7 @@ public class GetCustomerData {
         try {
             var responses = emag.readRequest("order",
                     Map.of("status",
-                            4,
+                            statusFinalized,
                             "createdAfter",
                             startTime,
                             "createdBefore",
@@ -54,7 +55,7 @@ public class GetCustomerData {
             Map<String, List<SheetData>> orderedProductsByPNK = new HashMap<>();
             for (OrderResult order : responses) {
                 for (Product product : order.products) {
-                    List<SheetData> list = orderedProductsByPNK.getOrDefault(product.part_number_key, new ArrayList<SheetData>());
+                    List<SheetData> list = orderedProductsByPNK.getOrDefault(product.part_number_key, new ArrayList<>());
                     list.add(new SheetData(
                                     order.id,
                                     product.quantity,
@@ -76,9 +77,7 @@ public class GetCustomerData {
                 }
             }
             return orderedProductsByPNK;
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        } catch (InterruptedException e) {
+        } catch (IOException | InterruptedException e) {
             throw new RuntimeException(e);
         }
     }

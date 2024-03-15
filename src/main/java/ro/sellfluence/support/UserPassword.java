@@ -1,4 +1,4 @@
-package ro.koppel.support;
+package ro.sellfluence.support;
 
 import java.io.IOException;
 import java.nio.file.Files;

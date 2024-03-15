@@ -1,4 +1,4 @@
-package ro.koppel.emag;
+package ro.sellfluence.emagapi;
 
 public class Attachment {
     public int order_id;

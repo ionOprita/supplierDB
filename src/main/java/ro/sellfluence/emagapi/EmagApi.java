@@ -1,4 +1,4 @@
-package ro.koppel.emag;
+package ro.sellfluence.emagapi;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -47,6 +47,8 @@ public class EmagApi {
     private final HttpClient httpClient;
 
     private static final DateTimeFormatter emagDate = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    public static int statusFinalized = 4;
 
     private final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new TypeAdapter<LocalDateTime>() {
