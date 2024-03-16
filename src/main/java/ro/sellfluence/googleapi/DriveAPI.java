@@ -1,6 +1,7 @@
 package ro.sellfluence.googleapi;
 
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.drive.Drive;
@@ -22,7 +23,8 @@ public class DriveAPI {
     private final String appName;
 
     /**
-     * Initialize the drive API for an app.
+     * Initialize the drive API.
+     *
      * @param appName name of the app as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
      */
     public DriveAPI(String appName) {
@@ -36,28 +38,37 @@ public class DriveAPI {
      * @return the id of the file.
      * @throws Exception if something goes wrong.
      */
-    public String getFileId(String name) throws Exception {
+    public String getFileId(String name) {
         Objects.requireNonNull(name);
-        var matchingFiles = setupDriveService().files().list().execute().getFiles().stream()
-                .filter(f -> name.equals(f.getName()))
-                .map(File::getId)
-                .collect(Collectors.toSet());
-        if (matchingFiles.isEmpty()) {
-            return null;
-        } else if (matchingFiles.size() == 1) {
-            return matchingFiles.iterator().next();
-        } else {
-            throw new RuntimeException("More than one file with matches %s.".formatted(name));
+        try {
+            var matchingFiles = setupDriveService().files().list().execute().getFiles().stream()
+                    .filter(f -> name.equals(f.getName()))
+                    .map(File::getId)
+                    .collect(Collectors.toSet());
+            if (matchingFiles.isEmpty()) {
+                return null;
+            } else if (matchingFiles.size() == 1) {
+                return matchingFiles.iterator().next();
+            } else {
+                throw new RuntimeException("More than one file with matches %s.".formatted(name));
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Couldn't retrieve the list of files.", e);
         }
     }
 
-    private Drive setupDriveService() throws GeneralSecurityException, IOException {
-        return new Drive.Builder(
-                GoogleNetHttpTransport.newTrustedTransport(),
-                jsonFactory,
-                getCredentials(GoogleNetHttpTransport.newTrustedTransport(), scopes)
-        )
-                .setApplicationName(appName)
-                .build();
+    private Drive setupDriveService() {
+        try {
+            NetHttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
+            return new Drive.Builder(
+                    httpTransport,
+                    jsonFactory,
+                    getCredentials(httpTransport, scopes)
+            )
+                    .setApplicationName(appName)
+                    .build();
+        } catch (GeneralSecurityException | IOException e) {
+            throw new RuntimeException("Couldn't set up driver service",e);
+        }
     }
 }

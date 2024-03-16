@@ -1,7 +1,6 @@
 package ro.sellfluence.googleapi;
 
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
-import com.google.api.client.http.HttpRequestInitializer;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
@@ -12,27 +11,61 @@ import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
 public class SheetsAPI {
     private static final JsonFactory jsonFactory = GsonFactory.getDefaultInstance();
-    private static final String appName = "sellfluence1";
+    private final String appName;
+    private final String spreadSheetId;
     private static final List<String> scopes = Collections.singletonList(SheetsScopes.SPREADSHEETS);
 
-    public static Sheets setupSheetsService() throws GeneralSecurityException, IOException {
-        final NetHttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
-        Sheets.Builder builder = new Sheets.Builder(httpTransport, jsonFactory, getCredentials(httpTransport, scopes));
-        builder.setHttpRequestInitializer(setHttpTimeout(builder.getHttpRequestInitializer()));
-        return builder.setApplicationName(appName)
-                .build();
+    /**
+     * Initialize the sheets API.
+     *
+     * @param appName name of the app as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
+     */
+    public SheetsAPI(String appName, String spreadSheetId) {
+        this.appName = appName;
+        this.spreadSheetId = spreadSheetId;
     }
 
-    private static HttpRequestInitializer setHttpTimeout(final HttpRequestInitializer requestInitializer) {
-        return httpRequest -> {
-            requestInitializer.initialize(httpRequest);
-            httpRequest.setConnectTimeout(3 * 60000);  // 3 minutes connect timeout
-            httpRequest.setReadTimeout(3 * 60000);  // 3 minutes read timeout
-        };
+    public Sheets setupSheetsService() {
+        try {
+            final NetHttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
+            return new Sheets.Builder(
+                    httpTransport,
+                    jsonFactory,
+                    getCredentials(httpTransport, scopes)
+            )
+                    .setApplicationName(appName)
+                    .build();
+        } catch (GeneralSecurityException | IOException e) {
+            throw new RuntimeException("Couldn't set up sheets service", e);
+        }
+    }
+
+    public Integer getSheetId(String name) {
+        Objects.requireNonNull(name);
+        try {
+            var matchingIds = setupSheetsService().spreadsheets().get(spreadSheetId).execute().getSheets().stream()
+                    .filter(sheet -> name.equals(sheet.getProperties().getTitle()))
+                    .map(sheet -> sheet.getProperties().getSheetId())
+                    .collect(Collectors.toSet());
+            if (matchingIds.isEmpty()) {
+                return null;
+            } else if (matchingIds.size() == 1) {
+                return matchingIds.iterator().next();
+            } else {
+                throw new RuntimeException("More than one file with matches %s.".formatted(name));
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Couldn't retrieve spreadsheet file.", e);
+        }
+    }
+
+    public static void main(String[] args) {
     }
 }

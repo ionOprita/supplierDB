@@ -27,7 +27,7 @@ public class Credentials {
             .resolve("Secrets")
             .resolve("googleOAuth2Credentials.json");
 
-    private static final Path tokenStorePath = Paths.get(System.getProperty("java. io. tmpdir"))
+    private static final Path tokenStorePath = Paths.get(System.getProperty("java.io.tmpdir"))
             .resolve("googleApiTokens");
 
     private static final JsonFactory jsonFactory = GsonFactory.getDefaultInstance();
