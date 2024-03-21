@@ -1,14 +1,18 @@
 package ro.sellfluence.app;
 
+import org.apache.commons.io.output.BrokenWriter;
 import ro.sellfluence.emagapi.EmagApi;
 import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.Product;
+import ro.sellfluence.googleapi.DriveAPI;
+import ro.sellfluence.googleapi.SheetsAPI;
 import ro.sellfluence.support.UserPassword;
 
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -18,6 +22,10 @@ import static java.time.LocalDate.now;
 import static ro.sellfluence.emagapi.EmagApi.statusFinalized;
 
 public class GetCustomerData {
+
+    private static final String googleAppName = "sellfluence1";
+    private static final String fileName = "Testing Coding Purposes - Neagu Lavinia - Feedback clienti";
+    private static final String statisticSheetName = "Statistici/luna";
 
     record SheetData(
             String orderId,
@@ -82,7 +90,22 @@ public class GetCustomerData {
         }
     }
 
+    private static record Statistic(String produs, String pnk, LocalDate lastUpdate) {}
+
+    private static final DateTimeFormatter sheetDateFormat = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
     public static void main(String[] args) {
-        System.out.println(getByProduct());
+//        System.out.println(getByProduct());
+        String spreadSheetId = new DriveAPI(googleAppName).getFileId(fileName);
+        SheetsAPI sheets = new SheetsAPI(googleAppName, spreadSheetId);
+//        Integer statisticSheetId = sheets.getSheetId(statisticSheetName);
+//        System.out.println(statisticSheetId);
+       // sheets.getMultipleColumns(statisticSheetName, "A", "B", "C", "E");
+        var statistics = sheets.getRowsInColumnRange(statisticSheetName, "A", "E").stream()
+                .skip(6)
+                .filter(row -> row.size()>=5 && row.getFirst().matches("\\d+") && !row.get(2).isEmpty())
+                .map(row -> new Statistic(row.get(1), row.get(2), LocalDate.parse(row.get(4), sheetDateFormat)))
+                .toList();
+        System.out.println(statistics);
     }
 }

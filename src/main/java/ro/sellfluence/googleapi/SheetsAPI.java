@@ -6,9 +6,11 @@ import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.SheetsScopes;
+import com.google.api.services.sheets.v4.model.ValueRange;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -21,6 +23,10 @@ public class SheetsAPI {
     private final String appName;
     private final String spreadSheetId;
     private static final List<String> scopes = Collections.singletonList(SheetsScopes.SPREADSHEETS);
+
+    public static final String COLUMNS = "COLUMNS";
+    public static final String ROWS = "ROWS";
+    public static final String UNFORMATTED_VALUE = "UNFORMATTED_VALUE";
 
     /**
      * Initialize the sheets API.
@@ -66,6 +72,42 @@ public class SheetsAPI {
         }
     }
 
-    public static void main(String[] args) {
+    public List<String> getColumn(String sheetName, String columnName) {
+        try {
+            var range ="%1$s!%2$s:%2$s".formatted(sheetName, columnName);
+            var result = setupSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(COLUMNS).execute().getValues();
+            return result.getFirst().stream().map(o -> (String)o).toList();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public List<List<String>> getRowsInColumnRange(String sheetName, String firstColumn, String lastColumns) {
+        try {
+            var range ="%1$s!%2$s:%3$s".formatted(sheetName, firstColumn, lastColumns);
+            var result = setupSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(ROWS).execute().getValues();
+            if (result!=null) {
+                return result.stream().map(objects -> objects.stream().map(o -> (String)o).toList()).toList();
+            } else {
+                return List.of(List.of());
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Issue in getRowsInColumnRange(%s,%s,%s)".formatted(sheetName, firstColumn, lastColumns), e);
+        }
+    }
+
+    public List<ValueRange> getMultipleColumns(String sheetName, String... columns) {
+        var ranges = Arrays.stream(columns).map(c -> "%1$s!%2$s:%2$s".formatted(sheetName, c)).toList();
+        try {
+            var result = setupSheetsService().spreadsheets().values().batchGet(spreadSheetId).setRanges(ranges).setMajorDimension(COLUMNS).setValueRenderOption(UNFORMATTED_VALUE).execute().getValueRanges();
+            if (result!=null) {
+                var r=result.stream().map(valueRange -> valueRange.getValues()).toList();
+                System.out.println(r);
+            } else {
+            }
+            return null;
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
