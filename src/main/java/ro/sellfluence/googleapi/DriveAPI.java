@@ -19,7 +19,6 @@ import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
 public class DriveAPI {
     private static final JsonFactory jsonFactory = GsonFactory.getDefaultInstance();
-    private static final List<String> scopes = List.of(DRIVE_READONLY, DRIVE_METADATA_READONLY);
     private final String appName;
 
     /**
@@ -63,7 +62,7 @@ public class DriveAPI {
             return new Drive.Builder(
                     httpTransport,
                     jsonFactory,
-                    getCredentials(httpTransport, scopes)
+                    getCredentials(httpTransport)
             )
                     .setApplicationName(appName)
                     .build();

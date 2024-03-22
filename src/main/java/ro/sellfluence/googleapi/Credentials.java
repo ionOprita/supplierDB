@@ -11,13 +11,16 @@ import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
 
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+
+import static com.google.api.services.drive.DriveScopes.DRIVE_METADATA_READONLY;
+import static com.google.api.services.drive.DriveScopes.DRIVE_READONLY;
+import static com.google.api.services.sheets.v4.SheetsScopes.SPREADSHEETS;
 
 public class Credentials {
     /**
@@ -27,10 +30,16 @@ public class Credentials {
             .resolve("Secrets")
             .resolve("googleOAuth2Credentials.json");
 
+    /**
+     * Path to the directory holding stored credentials.
+     * Delete this directory to recreate fresh credentials.
+     */
     private static final Path tokenStorePath = Paths.get(System.getProperty("java.io.tmpdir"))
             .resolve("googleApiTokens");
 
     private static final JsonFactory jsonFactory = GsonFactory.getDefaultInstance();
+
+    private static final List<String> scopes = List.of(DRIVE_READONLY, DRIVE_METADATA_READONLY, SPREADSHEETS);
 
     /**
      * Creates an authorized Credential object.
@@ -39,7 +48,7 @@ public class Credentials {
      * @return An authorized Credential object.
      * @throws IOException If the credentials.json file cannot be found.
      */
-    public static Credential getCredentials(final NetHttpTransport httpTransport, final List<String> scopes)
+    public static Credential getCredentials(final NetHttpTransport httpTransport)
             throws IOException {
         final InputStream in = new FileInputStream(creddentialsPath.toFile());
         final GoogleClientSecrets clientSecrets =

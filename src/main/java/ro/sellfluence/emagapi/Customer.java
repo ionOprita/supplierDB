@@ -91,8 +91,8 @@ public class Customer {
     public String getShippingAddress() {
         List<String> fields = new ArrayList<>();
         add(fields,shipping_street);
-        add(fields,shipping_suburb);
         add(fields,shipping_city);
+        add(fields,shipping_suburb);
         add(fields,shipping_country);
         return String.join(", ", fields);
     }

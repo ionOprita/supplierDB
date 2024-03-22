@@ -14,6 +14,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -25,6 +26,7 @@ import java.util.Map;
 import java.util.logging.Logger;
 
 import static java.net.HttpURLConnection.HTTP_OK;
+import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 
@@ -46,7 +48,8 @@ public class EmagApi {
     private final String credentials;
     private final HttpClient httpClient;
 
-    private static final DateTimeFormatter emagDate = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter emagDateTime = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter emagDate = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     public static int statusFinalized = 4;
 
@@ -57,7 +60,7 @@ public class EmagApi {
                     if (time == null) {
                         writer.nullValue();
                     } else {
-                        writer.value(emagDate.format(time));
+                        writer.value(emagDateTime.format(time));
                     }
                 }
 
@@ -67,7 +70,26 @@ public class EmagApi {
                         reader.nextNull();
                         return null;
                     }
-                    return LocalDateTime.parse(reader.nextString(), emagDate);
+                    return LocalDateTime.parse(reader.nextString(), emagDateTime);
+                }
+            })
+            .registerTypeAdapter(LocalDate.class, new TypeAdapter<LocalDate>() {
+                @Override
+                public void write(JsonWriter writer, LocalDate time) throws IOException {
+                    if (time == null) {
+                        writer.nullValue();
+                    } else {
+                        writer.value(emagDate.format(time));
+                    }
+                }
+
+                @Override
+                public LocalDate read(JsonReader reader) throws IOException {
+                    if (reader.peek() == JsonToken.NULL) {
+                        reader.nextNull();
+                        return null;
+                    }
+                    return LocalDate.parse(reader.nextString(), emagDate);
                 }
             })
             .create();
@@ -82,7 +104,7 @@ public class EmagApi {
         var finished = false;
         var url = emagRO + "/" + category + "/read";
         var jsonInput = new HashMap<String, Object>(
-                Map.of("itemsPerPage", 5)
+                Map.of("itemsPerPage", 100)
         );
         if (filter != null && !filter.isEmpty()) {
             jsonInput.putAll(filter);
@@ -91,7 +113,7 @@ public class EmagApi {
             jsonInput.put("data", data);
         }
         var accumulatedResponses = new ArrayList<T>();
-        while (!finished && page < 3) {
+        while (!finished) {
             page++;
             jsonInput.put("currentPage", page);
             System.out.println("Requesting page " + page);
@@ -116,8 +138,8 @@ public class EmagApi {
                     if (response.isError) {
                         logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
                     } else {
-                        logger.log(INFO, "Decoded JSON: " + response);
-                        System.out.printf("Received %d results%n", response.results.length);
+                        logger.log(INFO, () -> "Received %d items.".formatted(response.results.length));
+                        logger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
                         if (response.results.length > 0) {
                             accumulatedResponses.addAll(Arrays.asList(response.results));
                         } else {
@@ -134,36 +156,4 @@ public class EmagApi {
         }
         return accumulatedResponses;
     }
-
-//    public static void main(String[] args) throws IOException, InterruptedException {
-//        var user = System.getenv("EMAG_USER");
-//        var pw = System.getenv("EMAG_PASS");
-//        var emag = new EmagApi(user, pw);
-//        var startDate = LocalDate.of(2024, 2, 20).atStartOfDay();
-//        var endDate = now().minusDays(13).atStartOfDay();
-//        var response = emag.readRequest("order",
-//                Map.of("status",
-//                        4,
-//                        "createdAfter",
-//                        emagDate.format(startDate),
-//                        "createdBefore",
-//                        emagDate.format(endDate)),
-//                null,
-//                OrderResult.class);
-//        System.out.println(response);
-//    }
 }
-
-/*
-Liebe Eltern, Liebe Schülerinnen
-
-Nachdem ich mehrere Jahre an verschiedenen Schulen unterrichtete, eröffnete ich anfangs 1999 meine eigene Ballettschule Tanz-Atelier an der Wallisellenstrasse 23 in Dübendorf. Innerhalb kurzer Zeit wuchs diese auf drei Studios. Im Jahr 2014 musste ich zwei davon wegen Umbauten des Gebäudes wieder verlassen.
-
-Durch den Lockdown sank die Zahl der Schülerinnen nochmals und nun ist die Zeit Reif für einen Wiederaufbau. Doch wie mir in Gesprächen mit Freunden und Familie klar wurde, braucht es dafür jemand der denselben Elan aufbringen kann, den ich vor 25 Jahren hatte.
-
-Ich habe mich deshalb schweren Herzens dafür entschieden die Schule an Frau Larissa Tritten zu verkaufen. In Ihr habe ich eine würdige Nachfolgerin gefunden, die das nötige Feuer hat, um den Erfolg des Tanz-Ateliers weiterzuführen und auszubauen. Sie liebt den Tanz und ist sehr motiviert diese Freude den Schüler*innen zu vermitteln.
-
-Frau Larissa Tritten wird nach den Sommerferien alle Stunden unterrichten.
-
-In den 25 Jahren durfte ich viele Schüler*innen auf ihrem tänzerischen Weg begleiten und viele schöne Aufführungen mit ihnen erleben. Das einige Schülerinnen noch immer da sind erfreut mich sehr und der Abschied wird schmerzen.
- */
