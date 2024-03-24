@@ -158,7 +158,8 @@ public class SheetsAPI {
     }
 
     private Sheets getSheetsService() {
-        if (sheetService == null) {
+        // Caching disabled, because thought of causing th connection reset error.
+        if (true /*sheetService == null*/) {
             try {
                 final NetHttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
                 Sheets.Builder builder = new Sheets.Builder(
