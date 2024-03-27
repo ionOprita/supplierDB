@@ -98,6 +98,20 @@ public class Customer {
     }
 
     /**
+     * Build a shipping address out of the single fields.
+     *
+     * @return shipping address as a simple string.
+     */
+    public String getBillingAddress() {
+        List<String> fields = new ArrayList<>();
+        add(fields,billing_street);
+        add(fields,billing_city);
+        add(fields,billing_suburb);
+        add(fields,billing_country);
+        return String.join(", ", fields);
+    }
+
+    /**
      * Helper method to add only existing fields to a list.
      *
      * @param fields list to which to add the fields.
