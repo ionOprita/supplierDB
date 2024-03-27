@@ -8,12 +8,16 @@ import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.model.AppendCellsRequest;
+import com.google.api.services.sheets.v4.model.AppendValuesResponse;
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest;
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetResponse;
 import com.google.api.services.sheets.v4.model.CellData;
 import com.google.api.services.sheets.v4.model.ExtendedValue;
+import com.google.api.services.sheets.v4.model.ProtectedRange;
 import com.google.api.services.sheets.v4.model.Request;
 import com.google.api.services.sheets.v4.model.RowData;
+import com.google.api.services.sheets.v4.model.UpdateProtectedRangeRequest;
+import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
 
 import java.io.IOException;
@@ -31,6 +35,8 @@ public class SheetsAPI {
     public static final String UNFORMATTED_VALUE = "UNFORMATTED_VALUE";
 
     private static final JsonFactory jsonFactory = GsonFactory.getDefaultInstance();
+    public static final String USER_ENTERED = "USER_ENTERED";
+    public static final String INSERT_ROWS = "INSERT_ROWS";
     private final String appName;
     private final String spreadSheetId;
 
@@ -46,6 +52,23 @@ public class SheetsAPI {
     public SheetsAPI(String appName, String spreadSheetId) {
         this.appName = appName;
         this.spreadSheetId = spreadSheetId;
+    }
+
+    public List<ProtectedRange> getProtectedRanges(String name) {
+        Objects.requireNonNull(name);
+        try {
+            var matchingSheets = getSheetsService().spreadsheets().get(spreadSheetId).execute().getSheets().stream()
+                    .filter(sheet -> name.equals(sheet.getProperties().getTitle())).toList();
+            if (matchingSheets.isEmpty()) {
+                return null;
+            } else if (matchingSheets.size() == 1) {
+                return matchingSheets.getFirst().getProtectedRanges();
+            } else {
+                throw new RuntimeException("More than one sheet matches %s.".formatted(name));
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public record SheetMetaData(int index, int sheetId, String title) {
@@ -78,6 +101,15 @@ public class SheetsAPI {
         }
     }
 
+    public int getLastRow(String sheetName, String columnName) {
+        try {
+            var range = "%1$s!%2$s:%2$s".formatted(sheetName, columnName);
+            var result = getSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(COLUMNS).execute();
+            return result.getValues().getFirst().size();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
     public List<String> getColumn(String sheetName, String columnName) {
         try {
             var range = "%1$s!%2$s:%2$s".formatted(sheetName, columnName);
@@ -101,6 +133,16 @@ public class SheetsAPI {
             throw new RuntimeException("Issue in getRowsInColumnRange(%s,%s,%s)".formatted(sheetName, firstColumn, lastColumns), e);
         }
     }
+    public UpdateValuesResponse updateRange(String range, List<List<Object>> values) {
+        try {
+            ValueRange content = new ValueRange().setValues(values).setMajorDimension(ROWS).setRange(range);
+            return getSheetsService().spreadsheets().values().update(spreadSheetId, range, content)
+                    .setValueInputOption(USER_ENTERED)
+                    .setFields("*").execute();
+        } catch (IOException e) {
+            throw new RuntimeException("Issue in updateRange(%s,%s)".formatted(range, values), e);
+        }
+    }
 
     public List<ValueRange> getMultipleColumns(String sheetName, String... columns) {
         var ranges = Arrays.stream(columns).map(c -> "%1$s!%2$s:%2$s".formatted(sheetName, c)).toList();
@@ -120,11 +162,30 @@ public class SheetsAPI {
     /**
      * Append the values at the bottom of the sheet.
      *
+     * @param range  where to append the data, e.g. sheetName!A:P
+     * @param values organized as a list of rows holding a list of cells.
+     * @return
+     */
+    public AppendValuesResponse append(String range, List<List<Object>> values) {
+        var content = new ValueRange().setValues(values);
+        try {
+            return getSheetsService().spreadsheets().values().append(spreadSheetId, range, content)
+                    .setValueInputOption(USER_ENTERED)
+                    .setInsertDataOption(INSERT_ROWS)
+                    .execute();
+        } catch (IOException e) {
+            throw new RuntimeException("Couldn't append to sheet ", e);
+        }
+    }
+
+    /**
+     * Append the values at the bottom of the sheet.
+     *
      * @param spreadSheetName name of the sheet to which to append the rows.
      * @param values          organized as a list of rows holding a list of cells.
      * @return
      */
-    public BatchUpdateSpreadsheetResponse append(String spreadSheetName, List<RowData> values) {
+    public BatchUpdateSpreadsheetResponse appendX(String spreadSheetName, List<RowData> values) {
         var body = new BatchUpdateSpreadsheetRequest()
                 .setRequests(List.of(
                         new Request().setAppendCells(
@@ -140,6 +201,42 @@ public class SheetsAPI {
             throw new RuntimeException("Couldn't append to sheet ", e);
         }
     }
+
+    /**
+     * Append the values at the bottom of the sheet.
+     *
+     * @param spreadSheetName name of the sheet to which to append the rows.
+     * @param columnNumber    used to find the correct protection range.
+     * @param set             true to set it to warningOnly, false to reset it to block.
+     * @return
+     */
+    public BatchUpdateSpreadsheetResponse setRangeWarningOnly(String spreadSheetName, int columnNumber, boolean set) {
+        var matchingRanges = getProtectedRanges(spreadSheetName).stream()
+                .filter(pr -> pr.getRange().getStartColumnIndex() <= columnNumber && columnNumber <= pr.getRange().getEndColumnIndex()).toList();
+        try {
+            if (matchingRanges == null || matchingRanges.isEmpty()) {
+                return null;
+            } else if (matchingRanges.size() == 1) {
+                var protectedRange = matchingRanges.getFirst();
+                protectedRange.setWarningOnly(set);
+                var body = new BatchUpdateSpreadsheetRequest()
+                        .setRequests(List.of(
+                                new Request().setUpdateProtectedRange(
+                                        new UpdateProtectedRangeRequest()
+                                                .setProtectedRange(protectedRange)
+                                                .setFields("*")
+                                )
+
+                        ));
+                return getSheetsService().spreadsheets().batchUpdate(spreadSheetId, body).execute();
+            } else {
+                throw new RuntimeException("More than one protection range for column " + columnNumber);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Couldn't append to sheet ", e);
+        }
+    }
+
 
     /**
      * Converts from a Java type to cell data.
@@ -177,6 +274,7 @@ public class SheetsAPI {
         }
         return sheetService;
     }
+
     private static HttpRequestInitializer setHttpTimeout(final HttpRequestInitializer requestInitializer) {
         return new HttpRequestInitializer() {
             @Override
