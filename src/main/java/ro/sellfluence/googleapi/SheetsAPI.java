@@ -1,7 +1,6 @@
 package ro.sellfluence.googleapi;
 
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
-import com.google.api.client.http.HttpRequest;
 import com.google.api.client.http.HttpRequestInitializer;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
@@ -22,8 +21,11 @@ import com.google.api.services.sheets.v4.model.ValueRange;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
@@ -47,11 +49,19 @@ public class SheetsAPI {
     /**
      * Initialize the sheets API.
      *
-     * @param appName name of the app as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
+     * @param appName name of the application
+     *                as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
      */
-    public SheetsAPI(String appName, String spreadSheetId) {
+    private SheetsAPI(String appName, String spreadSheetId) {
         this.appName = appName;
         this.spreadSheetId = spreadSheetId;
+    }
+
+    private static final Map<String, SheetsAPI> spreadSheets = new HashMap<>();
+
+    public static SheetsAPI getSpreadSheet(String appName, String spreadSheetId) {
+        var key = "%s\t%s".formatted(appName, spreadSheetId);
+        return spreadSheets.computeIfAbsent(key, _ -> new SheetsAPI(appName, spreadSheetId));
     }
 
     public List<ProtectedRange> getProtectedRanges(String name) {
@@ -101,6 +111,16 @@ public class SheetsAPI {
         }
     }
 
+    /**
+     * Given an index returns the name of the sheet.
+     *
+     * @param index starting with 1.
+     * @return name of the n-th sheet.
+     */
+    public String getNameFromIndex(int index) {
+        return sheetMetaData.stream().filter(m -> m.index() == index - 1).toList().getFirst().title();
+    }
+
     public int getLastRow(String sheetName, String columnName) {
         try {
             var range = "%1$s!%2$s:%2$s".formatted(sheetName, columnName);
@@ -110,6 +130,7 @@ public class SheetsAPI {
             throw new RuntimeException(e);
         }
     }
+
     public List<String> getColumn(String sheetName, String columnName) {
         try {
             var range = "%1$s!%2$s:%2$s".formatted(sheetName, columnName);
@@ -133,6 +154,7 @@ public class SheetsAPI {
             throw new RuntimeException("Issue in getRowsInColumnRange(%s,%s,%s)".formatted(sheetName, firstColumn, lastColumns), e);
         }
     }
+
     public UpdateValuesResponse updateRange(String range, List<List<Object>> values) {
         try {
             ValueRange content = new ValueRange().setValues(values).setMajorDimension(ROWS).setRange(range);
@@ -144,16 +166,30 @@ public class SheetsAPI {
         }
     }
 
-    public List<ValueRange> getMultipleColumns(String sheetName, String... columns) {
+    public List<List<Object>> getMultipleColumns(String sheetName, String... columns) {
         var ranges = Arrays.stream(columns).map(c -> "%1$s!%2$s:%2$s".formatted(sheetName, c)).toList();
         try {
             var result = getSheetsService().spreadsheets().values().batchGet(spreadSheetId).setRanges(ranges).setMajorDimension(COLUMNS).setValueRenderOption(UNFORMATTED_VALUE).execute().getValueRanges();
-            if (result != null) {
-                var r = result.stream().map(valueRange -> valueRange.getValues()).toList();
-                System.out.println(r);
+            if (result != null && result.size() == columns.length) {
+                var maxColumn = columns.length;
+                var rows = new ArrayList<List<Object>>();
+                int[] columnSizes = result.stream().mapToInt(valueRange -> valueRange.getValues().getFirst().size()).toArray();
+                var maxRow = Arrays.stream(columnSizes).max().getAsInt();
+                for (int rowNumber = 0; rowNumber < maxRow; rowNumber++) {
+                    var row = new ArrayList<>();
+                    for (int columnNumber = 0; columnNumber < maxColumn; columnNumber++) {
+                        if (rowNumber < columnSizes[columnNumber]) {
+                            row.add(result.get(columnNumber).getValues().getFirst().get(rowNumber));
+                        } else {
+                            row.add(0);
+                        }
+                    }
+                    rows.add(row);
+                }
+                return rows;
             } else {
+                return null;
             }
-            return null;
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -164,7 +200,7 @@ public class SheetsAPI {
      *
      * @param range  where to append the data, e.g. sheetName!A:P
      * @param values organized as a list of rows holding a list of cells.
-     * @return
+     * @return response
      */
     public AppendValuesResponse append(String range, List<List<Object>> values) {
         var content = new ValueRange().setValues(values);
@@ -183,7 +219,7 @@ public class SheetsAPI {
      *
      * @param spreadSheetName name of the sheet to which to append the rows.
      * @param values          organized as a list of rows holding a list of cells.
-     * @return
+     * @return result
      */
     public BatchUpdateSpreadsheetResponse appendX(String spreadSheetName, List<RowData> values) {
         var body = new BatchUpdateSpreadsheetRequest()
@@ -208,13 +244,14 @@ public class SheetsAPI {
      * @param spreadSheetName name of the sheet to which to append the rows.
      * @param columnNumber    used to find the correct protection range.
      * @param set             true to set it to warningOnly, false to reset it to block.
-     * @return
+     * @return result
      */
     public BatchUpdateSpreadsheetResponse setRangeWarningOnly(String spreadSheetName, int columnNumber, boolean set) {
         var matchingRanges = getProtectedRanges(spreadSheetName).stream()
-                .filter(pr -> pr.getRange().getStartColumnIndex() <= columnNumber && columnNumber <= pr.getRange().getEndColumnIndex()).toList();
+                .filter(pr -> pr.getRange().getStartColumnIndex() <= columnNumber && columnNumber <= pr.getRange().getEndColumnIndex())
+                .toList();
         try {
-            if (matchingRanges == null || matchingRanges.isEmpty()) {
+            if (matchingRanges.isEmpty()) {
                 return null;
             } else if (matchingRanges.size() == 1) {
                 var protectedRange = matchingRanges.getFirst();
@@ -255,7 +292,7 @@ public class SheetsAPI {
     }
 
     private Sheets getSheetsService() {
-        // Caching disabled, because thought of causing th connection reset error.
+        // Caching disabled, because thought of causing the connection reset error.
         if (true /*sheetService == null*/) {
             try {
                 final NetHttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
@@ -276,13 +313,10 @@ public class SheetsAPI {
     }
 
     private static HttpRequestInitializer setHttpTimeout(final HttpRequestInitializer requestInitializer) {
-        return new HttpRequestInitializer() {
-            @Override
-            public void initialize(HttpRequest httpRequest) throws IOException {
-                requestInitializer.initialize(httpRequest);
-                httpRequest.setConnectTimeout(60_000);  // 1 minute connect timeout
-                httpRequest.setReadTimeout(120_000);  // 2 minutes read timeout
-            }
+        return httpRequest -> {
+            requestInitializer.initialize(httpRequest);
+            httpRequest.setConnectTimeout(60_000);  // 1 minute connect timeout
+            httpRequest.setReadTimeout(120_000);  // 2 minutes read timeout
         };
     }
 
