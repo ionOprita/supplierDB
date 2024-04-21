@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 import static java.util.Comparator.comparing;
 import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheet;
 
+//TODO: Check column 7 of a sheet before inserting, to verify that PNK matches.
 public class TransferFromEmagToSheets {
 
     private final String appName;
@@ -41,7 +42,7 @@ public class TransferFromEmagToSheets {
                 final var statistic = pnkToStatistic.get(pnk);
                 final var productName = statistic.produs();
                 final var rowsToAdd = orderEntries.stream()
-                        .filter(emagEntry -> emagEntry.orderDate().isAfter(statistic.lastUpdate().atStartOfDay()))
+                        .filter(emagEntry -> emagEntry.orderDate().isAfter(statistic.lastUpdate().plusDays(1).atStartOfDay()))
                         // Sort by date and within the same date by order ID.
                         .sorted(comparing(SheetData::orderDate).thenComparing(SheetData::orderId))
                         .map(data -> mapEmagToRow(data, productName))
@@ -49,6 +50,8 @@ public class TransferFromEmagToSheets {
                 if (!rowsToAdd.isEmpty()) {
                     addToSheet(pnk, rowsToAdd);
                 }
+            } else {
+                //TODO: Print warning if PNK in emag is not on sheet.
             }
         });
     }
@@ -80,43 +83,32 @@ public class TransferFromEmagToSheets {
 
     private static List<Object> mapEmagToRow(SheetData data, String productName) {
         var row = new ArrayList<>();
-        var identicalBillingAndCustomer = isIdenticalBillingAndCustomer(data);
-        var billingName = identicalBillingAndCustomer ? "Date facturare si livrare identice" : data.billingName();
-        var billingPhone = identicalBillingAndCustomer ? "" : data.billingPhone();
-        var billingAddress = identicalBillingAndCustomer ? "" : data.billingAddress();
         row.add(data.orderId());
         row.add(data.quantity());
-        row.add(data.price().toString());
-        row.add(data.isCompany() ? "Da" : "Nu");
+        //TODO: Check if .2f is rounding in a sensible way.
+        row.add("%.2f".formatted(data.price().doubleValue()*1.19));
+        row.add(data.isCompany() ? "Yes" : "No");
         row.add(data.orderDate().format(dateFormat));
         row.add(productName);
         row.add(data.partNumberKey());
-        row.add(billingName);
-        row.add(billingPhone);
-        row.add(billingAddress);
+        row.add(data.billingName());
+        row.add(data.billingPhone());
+        row.add(data.userName());
         row.add(data.clientName());
         row.add(data.clientPhone());
         row.add(data.deliveryAddress());
         row.add(data.deliveryMode());
-        row.add("");
-        row.add(data.contacted() ? "Da" : "Nu");
         return row;
     }
 
     private void addToSheet(String pnk, List<List<Object>> rowsToAdd) {
         var sheet = pnkToSpreadSheet.get(pnk);
+        //TODO: Instead of mapping from index maybe a better logic which is based on names.
         var sheetName = sheet.getNameFromIndex(pnkToStatistic.get(pnk).index());
+        //TODO: Store the whole column A which is order number in a set and then check the rowsToAdd if the number
+        // is already there, and exclude these (duplicates) and write a warning.
         var lastRowNumber = sheet.getLastRow(sheetName, "A");
-        sheet.updateRange("%s!A%d:P%d".formatted(sheetName, lastRowNumber + 1, lastRowNumber + rowsToAdd.size()), rowsToAdd);
+        System.out.printf("Adding %d rows after row %d to tab %s of some spreadsheet.%n", rowsToAdd.size(), lastRowNumber, sheetName);
+        sheet.updateRange("%s!A%d:N%d".formatted(sheetName, lastRowNumber + 1, lastRowNumber + rowsToAdd.size()), rowsToAdd);
     }
-
-    private static boolean isIdenticalBillingAndCustomer(SheetData data) {
-        var noBillingName = data.billingName() == null || data.billingName().isEmpty();
-        var noBillingPhone = data.billingPhone() == null || data.billingPhone().isEmpty();
-        var noBillingAddress = data.billingAddress() == null || data.billingAddress().isEmpty();
-        return (noBillingName || data.billingName().equals(data.clientName()))
-               && (noBillingAddress || (data.billingAddress()).equals(data.deliveryAddress()))
-               && (noBillingPhone || data.billingPhone().equals(data.clientPhone()));
-    }
-
 }

@@ -25,6 +25,7 @@ public class GetCustomerData {
             LocalDateTime orderDate,
             String productName,
             String partNumberKey,
+            String userName,
             String billingName,
             String billingPhone,
             String billingAddress,
@@ -37,6 +38,8 @@ public class GetCustomerData {
     }
 
     public static Map<String, List<SheetData>> getByProduct(LocalDateTime startTime, LocalDateTime endTime) {
+        //TODO: Need to get from more than one emag account.
+        //TODO: Bail out immediatly if the error message indicates IP-Adress which is not configured.
         var emagCredentials = UserPassword.findAlias("emag");
         var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
         try {
@@ -62,6 +65,7 @@ public class GetCustomerData {
                                         order.date,
                                         product.name, // TODO: This might not be correct.
                                         product.part_number_key,
+                                        order.customer.name,
                                         order.customer.billing_name,
                                         order.customer.billing_phone,
                                         order.customer.getBillingAddress(),

@@ -118,7 +118,7 @@ public class SheetsAPI {
      * @return name of the n-th sheet.
      */
     public String getNameFromIndex(int index) {
-        return sheetMetaData.stream().filter(m -> m.index() == index - 1).toList().getFirst().title();
+        return getSheetProperties().stream().filter(m -> m.index() == index - 1).toList().getFirst().title();
     }
 
     public int getLastRow(String sheetName, String columnName) {
