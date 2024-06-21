@@ -15,6 +15,12 @@ public class GetStatsForAllSheets {
 
     private static final DateTimeFormatter sheetDateFormat = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
+    /**
+     * Retrieve the relevant information from the monthly statistic page for all sheets.
+     *
+     * @param sheets collection of sheets.
+     * @return List with mappings of PNK to product name and last update date.
+     */
     public static List<Statistic> getStatistics(Collection<SheetsAPI> sheets) {
         return sheets.stream()
                 .flatMap(spreadSheet ->
