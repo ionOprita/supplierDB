@@ -115,9 +115,15 @@ public class TransferFromEmagToSheets {
         return row;
     }
 
+    /**
+     * Add new ordors for a product to its assigned sheet.
+     * @param pnk   Product identification
+     * @param rowsToAdd Additional rows.
+     */
     private void addToSheet(String pnk, List<List<Object>> rowsToAdd) {
         var sheet = pnkToSpreadSheet.get(pnk);
         //TODO: Instead of mapping from index maybe a better logic which is based on names.
+        //Not possible yet, because names do not match.
         var sheetName = sheet.getNameFromIndex(pnkToStatistic.get(pnk).index());
         var processedOrderIds = new HashSet<>(sheet.getColumn(sheetName, "A"));
         var lastRowNumber = processedOrderIds.size();
@@ -125,6 +131,8 @@ public class TransferFromEmagToSheets {
                 .filter(row -> !processedOrderIds.contains(((String) row.getFirst())))
                 .toList();
         System.out.printf("Adding %d rows after row %d to tab %s of some spreadsheet.%n", withoutDuplicates.size(), lastRowNumber, sheetName);
+        //TODO: Test whether the sheet is already big enough.
+        var totalRows = sheet.getAlloctedNumberOfRows(sheetName);
         sheet.updateRange("%s!A%d:N%d".formatted(sheetName, lastRowNumber + 1, lastRowNumber + withoutDuplicates.size()), withoutDuplicates);
     }
 }
