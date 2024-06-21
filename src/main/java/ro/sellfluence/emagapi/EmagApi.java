@@ -152,6 +152,7 @@ public class EmagApi {
                 }
             } else {
                 logger.log(SEVERE, "Received error status %s".formatted(statusCode));
+                throw new RuntimeException(String.format("Emag API error %d", statusCode));
             }
         }
         return accumulatedResponses;
