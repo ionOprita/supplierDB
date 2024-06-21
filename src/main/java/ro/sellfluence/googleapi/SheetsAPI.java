@@ -129,12 +129,9 @@ public class SheetsAPI {
      * TODO: Is it possible to get the number of lines already present in the sheet ?
      *
      * @param sheetName
-     * @return
+     * @return number fo rows allocated in this sheet.
      */
     public int getAlloctedNumberOfRows(String sheetName) {
-        var tabMetaData = getSheetProperties().stream().filter(it -> it.title.equals(sheetName)).findFirst();
-        if (tabMetaData.isPresent()) {
-        }
         return 0;
     }
 
