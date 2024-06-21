@@ -39,7 +39,6 @@ public class GetCustomerData {
 
     public static Map<String, List<SheetData>> getByProduct(LocalDateTime startTime, LocalDateTime endTime) {
         //TODO: Need to get from more than one emag account.
-        //TODO: Bail out immediatly if the error message indicates IP-Adress which is not configured.
         var emagCredentials = UserPassword.findAlias("emag");
         var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
         try {

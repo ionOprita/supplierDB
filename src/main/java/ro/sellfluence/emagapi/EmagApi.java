@@ -137,6 +137,10 @@ public class EmagApi {
                     Response<T> response = gson.fromJson(receivedJSON, responseItemClass.getType());
                     if (response.isError) {
                         logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
+                        if (Arrays.stream(response.messages).anyMatch(x -> x.contains("Invalid vendor ip"))) {
+                            logger.log(INFO, "Please register your IP address in the EMAG dashboard.");
+                            finished = true;
+                        }
                     } else {
                         logger.log(INFO, () -> "Received %d items.".formatted(response.results.length));
                         logger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
