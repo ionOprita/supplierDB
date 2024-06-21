@@ -5,6 +5,9 @@ import com.google.api.services.sheets.v4.model.ExtendedValue;
 import com.google.api.services.sheets.v4.model.RowData;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
+import ro.sellfluence.emagapi.OrderResult;
+import ro.sellfluence.emagapi.Product;
+import ro.sellfluence.emagapi.Response;
 
 import java.io.IOException;
 import java.net.URI;
