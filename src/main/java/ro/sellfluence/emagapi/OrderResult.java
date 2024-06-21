@@ -40,7 +40,7 @@ public class OrderResult {
         return switch (delivery_mode) {
             case "courier" -> "curier";
             case "pickup" -> "easybox";
-            case "Livrare 6H" -> "curier"; //TODO: Does this need a special value?
+            case "Livrare 6H" -> "curier";
             default -> throw new IllegalArgumentException("Unknown delivery_mode = " + delivery_mode + "in order " + id);
         };
     }
