@@ -122,20 +122,27 @@ public class SheetsAPI {
     }
 
     public int getLastRow(String sheetName, String columnName) {
-        try {
-            var range = "%1$s!%2$s:%2$s".formatted(sheetName, columnName);
-            var result = getSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(COLUMNS).execute();
-            return result.getValues().getFirst().size();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        return getColumn(sheetName, columnName).size();
+    }
+
+    /**
+     * TODO: Is it possible to get the number of lines already present in the sheet ?
+     *
+     * @param sheetName
+     * @return
+     */
+    public int getAlloctedNumberOfRows(String sheetName) {
+        var tabMetaData = getSheetProperties().stream().filter(it -> it.title.equals(sheetName)).findFirst();
+        if (tabMetaData.isPresent()) {
         }
+        return 0;
     }
 
     public List<String> getColumn(String sheetName, String columnName) {
         try {
             var range = "%1$s!%2$s:%2$s".formatted(sheetName, columnName);
-            var result = getSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(COLUMNS).execute().getValues();
-            return result.getFirst().stream().map(o -> (String) o).toList();
+            var result = getSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(COLUMNS).execute().getValues().getFirst();
+            return result.stream().map(o -> (String) o).toList();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

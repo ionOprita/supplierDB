@@ -9,11 +9,13 @@ public class GetOverview {
 
     private final DriveAPI drive;
     private final SheetsAPI spreadSheet;
+    private final String overviewSheetName;
 
-    public GetOverview(String appName, String spreadSheetName) {
+    public GetOverview(String appName, String spreadSheetName, String sheetName) {
         drive = new DriveAPI(appName);
         var spreadSheetId = drive.getFileId(spreadSheetName);
         spreadSheet = SheetsAPI.getSpreadSheet(appName, spreadSheetId);
+        overviewSheetName = sheetName;
     }
 
     public record SheetData(
@@ -25,7 +27,7 @@ public class GetOverview {
     }
 
     public List<SheetData> getWorkSheets() {
-        String sheetName = "Cons. Date Prod."; // TODO: Move also to Main
+        String sheetName = overviewSheetName; // TODO: Move also to Main
         return spreadSheet.getMultipleColumns(sheetName, "C", "V", "BH", "EI").stream()
                 .skip(3)
                 .filter(
