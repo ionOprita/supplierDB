@@ -63,7 +63,7 @@ public class GetCustomerData {
                                         product.sale_price,
                                         order.isCompany(),
                                         order.date,
-                                        product.name, // TODO: This might not be correct.
+                                        product.name,
                                         product.part_number_key,
                                         order.customer.name,
                                         order.customer.billing_name,
