@@ -11,7 +11,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -40,10 +39,10 @@ public class TransferFromEmagToSheets {
         this.overviewSheetName = overviewSheetName;
     }
 
-    public void transferFromEmagToSheet() {
+    public void transferFromEmagToSheet(String... emagAccounts) {
         loadOverview();
         loadAllStatistics();
-        final var emagEntries = GetCustomerData.getByProduct(startTime, endTime);
+        final var emagEntries = GetCustomerData.getByProduct(startTime, endTime, emagAccounts);
         emagEntries.forEach((pnk, orderEntries) -> {
             if (relevantProducts.contains(pnk)) {
                 final var statistic = pnkToStatistic.get(pnk);
@@ -60,7 +59,7 @@ public class TransferFromEmagToSheets {
             } else {
                 logger.log(
                         WARNING,
-                        () -> "Following order entries not stored, because no sheet found with PNK %s: %s".formatted(
+                        () -> "Following order entries aren't stored because no sheet found with PNK %s: %s".formatted(
                                 pnk,
                                 orderEntries.stream()
                                         .map(SheetData::orderId)
