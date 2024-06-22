@@ -6,12 +6,15 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class GetStatsForAllSheets {
 
     private static final String statisticSheetName = "Statistici/luna";
+    private static final String setariSheetName = "Setari";
 
-    public record Statistic(int index, String produs, String pnk, LocalDate lastUpdate) { }
+    public record Statistic(int index, String produs, String pnk, LocalDate lastUpdate, String sheetName) {
+    }
 
     private static final DateTimeFormatter sheetDateFormat = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
@@ -22,19 +25,29 @@ public class GetStatsForAllSheets {
      * @return List with mappings of PNK to product name and last update date.
      */
     public static List<Statistic> getStatistics(Collection<SheetsAPI> sheets) {
+
         return sheets.stream()
-                .flatMap(spreadSheet ->
-                        spreadSheet.getRowsInColumnRange(statisticSheetName, "A", "E").stream()
-                                .skip(6)
-                                .filter(row -> row.size() >= 5 && row.getFirst().matches("\\d+") && !row.get(2).isEmpty())
-                                .map(
-                                        row -> new Statistic(
-                                                Integer.parseInt(row.getFirst()),
-                                                row.get(1),
-                                                row.get(2),
-                                                LocalDate.parse(row.get(4), sheetDateFormat)
-                                        )
-                                )
+                .flatMap(spreadSheet -> {
+                            var pnkToSheetName = spreadSheet.getMultipleColumns(setariSheetName, "C", "E").stream()
+                                    .skip(2)
+                                    .collect(Collectors.toMap(row -> (String)row.get(1), row -> (String)row.get(2)));
+
+                            return spreadSheet.getRowsInColumnRange(statisticSheetName, "A", "E").stream()
+                                    .skip(6)
+                                    .filter(row -> row.size() >= 5 && row.getFirst().matches("\\d+") && !row.get(2).isEmpty())
+                                    .map(
+                                            row -> {
+                                                String pnk = row.get(2);
+                                                return new Statistic(
+                                                        Integer.parseInt(row.getFirst()),
+                                                        row.get(1),
+                                                        pnk,
+                                                        LocalDate.parse(row.get(4), sheetDateFormat),
+                                                        pnkToSheetName.get(pnk)
+                                                );
+                                            }
+                                    );
+                        }
                 )
                 .toList();
     }

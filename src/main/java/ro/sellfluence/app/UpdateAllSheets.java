@@ -7,6 +7,6 @@ public class UpdateAllSheets {
                 "Testing Coding 2024 - Date Produse & Angajati",
                 "Cons. Date Prod."
         )
-                .transferFromEmagToSheet("emag");
+                .transferFromEmagToSheet("emag", "emag2");
     }
 }

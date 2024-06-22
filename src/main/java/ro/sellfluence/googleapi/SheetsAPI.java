@@ -81,6 +81,10 @@ public class SheetsAPI {
         }
     }
 
+    public String getTitle() {
+        return spreadSheetId;
+    }
+
     public record SheetMetaData(int index, int sheetId, String title) {
     }
 
@@ -123,16 +127,6 @@ public class SheetsAPI {
 
     public int getLastRow(String sheetName, String columnName) {
         return getColumn(sheetName, columnName).size();
-    }
-
-    /**
-     * TODO: Is it possible to get the number of lines already present in the sheet ?
-     *
-     * @param sheetName
-     * @return number fo rows allocated in this sheet.
-     */
-    public int getAlloctedNumberOfRows(String sheetName) {
-        return 0;
     }
 
     public List<String> getColumn(String sheetName, String columnName) {
@@ -202,7 +196,7 @@ public class SheetsAPI {
     /**
      * Append the values at the bottom of the sheet.
      *
-     * @param range  where to append the data, e.g. sheetName!A:P
+     * @param range  where to append the data, for example, sheetName!A:P
      * @param values organized as a list of rows holding a list of cells.
      * @return response
      */

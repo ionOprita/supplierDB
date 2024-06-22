@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -18,7 +19,6 @@ import static java.util.Comparator.comparing;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheet;
 
-//TODO: Check column 7 of a sheet before inserting, to verify that PNK matches.
 public class TransferFromEmagToSheets {
 
     private static final Logger logger = Logger.getLogger(TransferFromEmagToSheets.class.getName());
@@ -59,7 +59,7 @@ public class TransferFromEmagToSheets {
             } else {
                 logger.log(
                         WARNING,
-                        () -> "Following order entries aren't stored because no sheet found with PNK %s: %s".formatted(
+                        () -> "Following order entries aren't stored because no sheet found with PNK %s: %s.".formatted(
                                 pnk,
                                 orderEntries.stream()
                                         .map(SheetData::orderId)
@@ -99,7 +99,6 @@ public class TransferFromEmagToSheets {
         var row = new ArrayList<>();
         row.add(data.orderId());
         row.add(data.quantity());
-        //TODO: Check if .2f is rounding in a sensible way.
         row.add("%.2f".formatted(data.price().doubleValue()*1.19));
         row.add(data.isCompany() ? "Yes" : "No");
         row.add(data.orderDate().format(dateFormat));
@@ -122,17 +121,20 @@ public class TransferFromEmagToSheets {
      */
     private void addToSheet(String pnk, List<List<Object>> rowsToAdd) {
         var sheet = pnkToSpreadSheet.get(pnk);
-        //TODO: Instead of mapping from index maybe a better logic which is based on names.
-        //Not possible yet, because names do not match.
-        var sheetName = sheet.getNameFromIndex(pnkToStatistic.get(pnk).index());
+        var sheetName = pnkToStatistic.get(pnk).sheetName();
         var processedOrderIds = new HashSet<>(sheet.getColumn(sheetName, "A"));
         var lastRowNumber = processedOrderIds.size();
         var withoutDuplicates = rowsToAdd.stream()
                 .filter(row -> !processedOrderIds.contains(((String) row.getFirst())))
                 .toList();
         System.out.printf("Adding %d rows after row %d to tab %s of some spreadsheet.%n", withoutDuplicates.size(), lastRowNumber, sheetName);
-        //TODO: Test whether the sheet is already big enough.
-        var totalRows = sheet.getAlloctedNumberOfRows(sheetName);
-        sheet.updateRange("%s!A%d:N%d".formatted(sheetName, lastRowNumber + 1, lastRowNumber + withoutDuplicates.size()), withoutDuplicates);
+        var pnksInSheet = sheet.getColumn(sheetName, "G").stream().filter(x -> !x.isBlank()).collect(Collectors.toSet());
+        if (pnksInSheet.size()>1) {
+            logger.log(WARNING, "Sheet '%s' in Spreadsheet '%s' contains multiple PNKs in column 7: %s.".formatted(sheetName, sheet.getTitle(), pnksInSheet));
+        } else if (pnksInSheet.size() == 1 && !Objects.equals(pnksInSheet.iterator().next(), pnk)) {
+            logger.log(WARNING, "Expected PNK '%s', but Sheet '%s' in Spreadsheet '%s' contains different PNK in column 7: %s.".formatted(pnk,sheetName, sheet.getTitle(), pnksInSheet));
+        } else {
+            sheet.updateRange("%s!A%d:N%d".formatted(sheetName, lastRowNumber + 1, lastRowNumber + withoutDuplicates.size()), withoutDuplicates);
+        }
     }
 }
