@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 public class GetStatsForAllSheets {
@@ -30,7 +31,16 @@ public class GetStatsForAllSheets {
                 .flatMap(spreadSheet -> {
                             var pnkToSheetName = spreadSheet.getMultipleColumns(setariSheetName, "C", "E").stream()
                                     .skip(2)
-                                    .collect(Collectors.toMap(row -> (String)row.get(1), row -> (String)row.get(2)));
+                                    .map(row -> {
+                                        if (row.get(0) instanceof String pnk && row.get(1) instanceof String sheetName) {
+                                            return new String[]{pnk, sheetName};
+                                        } else {
+                                            return null;
+                                        }
+                                    })
+                                    .filter(Objects::nonNull)
+                                    .collect(Collectors.toMap(row -> row[0]
+                                            , row -> row[1]));
 
                             return spreadSheet.getRowsInColumnRange(statisticSheetName, "A", "E").stream()
                                     .skip(6)
