@@ -12,10 +12,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
+import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.emagapi.EmagApi.statusFinalized;
 
 public class GetCustomerData {
+
+    private static final Logger logger = Logger.getLogger(GetCustomerData.class.getName());
 
     public record SheetData(
             String orderId,
@@ -41,6 +45,10 @@ public class GetCustomerData {
         Map<String, List<SheetData>> orderedProductsByPNK = new HashMap<>();
         for (var alias : emagAccounts) {
             var emagCredentials = UserPassword.findAlias(alias);
+            if (emagCredentials==null) {
+                logger.log(WARNING, "Missing credentials for alias "+alias);
+                return Map.of();
+            }
             var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
             try {
                 var responses = emag.readRequest("order",
