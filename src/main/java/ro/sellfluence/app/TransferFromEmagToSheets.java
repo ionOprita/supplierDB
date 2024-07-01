@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -99,7 +100,7 @@ public class TransferFromEmagToSheets {
         var row = new ArrayList<>();
         row.add(data.orderId());
         row.add(data.quantity());
-        row.add("%.2f".formatted(data.price().doubleValue()*1.19));
+        row.add("%.2f".formatted(data.price().doubleValue() * 1.19));
         row.add(data.isCompany() ? "Yes" : "No");
         row.add(data.orderDate().format(dateFormat));
         row.add(productName);
@@ -116,23 +117,48 @@ public class TransferFromEmagToSheets {
 
     /**
      * Add new ordors for a product to its assigned sheet.
-     * @param pnk   Product identification
+     *
+     * @param pnk       Product identification
      * @param rowsToAdd Additional rows.
      */
     private void addToSheet(String pnk, List<List<Object>> rowsToAdd) {
         var sheet = pnkToSpreadSheet.get(pnk);
         var sheetName = pnkToStatistic.get(pnk).sheetName();
-        var processedOrderIds = new HashSet<>(sheet.getColumn(sheetName, "A"));
-        var lastRowNumber = processedOrderIds.size();
+        List<String> orderIdColumn = sheet.getColumn(sheetName, "A");
+        var mapOrderToColumn = new HashMap<String, List<Integer>>();
+        for (var columnNumber = 0; columnNumber < orderIdColumn.size(); columnNumber++) {
+            var orderId = orderIdColumn.get(columnNumber);
+            var columnList = mapOrderToColumn.getOrDefault(orderId, new ArrayList<>());
+            columnList.add(columnNumber);
+            mapOrderToColumn.put(orderId, columnList);
+        }
+        mapOrderToColumn.entrySet().stream()
+                .filter(entry -> entry.getValue().size() > 1)
+                .forEach(entry ->
+                        logger.log(
+                                WARNING,
+                                "Found order %s in multiple columns: %s".formatted(
+                                        entry.getKey(),
+                                        String.join(
+                                                ", ",
+                                                entry.getValue().stream()
+                                                        .map(columnIndex -> Integer.toString(columnIndex + 1))
+                                                        .toList()
+                                        )
+                                )
+                        )
+                );
+        var lastRowNumber = orderIdColumn.size();
+        var processedOrderIds = new HashSet<>(orderIdColumn);   // Drops duplicates.
         var withoutDuplicates = rowsToAdd.stream()
                 .filter(row -> !processedOrderIds.contains(((String) row.getFirst())))
                 .toList();
         System.out.printf("Adding %d rows after row %d to tab %s of some spreadsheet.%n", withoutDuplicates.size(), lastRowNumber, sheetName);
-        var pnksInSheet = sheet.getColumn(sheetName, "G").stream().filter(x -> !x.isBlank()).collect(Collectors.toSet());
-        if (pnksInSheet.size()>1) {
+        var pnksInSheet = sheet.getColumn(sheetName, "G").stream().skip(3).filter(x -> !x.isBlank()).collect(Collectors.toSet());
+        if (pnksInSheet.size() > 1) {
             logger.log(WARNING, "Sheet '%s' in Spreadsheet '%s' contains multiple PNKs in column 7: %s.".formatted(sheetName, sheet.getTitle(), pnksInSheet));
         } else if (pnksInSheet.size() == 1 && !Objects.equals(pnksInSheet.iterator().next(), pnk)) {
-            logger.log(WARNING, "Expected PNK '%s', but Sheet '%s' in Spreadsheet '%s' contains different PNK in column 7: %s.".formatted(pnk,sheetName, sheet.getTitle(), pnksInSheet));
+            logger.log(WARNING, "Expected PNK '%s', but Sheet '%s' in Spreadsheet '%s' contains different PNK in column 7: %s.".formatted(pnk, sheetName, sheet.getTitle(), pnksInSheet));
         } else {
             sheet.updateRange("%s!A%d:N%d".formatted(sheetName, lastRowNumber + 1, lastRowNumber + withoutDuplicates.size()), withoutDuplicates);
         }
