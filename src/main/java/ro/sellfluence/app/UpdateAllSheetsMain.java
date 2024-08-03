@@ -1,6 +1,6 @@
 package ro.sellfluence.app;
 
-public class UpdateAllSheets {
+public class UpdateAllSheetsMain {
     public static void main(String[] args) {
         new TransferFromEmagToSheets(
                 "sellfluence1",
