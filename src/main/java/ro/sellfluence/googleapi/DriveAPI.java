@@ -6,6 +6,7 @@ import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.model.File;
+import com.google.api.services.drive.model.FileList;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -40,7 +41,9 @@ public class DriveAPI {
     public String getFileId(String name) {
         Objects.requireNonNull(name);
         try {
-            var matchingFiles = setupDriveService().files().list().execute().getFiles().stream()
+            FileList fileList = setupDriveService().files().list().setPageSize(1000).execute();
+            //ToDo: solution needed which works also for more than 1000 files
+            var matchingFiles = fileList.getFiles().stream()
                     .filter(f -> name.equals(f.getName()))
                     .map(File::getId)
                     .collect(Collectors.toSet());
