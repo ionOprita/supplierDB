@@ -10,12 +10,9 @@ import com.google.api.services.drive.model.FileList;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
-import java.util.List;
+import java.util.HashSet;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
-import static com.google.api.services.drive.DriveScopes.DRIVE_METADATA_READONLY;
-import static com.google.api.services.drive.DriveScopes.DRIVE_READONLY;
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
 public class DriveAPI {
@@ -25,7 +22,8 @@ public class DriveAPI {
     /**
      * Initialize the drive API.
      *
-     * @param appName name of the app as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
+     * @param appName name of the application
+     *                as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
      */
     public DriveAPI(String appName) {
         this.appName = appName;
@@ -35,18 +33,23 @@ public class DriveAPI {
      * Find the d of a file given its name.
      *
      * @param name of the file.
-     * @return the id of the file.
-     * @throws Exception if something goes wrong.
+     * @return the ID of the file.
+     * @throws RuntimeException if something goes wrong.
      */
     public String getFileId(String name) {
         Objects.requireNonNull(name);
         try {
-            FileList fileList = setupDriveService().files().list().setPageSize(1000).execute();
-            //ToDo: solution needed which works also for more than 1000 files
-            var matchingFiles = fileList.getFiles().stream()
-                    .filter(f -> name.equals(f.getName()))
-                    .map(File::getId)
-                    .collect(Collectors.toSet());
+            var matchingFiles = new HashSet<String>();
+            String pageToken = null;
+            do {
+                FileList fileList = setupDriveService().files().list().setPageToken(pageToken).execute();
+                pageToken = fileList.getNextPageToken();
+                var files = fileList.getFiles();
+                files.stream()
+                        .filter(f -> name.equals(f.getName()))
+                        .map(File::getId).forEach(matchingFiles::add);
+
+            } while (pageToken != null);
             if (matchingFiles.isEmpty()) {
                 return null;
             } else if (matchingFiles.size() == 1) {
@@ -70,7 +73,7 @@ public class DriveAPI {
                     .setApplicationName(appName)
                     .build();
         } catch (GeneralSecurityException | IOException e) {
-            throw new RuntimeException("Couldn't set up driver service",e);
+            throw new RuntimeException("Couldn't set up driver service", e);
         }
     }
 }
