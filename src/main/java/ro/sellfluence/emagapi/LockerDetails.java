@@ -1,4 +1,4 @@
-package ro.koppel.emag;
+package ro.sellfluence.emagapi;
 
 public class LockerDetails {
     public String locker_id;

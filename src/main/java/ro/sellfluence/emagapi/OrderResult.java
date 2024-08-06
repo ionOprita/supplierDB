@@ -1,19 +1,22 @@
-package ro.koppel.emag;
+package ro.sellfluence.emagapi;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 
 public class OrderResult {
+    public String vendor_name;
     public String id;
     public int status;
     public Integer is_complete;
     public Integer type;
+    public String payment_mode;
     public int payment_mode_id;
     public String delivery_payment_mode;
     public String delivery_mode;
-
+    public String observation;
     public LockerDetails details;
-    public String date;
+    public LocalDateTime date;
     public Integer payment_status;
     public BigDecimal cashed_co;
     public BigDecimal cashed_cod;
@@ -27,6 +30,29 @@ public class OrderResult {
     public Voucher[] vouchers;
     public boolean is_storno;
     public Integer cancellation_reason;
+
+    /**
+     * Return the delivery mode as either 'curier' or 'easybox'
+     *
+     * @return converted string.
+     */
+    public String getDeliveryMode() {
+        return switch (delivery_mode) {
+            case "courier" -> "curier";
+            case "pickup" -> "easybox";
+            case "Livrare 6H" -> "curier";
+            default -> throw new IllegalArgumentException("Unknown delivery_mode = " + delivery_mode + "in order " + id);
+        };
+    }
+
+    /**
+     * Report whether the customer is a company.
+     *
+     * @return true if it is a company.
+     */
+    public boolean isCompany() {
+        return Integer.valueOf(1).equals(customer.legal_entity);
+    }
 
     @Override
     public String toString() {

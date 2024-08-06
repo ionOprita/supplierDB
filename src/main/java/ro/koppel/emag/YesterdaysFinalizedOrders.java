@@ -5,6 +5,9 @@ import com.google.api.services.sheets.v4.model.ExtendedValue;
 import com.google.api.services.sheets.v4.model.RowData;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
+import ro.sellfluence.emagapi.OrderResult;
+import ro.sellfluence.emagapi.Product;
+import ro.sellfluence.emagapi.Response;
 
 import java.io.IOException;
 import java.net.URI;
@@ -13,18 +16,23 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.security.GeneralSecurityException;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.List;
+import java.util.TreeMap;
 import java.util.logging.Logger;
 
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.time.DayOfWeek.SUNDAY;
-import static java.util.logging.Level.*;
+import static java.util.logging.Level.FINE;
+import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.SEVERE;
 
 public class YesterdaysFinalizedOrders {
 
@@ -93,7 +101,7 @@ public class YesterdaysFinalizedOrders {
                 String receivedJSON = httpResponse.body();
                 logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
                 try {
-                    Response response = new Gson().fromJson(receivedJSON, Response.class);
+                    Response<OrderResult> response = new Gson().fromJson(receivedJSON, Response.class);
                     if (response.isError) {
                         logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
                     } else {
@@ -652,36 +660,28 @@ public class YesterdaysFinalizedOrders {
         }
     }
 
-    private static String dayAndHourConversion(String date) {
-        DateTimeFormatter emag;
+    private static String dayAndHourConversion(LocalDateTime date) {
         DateTimeFormatter excel;
-        emag = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         excel = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss");
-        return LocalDateTime.parse(date, emag).format(excel);
+        return date.format(excel);
     }
 
-    private static String dayConversion(String date) {
-        DateTimeFormatter emag;
+    private static String dayConversion(LocalDateTime date) {
         DateTimeFormatter excel;
-        emag = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         excel = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        return LocalDateTime.parse(date, emag).format(excel);
+        return date.format(excel);
     }
 
-    private static String monthConversion(String date) {
-        DateTimeFormatter emag;
+    private static String monthConversion(LocalDateTime date) {
         DateTimeFormatter excel;
-        emag = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         excel = DateTimeFormatter.ofPattern("01/MM/yyyy");
-        return LocalDateTime.parse(date, emag).format(excel);
+        return date.format(excel);
     }
 
-    private static String weekConversion(String date) {
-        DateTimeFormatter emag;
+    private static String weekConversion(LocalDateTime date) {
         DateTimeFormatter excel;
-        emag = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         excel = DateTimeFormatter.ofPattern("dd-MMM-yyyy");
-        return LocalDateTime.parse(date, emag).with(TemporalAdjusters.nextOrSame(SUNDAY)).format(excel);
+        return date.with(TemporalAdjusters.nextOrSame(SUNDAY)).format(excel);
     }
 
     private static record SplittedResult(List<OrderResult> duplicates, List<OrderResult> clean) {

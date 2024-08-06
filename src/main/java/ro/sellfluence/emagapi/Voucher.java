@@ -1,4 +1,4 @@
-package ro.koppel.emag;
+package ro.sellfluence.emagapi;
 
 import java.math.BigDecimal;
 

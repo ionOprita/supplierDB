@@ -1,3 +1,11 @@
+Start Update Feedback Clients Sheets Application
+=
+
+To start the application, you have to run the class from this path:
+```
+src/main/java/ro/sellfluence/app/UpdateAllSheetsMain.java
+```
+
 API-Key
 =
 
