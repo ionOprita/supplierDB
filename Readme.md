@@ -1,13 +1,40 @@
-Start Update Feedback Clients Sheets Application
+Emag -> Google Drive
 =
 
-To start the application, you have to run the class from this path:
+Start Update Feedback Clients Sheets Application
+-
+
+To start the application, run the class from this path:
 ```
 src/main/java/ro/sellfluence/app/UpdateAllSheetsMain.java
 ```
 
-API-Key
+Emag Mirror to DB
 =
+
+Database setup
+-
+These instructions work for the development environment of claudio. Maybe the need to be modified for other environments.
+
+```
+psql template1 -X -c "CREATE DATABASE emag WITH OWNER = $(id -nu)"
+psql -1 -X -c "CREATE ROLE emag WITH LOGIN PASSWORD 'password'; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO emag"
+```
+
+Substitute *password* with the real password.
+
+Then add the following line to $HOME/Secrets/dbpass.txt again putting the password instead of the word *password*.
+
+```
+emag    jdbc:postgresql://127.0.0.1:5432/emag       emag        password
+```
+
+
+Stuff related to scraping app
+=
+
+API-Key
+-
 
 The scrpingant api-key needs to be configured in the application.properties by
 adding a line like this:
@@ -15,11 +42,10 @@ adding a line like this:
 ```
 ro.koppel.apiKey=ff7320bfe38e2b076fd0a7aa42a4abbc
 ```
-The value behind the = sign needs to be your actual api-key obtained from the
-scrapingant web site.
+The value behind the = sign needs to be the api-key from the scraping agent website.
 
 Command line arguments
-=
+-
 Exactly two arguments are required.
 
 The first argument is an absolute or relative
@@ -30,7 +56,7 @@ The second argument is an absolute or relative path for the Excel file to be cre
 or modified (TODO).
 
 Database creation instructions
-=
+-
 
 As user 'claudio' is already defined as superuser instead of postgres
 and cannot be used with a password, a different user needed to be created.
