@@ -7,12 +7,18 @@ import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
+
+import static java.util.logging.Level.INFO;
+
 
 public class GetStatsForAllSheets {
 
     private static final String statisticSheetName = "Statistici/luna";
     private static final String setariSheetName = "Setari";
+
+    private static final Logger logger = Logger.getLogger(GetStatsForAllSheets.class.getName());
 
     public record Statistic(int index, String produs, String pnk, LocalDate lastUpdate, String sheetName) {
     }
@@ -41,8 +47,13 @@ public class GetStatsForAllSheets {
                                     .filter(Objects::nonNull)
                                     .collect(Collectors.toMap(row -> row[0]
                                             , row -> row[1]));
-
-                            return spreadSheet.getRowsInColumnRange(statisticSheetName, "A", "E").stream()
+                            logger.log(INFO, () -> {
+                                return pnkToSheetName.entrySet().stream()
+                                        .map(e -> "%s -> %s".formatted(e.getKey(), e.getValue()))
+                                        .sorted()
+                                        .collect(Collectors.joining("\n ", "%s setari PNK mapping:\n ".formatted(spreadSheet.getTitle()), "\n"));
+                            });
+                            List<Statistic> statistics = spreadSheet.getRowsInColumnRange(statisticSheetName, "A", "E").stream()
                                     .skip(6)
                                     .filter(row -> row.size() >= 5 && row.getFirst().matches("\\d+") && !row.get(2).isEmpty())
                                     .map(
@@ -56,7 +67,12 @@ public class GetStatsForAllSheets {
                                                         pnkToSheetName.get(pnk)
                                                 );
                                             }
-                                    );
+                                    ).toList();
+                            logger.log(INFO, () -> statistics.stream()
+                                    .map(st -> {
+                                        return "%s %s".formatted(st.pnk, st.produs);
+                                    }).collect(Collectors.joining("\n ", "%s statistics PNK found\n ".formatted(spreadSheet.getTitle()), "\n")));
+                            return statistics.stream();
                         }
                 )
                 .toList();

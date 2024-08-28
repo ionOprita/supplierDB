@@ -17,6 +17,7 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static java.util.Comparator.comparing;
+import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheet;
 
@@ -73,11 +74,18 @@ public class TransferFromEmagToSheets {
 
     private void loadOverview() {
         var overviewResult = new GetOverview(appName, overviewSpreadSheetName, overviewSheetName).getWorkSheets();
+        logger.log(INFO, () -> overviewResult.stream()
+                .map(sheetData -> "%s -> %s".formatted(sheetData.pnk(), sheetData.spreadSheetName()))
+                .sorted()
+                .collect(Collectors.joining("\n ", "PNK to Spreadsheet mapping:\n ", "\n")));
         pnkToSpreadSheet = overviewResult.stream()
                 .collect(Collectors.toMap(GetOverview.SheetData::pnk, product -> getSpreadSheet(appName, product.spreadSheetId())));
+        var nullPNK = pnkToSpreadSheet.entrySet().stream().filter(it -> it.getValue() == null).map(Map.Entry::getKey).toList();
+        if (!nullPNK.isEmpty()) {
+            logger.warning("Spreadsheet lookup issue for PNKs %s".formatted(nullPNK));
+        }
         requiredSpreadsheets = pnkToSpreadSheet.values().stream().distinct().toList();
         relevantProducts = pnkToSpreadSheet.keySet();
-
     }
 
     private void loadAllStatistics() {
