@@ -42,7 +42,7 @@ public class DriveAPI {
             var matchingFiles = new HashSet<String>();
             String pageToken = null;
             do {
-                FileList fileList = setupDriveService().files().list().setPageToken(pageToken).execute();
+                FileList fileList = setupDriveService().files().list().setQ("name='%s'".formatted(name)).setPageToken(pageToken).execute();
                 pageToken = fileList.getNextPageToken();
                 var files = fileList.getFiles();
                 files.stream()
