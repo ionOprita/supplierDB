@@ -13,6 +13,12 @@ public class EmagMirrorDB {
         db.prepareDB(EmagMirrorDB::version1);
     }
 
+    /**
+     * Create the tables for the first version of the database.
+     * Reset the database with DROP TABLE VoucherSplit, Product, Voucher, Attachment, Order, Customer;
+     * @param db
+     * @throws SQLException
+     */
     private static void version1(Connection db) throws SQLException {
         try (var s = db.prepareStatement("""
 CREATE TABLE LockerDetails(
@@ -60,34 +66,6 @@ CREATE TABLE Customer(
   shipping_phone VARCHAR(255),
   created TIMESTAMP,
   modified TIMESTAMP
-);
-                """)) {
-            s.execute();
-        }
-        try (var s = db.prepareStatement("""
-CREATE TABLE OrderResult(
-  id VARCHAR(255),
-  vendor_name VARCHAR(255),
-  status INTEGER,
-  is_complete INTEGER,
-  type INTEGER,
-  payment_mode VARCHAR(255),
-  payment_mode_id INTEGER,
-  delivery_payment_mode VARCHAR(255),
-  delivery_mode VARCHAR(255),
-  observation VARCHAR(255),
-  details_id INTEGER,
-  date TIMESTAMP,
-  payment_status INTEGER,
-  cashed_co DECIMAL(10, 2),
-  cashed_cod DECIMAL(10, 2),
-  shipping_tax DECIMAL(10, 2),
-  customer_id INTEGER,
-  is_storno BOOLEAN,
-  cancellation_reason INTEGER,
-  PRIMARY KEY (id),
-  FOREIGN KEY (details_id) REFERENCES LockerDetails(id),
-  FOREIGN KEY (customer_id) REFERENCES Customer(id)
 );
                 """)) {
             s.execute();
