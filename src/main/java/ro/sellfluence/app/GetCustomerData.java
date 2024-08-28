@@ -53,6 +53,7 @@ public class GetCustomerData {
     public static Map<String, List<SheetData>> getByProduct(LocalDateTime startTime, LocalDateTime endTime, String... emagAccounts) {
         Map<String, List<SheetData>> orderedProductsByPNK = new HashMap<>();
         for (var alias : emagAccounts) {
+            System.out.println("Now fetching for account: " + alias);
             var emagCredentials = UserPassword.findAlias(alias);
             if (emagCredentials == null) {
                 logger.log(WARNING, "Missing credentials for alias " + alias);
