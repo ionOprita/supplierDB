@@ -72,6 +72,7 @@ public class TransferFromEmagToSheets {
         });
     }
 
+    //TODO: Associate PNK to sheets, so that loadAllStatistics uses the PNK from the right sheet only.
     private void loadOverview() {
         var overviewResult = new GetOverview(appName, overviewSpreadSheetName, overviewSheetName).getWorkSheets();
         logger.log(INFO, () -> overviewResult.stream()
@@ -88,6 +89,7 @@ public class TransferFromEmagToSheets {
         relevantProducts = pnkToSpreadSheet.keySet();
     }
 
+    //TODO: When statistics are gathered from a sheet only the products assigned to this sheet by the overview should be taken.
     private void loadAllStatistics() {
         var statisticsFromAllSheets = GetStatsForAllSheets.getStatistics(requiredSpreadsheets).stream()
                 .filter(it -> relevantProducts.contains(it.pnk()))
