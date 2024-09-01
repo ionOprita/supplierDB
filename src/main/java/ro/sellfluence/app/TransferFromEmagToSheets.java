@@ -29,7 +29,6 @@ public class TransferFromEmagToSheets {
     private final String overviewSpreadSheetName;
     private final String overviewSheetName;
     private Map<String, SheetsAPI> pnkToSpreadSheet;
-    private List<SheetsAPI> requiredSpreadsheets;
     private Set<String> relevantProducts;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
@@ -72,7 +71,6 @@ public class TransferFromEmagToSheets {
         });
     }
 
-    //TODO: Associate PNK to sheets, so that loadAllStatistics uses the PNK from the right sheet only.
     private void loadOverview() {
         var overviewResult = new GetOverview(appName, overviewSpreadSheetName, overviewSheetName).getWorkSheets();
         logger.log(INFO, () -> overviewResult.stream()
@@ -85,13 +83,11 @@ public class TransferFromEmagToSheets {
         if (!nullPNK.isEmpty()) {
             logger.warning("Spreadsheet lookup issue for PNKs %s".formatted(nullPNK));
         }
-        requiredSpreadsheets = pnkToSpreadSheet.values().stream().distinct().toList();
         relevantProducts = pnkToSpreadSheet.keySet();
     }
 
-    //TODO: When statistics are gathered from a sheet only the products assigned to this sheet by the overview should be taken.
     private void loadAllStatistics() {
-        var statisticsFromAllSheets = GetStatsForAllSheets.getStatistics(requiredSpreadsheets).stream()
+        var statisticsFromAllSheets = GetStatsForAllSheets.getStatistics(pnkToSpreadSheet).stream()
                 .filter(it -> relevantProducts.contains(it.pnk()))
                 .toList();
         var smallestUpdateDate = statisticsFromAllSheets.stream()
@@ -126,7 +122,7 @@ public class TransferFromEmagToSheets {
     }
 
     /**
-     * Add new ordors for a product to its assigned sheet.
+     * Add new orders for a product to its assigned sheet.
      *
      * @param pnk       Product identification
      * @param rowsToAdd Additional rows.
