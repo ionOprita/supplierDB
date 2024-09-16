@@ -114,7 +114,7 @@ public class TransferFromEmagToSheets {
         var row = new ArrayList<>();
         row.add(data.orderId());
         row.add(data.quantity());
-        row.add(String.format(roLocale, "%.2f", data.price().doubleValue() * 1.19));
+        row.add(String.format(Locale.US, "%.2f", data.price().doubleValue() * 1.19));
         row.add(data.isCompany() ? "Yes" : "No");
         row.add(data.orderDate().format(dateFormat));
         row.add(productName);
