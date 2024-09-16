@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -33,6 +34,8 @@ public class TransferFromEmagToSheets {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private Map<String, GetStatsForAllSheets.Statistic> pnkToStatistic;
+
+    private static final Locale roLocale = Locale.of("ro", "RO");
 
     public TransferFromEmagToSheets(String appName, String spreadSheetName, String overviewSheetName) {
         this.appName = appName;
@@ -111,7 +114,7 @@ public class TransferFromEmagToSheets {
         var row = new ArrayList<>();
         row.add(data.orderId());
         row.add(data.quantity());
-        row.add("%.2f".formatted(data.price().doubleValue() * 1.19));
+        row.add(String.format(roLocale, "%.2f", data.price().doubleValue() * 1.19));
         row.add(data.isCompany() ? "Yes" : "No");
         row.add(data.orderDate().format(dateFormat));
         row.add(productName);
