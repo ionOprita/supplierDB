@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -17,6 +18,7 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static java.util.Comparator.comparing;
+import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheet;
 
@@ -28,11 +30,12 @@ public class TransferFromEmagToSheets {
     private final String overviewSpreadSheetName;
     private final String overviewSheetName;
     private Map<String, SheetsAPI> pnkToSpreadSheet;
-    private List<SheetsAPI> requiredSpreadsheets;
     private Set<String> relevantProducts;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private Map<String, GetStatsForAllSheets.Statistic> pnkToStatistic;
+
+    private static final Locale roLocale = Locale.of("ro", "RO");
 
     public TransferFromEmagToSheets(String appName, String spreadSheetName, String overviewSheetName) {
         this.appName = appName;
@@ -47,15 +50,20 @@ public class TransferFromEmagToSheets {
         emagEntries.forEach((pnk, orderEntries) -> {
             if (relevantProducts.contains(pnk)) {
                 final var statistic = pnkToStatistic.get(pnk);
-                final var productName = statistic.produs();
-                final var rowsToAdd = orderEntries.stream()
-                        .filter(emagEntry -> emagEntry.orderDate().isAfter(statistic.lastUpdate().plusDays(1).atStartOfDay()))
-                        // Sort by date and within the same date by order ID.
-                        .sorted(comparing(SheetData::orderDate).thenComparing(SheetData::orderId))
-                        .map(data -> mapEmagToRow(data, productName))
-                        .toList();
-                if (!rowsToAdd.isEmpty()) {
-                    addToSheet(pnk, rowsToAdd);
+                if (statistic != null) {
+                    final var productName = statistic.produs();
+                    final var rowsToAdd = orderEntries.stream()
+                            .filter(emagEntry -> emagEntry.orderDate().isAfter(statistic.lastUpdate().plusDays(1).atStartOfDay()))
+                            // Sort by date and within the same date by order ID.
+                            .sorted(comparing(SheetData::orderDate).thenComparing(SheetData::orderId))
+                            .map(data -> mapEmagToRow(data, productName))
+                            .toList();
+                    if (!rowsToAdd.isEmpty()) {
+                        addToSheet(pnk, rowsToAdd);
+                    }
+                } else {
+                    logger.log(WARNING, () -> "Product with PNK %s doesn't have an entry in statistici/lune or setari in the spreadsheet %s."
+                            .formatted(pnk, pnkToSpreadSheet.get(pnk).getTitle()));
                 }
             } else {
                 logger.log(
@@ -73,15 +81,21 @@ public class TransferFromEmagToSheets {
 
     private void loadOverview() {
         var overviewResult = new GetOverview(appName, overviewSpreadSheetName, overviewSheetName).getWorkSheets();
+        logger.log(INFO, () -> overviewResult.stream()
+                .map(sheetData -> "%s -> %s".formatted(sheetData.pnk(), sheetData.spreadSheetName()))
+                .sorted()
+                .collect(Collectors.joining("\n ", "PNK to Spreadsheet mapping:\n ", "\n")));
         pnkToSpreadSheet = overviewResult.stream()
                 .collect(Collectors.toMap(GetOverview.SheetData::pnk, product -> getSpreadSheet(appName, product.spreadSheetId())));
-        requiredSpreadsheets = pnkToSpreadSheet.values().stream().distinct().toList();
+        var nullPNK = pnkToSpreadSheet.entrySet().stream().filter(it -> it.getValue() == null).map(Map.Entry::getKey).toList();
+        if (!nullPNK.isEmpty()) {
+            logger.warning("Spreadsheet lookup issue for PNKs %s".formatted(nullPNK));
+        }
         relevantProducts = pnkToSpreadSheet.keySet();
-
     }
 
     private void loadAllStatistics() {
-        var statisticsFromAllSheets = GetStatsForAllSheets.getStatistics(requiredSpreadsheets).stream()
+        var statisticsFromAllSheets = GetStatsForAllSheets.getStatistics(pnkToSpreadSheet).stream()
                 .filter(it -> relevantProducts.contains(it.pnk()))
                 .toList();
         var smallestUpdateDate = statisticsFromAllSheets.stream()
@@ -100,7 +114,7 @@ public class TransferFromEmagToSheets {
         var row = new ArrayList<>();
         row.add(data.orderId());
         row.add(data.quantity());
-        row.add("%.2f".formatted(data.price().doubleValue() * 1.19));
+        row.add(String.format(Locale.US, "%.2f", data.price().doubleValue() * 1.19));
         row.add(data.isCompany() ? "Yes" : "No");
         row.add(data.orderDate().format(dateFormat));
         row.add(productName);
@@ -116,7 +130,7 @@ public class TransferFromEmagToSheets {
     }
 
     /**
-     * Add new ordors for a product to its assigned sheet.
+     * Add new orders for a product to its assigned sheet.
      *
      * @param pnk       Product identification
      * @param rowsToAdd Additional rows.

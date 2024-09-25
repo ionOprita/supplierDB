@@ -120,7 +120,7 @@ public class EmagApi {
             // Filter items are on the first level together with the pagination items.
             // The data item which is also on the first level is used only for submitting data.
             var jsonAsString = gson.toJson(jsonInput);
-            logger.log(INFO, "JSON = " + jsonAsString);
+            logger.log(FINE, "JSON = " + jsonAsString);
             var httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Authorization", "Basic " + credentials)
@@ -128,10 +128,10 @@ public class EmagApi {
                     .POST(HttpRequest.BodyPublishers.ofString(jsonAsString)).build();
             var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
             int statusCode = httpResponse.statusCode();
-            logger.log(INFO, "Status code = " + statusCode);
+            logger.log(FINE, "Status code = " + statusCode);
             if (statusCode == HTTP_OK) {
                 String receivedJSON = httpResponse.body();
-                logger.log(INFO, () -> "Full response body: %s".formatted(receivedJSON));
+                logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
                 try {
                     var responseItemClass = TypeToken.getParameterized(Response.class, responseClass);
                     Response<T> response = gson.fromJson(receivedJSON, responseItemClass.getType());
