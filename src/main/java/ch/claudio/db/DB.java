@@ -77,9 +77,6 @@ public class DB {
                     } else {
                         v = 0;
                     }
-
-                } catch (SQLException e) {
-                    v = 0;
                 }
                 return v;
             });
@@ -224,6 +221,7 @@ public class DB {
                     }
                 } while (txResult == null);
                 doResult = txResult;
+                db.commit();
             } catch (SQLTransientConnectionException e) {
                 delay = waitOrThrow(delay, e);
                 doResult = null;
