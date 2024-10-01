@@ -15,8 +15,10 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.logging.Logger;
 
+import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 
 public class EmagMirrorDB {
@@ -42,27 +44,29 @@ public class EmagMirrorDB {
     }
 
     public void addOrder(OrderResult order) throws SQLException {
+        var vendorName = order.vendor_name;
+        var vendorId = getOrAddVendor(vendorName);
         database.writeTX(db -> {
-                    insertCustomer(db, order.customer);
-                    indertLockerDetails(db, order.details);
-                    insertOrder(db, order);
+                    if (order.customer != null) insertCustomer(db, order.customer);
+                    if (order.details != null && order.details.locker_id != null) indertLockerDetails(db, order.details);
+                    insertOrder(db, order, vendorId);
                     for (var product : order.products) {
-                        insertProduct(db, product, order.id);
+                        insertProduct(db, product, order.id, vendorId);
                         for (var voucherSplit : product.product_voucher_split) {
-                            insertVoucherSplit(db, voucherSplit, order.id, product.id);
+                            insertVoucherSplit(db, voucherSplit, order.id, vendorId, product.id);
                         }
                     }
                     for (var voucherSplit : order.shipping_tax_voucher_split) {
-                        insertVoucherSplit(db, voucherSplit, order.id);
+                        insertVoucherSplit(db, voucherSplit, order.id, vendorId);
                     }
                     for (var attachment : order.attachments) {
                         if (!order.id.equals(attachment.order_id)) {
                             logger.log(WARNING, "Attachment order_id mismatch, order has " + order.id + " but attachment has " + attachment.order_id);
                         }
-                        insertAttachment(db, attachment, order.id);
+                        insertAttachment(db, attachment, order.id, vendorId);
                     }
                     for (Voucher voucher : order.vouchers) {
-                        insertVoucher(db, voucher, order.id);
+                        insertVoucher(db, voucher, order.id, vendorId);
 
                     }
                     return 0;
@@ -70,78 +74,110 @@ public class EmagMirrorDB {
         );
     }
 
-    private static int insertAttachment(Connection db, Attachment attachment, String orderId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO Attachment (order_id, name, url, type, force_download) VALUES (?, ?, ?, ?, ?) ON CONFLICT(order_id, url) DO NOTHING")) {
+    private UUID getOrAddVendor(String name) throws SQLException {
+        return database.writeTX(db -> {
+                    UUID id = null;
+                    try (var s = db.prepareStatement("SELECT id FROM Vendor WHERE vendor_name=?")) {
+                        s.setString(1, name);
+                        try (var rs = s.executeQuery()) {
+                            if (rs.next()) {
+                                id = rs.getObject(1, UUID.class);
+                            }
+                            if (rs.next()) {
+                                logger.log(SEVERE, "More than one vendor with the same name ???");
+                            }
+                        }
+                    }
+                    if (id == null) {
+                        id = UUID.randomUUID();
+                        try (var s = db.prepareStatement("INSERT INTO Vendor (id, vendor_name) VALUES (?,?)")) {
+                            s.setObject(1, id);
+                            s.setString(2, name);
+                            s.executeUpdate();
+                        }
+                    }
+                    return id;
+                }
+        );
+    }
+
+    private static int insertAttachment(Connection db, Attachment attachment, String orderId, UUID vendorId) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO Attachment (order_id, vendor_id, name, url, type, force_download) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(order_id, url) DO NOTHING")) {
             s.setString(1, orderId);
-            s.setString(2, attachment.name);
-            s.setString(3, attachment.url);
-            s.setInt(4, attachment.type);
-            s.setInt(5, attachment.force_download);
+            s.setObject(2, vendorId);
+            s.setString(3, attachment.name);
+            s.setString(4, attachment.url);
+            s.setInt(5, attachment.type);
+            s.setInt(6, attachment.force_download);
             return s.executeUpdate();
         }
     }
 
-    private static int insertVoucher(Connection db, Voucher voucher, String orderId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO Voucher (voucher_id, order_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
+    private static int insertVoucher(Connection db, Voucher voucher, String orderId, UUID vendorId) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO Voucher (voucher_id, order_id, vendor_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
             s.setInt(1, voucher.voucher_id);
             s.setString(2, orderId);
-            s.setString(3, voucher.modified);
-            s.setString(4, voucher.created);
-            s.setInt(5, voucher.status);
-            s.setBigDecimal(6, voucher.sale_price_vat);
-            s.setBigDecimal(7, voucher.sale_price);
-            s.setString(8, voucher.voucher_name);
-            s.setBigDecimal(9, voucher.vat);
-            s.setString(10, voucher.issue_date);
+            s.setObject(3, vendorId);
+            s.setString(4, voucher.modified);
+            s.setString(5, voucher.created);
+            s.setInt(6, voucher.status);
+            s.setBigDecimal(7, voucher.sale_price_vat);
+            s.setBigDecimal(8, voucher.sale_price);
+            s.setString(9, voucher.voucher_name);
+            s.setBigDecimal(10, voucher.vat);
+            s.setString(11, voucher.issue_date);
             return s.executeUpdate();
         }
     }
 
-    private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, String orderId) throws SQLException {
-        try (var s = conn.prepareStatement("INSERT INTO VoucherSplit (voucher_id, order_id, value, vat_value) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
+    private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, String orderId, UUID vendorId) throws SQLException {
+        try (var s = conn.prepareStatement("INSERT INTO VoucherSplit (voucher_id, order_id, vendor_id, value, vat_value) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id);
             s.setString(2, orderId);
-            s.setBigDecimal(3, voucherSplit.value);
-            s.setBigDecimal(4, voucherSplit.vat_value);
-            return s.executeUpdate();
-        }
-    }
-
-    private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, String orderId, int productId) throws SQLException {
-        try (var s = conn.prepareStatement("INSERT INTO VoucherSplit (voucher_id, order_id, product_id, value, vat_value) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
-            s.setInt(1, voucherSplit.voucher_id);
-            s.setString(2, orderId);
-            s.setInt(3, productId);
+            s.setObject(3, vendorId);
             s.setBigDecimal(4, voucherSplit.value);
             s.setBigDecimal(5, voucherSplit.vat_value);
             return s.executeUpdate();
         }
     }
 
-    private static int insertProduct(Connection db, Product product, String orderId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO Product (id, order_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
+    private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, String orderId, UUID vendorId, int productId) throws SQLException {
+        try (var s = conn.prepareStatement("INSERT INTO VoucherSplit (voucher_id, order_id, vendor_id, product_id, value, vat_value) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+            s.setInt(1, voucherSplit.voucher_id);
+            s.setString(2, orderId);
+            s.setObject(3, vendorId);
+            s.setInt(4, productId);
+            s.setBigDecimal(5, voucherSplit.value);
+            s.setBigDecimal(6, voucherSplit.vat_value);
+            return s.executeUpdate();
+        }
+    }
+
+    private static int insertProduct(Connection db, Product product, String orderId, UUID vendorId) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO Product (id, order_id, vendor_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
             s.setInt(1, product.id);
             s.setString(2, orderId);
-            s.setInt(3, product.product_id);
-            s.setInt(4, product.mkt_id);
-            s.setString(5, product.name);
-            s.setInt(6, product.status);
-            s.setString(7, product.ext_part_number);
-            s.setString(8, product.part_number);
-            s.setString(9, product.part_number_key);
-            s.setString(10, product.currency);
-            s.setString(11, product.vat);
-            s.setInt(12, product.retained_amount);
-            s.setInt(13, product.quantity);
-            s.setInt(14, product.initial_qty);
-            s.setInt(15, product.storno_qty);
-            s.setInt(16, product.reversible_vat_charging);
-            s.setBigDecimal(17, product.sale_price);
-            s.setBigDecimal(18, product.original_price);
-            s.setTimestamp(19, Timestamp.valueOf(product.created));
-            s.setTimestamp(20, Timestamp.valueOf(product.modified));
-            s.setString(21, String.join("\n", product.details));
-            s.setString(22, String.join("\n", product.recycle_warranties));
+            s.setObject(3, vendorId);
+            s.setInt(4, product.product_id);
+            s.setInt(5, product.mkt_id);
+            s.setString(6, product.name);
+            s.setInt(7, product.status);
+            s.setString(8, product.ext_part_number);
+            s.setString(9, product.part_number);
+            s.setString(10, product.part_number_key);
+            s.setString(11, product.currency);
+            s.setString(12, product.vat);
+            s.setInt(13, product.retained_amount);
+            s.setInt(14, product.quantity);
+            s.setInt(15, product.initial_qty);
+            s.setInt(16, product.storno_qty);
+            s.setInt(17, product.reversible_vat_charging);
+            s.setBigDecimal(18, product.sale_price);
+            s.setBigDecimal(19, product.original_price);
+            s.setTimestamp(20, Timestamp.valueOf(product.created));
+            s.setTimestamp(21, Timestamp.valueOf(product.modified));
+            s.setString(22, String.join("\n", product.details));
+            s.setString(23, String.join("\n", product.recycle_warranties));
             return s.executeUpdate();
         }
     }
@@ -195,9 +231,9 @@ public class EmagMirrorDB {
         }
     }
 
-    private static int insertOrder(Connection db, OrderResult or) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO EmagOrder (vendor_name, id, status, is_complete, type, payment_mode, payment_mode_id, delivery_payment_mode, delivery_mode, observation, details_id, date, payment_status, cashed_co, cashed_cod, shipping_tax, customer_id, is_storno, cancellation_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING")) {
-            s.setString(1, or.vendor_name);
+    private static int insertOrder(Connection db, OrderResult or, UUID vendorId) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO EmagOrder (vendor_id, id, status, is_complete, type, payment_mode, payment_mode_id, delivery_payment_mode, delivery_mode, observation, details_id, date, payment_status, cashed_co, cashed_cod, shipping_tax, customer_id, is_storno, cancellation_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id, vendor_id) DO NOTHING")) {
+            s.setObject(1, vendorId);
             s.setString(2, or.id);
             s.setInt(3, or.status);
             s.setInt(4, or.is_complete);
@@ -213,7 +249,7 @@ public class EmagMirrorDB {
             s.setBigDecimal(14, or.cashed_co);
             s.setBigDecimal(15, or.cashed_cod);
             s.setBigDecimal(16, or.shipping_tax);
-            s.setInt(17, or.customer.id);
+            if (or.customer != null) s.setInt(17, or.customer.id);
             s.setBoolean(18, or.is_storno);
             s.setObject(19, or.cancellation_reason);
             return s.executeUpdate();
