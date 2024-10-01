@@ -26,7 +26,7 @@ public class EmagDBApp {
         activateEmagJSONLog();
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagOprita");
         // ("sellfluence", "sellfusion", "zoopieconcept", "zoopieinvest", "zoopiesolutions", "judios", "koppel", "koppelfbe");
-        var accounts = List.of("sellfusion", "koppelfbe");
+        var accounts = List.of("sellfluence", "sellfusion", "zoopieconcept", "zoopieinvest", "zoopiesolutions", "judios", "koppel", "koppelfbe");
         for (String account : accounts) {
             var orders = readFromEmag(account, LocalDateTime.now().minusDays(1), LocalDateTime.now().minusDays(0));
             if (orders != null) {
