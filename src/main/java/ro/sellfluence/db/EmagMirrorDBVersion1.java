@@ -10,22 +10,22 @@ class EmagMirrorDBVersion1 {
      * Create the tables for the first version of the database.
      * Reset the database with DROP TABLE VoucherSplit, Product, Voucher, Attachment, Order, Customer;
      *
-     * @param db
-     * @throws SQLException
+     * @param db database connection to use.
+     * @throws SQLException all errors are passed back to caller.
      */
     static void version1(Connection db) throws SQLException {
         try (var s = db.prepareStatement("""
                 CREATE TABLE LockerDetails(
-                  id INTEGER PRIMARY KEY,
                   locker_id VARCHAR(255),
-                  locker_name VARCHAR(255)
+                  locker_name VARCHAR(255),
+                  PRIMARY KEY (locker_id)
                 );
                 """)) {
             s.execute();
         }
         try (var s = db.prepareStatement("""
                 CREATE TABLE Customer(
-                  id INTEGER PRIMARY KEY,
+                  id INTEGER,
                   mkt_id INTEGER,
                   name VARCHAR(255),
                   email VARCHAR(255),
@@ -59,7 +59,8 @@ class EmagMirrorDBVersion1 {
                   shipping_contact VARCHAR(255),
                   shipping_phone VARCHAR(255),
                   created TIMESTAMP,
-                  modified TIMESTAMP
+                  modified TIMESTAMP,
+                  PRIMARY KEY (id)
                 );
                 """)) {
             s.execute();
@@ -76,7 +77,7 @@ class EmagMirrorDBVersion1 {
                   delivery_payment_mode VARCHAR(255),
                   delivery_mode VARCHAR(255),
                   observation VARCHAR(255),
-                  details_id INTEGER,
+                  details_id  VARCHAR(255),
                   date TIMESTAMP,
                   payment_status INTEGER,
                   cashed_co DECIMAL(10, 2),
@@ -86,7 +87,7 @@ class EmagMirrorDBVersion1 {
                   is_storno BOOLEAN,
                   cancellation_reason INTEGER,
                   PRIMARY KEY (id),
-                  FOREIGN KEY (details_id) REFERENCES LockerDetails(id),
+                  FOREIGN KEY (details_id) REFERENCES LockerDetails(locker_id),
                   FOREIGN KEY (customer_id) REFERENCES Customer(id)
                 );
                 """)) {
@@ -94,11 +95,12 @@ class EmagMirrorDBVersion1 {
         }
         try (var s = db.prepareStatement("""
                 CREATE TABLE Attachment(
-                    order_id VARCHAR(255) NULL,
+                    order_id VARCHAR(255),
                     name VARCHAR(255) NOT NULL,
-                    url VARCHAR(255) NOT NULL,
+                    url VARCHAR(1024) NOT NULL,
                     type INT,
                     force_download INT,
+                    PRIMARY KEY (order_id, url),
                     FOREIGN KEY (order_id) REFERENCES EmagOrder(id)
                 );
                 """)) {
@@ -116,6 +118,7 @@ class EmagMirrorDBVersion1 {
                     voucher_name VARCHAR(255),
                     vat DECIMAL(19, 4),
                     issue_date VARCHAR(255),
+                    PRIMARY KEY (voucher_id),
                     FOREIGN KEY (order_id) REFERENCES EmagOrder(id)
                 );
                 """)) {
@@ -157,9 +160,10 @@ class EmagMirrorDBVersion1 {
                 CREATE TABLE VoucherSplit(
                     voucher_id INTEGER,
                     order_id VARCHAR(255),
-                    product_id INTEGER NOT NULL,
+                    product_id INTEGER,
                     value DECIMAL(19, 4),
                     vat_value DECIMAL(19, 4),
+                    PRIMARY KEY (voucher_id),
                     FOREIGN KEY (order_id) REFERENCES EmagOrder(id),
                     FOREIGN KEY (product_id) REFERENCES Product(id)
                 );
