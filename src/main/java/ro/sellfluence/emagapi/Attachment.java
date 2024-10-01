@@ -1,7 +1,7 @@
 package ro.sellfluence.emagapi;
 
 public class Attachment {
-    public int order_id;
+    public String order_id;
     public String name;
     public String url;
     public Integer type;
