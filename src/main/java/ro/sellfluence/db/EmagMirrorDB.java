@@ -131,7 +131,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, String orderId, UUID vendorId) throws SQLException {
-        try (var s = conn.prepareStatement("INSERT INTO VoucherSplit (voucher_id, order_id, vendor_id, value, vat_value) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
+        try (var s = conn.prepareStatement("INSERT INTO VoucherSplit (voucher_id, order_id, vendor_id, value, vat_value) VALUES (?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id);
             s.setString(2, orderId);
             s.setObject(3, vendorId);
