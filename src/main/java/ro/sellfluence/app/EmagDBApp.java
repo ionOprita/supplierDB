@@ -23,14 +23,7 @@ public class EmagDBApp {
     private static final Logger logger = Logger.getLogger(EmagDBApp.class.getName());
 
     public static void main(String[] args) throws Exception {
-//        var emagLogger = Logger.getLogger(EmagApi.class.getName());
-//        emagLogger.setLevel(FINE);
-//        for (Handler handler : emagLogger.getHandlers()) {
-//            handler.setLevel(FINE);
-//        }
-//        for (Handler handler : emagLogger.getParent().getHandlers()) {
-//            handler.setLevel(FINE);
-//        }
+        activateEmagJSONLog();
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagOprita");
         // ("sellfluence", "sellfusion", "zoopieconcept", "zoopieinvest", "zoopiesolutions", "judios", "koppel", "koppelfbe");
         var accounts = List.of("sellfusion", "koppelfbe");
@@ -50,6 +43,16 @@ public class EmagDBApp {
         }
     }
 
+    private static void activateEmagJSONLog() {
+        var emagLogger = Logger.getLogger(EmagApi.class.getName());
+        emagLogger.setLevel(FINE);
+        for (Handler handler : emagLogger.getHandlers()) {
+            handler.setLevel(FINE);
+        }
+        for (Handler handler : emagLogger.getParent().getHandlers()) {
+            handler.setLevel(FINE);
+        }
+    }
 
     private static List<OrderResult> readFromEmag(String alias, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
         var emagCredentials = UserPassword.findAlias(alias);
