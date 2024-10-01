@@ -90,6 +90,12 @@
             <version>1.20.0</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.schemaspy</groupId>
+            <artifactId>schemaspy</artifactId>
+            <version>6.2.4</version>
+        </dependency>
+
     </dependencies>
 
     <build>
