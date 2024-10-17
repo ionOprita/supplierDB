@@ -95,6 +95,10 @@ class EmagMirrorDBVersion1 {
                   customer_id INTEGER,
                   is_storno BOOLEAN,
                   cancellation_reason INTEGER,
+                  refunded_amount DECIMAL(10, 2),
+                  refund_status VARCHAR(255),
+                  maximum_date_for_shipment TIMESTAMP,
+                  finalization_date TIMESTAMP,
                   PRIMARY KEY (id, vendor_id),
                   FOREIGN KEY (details_id) REFERENCES LockerDetails(locker_id),
                   FOREIGN KEY (customer_id) REFERENCES Customer(id)
@@ -179,6 +183,38 @@ class EmagMirrorDBVersion1 {
                     PRIMARY KEY (voucher_id),
                     FOREIGN KEY (order_id, vendor_id) REFERENCES EmagOrder(id, vendor_id),
                     FOREIGN KEY (product_id) REFERENCES Product(id)
+                );
+                """)) {
+            s.execute();
+        }
+        try (var s = db.prepareStatement("""
+                CREATE TABLE rma_results (
+                   emag_id INT PRIMARY KEY,
+                   order_id INT,
+                   type INT,
+                   date TIMESTAMP,
+                   request_status INT,
+                   return_type INT,
+                   return_reason INT,
+                   observations TEXT
+                );
+                """)) {
+            s.execute();
+        }
+        try (var s = db.prepareStatement("""
+                CREATE TABLE returned_products (
+                    id INT PRIMARY KEY,
+                    rma_result_id INT,
+                    product_emag_id INT,
+                    product_id INT,
+                    quantity INT,
+                    product_name VARCHAR(255),
+                    return_reason INT,
+                    observations TEXT,
+                    diagnostic INT,
+                    reject_reason INT,
+                    refund_value VARCHAR(255),
+                    FOREIGN KEY (rma_result_id) REFERENCES rma_results(id)
                 );
                 """)) {
             s.execute();

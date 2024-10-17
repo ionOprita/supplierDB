@@ -6,6 +6,8 @@ import ro.sellfluence.emagapi.Customer;
 import ro.sellfluence.emagapi.LockerDetails;
 import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.Product;
+import ro.sellfluence.emagapi.RMAResult;
+import ro.sellfluence.emagapi.ReturnedProduct;
 import ro.sellfluence.emagapi.Voucher;
 import ro.sellfluence.emagapi.VoucherSplit;
 
@@ -252,6 +254,37 @@ public class EmagMirrorDB {
             if (or.customer != null) s.setInt(17, or.customer.id);
             s.setBoolean(18, or.is_storno);
             s.setObject(19, or.cancellation_reason);
+            return s.executeUpdate();
+        }
+    }
+
+    private static int insertReturnedProduct(Connection db, ReturnedProduct returnedProduct, int rmaId) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO returned_products (id, rma_result_id, product_emag_id, product_id, quantity, product_name, return_reason, observations, diagnostic, reject_reason, refund_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
+            s.setInt(1, returnedProduct.id());
+            s.setInt(2, rmaId);
+            s.setInt(3, returnedProduct.product_emag_id());
+            s.setInt(4, returnedProduct.product_id());
+            s.setInt(5, returnedProduct.quantity());
+            s.setString(6, returnedProduct.product_name());
+            s.setInt(7, returnedProduct.return_reason());
+            s.setString(8, returnedProduct.observations());
+            s.setInt(9, returnedProduct.diagnostic());
+            s.setInt(10, returnedProduct.reject_reason());
+            s.setString(11, returnedProduct.refund_value());
+            return s.executeUpdate();
+        }
+    }
+
+    private static int insertRMAResult(Connection db, RMAResult rmaResult) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO rma_results (emag_id, order_id, type, date, request_status, return_type, return_reason, observations) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
+            s.setInt(1, rmaResult.emag_id());
+            s.setInt(2, rmaResult.order_id());
+            s.setInt(3, rmaResult.type());
+            s.setTimestamp(4, Timestamp.valueOf(rmaResult.date()));
+            s.setInt(5, rmaResult.request_status());
+            s.setInt(6, rmaResult.return_type());
+            s.setInt(7, rmaResult.return_reason());
+            s.setString(8, rmaResult.observations());
             return s.executeUpdate();
         }
     }
