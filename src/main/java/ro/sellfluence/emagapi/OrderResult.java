@@ -30,6 +30,11 @@ public class OrderResult {
     public Voucher[] vouchers;
     public boolean is_storno;
     public Integer cancellation_reason;
+    public BigDecimal refunded_amount;
+    public String refund_status;
+    public LocalDateTime maximum_date_for_shipment;
+    public LocalDateTime finalization_date;
+
 
     /**
      * Return the delivery mode as either 'curier' or 'easybox'
@@ -57,26 +62,33 @@ public class OrderResult {
     @Override
     public String toString() {
         return "OrderResult{" +
-                "id='" + id + '\'' +
-                ", status=" + status +
-                ", is_complete=" + is_complete +
-                ", type=" + type +
-                ", payment_mode_id=" + payment_mode_id +
-                ", delivery_payment_mode='" + delivery_payment_mode + '\'' +
-                ", delivery_mode='" + delivery_mode + '\'' +
-                ", details=" + details +
-                ", date='" + date + '\'' +
-                ", payment_status=" + payment_status +
-                ", cashed_co=" + cashed_co +
-                ", cashed_cod=" + cashed_cod +
-                ", shipping_tax=" + shipping_tax +
-                ", shipping_tax_voucher_split=" + Arrays.toString(shipping_tax_voucher_split) +
-                ", customer=" + customer +
-                ", products=" + Arrays.toString(products) +
-                ", attachments=" + Arrays.toString(attachments) +
-                ", vouchers=" + Arrays.toString(vouchers) +
-                ", is_storno=" + is_storno +
-                ", cancellation_reason=" + cancellation_reason +
-                '}';
+               "vendor_name='" + vendor_name + '\'' +
+               ", id='" + id + '\'' +
+               ", status=" + status +
+               ", is_complete=" + is_complete +
+               ", type=" + type +
+               ", payment_mode='" + payment_mode + '\'' +
+               ", payment_mode_id=" + payment_mode_id +
+               ", delivery_payment_mode='" + delivery_payment_mode + '\'' +
+               ", delivery_mode='" + delivery_mode + '\'' +
+               ", observation='" + observation + '\'' +
+               ", details=" + details +
+               ", date=" + date +
+               ", payment_status=" + payment_status +
+               ", cashed_co=" + cashed_co +
+               ", cashed_cod=" + cashed_cod +
+               ", shipping_tax=" + shipping_tax +
+               ", shipping_tax_voucher_split=" + Arrays.toString(shipping_tax_voucher_split) +
+               ", customer=" + customer +
+               ", products=" + Arrays.toString(products) +
+               ", attachments=" + Arrays.toString(attachments) +
+               ", vouchers=" + Arrays.toString(vouchers) +
+               ", is_storno=" + is_storno +
+               ", cancellation_reason=" + cancellation_reason +
+               ", refunded_amount=" + refunded_amount +
+               ", refund_status='" + refund_status + '\'' +
+               ", maximum_date_for_shipment=" + maximum_date_for_shipment +
+               ", finalization_date=" + finalization_date +
+               '}';
     }
 }
