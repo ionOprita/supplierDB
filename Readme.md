@@ -34,7 +34,7 @@ Make sure each field is separated by a single TAB character.
 To quickly drop all tables for testing, execute this:
 
 ```
-psql -d emag -c "SELECT 'DROP TABLE IF EXISTS ' || tablename || ' CASCADE;' FROM pg_tables WHERE schemaname = 'public';" | psql -d emag
+psql -t -d emag -c "SELECT 'DROP TABLE IF EXISTS ' || tablename || ' CASCADE;' FROM pg_tables WHERE schemaname = 'public';" | psql -d emag
 ```
 
 Stuff related to scraping app
