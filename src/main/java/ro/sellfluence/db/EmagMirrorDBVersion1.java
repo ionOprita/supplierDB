@@ -15,16 +15,17 @@ class EmagMirrorDBVersion1 {
      */
     static void version1(Connection db) throws SQLException {
         try (var s = db.prepareStatement("""
-                CREATE TABLE Vendor(
+                CREATE TABLE vendor(
                   id UUID,
                   vendor_name VARCHAR(255) UNIQUE NOT NULL,
+                  isFBE BOOLEAN,
                   PRIMARY KEY (id)
                 );
                 """)) {
             s.execute();
         }
         try (var s = db.prepareStatement("""
-                CREATE TABLE LockerDetails(
+                CREATE TABLE locker_details(
                   locker_id VARCHAR(255),
                   locker_name VARCHAR(255),
                   PRIMARY KEY (locker_id)
@@ -33,7 +34,7 @@ class EmagMirrorDBVersion1 {
             s.execute();
         }
         try (var s = db.prepareStatement("""
-                CREATE TABLE Customer(
+                CREATE TABLE customer(
                   id INTEGER,
                   mkt_id INTEGER,
                   name VARCHAR(255),
@@ -75,7 +76,7 @@ class EmagMirrorDBVersion1 {
             s.execute();
         }
         try (var s = db.prepareStatement("""
-                CREATE TABLE EmagOrder(
+                CREATE TABLE emag_order(
                   id VARCHAR(255),
                   vendor_id UUID,
                   status INTEGER,
@@ -100,14 +101,14 @@ class EmagMirrorDBVersion1 {
                   maximum_date_for_shipment TIMESTAMP,
                   finalization_date TIMESTAMP,
                   PRIMARY KEY (id, vendor_id),
-                  FOREIGN KEY (details_id) REFERENCES LockerDetails(locker_id),
-                  FOREIGN KEY (customer_id) REFERENCES Customer(id)
+                  FOREIGN KEY (details_id) REFERENCES locker_details(locker_id),
+                  FOREIGN KEY (customer_id) REFERENCES customer(id)
                 );
                 """)) {
             s.execute();
         }
         try (var s = db.prepareStatement("""
-                CREATE TABLE Attachment(
+                CREATE TABLE attachment(
                     order_id VARCHAR(255),
                     vendor_id UUID,
                     name VARCHAR(255) NOT NULL,
@@ -115,13 +116,13 @@ class EmagMirrorDBVersion1 {
                     type INT,
                     force_download INT,
                     PRIMARY KEY (order_id, url),
-                    FOREIGN KEY (order_id, vendor_id) REFERENCES EmagOrder(id, vendor_id)
+                    FOREIGN KEY (order_id, vendor_id) REFERENCES emag_order(id, vendor_id)
                 );
                 """)) {
             s.execute();
         }
         try (var s = db.prepareStatement("""
-                CREATE TABLE Voucher(
+                CREATE TABLE voucher(
                     voucher_id INT,
                     order_id VARCHAR(255),
                     vendor_id UUID,
@@ -134,13 +135,13 @@ class EmagMirrorDBVersion1 {
                     vat DECIMAL(19, 4),
                     issue_date VARCHAR(255),
                     PRIMARY KEY (voucher_id),
-                    FOREIGN KEY (order_id, vendor_id) REFERENCES EmagOrder(id, vendor_id)
+                    FOREIGN KEY (order_id, vendor_id) REFERENCES emag_order(id, vendor_id)
                 );
                 """)) {
             s.execute();
         }
         try (var s = db.prepareStatement("""
-                CREATE TABLE Product(
+                CREATE TABLE product(
                     id INTEGER,
                     order_id VARCHAR(255),
                     vendor_id UUID,
@@ -165,7 +166,7 @@ class EmagMirrorDBVersion1 {
                     details TEXT,
                     recycle_warranties TEXT,
                     PRIMARY KEY (id),
-                    FOREIGN KEY (order_id, vendor_id) REFERENCES EmagOrder(id, vendor_id)
+                    FOREIGN KEY (order_id, vendor_id) REFERENCES emag_order(id, vendor_id)
                 );
                 """)) {
             s.execute();
@@ -173,7 +174,7 @@ class EmagMirrorDBVersion1 {
         // Either the order_id or the product_id will be null.
         // If this doesn't work, then make two tables, one for order voucher splits and one for product voucher splits.
         try (var s = db.prepareStatement("""
-                CREATE TABLE VoucherSplit(
+                CREATE TABLE voucher_split(
                     voucher_id INTEGER,
                     order_id VARCHAR(255),
                     vendor_id UUID,
@@ -181,8 +182,8 @@ class EmagMirrorDBVersion1 {
                     value DECIMAL(19, 4),
                     vat_value DECIMAL(19, 4),
                     PRIMARY KEY (voucher_id),
-                    FOREIGN KEY (order_id, vendor_id) REFERENCES EmagOrder(id, vendor_id),
-                    FOREIGN KEY (product_id) REFERENCES Product(id)
+                    FOREIGN KEY (order_id, vendor_id) REFERENCES emag_order(id, vendor_id),
+                    FOREIGN KEY (product_id) REFERENCES product(id)
                 );
                 """)) {
             s.execute();
@@ -214,7 +215,7 @@ class EmagMirrorDBVersion1 {
                     diagnostic INT,
                     reject_reason INT,
                     refund_value VARCHAR(255),
-                    FOREIGN KEY (rma_result_id) REFERENCES rma_results(id)
+                    FOREIGN KEY (rma_result_id) REFERENCES rma_results(emag_id)
                 );
                 """)) {
             s.execute();
