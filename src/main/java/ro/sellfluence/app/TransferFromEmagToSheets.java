@@ -35,8 +35,6 @@ public class TransferFromEmagToSheets {
     private LocalDateTime endTime;
     private Map<String, GetStatsForAllSheets.Statistic> pnkToStatistic;
 
-    private static final Locale roLocale = Locale.of("ro", "RO");
-
     public TransferFromEmagToSheets(String appName, String spreadSheetName, String overviewSheetName) {
         this.appName = appName;
         this.overviewSpreadSheetName = spreadSheetName;
@@ -45,6 +43,9 @@ public class TransferFromEmagToSheets {
 
     public void transferFromEmagToSheet(String... emagAccounts) {
         loadOverview();
+        if (relevantProducts.isEmpty()) {
+            throw new RuntimeException("No valid products found for accounts %s.".formatted(emagAccounts));
+        }
         loadAllStatistics();
         for (String emagAccount : emagAccounts) {
             final var emagEntries = GetCustomerData.getByProduct(startTime, endTime, emagAccount);
