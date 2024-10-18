@@ -12,10 +12,15 @@ import ro.sellfluence.emagapi.Voucher;
 import ro.sellfluence.emagapi.VoucherSplit;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -76,10 +81,97 @@ public class EmagMirrorDB {
         );
     }
 
+    public List<List<Object>> readForSheet() throws SQLException {
+        return database.readTX(db ->
+                {
+                    ArrayList<List<Object>> rows = new ArrayList<>();
+                    try (var s = db.prepareStatement(
+                            """
+                                    SELECT
+                                      o.date,
+                                      o.id,
+                                      o.status,
+                                      p.part_number_key,
+                                      p.quantity,
+                                      p.sale_price,
+                                      o.delivery_mode,
+                                      c.name,
+                                      c.shipping_phone,
+                                      c.billing_name,
+                                      c.billing_phone,
+                                      c.code,
+                                      o.observation,
+                                      v.vendor_name,
+                                      v.isFBE
+                                    FROM emag_order as o
+                                    LEFT JOIN customer as c
+                                    ON o.customer_id = c.id
+                                    LEFT JOIN vendor as v
+                                    ON o.vendor_id = v.id
+                                    LEFT JOIN product as p 
+                                    ON p.order_id = o.id
+                                    WHERE o.status = 4 OR o.status = 5
+                                    """
+                    )) {
+                        try (var rs = s.executeQuery()) {
+                            while (rs.next()) {
+// 2024-10-17 16:49:51
+                                var priceWithoutVAT = rs.getBigDecimal(6);
+                                var priceWithVAT = priceWithoutVAT.multiply(BigDecimal.valueOf(1.19)); // TODO: Proper handling of VAT required
+                                String customerName = rs.getString(8);
+                                var row = Arrays.stream(new Object[]{
+                                        DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(rs.getTimestamp(1).toLocalDateTime()), // creation date
+                                        rs.getString(2), // id
+                                        statusToString(rs.getInt(3)), // status
+                                        "",
+                                        "",
+                                        modelToString(rs.getString(4)), // Model description out of PNK
+                                        rs.getInt(5), // quantity
+                                        priceWithoutVAT,
+                                        priceWithVAT,
+                                        "",
+                                        "",
+                                        "",
+                                        rs.getString(7), // deliver mode
+                                        customerName, // customerName
+                                        customerName, // customer shipment name
+                                        rs.getString(9), // customer shipping phone
+                                        "",
+                                        rs.getString(10), // customer billing name
+                                        rs.getString(11), // customer billing phone
+                                        "",
+                                        rs.getString(12), // company code
+                                        rs.getString(13), // observation
+                                        "", // Other observations
+                                        rs.getString(14), // company name
+                                        booleanToFBE(rs.getBoolean(15)) // platform
+                                        // TODO: Columns 26 ff.
+                                }).toList();
+                                rows.add(row);
+                            }
+                        }
+                    }
+                    return rows;
+                }
+        );
+    }
+
+    private Boolean booleanToFBE(boolean isFBE) {
+        return isFBE;
+    }
+
+    private String modelToString(String pnk) {
+        return "PNK:" + pnk;
+    }
+
+    private String statusToString(int status) {
+        return "Status:" + status;
+    }
+
     private UUID getOrAddVendor(String name) throws SQLException {
         return database.writeTX(db -> {
                     UUID id = null;
-                    try (var s = db.prepareStatement("SELECT id FROM Vendor WHERE vendor_name=?")) {
+                    try (var s = db.prepareStatement("SELECT id FROM vendor WHERE vendor_name=?")) {
                         s.setString(1, name);
                         try (var rs = s.executeQuery()) {
                             if (rs.next()) {
@@ -92,7 +184,7 @@ public class EmagMirrorDB {
                     }
                     if (id == null) {
                         id = UUID.randomUUID();
-                        try (var s = db.prepareStatement("INSERT INTO Vendor (id, vendor_name) VALUES (?,?)")) {
+                        try (var s = db.prepareStatement("INSERT INTO vendor (id, vendor_name) VALUES (?,?)")) {
                             s.setObject(1, id);
                             s.setString(2, name);
                             s.executeUpdate();
@@ -104,7 +196,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertAttachment(Connection db, Attachment attachment, String orderId, UUID vendorId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO Attachment (order_id, vendor_id, name, url, type, force_download) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(order_id, url) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO attachment (order_id, vendor_id, name, url, type, force_download) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(order_id, url) DO NOTHING")) {
             s.setString(1, orderId);
             s.setObject(2, vendorId);
             s.setString(3, attachment.name);
@@ -116,7 +208,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertVoucher(Connection db, Voucher voucher, String orderId, UUID vendorId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO Voucher (voucher_id, order_id, vendor_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO voucher (voucher_id, order_id, vendor_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
             s.setInt(1, voucher.voucher_id);
             s.setString(2, orderId);
             s.setObject(3, vendorId);
@@ -133,7 +225,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, String orderId, UUID vendorId) throws SQLException {
-        try (var s = conn.prepareStatement("INSERT INTO VoucherSplit (voucher_id, order_id, vendor_id, value, vat_value) VALUES (?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, order_id, vendor_id, value, vat_value) VALUES (?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id);
             s.setString(2, orderId);
             s.setObject(3, vendorId);
@@ -144,7 +236,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, String orderId, UUID vendorId, int productId) throws SQLException {
-        try (var s = conn.prepareStatement("INSERT INTO VoucherSplit (voucher_id, order_id, vendor_id, product_id, value, vat_value) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, order_id, vendor_id, product_id, value, vat_value) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id);
             s.setString(2, orderId);
             s.setObject(3, vendorId);
@@ -156,7 +248,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertProduct(Connection db, Product product, String orderId, UUID vendorId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO Product (id, order_id, vendor_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO product (id, order_id, vendor_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
             s.setInt(1, product.id);
             s.setString(2, orderId);
             s.setObject(3, vendorId);
@@ -185,7 +277,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertCustomer(Connection db, Customer c) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO Customer (id, mkt_id, name, email, company, gender, code, registration_number, bank, iban, fax, legal_entity, is_vat_payer, phone_1, phone_2, phone_3, billing_name, billing_phone, billing_country, billing_suburb, billing_city, billing_locality_id, billing_street, billing_postal_code, liable_person, shipping_country, shipping_suburb, shipping_city, shipping_locality_id, shipping_street, shipping_postal_code, shipping_contact, shipping_phone, created, modified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO customer (id, mkt_id, name, email, company, gender, code, registration_number, bank, iban, fax, legal_entity, is_vat_payer, phone_1, phone_2, phone_3, billing_name, billing_phone, billing_country, billing_suburb, billing_city, billing_locality_id, billing_street, billing_postal_code, liable_person, shipping_country, shipping_suburb, shipping_city, shipping_locality_id, shipping_street, shipping_postal_code, shipping_contact, shipping_phone, created, modified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING")) {
             s.setInt(1, c.id);
             s.setInt(2, c.mkt_id);
             s.setString(3, c.name);
@@ -226,7 +318,7 @@ public class EmagMirrorDB {
     }
 
     private static int indertLockerDetails(Connection db, LockerDetails ld) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO LockerDetails (locker_id, locker_name) VALUES (?,?) ON CONFLICT(locker_id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO locker_details (locker_id, locker_name) VALUES (?,?) ON CONFLICT(locker_id) DO NOTHING")) {
             s.setString(1, ld.locker_id);
             s.setString(2, ld.locker_name);
             return s.executeUpdate();
@@ -234,7 +326,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertOrder(Connection db, OrderResult or, UUID vendorId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO EmagOrder (vendor_id, id, status, is_complete, type, payment_mode, payment_mode_id, delivery_payment_mode, delivery_mode, observation, details_id, date, payment_status, cashed_co, cashed_cod, shipping_tax, customer_id, is_storno, cancellation_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id, vendor_id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO emag_order (vendor_id, id, status, is_complete, type, payment_mode, payment_mode_id, delivery_payment_mode, delivery_mode, observation, details_id, date, payment_status, cashed_co, cashed_cod, shipping_tax, customer_id, is_storno, cancellation_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id, vendor_id) DO NOTHING")) {
             s.setObject(1, vendorId);
             s.setString(2, or.id);
             s.setInt(3, or.status);

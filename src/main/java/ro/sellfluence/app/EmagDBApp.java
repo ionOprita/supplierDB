@@ -23,7 +23,7 @@ public class EmagDBApp {
 
     private static final Logger logger = Logger.getLogger(EmagDBApp.class.getName());
     private static final List<String> emagAccounts = List.of(
-            "sellfluence",
+         //   "sellfluence",
             "sellfusion"
 //            "zoopieconcept",
 //            "zoopieinvest",
@@ -37,7 +37,8 @@ public class EmagDBApp {
         activateEmagJSONLog();
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
         var startOfToday = LocalDate.now().atStartOfDay();
-        for (int pastWeek=0; pastWeek<52; pastWeek++) {
+        int weeksToRead = 1;
+        for (int pastWeek = 0; pastWeek < weeksToRead; pastWeek++) {
             var endTime = startOfToday.minusWeeks(pastWeek);
             var startTime = endTime.minusWeeks(1);
             for (String account : emagAccounts) {
