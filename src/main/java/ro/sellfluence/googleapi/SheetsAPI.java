@@ -18,8 +18,10 @@ import com.google.api.services.sheets.v4.model.RowData;
 import com.google.api.services.sheets.v4.model.UpdateProtectedRangeRequest;
 import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -27,6 +29,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
@@ -164,6 +167,33 @@ public class SheetsAPI {
         } catch (IOException e) {
             throw new RuntimeException("Issue in updateRange(%s,%s)".formatted(range, values), e);
         }
+    }
+
+    public void updateRanges(List<List<? extends @NotNull List<? extends Serializable>>> rows, String... ranges) {
+        var groupOfTables = transformList(rows);
+        if (groupOfTables.size()!=ranges.length) {
+            throw new IllegalArgumentException(
+                    "The number of cell groups (%d) must match the number of ranges given (%d)".formatted(
+                            groupOfTables.size(), ranges.length
+                    )
+            );
+        }
+        for (int i=0; i<ranges.length; i++) {
+            updateRange(ranges[i], (List<List<Object>>) groupOfTables.get(i));
+        }
+    }
+
+    public static List<List<? extends @NotNull List<? extends Serializable>>> transformList(List<List<? extends @NotNull List<? extends Serializable>>> inputList) {
+        List<List<? extends @NotNull List<? extends Serializable>>> outputList = new ArrayList<>();
+        var firstRow = inputList.getFirst();
+        var groupCount = firstRow.size();
+        for (int groupNumber = 0; groupNumber < groupCount; groupNumber++) {
+            var groupToFilter = groupNumber;
+            outputList.add(inputList.stream()
+                    .map(rowGroups -> rowGroups.get(groupToFilter))
+                    .collect(Collectors.toList()));
+        }
+        return outputList;
     }
 
     public List<List<Object>> getMultipleColumns(String sheetName, String... columns) {

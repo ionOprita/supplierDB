@@ -12,13 +12,13 @@ import ro.sellfluence.emagapi.Voucher;
 import ro.sellfluence.emagapi.VoucherSplit;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -81,11 +81,18 @@ public class EmagMirrorDB {
         );
     }
 
-    public List<List<Object>> readForSheet() throws SQLException {
+    /**
+     * Read database information and prepare them for inclusion in the spreadsheet.
+     *
+     * @return list of rows containing a list of cell groups. Each cell group is a list of cells.
+     * @throws SQLException
+     */
+    public List<List<? extends @org.jetbrains.annotations.NotNull List<? extends Serializable>>> readForSheet() throws SQLException {
         return database.readTX(db ->
                 {
-                    ArrayList<List<Object>> rows = new ArrayList<>();
+                    List<List<? extends @org.jetbrains.annotations.NotNull List<? extends Serializable>>> rows = new ArrayList<>();
                     try (var s = db.prepareStatement(
+                            //language=sql
                             """
                                     SELECT
                                       o.date,
@@ -119,34 +126,39 @@ public class EmagMirrorDB {
                                 var priceWithoutVAT = rs.getBigDecimal(6);
                                 var priceWithVAT = priceWithoutVAT.multiply(BigDecimal.valueOf(1.19)); // TODO: Proper handling of VAT required
                                 String customerName = rs.getString(8);
-                                var row = Arrays.stream(new Object[]{
-                                        DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(rs.getTimestamp(1).toLocalDateTime()), // creation date
-                                        rs.getString(2), // id
-                                        statusToString(rs.getInt(3)), // status
-                                        "",
-                                        "",
-                                        modelToString(rs.getString(4)), // Model description out of PNK
-                                        rs.getInt(5), // quantity
-                                        priceWithoutVAT,
-                                        priceWithVAT,
-                                        "",
-                                        "",
-                                        "",
-                                        rs.getString(7), // deliver mode
-                                        customerName, // customerName
-                                        customerName, // customer shipment name
-                                        rs.getString(9), // customer shipping phone
-                                        "",
-                                        rs.getString(10), // customer billing name
-                                        rs.getString(11), // customer billing phone
-                                        "",
-                                        rs.getString(12), // company code
-                                        rs.getString(13), // observation
-                                        "", // Other observations
-                                        rs.getString(14), // company name
-                                        booleanToFBE(rs.getBoolean(15)) // platform
+                                var row = List.of(
+                                        List.of(
+                                                DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(rs.getTimestamp(1).toLocalDateTime()), // creation date
+                                                rs.getString(2), // id
+                                                statusToString(rs.getInt(3)) // status
+                                        ),
+                                        List.of(
+                                                modelToString(rs.getString(4)), // Model description out of PNK
+                                                rs.getInt(5), // quantity
+                                                priceWithoutVAT,
+                                                priceWithVAT
+                                        ),
+                                        List.of(
+                                                rs.getString(7), // deliver mode
+                                                customerName, // customerName
+                                                customerName, // customer shipment name
+                                                rs.getString(9) // customer shipping phone
+                                        ),
+                                        List.of(
+                                                rs.getString(10), // customer billing name
+                                                rs.getString(11) // customer billing phone
+                                        ),
+                                        List.of(
+                                                rs.getString(12), // company code
+                                                rs.getString(13) // observation
+                                        ),
+                                        List.of(
+                                                rs.getString(14), // company name
+                                                booleanToFBE(rs.getBoolean(15)) // platform
+                                        )
+                                )
                                         // TODO: Columns 26 ff.
-                                }).toList();
+                                        ;
                                 rows.add(row);
                             }
                         }
