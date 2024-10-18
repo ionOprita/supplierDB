@@ -17,7 +17,7 @@ public class GetOverview {
     private static final Logger logger = Logger.getLogger(GetOverview.class.getName());
 
     public GetOverview(String appName, String spreadSheetName, String sheetName) {
-        drive = new DriveAPI(appName);
+        drive = DriveAPI.getDriveAPI(appName);
         var spreadSheetId = drive.getFileId(spreadSheetName);
         spreadSheet = SheetsAPI.getSpreadSheet(appName, spreadSheetId);
         overviewSheetName = sheetName;

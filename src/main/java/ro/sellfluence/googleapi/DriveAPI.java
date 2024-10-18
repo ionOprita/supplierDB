@@ -19,6 +19,8 @@ import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
 public class DriveAPI {
     private static final JsonFactory jsonFactory = GsonFactory.getDefaultInstance();
+    private static final Map<String, DriveAPI> nameToAPI = new HashMap<>();
+
     private final String appName;
 
     private final Map<String, String> nameForId = new HashMap<>();
@@ -29,8 +31,17 @@ public class DriveAPI {
      * @param appName name of the application
      *                as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
      */
-    public DriveAPI(String appName) {
+    private DriveAPI(String appName) {
         this.appName = appName;
+    }
+
+    public static DriveAPI getDriveAPI(String appName) {
+        var api = nameToAPI.get(appName);
+        if (api==null) {
+            api = new DriveAPI(appName);
+            nameToAPI.put(appName, api);
+        }
+        return api;
     }
 
     /**
