@@ -18,14 +18,22 @@ public class CreateOrderSheet {
     private static final String sheetName = "Date";
 
     public static void main(String[] args) throws SQLException, IOException {
-        var drive = new DriveAPI(appName);
+        var drive = DriveAPI.getDriveAPI(appName);
         var spreadSheetId = drive.getFileId(spreadSheetName);
         var sheet = SheetsAPI.getSpreadSheet(appName, spreadSheetId);
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
         var rows = mirrorDB.readForSheet();
         List<String> firstColumn = sheet.getColumn(sheetName, "A");
         var lastRowNumber = firstColumn.size();
+        var nextRow= lastRowNumber + 1;
         System.out.println(System.getProperty("java.io.tmpdir"));
-        sheet.updateRange(("%s!A%d:Z%d").formatted(sheetName, lastRowNumber + 1, lastRowNumber + rows.size()), rows);
+        sheet.updateRanges(rows,
+                "%s!A%d".formatted(sheetName, nextRow),
+                "%s!F%d".formatted(sheetName, nextRow),
+                "%s!M%d".formatted(sheetName, nextRow),
+                "%s!R%d".formatted(sheetName, nextRow),
+                "%s!U%d".formatted(sheetName, nextRow),
+                "%s!X%d".formatted(sheetName, nextRow)
+        );
     }
 }
