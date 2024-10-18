@@ -4,12 +4,17 @@ import ro.sellfluence.googleapi.DriveAPI;
 import ro.sellfluence.googleapi.SheetsAPI;
 
 import java.util.List;
+import java.util.logging.Logger;
+
+import static java.util.logging.Level.WARNING;
 
 public class GetOverview {
 
     private final DriveAPI drive;
     private final SheetsAPI spreadSheet;
     private final String overviewSheetName;
+
+    private static final Logger logger = Logger.getLogger(GetOverview.class.getName());
 
     public GetOverview(String appName, String spreadSheetName, String sheetName) {
         drive = new DriveAPI(appName);
@@ -40,6 +45,9 @@ public class GetOverview {
                     var pnk = row.get(2).toString();
                     var name = row.get(3).toString();
                     var id = drive.getFileId(name);
+                    if (id==null) {
+                        logger.log(WARNING, "Spreadsheet %s for the product %s with PNK %s was not found, it will be ignored.".formatted(name, productName, pnk));
+                    }
                     return new SheetData(productName, pnk, name, id);
                 })
                 .filter(it -> it.spreadSheetId != null)
