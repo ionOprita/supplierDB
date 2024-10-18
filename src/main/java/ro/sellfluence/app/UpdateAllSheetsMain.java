@@ -17,7 +17,7 @@ public class UpdateAllSheetsMain {
                     "2024 - Date produse & angajati",
                     "Cons. Date Prod."
             )
-                    .transferFromEmagToSheet("emag", "emag2");
+                    .transferFromEmagToSheet("sellfluence", "sellfusion", "zoopieconcept", "zoopieinvest", "zoopiesolutions", "judios", "koppel", "koppelfbe");
         } catch (Exception e) {
             if (e instanceof TokenResponseException) {
                 System.out.println("Try to delete " + tokenStorePath);
