@@ -189,7 +189,7 @@ public class SheetsAPI {
                 return null;
             }
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Error when reading the columns %s from the sheet %s.".formatted(columns, sheetName), e);
         }
     }
 
