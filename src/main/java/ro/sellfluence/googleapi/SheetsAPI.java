@@ -41,6 +41,7 @@ public class SheetsAPI {
     public static final String INSERT_ROWS = "INSERT_ROWS";
     private final String appName;
     private final String spreadSheetId;
+    private final String spreadSheetName;
 
     private Sheets sheetService = null;
 
@@ -55,6 +56,7 @@ public class SheetsAPI {
     private SheetsAPI(String appName, String spreadSheetId) {
         this.appName = appName;
         this.spreadSheetId = spreadSheetId;
+        this.spreadSheetName = DriveAPI.getDriveAPI(appName).getNameForId(spreadSheetId);
     }
 
     private static final Map<String, SheetsAPI> spreadSheets = new HashMap<>();
@@ -189,7 +191,7 @@ public class SheetsAPI {
                 return null;
             }
         } catch (IOException e) {
-            throw new RuntimeException("Error when reading the columns %s from the sheet %s.".formatted(columns, sheetName), e);
+            throw new RuntimeException("Error when reading the columns %s from the sheet %s of spreadsheet %s (%s).".formatted(columns, sheetName, spreadSheetName, spreadSheetId), e);
         }
     }
 
