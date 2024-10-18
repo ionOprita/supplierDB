@@ -34,7 +34,7 @@ public class Credentials {
      * Path to the directory holding stored credentials.
      * Delete this directory to recreate fresh credentials.
      */
-    private static final Path tokenStorePath = Paths.get(System.getProperty("java.io.tmpdir"))
+    public static final Path tokenStorePath = Paths.get(System.getProperty("java.io.tmpdir"))
             .resolve("googleApiTokens");
 
     private static final JsonFactory jsonFactory = GsonFactory.getDefaultInstance();

@@ -46,37 +46,39 @@ public class TransferFromEmagToSheets {
     public void transferFromEmagToSheet(String... emagAccounts) {
         loadOverview();
         loadAllStatistics();
-        final var emagEntries = GetCustomerData.getByProduct(startTime, endTime, emagAccounts);
-        emagEntries.forEach((pnk, orderEntries) -> {
-            if (relevantProducts.contains(pnk)) {
-                final var statistic = pnkToStatistic.get(pnk);
-                if (statistic != null) {
-                    final var productName = statistic.produs();
-                    final var rowsToAdd = orderEntries.stream()
-                            .filter(emagEntry -> emagEntry.orderDate().isAfter(statistic.lastUpdate().plusDays(1).atStartOfDay()))
-                            // Sort by date and within the same date by order ID.
-                            .sorted(comparing(SheetData::orderDate).thenComparing(SheetData::orderId))
-                            .map(data -> mapEmagToRow(data, productName))
-                            .toList();
-                    if (!rowsToAdd.isEmpty()) {
-                        addToSheet(pnk, rowsToAdd);
+        for (String emagAccount : emagAccounts) {
+            final var emagEntries = GetCustomerData.getByProduct(startTime, endTime, emagAccount);
+            emagEntries.forEach((pnk, orderEntries) -> {
+                if (relevantProducts.contains(pnk)) {
+                    final var statistic = pnkToStatistic.get(pnk);
+                    if (statistic != null) {
+                        final var productName = statistic.produs();
+                        final var rowsToAdd = orderEntries.stream()
+                                .filter(emagEntry -> emagEntry.orderDate().isAfter(statistic.lastUpdate().plusDays(1).atStartOfDay()))
+                                // Sort by date and within the same date by order ID.
+                                .sorted(comparing(SheetData::orderDate).thenComparing(SheetData::orderId))
+                                .map(data -> mapEmagToRow(data, productName))
+                                .toList();
+                        if (!rowsToAdd.isEmpty()) {
+                            addToSheet(pnk, rowsToAdd);
+                        }
+                    } else {
+                        logger.log(WARNING, () -> "Product with PNK %s doesn't have an entry in statistici/lune or setari in the spreadsheet %s."
+                                .formatted(pnk, pnkToSpreadSheet.get(pnk).getTitle()));
                     }
                 } else {
-                    logger.log(WARNING, () -> "Product with PNK %s doesn't have an entry in statistici/lune or setari in the spreadsheet %s."
-                            .formatted(pnk, pnkToSpreadSheet.get(pnk).getTitle()));
+                    logger.log(
+                            WARNING,
+                            () -> "Following order entries aren't stored because no sheet found with PNK %s: %s.".formatted(
+                                    pnk,
+                                    orderEntries.stream()
+                                            .map(SheetData::orderId)
+                                            .collect(Collectors.joining(","))
+                            )
+                    );
                 }
-            } else {
-                logger.log(
-                        WARNING,
-                        () -> "Following order entries aren't stored because no sheet found with PNK %s: %s.".formatted(
-                                pnk,
-                                orderEntries.stream()
-                                        .map(SheetData::orderId)
-                                        .collect(Collectors.joining(","))
-                        )
-                );
-            }
-        });
+            });
+        }
     }
 
     private void loadOverview() {
