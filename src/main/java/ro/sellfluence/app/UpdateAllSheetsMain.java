@@ -14,7 +14,7 @@ public class UpdateAllSheetsMain {
         try {
             new TransferFromEmagToSheets(
                     "sellfluence1",
-                    "Testing Coding 2024 - Date Produse & Angajati",
+                    "2024 - Date produse & angajati",
                     "Cons. Date Prod."
             )
                     .transferFromEmagToSheet("emag", "emag2");
