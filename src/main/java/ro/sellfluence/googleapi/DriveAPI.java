@@ -10,7 +10,9 @@ import com.google.api.services.drive.model.FileList;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Objects;
 
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
@@ -18,6 +20,8 @@ import static ro.sellfluence.googleapi.Credentials.getCredentials;
 public class DriveAPI {
     private static final JsonFactory jsonFactory = GsonFactory.getDefaultInstance();
     private final String appName;
+
+    private final Map<String, String> nameForId = new HashMap<>();
 
     /**
      * Initialize the drive API.
@@ -53,13 +57,26 @@ public class DriveAPI {
             if (matchingFiles.isEmpty()) {
                 return null;
             } else if (matchingFiles.size() == 1) {
-                return matchingFiles.iterator().next();
+                String fileId = matchingFiles.iterator().next();
+                nameForId.put(fileId, name);
+                return fileId;
             } else {
                 throw new RuntimeException("More than one file with matches %s.".formatted(name));
             }
         } catch (IOException e) {
             throw new RuntimeException("Couldn't retrieve the list of files.", e);
         }
+    }
+
+    /**
+     * Return the name for a file ID. This works only, if the file was already searched for
+     * using this API.
+     *
+     * @param id to look for
+     * @return either the name or the ID if the name is not known.
+     */
+    public String getNameForId(String id) {
+        return nameForId.getOrDefault(id, id);
     }
 
     private Drive setupDriveService() {
