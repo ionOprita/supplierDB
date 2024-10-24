@@ -44,7 +44,10 @@ public class EmagDBApp {
             for (String account : emagAccounts) {
                 logger.log(INFO, "Fetch from %s for %s - %s".formatted(account, startTime, endTime));
                 transferOrdersToDatabase(account, mirrorDB, startTime, endTime);
+                Thread.sleep(1_000);
             }
+            Thread.sleep(5_000); // 5 sec * 5 * 53 weeks = 5 sec * 265 weeks
+            // to reads = 1325 sec = less than 1 hours
         }
     }
 
