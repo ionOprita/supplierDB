@@ -140,8 +140,11 @@ class EmagMirrorDBVersion1 {
                 """)) {
             s.execute();
         }
+        /**
+         * This product table represents the data included in an emag order.
+         */
         try (var s = db.prepareStatement("""
-                CREATE TABLE product(
+                CREATE TABLE product_in_order(
                     id INTEGER,
                     order_id VARCHAR(255),
                     vendor_id UUID,
@@ -183,7 +186,7 @@ class EmagMirrorDBVersion1 {
                     vat_value DECIMAL(19, 4),
                     PRIMARY KEY (voucher_id),
                     FOREIGN KEY (order_id, vendor_id) REFERENCES emag_order(id, vendor_id),
-                    FOREIGN KEY (product_id) REFERENCES product(id)
+                    FOREIGN KEY (product_id) REFERENCES product_in_order(id)
                 );
                 """)) {
             s.execute();
@@ -203,7 +206,7 @@ class EmagMirrorDBVersion1 {
             s.execute();
         }
         try (var s = db.prepareStatement("""
-                CREATE TABLE returned_products (
+                CREATE TABLE emag_returned_products (
                     id INT PRIMARY KEY,
                     rma_result_id INT,
                     product_emag_id INT,
@@ -216,6 +219,18 @@ class EmagMirrorDBVersion1 {
                     reject_reason INT,
                     refund_value VARCHAR(255),
                     FOREIGN KEY (rma_result_id) REFERENCES rma_results(emag_id)
+                );
+                """)) {
+            s.execute();
+        }
+        try (var s = db.prepareStatement("""
+                CREATE TABLE product (
+                    id UUID PRIMARY KEY,
+                    emag_pnk VARCHAR(255),
+                    product_id INT,
+                    length INT,
+                    -- and so on, this data will be filled in initially from "Date produse & angajati" sheet "Cons. Date. Prod."
+                    product_name VARCHAR(255),
                 );
                 """)) {
             s.execute();

@@ -12,7 +12,6 @@ import ro.sellfluence.emagapi.Voucher;
 import ro.sellfluence.emagapi.VoucherSplit;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -24,7 +23,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 
+import static java.math.RoundingMode.HALF_EVEN;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 
@@ -33,6 +34,7 @@ public class EmagMirrorDB {
     private static final Map<String, EmagMirrorDB> openDatabases = new HashMap<>();
     private static final Logger logger = Logger.getLogger(EmagMirrorDB.class.getName());
 
+    private static final DateTimeFormatter formatDate = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private final DB database;
 
     private EmagMirrorDB(DB database) {
@@ -87,10 +89,10 @@ public class EmagMirrorDB {
      * @return list of rows containing a list of cell groups. Each cell group is a list of cells.
      * @throws SQLException
      */
-    public List<List<? extends @org.jetbrains.annotations.NotNull List<? extends Serializable>>> readForSheet() throws SQLException {
+    public List<List<List<Object>>> readForSheet() throws SQLException {
         return database.readTX(db ->
                 {
-                    List<List<? extends @org.jetbrains.annotations.NotNull List<? extends Serializable>>> rows = new ArrayList<>();
+                    List<List<List<Object>>> rows = new ArrayList<>();
                     try (var s = db.prepareStatement(
                             //language=sql
                             """
@@ -115,7 +117,7 @@ public class EmagMirrorDB {
                                     ON o.customer_id = c.id
                                     LEFT JOIN vendor as v
                                     ON o.vendor_id = v.id
-                                    LEFT JOIN product as p 
+                                    LEFT JOIN product_in_order as p 
                                     ON p.order_id = o.id
                                     WHERE o.status = 4 OR o.status = 5
                                     """
@@ -126,39 +128,44 @@ public class EmagMirrorDB {
                                 var priceWithoutVAT = rs.getBigDecimal(6);
                                 var priceWithVAT = priceWithoutVAT.multiply(BigDecimal.valueOf(1.19)); // TODO: Proper handling of VAT required
                                 String customerName = rs.getString(8);
+                                boolean isFBE = rs.getBoolean(15);
                                 var row = List.of(
-                                        List.of(
-                                                DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(rs.getTimestamp(1).toLocalDateTime()), // creation date
+                                        Stream.of(
+                                                rs.getTimestamp(1).toLocalDateTime().format(formatDate), // creation date
                                                 rs.getString(2), // id
                                                 statusToString(rs.getInt(3)) // status
-                                        ),
-                                        List.of(
+                                        ).map(Object.class::cast).toList(),
+                                        Stream.of(
                                                 modelToString(rs.getString(4)), // Model description out of PNK
                                                 rs.getInt(5), // quantity
-                                                priceWithoutVAT,
-                                                priceWithVAT
-                                        ),
-                                        List.of(
+                                                priceWithoutVAT.setScale(2, HALF_EVEN),
+                                                priceWithVAT.setScale(2, HALF_EVEN)
+                                        ).map(Object.class::cast).toList(),
+                                        Stream.of(
                                                 rs.getString(7), // deliver mode
                                                 customerName, // customerName
                                                 customerName, // customer shipment name
                                                 rs.getString(9) // customer shipping phone
-                                        ),
-                                        List.of(
+                                        ).map(Object.class::cast).toList(),
+                                        Stream.of(
                                                 rs.getString(10), // customer billing name
                                                 rs.getString(11) // customer billing phone
-                                        ),
-                                        List.of(
+                                        ).map(Object.class::cast).toList(),
+                                        Stream.of(
                                                 rs.getString(12), // company code
                                                 rs.getString(13) // observation
-                                        ),
-                                        List.of(
+                                        ).map(Object.class::cast).toList(),
+                                        Stream.of(
                                                 rs.getString(14), // company name
-                                                booleanToFBE(rs.getBoolean(15)) // platform
-                                        )
-                                )
-                                        // TODO: Columns 26 ff.
-                                        ;
+                                                booleanToFBE(isFBE) // platform
+                                        ).map(Object.class::cast).toList(),
+                                        Stream.of(
+                                                isFBE,
+                                                isFBE,
+                                                isFBE,
+                                                false
+                                        ).map(Object.class::cast).toList()
+                                );
                                 rows.add(row);
                             }
                         }
@@ -168,8 +175,8 @@ public class EmagMirrorDB {
         );
     }
 
-    private Boolean booleanToFBE(boolean isFBE) {
-        return isFBE;
+    private String booleanToFBE(boolean isFBE) {
+        return isFBE ? "eMAG FBE" : "eMAG NON-FBE";
     }
 
     private String modelToString(String pnk) {
@@ -177,7 +184,11 @@ public class EmagMirrorDB {
     }
 
     private String statusToString(int status) {
-        return "Status:" + status;
+        return switch (status) {
+            case 4 -> "Finalizata";
+            case 5 -> "Stornata";
+            default -> "Status:" + status;
+        };
     }
 
     private UUID getOrAddVendor(String name) throws SQLException {
@@ -260,7 +271,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertProduct(Connection db, Product product, String orderId, UUID vendorId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO product (id, order_id, vendor_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO product_in_order (id, order_id, vendor_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
             s.setInt(1, product.id);
             s.setString(2, orderId);
             s.setObject(3, vendorId);
@@ -363,7 +374,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertReturnedProduct(Connection db, ReturnedProduct returnedProduct, int rmaId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO returned_products (id, rma_result_id, product_emag_id, product_id, quantity, product_name, return_reason, observations, diagnostic, reject_reason, refund_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO emag_returned_products (id, rma_result_id, product_emag_id, product_id, quantity, product_name, return_reason, observations, diagnostic, reject_reason, refund_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
             s.setInt(1, returnedProduct.id());
             s.setInt(2, rmaId);
             s.setInt(3, returnedProduct.product_emag_id());

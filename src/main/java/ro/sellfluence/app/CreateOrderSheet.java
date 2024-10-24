@@ -33,7 +33,8 @@ public class CreateOrderSheet {
                 "%s!M%d".formatted(sheetName, nextRow),
                 "%s!R%d".formatted(sheetName, nextRow),
                 "%s!U%d".formatted(sheetName, nextRow),
-                "%s!X%d".formatted(sheetName, nextRow)
+                "%s!X%d".formatted(sheetName, nextRow),
+                "%s!AA%d".formatted(sheetName, nextRow)
         );
     }
 }
