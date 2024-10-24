@@ -10,6 +10,8 @@ import com.google.api.services.sheets.v4.model.AppendCellsRequest;
 import com.google.api.services.sheets.v4.model.AppendValuesResponse;
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest;
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetResponse;
+import com.google.api.services.sheets.v4.model.BatchUpdateValuesRequest;
+import com.google.api.services.sheets.v4.model.BatchUpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.CellData;
 import com.google.api.services.sheets.v4.model.ExtendedValue;
 import com.google.api.services.sheets.v4.model.ProtectedRange;
@@ -18,10 +20,8 @@ import com.google.api.services.sheets.v4.model.RowData;
 import com.google.api.services.sheets.v4.model.UpdateProtectedRangeRequest;
 import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
-import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -169,22 +169,29 @@ public class SheetsAPI {
         }
     }
 
-    public void updateRanges(List<List<? extends @NotNull List<? extends Serializable>>> rows, String... ranges) {
+    public BatchUpdateValuesResponse updateRanges(List<List<List<Object>>> rows, String... ranges) {
         var groupOfTables = transformList(rows);
-        if (groupOfTables.size()!=ranges.length) {
+        if (groupOfTables.size() != ranges.length) {
             throw new IllegalArgumentException(
                     "The number of cell groups (%d) must match the number of ranges given (%d)".formatted(
                             groupOfTables.size(), ranges.length
                     )
             );
         }
-        for (int i=0; i<ranges.length; i++) {
-            updateRange(ranges[i], (List<List<Object>>) groupOfTables.get(i));
+        var updateList = new ArrayList<ValueRange>();
+        for (int i = 0; i < ranges.length; i++) {
+            updateList.add(new ValueRange().setRange(ranges[i]).setValues(groupOfTables.get(i)));
+        }
+        var body = new BatchUpdateValuesRequest().setValueInputOption("RAW").setData(updateList);
+        try {
+            return getSheetsService().spreadsheets().values().batchUpdate(spreadSheetId, body).execute();
+        } catch (IOException cause) {
+            throw new RuntimeException("Issue in updateRanges for sheet %s".formatted(spreadSheetName), cause);
         }
     }
 
-    public static List<List<? extends @NotNull List<? extends Serializable>>> transformList(List<List<? extends @NotNull List<? extends Serializable>>> inputList) {
-        List<List<? extends @NotNull List<? extends Serializable>>> outputList = new ArrayList<>();
+    public static List<List<List<Object>>> transformList(List<List<List<Object>>> inputList) {
+        List<List<List<Object>>> outputList = new ArrayList<>();
         var firstRow = inputList.getFirst();
         var groupCount = firstRow.size();
         for (int groupNumber = 0; groupNumber < groupCount; groupNumber++) {
