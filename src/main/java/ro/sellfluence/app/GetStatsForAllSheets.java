@@ -62,15 +62,17 @@ public class GetStatsForAllSheets {
                                     .collect(Collectors.joining("\n ", "%s setari PNK mapping:\n ".formatted(spreadSheet.getTitle()), "\n")));
                             List<Statistic> statistics = spreadSheet.getRowsInColumnRange(statisticSheetName, "A", "E").stream()
                                     .skip(6)
-                                    .filter(row -> row.size() >= 5 && row.getFirst().matches("\\d+") && !row.get(2).isEmpty())
+                                    .filter(row -> row.getFirst().matches("\\d+") && !row.get(2).isEmpty())
                                     .map(
                                             row -> {
                                                 String pnk = row.get(2);
+                                                String dateAsString = row.get(4);
+                                                LocalDate date = (dateAsString.isBlank())?LocalDate.now().minusYears(1):LocalDate.parse(dateAsString, sheetDateFormat);
                                                 return new Statistic(
                                                         Integer.parseInt(row.getFirst()),
                                                         row.get(1),
                                                         pnk,
-                                                        LocalDate.parse(row.get(4), sheetDateFormat),
+                                                        date,
                                                         pnkToSheetName.get(pnk)
                                                 );
                                             }
