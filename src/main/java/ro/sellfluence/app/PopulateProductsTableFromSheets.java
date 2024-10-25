@@ -26,13 +26,14 @@ public class PopulateProductsTableFromSheets {
         var drive = DriveAPI.getDriveAPI(appName);
         var spreadSheetId = drive.getFileId(spreadSheetName);
         var spreadSheet = SheetsAPI.getSpreadSheet(appName, spreadSheetId);
-        return spreadSheet.getMultipleColumns(overviewSheetName, "C", "BH", "CN").stream().skip(3)
+        return spreadSheet.getMultipleColumns(overviewSheetName, "C", "BH", "CN", "DW").stream().skip(3)
                 .<ProductInfo>mapMulti((row, nextConsumer) -> {
                             var pnk = row.get(1).toString();
                             var name = row.get(0).toString();
                             var category = row.get(2).toString();
+                            var messageKeyword = row.get(3).toString();
                             if (!(pnk.isBlank() || pnk.equals("0") || name.isBlank() || name.equals("-"))) {
-                                nextConsumer.accept(new ProductInfo(pnk, name, category));
+                                nextConsumer.accept(new ProductInfo(pnk, name, category, messageKeyword));
                             }
                         }
                 ).toList();

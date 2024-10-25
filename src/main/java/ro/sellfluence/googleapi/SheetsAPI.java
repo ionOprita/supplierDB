@@ -12,9 +12,13 @@ import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest;
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetResponse;
 import com.google.api.services.sheets.v4.model.BatchUpdateValuesRequest;
 import com.google.api.services.sheets.v4.model.BatchUpdateValuesResponse;
+import com.google.api.services.sheets.v4.model.BooleanCondition;
 import com.google.api.services.sheets.v4.model.CellData;
+import com.google.api.services.sheets.v4.model.DataValidationRule;
 import com.google.api.services.sheets.v4.model.ExtendedValue;
+import com.google.api.services.sheets.v4.model.GridRange;
 import com.google.api.services.sheets.v4.model.ProtectedRange;
+import com.google.api.services.sheets.v4.model.RepeatCellRequest;
 import com.google.api.services.sheets.v4.model.Request;
 import com.google.api.services.sheets.v4.model.RowData;
 import com.google.api.services.sheets.v4.model.UpdateProtectedRangeRequest;
@@ -33,6 +37,9 @@ import java.util.stream.Collectors;
 
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
+/**
+ * This class represents a spreadsheet in Google-Drive.
+ */
 public class SheetsAPI {
 
     public static final String COLUMNS = "COLUMNS";
@@ -185,6 +192,41 @@ public class SheetsAPI {
         var body = new BatchUpdateValuesRequest().setValueInputOption("RAW").setData(updateList);
         try {
             return getSheetsService().spreadsheets().values().batchUpdate(spreadSheetId, body).execute();
+        } catch (IOException cause) {
+            throw new RuntimeException("Issue in updateRanges for sheet %s".formatted(spreadSheetName), cause);
+        }
+    }
+
+    public BatchUpdateSpreadsheetResponse formatAsCheckboxes(String spreadSheetId, int startColumn, int endColumn, int startRow, int endRow) {
+        // Create a data validation rule
+        DataValidationRule rule = new DataValidationRule()
+                .setCondition(new BooleanCondition()
+                        .setType("BOOLEAN"));
+
+        // Create a cell style with the data validation rule
+        var cellStyle = new CellData().setDataValidation(rule);
+
+        var range = new GridRange()
+                .setSheetId(getSheetId(spreadSheetId))
+                .setStartColumnIndex(startColumn)
+                .setEndColumnIndex(endColumn)
+                .setStartRowIndex(startRow)
+                .setEndRowIndex(endRow);
+        // Create a repeat cell request
+        RepeatCellRequest repeatCellRequest = new RepeatCellRequest()
+                .setCell(cellStyle)
+                .setRange(range)
+                .setFields("*");
+
+        // Create a request to update the spreadsheet
+        Request request = new Request()
+                .setRepeatCell(repeatCellRequest);
+
+        var updateList = new ArrayList<Request>();
+        updateList.add(request);
+        var body = new BatchUpdateSpreadsheetRequest().setRequests(updateList);
+        try {
+            return getSheetsService().spreadsheets().batchUpdate(spreadSheetId, body).execute();
         } catch (IOException cause) {
             throw new RuntimeException("Issue in updateRanges for sheet %s".formatted(spreadSheetName), cause);
         }

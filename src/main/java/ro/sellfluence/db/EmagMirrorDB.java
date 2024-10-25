@@ -69,7 +69,7 @@ public class EmagMirrorDB {
                         insertVoucherSplit(db, voucherSplit, order.id, vendorId);
                     }
                     for (var attachment : order.attachments) {
-                        if (!order.id.equals(attachment.order_id)) {
+                        if (attachment.order_id!=null && !order.id.equals(attachment.order_id)) {
                             logger.log(WARNING, "Attachment order_id mismatch, order has " + order.id + " but attachment has " + attachment.order_id);
                         }
                         insertAttachment(db, attachment, order.id, vendorId);
@@ -104,7 +104,7 @@ public class EmagMirrorDB {
                                       o.date,
                                       o.id,
                                       o.status,
-                                      p.part_number_key,
+                                      pi.name,
                                       p.quantity,
                                       p.sale_price,
                                       o.delivery_mode,
@@ -115,14 +115,17 @@ public class EmagMirrorDB {
                                       c.code,
                                       o.observation,
                                       v.vendor_name,
-                                      v.isFBE
+                                      v.isFBE,
+                                      pi.message_keyword
                                     FROM emag_order as o
                                     LEFT JOIN customer as c
                                     ON o.customer_id = c.id
                                     LEFT JOIN vendor as v
                                     ON o.vendor_id = v.id
-                                    LEFT JOIN product_in_order as p 
+                                    LEFT JOIN product_in_order as p
                                     ON p.order_id = o.id
+                                    JOIN product as pi
+                                    ON p.part_number_key = pi.emag_pnk
                                     WHERE o.status = 4 OR o.status = 5
                                     """
                     )) {
@@ -140,7 +143,7 @@ public class EmagMirrorDB {
                                                 statusToString(rs.getInt(3)) // status
                                         ).map(Object.class::cast).toList(),
                                         Stream.of(
-                                                modelToString(rs.getString(4)), // Model description out of PNK
+                                                rs.getString(4),
                                                 rs.getInt(5), // quantity
                                                 priceWithoutVAT.setScale(2, HALF_EVEN),
                                                 priceWithVAT.setScale(2, HALF_EVEN)
@@ -168,6 +171,9 @@ public class EmagMirrorDB {
                                                 isFBE,
                                                 isFBE,
                                                 false
+                                        ).map(Object.class::cast).toList(),
+                                        Stream.of(
+                                                rs.getString(16)
                                         ).map(Object.class::cast).toList()
                                 );
                                 rows.add(row);
@@ -211,9 +217,10 @@ public class EmagMirrorDB {
                     }
                     if (id == null) {
                         id = UUID.randomUUID();
-                        try (var s = db.prepareStatement("INSERT INTO vendor (id, vendor_name) VALUES (?,?)")) {
+                        try (var s = db.prepareStatement("INSERT INTO vendor (id, vendor_name, isfbe) VALUES (?,?,?)")) {
                             s.setObject(1, id);
                             s.setString(2, name);
+                            s.setBoolean(3, name.contains("FBE")); //TODO: Is this ok?
                             s.executeUpdate();
                         }
                     }
@@ -409,11 +416,12 @@ public class EmagMirrorDB {
     }
 
     private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO product (id, emag_pnk, name, category) VALUES (?, ?, ?, ?) ON CONFLICT(emag_pnk) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO product (id, emag_pnk, name, category, message_keyword) VALUES (?, ?, ?, ?, ?) ON CONFLICT(emag_pnk) DO NOTHING")) {
             s.setObject(1, UUID.randomUUID());
             s.setString(2, productInfo.pnk());
             s.setString(3, productInfo.name());
             s.setString(4, productInfo.category());
+            s.setString(5, productInfo.messageKeyword());
             return s.executeUpdate();
         }
     }

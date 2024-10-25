@@ -226,7 +226,8 @@ class EmagMirrorDBVersion1 {
                     id UUID PRIMARY KEY,
                     emag_pnk VARCHAR(255) UNIQUE,
                     name VARCHAR(255),
-                    category VARCHAR(255)
+                    category VARCHAR(255),
+                    message_keyword VARCHAR(255)
                     -- and so on, this data will be filled in initially from "Date produse & angajati" sheet "Cons. Date. Prod."
                 );
                 """)) {

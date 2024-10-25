@@ -25,8 +25,12 @@ public class CreateOrderSheet {
         var rows = mirrorDB.readForSheet();
         List<String> firstColumn = sheet.getColumn(sheetName, "A");
         var lastRowNumber = firstColumn.size();
-        var nextRow= lastRowNumber + 1;
+        var nextRow = lastRowNumber + 1;
+        var lastRow = lastRowNumber + rows.size();
         System.out.println(System.getProperty("java.io.tmpdir"));
+        System.out.println("Now fixing cell format");
+        sheet.formatAsCheckboxes(spreadSheetId, 26, 30, lastRowNumber, lastRow);
+        System.out.println("Now adding the rows");
         sheet.updateRanges(rows,
                 "%s!A%d".formatted(sheetName, nextRow),
                 "%s!F%d".formatted(sheetName, nextRow),
@@ -34,7 +38,8 @@ public class CreateOrderSheet {
                 "%s!R%d".formatted(sheetName, nextRow),
                 "%s!U%d".formatted(sheetName, nextRow),
                 "%s!X%d".formatted(sheetName, nextRow),
-                "%s!AA%d".formatted(sheetName, nextRow)
+                "%s!AA%d".formatted(sheetName, nextRow),
+                "%s!AF%d".formatted(sheetName, nextRow)
         );
     }
 }
