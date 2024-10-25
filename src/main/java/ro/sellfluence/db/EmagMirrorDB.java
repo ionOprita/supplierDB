@@ -83,6 +83,10 @@ public class EmagMirrorDB {
         );
     }
 
+    public void addProduct(ProductInfo productInfo) throws SQLException {
+        database.writeTX(db -> insertProduct(db, productInfo));
+    }
+
     /**
      * Read database information and prepare them for inclusion in the spreadsheet.
      *
@@ -400,6 +404,16 @@ public class EmagMirrorDB {
             s.setInt(6, rmaResult.return_type());
             s.setInt(7, rmaResult.return_reason());
             s.setString(8, rmaResult.observations());
+            return s.executeUpdate();
+        }
+    }
+
+    private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO product (id, emag_pnk, name, category) VALUES (?, ?, ?, ?) ON CONFLICT(emag_pnk) DO NOTHING")) {
+            s.setObject(1, UUID.randomUUID());
+            s.setString(2, productInfo.pnk());
+            s.setString(3, productInfo.name());
+            s.setString(4, productInfo.category());
             return s.executeUpdate();
         }
     }

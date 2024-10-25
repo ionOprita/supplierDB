@@ -140,9 +140,7 @@ class EmagMirrorDBVersion1 {
                 """)) {
             s.execute();
         }
-        /**
-         * This product table represents the data included in an emag order.
-         */
+        // This product table represents the data included in an emag order.
         try (var s = db.prepareStatement("""
                 CREATE TABLE product_in_order(
                     id INTEGER,
@@ -226,11 +224,10 @@ class EmagMirrorDBVersion1 {
         try (var s = db.prepareStatement("""
                 CREATE TABLE product (
                     id UUID PRIMARY KEY,
-                    emag_pnk VARCHAR(255),
-                    product_id INT,
-                    length INT,
+                    emag_pnk VARCHAR(255) UNIQUE,
+                    name VARCHAR(255),
+                    category VARCHAR(255)
                     -- and so on, this data will be filled in initially from "Date produse & angajati" sheet "Cons. Date. Prod."
-                    product_name VARCHAR(255),
                 );
                 """)) {
             s.execute();
