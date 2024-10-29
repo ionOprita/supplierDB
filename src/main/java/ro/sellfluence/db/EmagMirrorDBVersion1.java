@@ -233,5 +233,17 @@ class EmagMirrorDBVersion1 {
                 """)) {
             s.execute();
         }
+        try (var s=db.prepareStatement("""
+                CREATE TABLE emag_fetch_log (
+                    emag_login VARCHAR(255) UNIQUE,
+                    order_start TIMESTAMP NOT NULL,
+                    order_end TIMESTAMP NOT NULL,
+                    fetch_start TIMESTAMP NOT NULL,
+                    fetch_end TIMESTAMP NOT NULL,
+                    error VARCHAR(1024)
+                );
+                """)) {
+            s.execute();
+        }
     }
 }
