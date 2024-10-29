@@ -67,7 +67,7 @@ public class GetStatsForAllSheets {
                                             row -> {
                                                 String pnk = row.get(2);
                                                 String dateAsString = (row.size() > 4) ? row.get(4) : "";
-                                                LocalDate date = (dateAsString.isBlank()) ? LocalDate.now().minusYears(1) : LocalDate.parse(dateAsString, sheetDateFormat);
+                                                LocalDate date = (dateAsString.isBlank()) ? LocalDate.now().minusMonths(1) : LocalDate.parse(dateAsString, sheetDateFormat);
                                                 return new Statistic(
                                                         Integer.parseInt(row.getFirst()),
                                                         row.get(1),

@@ -21,7 +21,7 @@ public class CreateOrderSheet {
         var drive = DriveAPI.getDriveAPI(appName);
         var spreadSheetId = drive.getFileId(spreadSheetName);
         var sheet = SheetsAPI.getSpreadSheet(appName, spreadSheetId);
-        var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
+        var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagOprita");
         var rows = mirrorDB.readForSheet();
         List<String> firstColumn = sheet.getColumn(sheetName, "A");
         var lastRowNumber = firstColumn.size();
