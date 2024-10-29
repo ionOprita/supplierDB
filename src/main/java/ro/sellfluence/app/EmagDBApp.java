@@ -23,14 +23,14 @@ public class EmagDBApp {
 
     private static final Logger logger = Logger.getLogger(EmagDBApp.class.getName());
     private static final List<String> emagAccounts = List.of(
-         //   "sellfluence",
-            "sellfusion"
-//            "zoopieconcept",
-//            "zoopieinvest",
-//            "zoopiesolutions",
-//            "judios",
-//            "koppel",
-//            "koppelfbe"
+            "sellfluence",
+            "sellfusion",
+            "zoopieconcept",
+            "zoopieinvest",
+            "zoopiesolutions",
+            "judios",
+            "koppel",
+            "koppelfbe"
     );
     //Vendor, day-requested, day-executed, error encountered (NULL if fully executed successfully)
     //TODO: Store what has been done externally, so we don't need to refetch when error happens.
@@ -38,7 +38,7 @@ public class EmagDBApp {
         //activateEmagJSONLog();
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
         var startOfToday = LocalDate.now().atStartOfDay();
-        int weeksToRead = 1;
+        int weeksToRead = 5*53;
         for (int pastWeek = 0; pastWeek < weeksToRead; pastWeek++) {
             var endTime = startOfToday.minusWeeks(pastWeek);
             var startTime = endTime.minusWeeks(1);
@@ -56,7 +56,7 @@ public class EmagDBApp {
                 }
                 Thread.sleep(1_000);
             }
-            Thread.sleep(5_000); // 5 sec * 5 * 53 weeks = 5 sec * 265 weeks
+            Thread.sleep(10_000); // 5 sec * 5 * 53 weeks = 5 sec * 265 weeks
             // to reads = 1325 sec = less than 1 hours
         }
     }

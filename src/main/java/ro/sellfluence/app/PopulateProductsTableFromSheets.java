@@ -11,7 +11,7 @@ import java.util.List;
 public class PopulateProductsTableFromSheets {
 
     public static void main(String[] args) throws Exception {
-        var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
+        var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagOprita");
         var productList = populateFrom("sellfluence1", "2024 - Date produse & angajati", "Cons. Date Prod.");
         productList.forEach(productInfo -> {
             try {
