@@ -94,7 +94,7 @@ public class EmagMirrorDB {
                     if (insertedRows == 0) {
                         updateEmagLog(db, account, startTime, endTime, fetchStartTime, fetchEndTime, error);
                     }
-                    return null;
+                    return "";
                 }
         );
     }
@@ -495,7 +495,7 @@ public class EmagMirrorDB {
      * @param endTime end of range exclusive
      */
     private static List<EmagFetchLog> getEmagLog(Connection db, String account, LocalDateTime startTime, LocalDateTime endTime) throws SQLException {
-        try (var s = db.prepareStatement("SELECT * FROM emag_fetch_log WHERE account=? AND ? < endTime AND ? > startTime")) {
+        try (var s = db.prepareStatement("SELECT * FROM emag_fetch_log WHERE emag_login=? AND ? < order_end AND ? > order_start")) {
             s.setString(1, account);
             s.setTimestamp(2, Timestamp.valueOf(startTime));
             s.setTimestamp(3, Timestamp.valueOf(endTime));
