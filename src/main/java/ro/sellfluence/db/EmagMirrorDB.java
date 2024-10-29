@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -69,7 +70,7 @@ public class EmagMirrorDB {
                         insertVoucherSplit(db, voucherSplit, order.id, vendorId);
                     }
                     for (var attachment : order.attachments) {
-                        if (attachment.order_id!=null && !order.id.equals(attachment.order_id)) {
+                        if (attachment.order_id != null && !order.id.equals(attachment.order_id)) {
                             logger.log(WARNING, "Attachment order_id mismatch, order has " + order.id + " but attachment has " + attachment.order_id);
                         }
                         insertAttachment(db, attachment, order.id, vendorId);
@@ -85,6 +86,10 @@ public class EmagMirrorDB {
 
     public void addProduct(ProductInfo productInfo) throws SQLException {
         database.writeTX(db -> insertProduct(db, productInfo));
+    }
+
+    public void addEmagLog(String account, LocalDateTime startTime, LocalDateTime endTime, LocalDateTime fetchStartTime, LocalDateTime fetchEndTime, String error) throws SQLException {
+        database.writeTX(db -> insertEmagLog(db, account,startTime,endTime,fetchStartTime,fetchEndTime, error));
     }
 
     /**
@@ -422,6 +427,18 @@ public class EmagMirrorDB {
             s.setString(3, productInfo.name());
             s.setString(4, productInfo.category());
             s.setString(5, productInfo.messageKeyword());
+            return s.executeUpdate();
+        }
+    }
+
+    private static int insertEmagLog(Connection db, String account, LocalDateTime startTime, LocalDateTime endTime, LocalDateTime fetchStartTime, LocalDateTime fetchEndTime, String error) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO emag_fetch_log (id, order_start, order_end, fetch_start, fetch_end) VALUES (?, ?, ?, ?, ?)")) {
+            s.setString(1, account);
+            s.setTimestamp(2, Timestamp.valueOf(startTime));
+            s.setTimestamp(3, Timestamp.valueOf(endTime));
+            s.setTimestamp(4, Timestamp.valueOf(fetchStartTime));
+            s.setTimestamp(5, Timestamp.valueOf(fetchEndTime));
+            s.setString(6, error);
             return s.executeUpdate();
         }
     }

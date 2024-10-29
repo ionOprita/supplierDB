@@ -32,9 +32,10 @@ public class EmagDBApp {
 //            "koppel",
 //            "koppelfbe"
     );
-
+    //Vendor, day-requested, day-executed, error encountered (NULL if fully executed successfully)
+    //TODO: Store what has been done externally, so we don't need to refetch when error happens.
     public static void main(String[] args) throws Exception {
-        activateEmagJSONLog();
+        //activateEmagJSONLog();
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
         var startOfToday = LocalDate.now().atStartOfDay();
         int weeksToRead = 1;
@@ -43,7 +44,16 @@ public class EmagDBApp {
             var startTime = endTime.minusWeeks(1);
             for (String account : emagAccounts) {
                 logger.log(INFO, "Fetch from %s for %s - %s".formatted(account, startTime, endTime));
-                transferOrdersToDatabase(account, mirrorDB, startTime, endTime);
+                var fetchStartTime = LocalDateTime.now();
+                String error = null;
+                try {
+                    transferOrdersToDatabase(account, mirrorDB, startTime, endTime);
+                } catch (Exception e) {
+                   error = e.getMessage();
+                } finally {
+                    var fetchEndTime = LocalDateTime.now();
+                    mirrorDB.addEmagLog(account,startTime, endTime,fetchStartTime,fetchEndTime,error);
+                }
                 Thread.sleep(1_000);
             }
             Thread.sleep(5_000); // 5 sec * 5 * 53 weeks = 5 sec * 265 weeks
