@@ -235,12 +235,13 @@ class EmagMirrorDBVersion1 {
         }
         try (var s=db.prepareStatement("""
                 CREATE TABLE emag_fetch_log (
-                    emag_login VARCHAR(255) UNIQUE,
+                    emag_login VARCHAR(255),
                     order_start TIMESTAMP NOT NULL,
                     order_end TIMESTAMP NOT NULL,
                     fetch_start TIMESTAMP NOT NULL,
                     fetch_end TIMESTAMP NOT NULL,
-                    error VARCHAR(1024)
+                    error VARCHAR(1024),
+                    PRIMARY KEY (emag_login, order_start, order_end)
                 );
                 """)) {
             s.execute();

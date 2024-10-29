@@ -89,7 +89,38 @@ public class EmagMirrorDB {
     }
 
     public void addEmagLog(String account, LocalDateTime startTime, LocalDateTime endTime, LocalDateTime fetchStartTime, LocalDateTime fetchEndTime, String error) throws SQLException {
-        database.writeTX(db -> insertEmagLog(db, account,startTime,endTime,fetchStartTime,fetchEndTime, error));
+        database.writeTX(db -> {
+                    var insertedRows = insertEmagLog(db, account, startTime, endTime, fetchStartTime, fetchEndTime, error);
+                    if (insertedRows == 0) {
+                        updateEmagLog(db, account, startTime, endTime, fetchStartTime, fetchEndTime, error);
+                    }
+                    return null;
+                }
+        );
+    }
+
+    public enum FetchStatus {
+        yes,
+        no,
+        partially
+    }
+
+    public FetchStatus wasFetched(String account, LocalDateTime startTime, LocalDateTime endTime) throws SQLException {
+        var fetches = database.readTX(db -> getEmagLog(db, account, startTime, endTime));
+        if (fetches.isEmpty()) {
+            return FetchStatus.no;
+        } else if (fetches.size() == 1) {
+            var fetch = fetches.getFirst();
+            if (fetch.error() != null) {
+                return FetchStatus.no;
+            } else if (!(fetch.startTime().isAfter(startTime) || fetch.endTime().isBefore(endTime))) {
+                return FetchStatus.yes;
+            } else {
+                return FetchStatus.partially;
+            }
+        } else {
+            throw new RuntimeException("Not yet implemented");
+        }
     }
 
     /**
@@ -432,7 +463,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertEmagLog(Connection db, String account, LocalDateTime startTime, LocalDateTime endTime, LocalDateTime fetchStartTime, LocalDateTime fetchEndTime, String error) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO emag_fetch_log (id, order_start, order_end, fetch_start, fetch_end) VALUES (?, ?, ?, ?, ?)")) {
+        try (var s = db.prepareStatement("INSERT INTO emag_fetch_log (emag_login, order_start, order_end, fetch_start, fetch_end, error) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(emag_login, order_start, order_end) DO NOTHING")) {
             s.setString(1, account);
             s.setTimestamp(2, Timestamp.valueOf(startTime));
             s.setTimestamp(3, Timestamp.valueOf(endTime));
@@ -440,6 +471,48 @@ public class EmagMirrorDB {
             s.setTimestamp(5, Timestamp.valueOf(fetchEndTime));
             s.setString(6, error);
             return s.executeUpdate();
+        }
+    }
+
+    private static int updateEmagLog(Connection db, String account, LocalDateTime startTime, LocalDateTime endTime, LocalDateTime fetchStartTime, LocalDateTime fetchEndTime, String error) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE emag_fetch_log SET fetch_start=?, fetch_end=?, error=? WHERE emag_login=? AND order_start=? AND order_end=?")) {
+            s.setTimestamp(1, Timestamp.valueOf(fetchStartTime));
+            s.setTimestamp(2, Timestamp.valueOf(fetchEndTime));
+            s.setString(3, error);
+            s.setString(4, account);
+            s.setTimestamp(5, Timestamp.valueOf(startTime));
+            s.setTimestamp(6, Timestamp.valueOf(endTime));
+            return s.executeUpdate();
+        }
+    }
+
+    /**
+     * Get all entries from emag_fetch_log which overlap with the given range.
+     *
+     * @param db database
+     * @param account emag account
+     * @param startTime start of range inclusive
+     * @param endTime end of range exclusive
+     */
+    private static List<EmagFetchLog> getEmagLog(Connection db, String account, LocalDateTime startTime, LocalDateTime endTime) throws SQLException {
+        try (var s = db.prepareStatement("SELECT * FROM emag_fetch_log WHERE account=? AND ? < endTime AND ? > startTime")) {
+            s.setString(1, account);
+            s.setTimestamp(2, Timestamp.valueOf(startTime));
+            s.setTimestamp(3, Timestamp.valueOf(endTime));
+            try (var rs = s.executeQuery()) {
+                var fetchLogs = new ArrayList<EmagFetchLog>();
+                while (rs.next()) {
+                    fetchLogs.add(new EmagFetchLog(
+                            rs.getString(1),
+                            rs.getTimestamp(2).toLocalDateTime(),
+                            rs.getTimestamp(3).toLocalDateTime(),
+                            rs.getTimestamp(4).toLocalDateTime(),
+                            rs.getTimestamp(5).toLocalDateTime(),
+                            rs.getString(6)
+                    ));
+                }
+                return fetchLogs;
+            }
         }
     }
 }

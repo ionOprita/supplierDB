@@ -43,18 +43,21 @@ public class EmagDBApp {
             var endTime = startOfToday.minusWeeks(pastWeek);
             var startTime = endTime.minusWeeks(1);
             for (String account : emagAccounts) {
-                logger.log(INFO, "Fetch from %s for %s - %s".formatted(account, startTime, endTime));
-                var fetchStartTime = LocalDateTime.now();
-                String error = null;
-                try {
-                    transferOrdersToDatabase(account, mirrorDB, startTime, endTime);
-                } catch (Exception e) {
-                   error = e.getMessage();
-                } finally {
-                    var fetchEndTime = LocalDateTime.now();
-                    mirrorDB.addEmagLog(account,startTime, endTime,fetchStartTime,fetchEndTime,error);
+                var wasFetched = mirrorDB.wasFetched(account, startTime, endTime);
+                if (wasFetched != EmagMirrorDB.FetchStatus.yes) {
+                    logger.log(INFO, "Fetch from %s for %s - %s".formatted(account, startTime, endTime));
+                    var fetchStartTime = LocalDateTime.now();
+                    String error = null;
+                    try {
+                        transferOrdersToDatabase(account, mirrorDB, startTime, endTime);
+                    } catch (Exception e) {
+                        error = e.getMessage();
+                    } finally {
+                        var fetchEndTime = LocalDateTime.now();
+                        mirrorDB.addEmagLog(account, startTime, endTime, fetchStartTime, fetchEndTime, error);
+                    }
+                    Thread.sleep(1_000);
                 }
-                Thread.sleep(1_000);
             }
             Thread.sleep(10_000); // 5 sec * 5 * 53 weeks = 5 sec * 265 weeks
             // to reads = 1325 sec = less than 1 hours
