@@ -432,7 +432,7 @@ public class EmagMirrorDB {
             s.setString(8, returnedProduct.observations());
             s.setInt(9, returnedProduct.diagnostic());
             s.setInt(10, returnedProduct.reject_reason());
-            s.setString(11, returnedProduct.refund_value());
+            s.setInt(11, returnedProduct.retained_amount());
             return s.executeUpdate();
         }
     }
@@ -440,7 +440,7 @@ public class EmagMirrorDB {
     private static int insertRMAResult(Connection db, RMAResult rmaResult) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO rma_results (emag_id, order_id, type, date, request_status, return_type, return_reason, observations) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
             s.setInt(1, rmaResult.emag_id());
-            s.setInt(2, rmaResult.order_id());
+            s.setString(2, rmaResult.order_id());
             s.setInt(3, rmaResult.type());
             s.setTimestamp(4, Timestamp.valueOf(rmaResult.date()));
             s.setInt(5, rmaResult.request_status());
