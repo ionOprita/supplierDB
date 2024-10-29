@@ -72,7 +72,7 @@ public class EmagDBApp {
                         try {
                             mirrorDB.addOrder(orderResult);
                         } catch (SQLException e) {
-                            logger.log(SEVERE, "Error inserting order " + orderResult, e);
+                            throw new RuntimeException("Error inserting order " + orderResult, e);
                         }
                     }
             );
