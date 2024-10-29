@@ -23,6 +23,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Handler;
 import java.util.logging.Logger;
 
 import static java.net.HttpURLConnection.HTTP_OK;
@@ -160,5 +161,15 @@ public class EmagApi {
             }
         }
         return accumulatedResponses;
+    }
+
+    public static void activateEmagJSONLog() {
+        logger.setLevel(FINE);
+        for (Handler handler : logger.getHandlers()) {
+            handler.setLevel(FINE);
+        }
+        for (Handler handler : logger.getParent().getHandlers()) {
+            handler.setLevel(FINE);
+        }
     }
 }
