@@ -1,15 +1,25 @@
 package ro.sellfluence.emagapi;
 
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.JsonSerializer;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.TypeAdapter;
-import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
 
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -95,6 +105,52 @@ public class EmagApi {
             })
             .create();
 
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true)
+            .registerModule(new SimpleModule()
+                    .addSerializer(LocalDateTime.class, new LocalDateTimeSerializer())
+                    .addDeserializer(LocalDateTime.class, new LocalDateTimeDeserializer())
+                    .addSerializer(LocalDate.class, new LocalDateSerializer())
+                    .addDeserializer(LocalDate.class, new LocalDateDeserializer()));
+            //.registerModule(new JavaTimeModule());
+
+    private static class LocalDateTimeSerializer extends JsonSerializer<LocalDateTime> {
+        private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+
+        @Override
+        public void serialize(LocalDateTime value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+            gen.writeString(formatter.format(value));
+        }
+    }
+
+    private static class LocalDateTimeDeserializer extends JsonDeserializer<LocalDateTime> {
+        private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+        @Override
+        public LocalDateTime deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+            return LocalDateTime.parse(p.getText(), formatter);
+        }
+    }
+
+    private static class LocalDateSerializer extends JsonSerializer<LocalDate> {
+        private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+        @Override
+        public void serialize(LocalDate value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+            gen.writeString(formatter.format(value));
+        }
+    }
+
+    private static class LocalDateDeserializer extends JsonDeserializer<LocalDate> {
+        private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+        @Override
+        public LocalDate deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+            return LocalDate.parse(p.getText(), formatter);
+        }
+    }
+
+
     public EmagApi(String username, String password) {
         credentials = Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
         httpClient = HttpClient.newHttpClient();
@@ -134,8 +190,16 @@ public class EmagApi {
                 String receivedJSON = httpResponse.body();
                 logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
                 try {
-                    var responseItemClass = TypeToken.getParameterized(Response.class, responseClass);
-                    Response<T> response = gson.fromJson(receivedJSON, responseItemClass.getType());
+                    //var responseItemClass = TypeToken.getParameterized(Response.class, responseClass);
+                    //Response<T> response = gson.fromJson(receivedJSON, responseItemClass.getType());
+                    var typeRef = new TypeReference<Response<T>>() {
+                        @Override
+                        public Type getType() {
+                            return objectMapper.getTypeFactory().constructParametricType(Response.class, responseClass);
+                        }
+                    };
+                    var response = objectMapper.readValue(receivedJSON, typeRef);
+
                     if (response.isError) {
                         logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
                         if (Arrays.stream(response.messages).anyMatch(x -> x.contains("Invalid vendor ip"))) {

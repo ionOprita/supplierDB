@@ -2,39 +2,47 @@ package ro.sellfluence.emagapi;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Arrays;
 
-public class OrderResult {
-    public String vendor_name;
-    public String id;
-    public int status;
-    public Integer is_complete;
-    public Integer type;
-    public String payment_mode;
-    public int payment_mode_id;
-    public String delivery_payment_mode;
-    public String delivery_mode;
-    public String observation;
-    public LockerDetails details;
-    public LocalDateTime date;
-    public Integer payment_status;
-    public BigDecimal cashed_co;
-    public BigDecimal cashed_cod;
-    public BigDecimal shipping_tax;
-    public VoucherSplit[] shipping_tax_voucher_split;
-
-    public Customer customer;
-
-    public Product[] products;
-    public Attachment[] attachments;
-    public Voucher[] vouchers;
-    public boolean is_storno;
-    public Integer cancellation_reason;
-    public BigDecimal refunded_amount;
-    public String refund_status;
-    public LocalDateTime maximum_date_for_shipment;
-    public LocalDateTime finalization_date;
-
+public record OrderResult(
+        String vendor_name,
+        String id,
+        int status,
+        Integer is_complete,
+        Integer type,
+        String payment_mode,
+        int payment_mode_id,
+        String delivery_payment_mode,
+        String delivery_mode,
+        String observation,
+        LockerDetails details,
+        LocalDateTime date,
+        Integer payment_status,
+        BigDecimal cashed_co,
+        BigDecimal cashed_cod,
+        BigDecimal shipping_tax,
+        VoucherSplit[] shipping_tax_voucher_split,
+        Customer customer,
+        Product[] products,
+        Attachment[] attachments,
+        Voucher[] vouchers,
+        boolean is_storno,
+        Integer cancellation_reason,
+        BigDecimal refunded_amount,
+        String refund_status,
+        LocalDateTime maximum_date_for_shipment,
+        LocalDateTime finalization_date,
+        //TODO: Additional fields
+        String parent_id,
+        String detailed_payment_method,
+        String[] proforms,
+        String cancellation_request,
+        int has_editable_products,
+        CancellationReason reason_cancellation,
+        Integer late_shipment,
+        Flag[] flags,
+        int emag_club,
+        int weekend_delivery
+) {
 
     /**
      * Return the delivery mode as either 'curier' or 'easybox'
@@ -56,39 +64,6 @@ public class OrderResult {
      * @return true if it is a company.
      */
     public boolean isCompany() {
-        return Integer.valueOf(1).equals(customer.legal_entity);
-    }
-
-    @Override
-    public String toString() {
-        return "OrderResult{" +
-               "vendor_name='" + vendor_name + '\'' +
-               ", id='" + id + '\'' +
-               ", status=" + status +
-               ", is_complete=" + is_complete +
-               ", type=" + type +
-               ", payment_mode='" + payment_mode + '\'' +
-               ", payment_mode_id=" + payment_mode_id +
-               ", delivery_payment_mode='" + delivery_payment_mode + '\'' +
-               ", delivery_mode='" + delivery_mode + '\'' +
-               ", observation='" + observation + '\'' +
-               ", details=" + details +
-               ", date=" + date +
-               ", payment_status=" + payment_status +
-               ", cashed_co=" + cashed_co +
-               ", cashed_cod=" + cashed_cod +
-               ", shipping_tax=" + shipping_tax +
-               ", shipping_tax_voucher_split=" + Arrays.toString(shipping_tax_voucher_split) +
-               ", customer=" + customer +
-               ", products=" + Arrays.toString(products) +
-               ", attachments=" + Arrays.toString(attachments) +
-               ", vouchers=" + Arrays.toString(vouchers) +
-               ", is_storno=" + is_storno +
-               ", cancellation_reason=" + cancellation_reason +
-               ", refunded_amount=" + refunded_amount +
-               ", refund_status='" + refund_status + '\'' +
-               ", maximum_date_for_shipment=" + maximum_date_for_shipment +
-               ", finalization_date=" + finalization_date +
-               '}';
+        return Integer.valueOf(1).equals(customer.legal_entity());
     }
 }

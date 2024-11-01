@@ -2,14 +2,11 @@ package ro.sellfluence.emagapi;
 
 import java.math.BigDecimal;
 
-public class VoucherSplit {
-    public Integer voucher_id;
-
-    public BigDecimal value;
-    public BigDecimal vat_value;
-
-    @Override
-    public String toString() {
-        return "ShippingTaxVoucher {" + "voucher_id=" + voucher_id + ", value=" + value + ", vat_value=" + vat_value + '}';
-    }
-}
+public record VoucherSplit (
+   Integer voucher_id,
+   BigDecimal value,
+   BigDecimal vat_value,
+   //TODO: Added field
+   String vat,
+   String offered_by
+){}

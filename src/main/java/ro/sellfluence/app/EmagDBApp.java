@@ -48,8 +48,8 @@ public class EmagDBApp {
                     var fetchStartTime = LocalDateTime.now();
                     Exception exception = null;
                     try {
-                        transferRMAsToDatabase(account, mirrorDB, startTime, endTime);
                         transferOrdersToDatabase(account, mirrorDB, startTime, endTime);
+                        transferRMAsToDatabase(account, mirrorDB, startTime, endTime);
                     } catch (Exception e) {
                         exception = e;
                     } finally {

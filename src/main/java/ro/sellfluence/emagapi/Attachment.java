@@ -1,20 +1,11 @@
 package ro.sellfluence.emagapi;
 
-public class Attachment {
-    public String order_id;
-    public String name;
-    public String url;
-    public Integer type;
-    public Integer force_download;
-
-    @Override
-    public String toString() {
-        return "Attachment{" +
-                "order_id=" + order_id +
-                ", name='" + name + '\'' +
-                ", url='" + url + '\'' +
-                ", type=" + type +
-                ", force_download=" + force_download +
-                '}';
-    }
-}
+public record Attachment (
+    String order_id,
+    String name,
+    String url,
+    Integer type,
+    Integer force_download,
+    //TODO: Added field
+    String visibility
+){}
