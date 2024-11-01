@@ -1,6 +1,7 @@
 package ro.sellfluence.db;
 
 import ch.claudio.db.DB;
+import ro.sellfluence.emagapi.AWB;
 import ro.sellfluence.emagapi.Attachment;
 import ro.sellfluence.emagapi.Customer;
 import ro.sellfluence.emagapi.LockerDetails;
@@ -8,6 +9,8 @@ import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.Product;
 import ro.sellfluence.emagapi.RMAResult;
 import ro.sellfluence.emagapi.ReturnedProduct;
+import ro.sellfluence.emagapi.StatusHistory;
+import ro.sellfluence.emagapi.StatusRequest;
 import ro.sellfluence.emagapi.Voucher;
 import ro.sellfluence.emagapi.VoucherSplit;
 
@@ -82,6 +85,27 @@ public class EmagMirrorDB {
                     return 0;
                 }
         );
+    }
+
+    public void addRMA(RMAResult rmaResult) throws SQLException {
+        database.writeTX(db -> {
+            var emagId = rmaResult.emag_id();
+            insertRMAResult(db, rmaResult);
+            for (var product : rmaResult.products()) {
+                insertReturnedProduct(db, product, emagId);
+            }
+            for (var awb : rmaResult.awbs()) {
+                insertAWB(db, awb, emagId);
+            }
+            for (var statusHistory : rmaResult.status_history()) {
+                var historyUUID = UUID.randomUUID();
+                insertStatusHistory(db, statusHistory, emagId, historyUUID);
+                for (var statusRequest : statusHistory.requests()) {
+                    insertStatusRequest(db, statusRequest, historyUUID);
+                }
+            }
+            return 0;
+        });
     }
 
     public void addProduct(ProductInfo productInfo) throws SQLException {
@@ -420,33 +444,90 @@ public class EmagMirrorDB {
         }
     }
 
-    private static int insertReturnedProduct(Connection db, ReturnedProduct returnedProduct, int rmaId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO emag_returned_products (id, rma_result_id, product_emag_id, product_id, quantity, product_name, return_reason, observations, diagnostic, reject_reason, refund_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
+    private static int insertAWB(Connection db, AWB awb, int emagId) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO awb (reservation_id, emag_id) VALUES (?, ?)")) {
+            s.setInt(1, awb.reservation_id());
+            s.setInt(2, emagId);
+            return s.executeUpdate();
+        }
+    }
+
+    private static int insertStatusHistory(Connection db, StatusHistory statusHistory, int emagId, UUID uuid) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO status_history (uuid, code, emag_id) VALUES (?, ?, ?)")) {
+            s.setObject(1, uuid);
+            s.setString(2, statusHistory.code());
+            s.setInt(3, emagId);
+            return s.executeUpdate();
+        }
+    }
+
+    private static int insertStatusRequest(Connection db, StatusRequest statusRequest, UUID statusHistoryUuid) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO status_request (amount, created, refund_type, refund_status, rma_id, status_date, status_history_uuid) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+            s.setBigDecimal(1, statusRequest.amount());
+            s.setTimestamp(2, Timestamp.valueOf(statusRequest.created()));
+            s.setString(3, statusRequest.refund_type());
+            s.setString(4, statusRequest.refund_status());
+            s.setString(5, statusRequest.rma_id());
+            s.setTimestamp(6, Timestamp.valueOf(statusRequest.status_date()));
+            s.setObject(7, statusHistoryUuid);
+            return s.executeUpdate();
+        }
+    }
+
+    private static int insertReturnedProduct(Connection db, ReturnedProduct returnedProduct, int emagId) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO emag_returned_products (id, product_emag_id, product_id, quantity, product_name, return_reason, observations, diagnostic, reject_reason, retained_amount, emag_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             s.setInt(1, returnedProduct.id());
-            s.setInt(2, rmaId);
-            s.setInt(3, returnedProduct.product_emag_id());
-            s.setInt(4, returnedProduct.product_id());
-            s.setInt(5, returnedProduct.quantity());
-            s.setString(6, returnedProduct.product_name());
-            s.setInt(7, returnedProduct.return_reason());
-            s.setString(8, returnedProduct.observations());
-            s.setInt(9, returnedProduct.diagnostic());
-            s.setInt(10, returnedProduct.reject_reason());
-            s.setInt(11, returnedProduct.retained_amount());
+            s.setInt(2, returnedProduct.product_emag_id());
+            s.setInt(3, returnedProduct.product_id());
+            s.setInt(4, returnedProduct.quantity());
+            s.setString(5, returnedProduct.product_name());
+            s.setInt(6, returnedProduct.return_reason());
+            s.setString(7, returnedProduct.observations());
+            s.setObject(8, returnedProduct.diagnostic());
+            s.setInt(9, returnedProduct.reject_reason());
+            s.setInt(10, returnedProduct.retained_amount());
+            s.setInt(11, emagId);
             return s.executeUpdate();
         }
     }
 
     private static int insertRMAResult(Connection db, RMAResult rmaResult) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO rma_results (emag_id, order_id, type, date, request_status, return_type, return_reason, observations) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
-            s.setInt(1, rmaResult.emag_id());
-            s.setString(2, rmaResult.order_id());
-            s.setInt(3, rmaResult.type());
-            s.setTimestamp(4, Timestamp.valueOf(rmaResult.date()));
-            s.setInt(5, rmaResult.request_status());
-            s.setInt(6, rmaResult.return_type());
-            s.setInt(7, rmaResult.return_reason());
-            s.setString(8, rmaResult.observations());
+        try (var s = db.prepareStatement("INSERT INTO rma_result (is_full_fbe, emag_id, return_parent_id, order_id, type, is_club, is_fast, customer_name, customer_company, customer_phone, pickup_country, pickup_suburb, pickup_city, pickup_address, pickup_zipcode, pickup_locality_id, pickup_method, customer_account_iban, customer_account_bank, customer_account_beneficiary, replacement_product_emag_id, replacement_product_id, replacement_product_name, replacement_product_quantity, observations, request_status, return_type, return_reason, date, extra_info, return_tax_value, swap, return_address_snapshot, request_history, locker) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+            s.setInt(1, rmaResult.is_full_fbe());
+            s.setInt(2, rmaResult.emag_id());
+            s.setObject(3, rmaResult.return_parent_id());
+            s.setString(4, rmaResult.order_id());
+            s.setInt(5, rmaResult.type());
+            s.setInt(6, rmaResult.is_club());
+            s.setInt(7, rmaResult.is_fast());
+            s.setString(8, rmaResult.customer_name());
+            s.setString(9, rmaResult.customer_company());
+            s.setString(10, rmaResult.customer_phone());
+            s.setString(11, rmaResult.pickup_country());
+            s.setString(12, rmaResult.pickup_suburb());
+            s.setString(13, rmaResult.pickup_city());
+            s.setString(14, rmaResult.pickup_address());
+            s.setString(15, rmaResult.pickup_zipcode());
+            s.setInt(16, rmaResult.pickup_locality_id());
+            s.setInt(17, rmaResult.pickup_method());
+            s.setString(18, rmaResult.customer_account_iban());
+            s.setString(19, rmaResult.customer_account_bank());
+            s.setString(20, rmaResult.customer_account_beneficiary());
+            s.setObject(21, rmaResult.replacement_product_emag_id());
+            s.setObject(22, rmaResult.replacement_product_id());
+            s.setString(23, rmaResult.replacement_product_name());
+            s.setObject(24, rmaResult.replacement_product_quantity());
+            s.setString(25, rmaResult.observations());
+            s.setInt(26, rmaResult.request_status());
+            s.setInt(27, rmaResult.return_type());
+            s.setInt(28, rmaResult.return_reason());
+            s.setTimestamp(29, Timestamp.valueOf(rmaResult.date()));
+            s.setString(30, rmaResult.extra_info());
+            s.setString(31, rmaResult.return_tax_value());
+            s.setString(32, rmaResult.swap());
+            s.setString(33, rmaResult.return_address_snapshot());
+            s.setString(34, String.join("\n", rmaResult.request_history()));
+            s.setString(35, String.join("\n", rmaResult.locker()));
             return s.executeUpdate();
         }
     }

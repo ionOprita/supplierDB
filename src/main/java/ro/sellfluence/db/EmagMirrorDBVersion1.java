@@ -190,34 +190,61 @@ class EmagMirrorDBVersion1 {
             s.execute();
         }
         try (var s = db.prepareStatement("""
-                CREATE TABLE rma_results (
-                   emag_id INT PRIMARY KEY,
-                   order_id INT,
-                   type INT,
-                   date TIMESTAMP,
-                   request_status INT,
-                   return_type INT,
-                   return_reason INT,
-                   observations TEXT
-                );
+                            CREATE TABLE rma_result (
+                emag_id INT PRIMARY KEY,
+                is_full_fbe INT,
+                return_parent_id INT,
+                order_id VARCHAR(255),
+                type INT,
+                is_club INT,
+                is_fast INT,
+                customer_name VARCHAR(255),
+                customer_company VARCHAR(255),
+                customer_phone VARCHAR(255),
+                pickup_country VARCHAR(255),
+                pickup_suburb VARCHAR(255),
+                pickup_city VARCHAR(255),
+                pickup_address VARCHAR(255),
+                pickup_zipcode VARCHAR(255),
+                pickup_locality_id INT,
+                pickup_method INT,
+                customer_account_iban VARCHAR(255),
+                customer_account_bank VARCHAR(255),
+                customer_account_beneficiary VARCHAR(255),
+                replacement_product_emag_id INT,
+                replacement_product_id INT,
+                replacement_product_name VARCHAR(255),
+                replacement_product_quantity INT,
+                observations TEXT,
+                request_status INT,
+                return_type INT,
+                return_reason INT,
+                date TIMESTAMP,
+                extra_info TEXT,
+                return_tax_value VARCHAR(255),
+                swap VARCHAR(255),
+                return_address_snapshot TEXT,
+                request_history TEXT,
+                locker TEXT
+                            );
                 """)) {
             s.execute();
         }
         try (var s = db.prepareStatement("""
-                CREATE TABLE emag_returned_products (
-                    id INT PRIMARY KEY,
-                    rma_result_id INT,
-                    product_emag_id INT,
-                    product_id INT,
-                    quantity INT,
-                    product_name VARCHAR(255),
-                    return_reason INT,
-                    observations TEXT,
-                    diagnostic INT,
-                    reject_reason INT,
-                    refund_value VARCHAR(255),
-                    FOREIGN KEY (rma_result_id) REFERENCES rma_results(emag_id)
-                );
+                            CREATE TABLE emag_returned_products (
+                id INT PRIMARY KEY,
+                product_emag_id INT,
+                product_id INT,
+                quantity INT,
+                product_name VARCHAR(255),
+                return_reason INT,
+                observations TEXT,
+                diagnostic INT,
+                reject_reason INT,
+                retained_amount INT,
+                emag_id INT, -- Foreign key referencing rma_result.emag_id
+                FOREIGN KEY (emag_id) REFERENCES rma_result(emag_id)
+                            );
                 """)) {
             s.execute();
         }
@@ -233,14 +260,47 @@ class EmagMirrorDBVersion1 {
                 """)) {
             s.execute();
         }
-        try (var s=db.prepareStatement("""
+        try (var s = db.prepareStatement("""
+                CREATE TABLE awb (
+                    reservation_id INT PRIMARY KEY,
+                    emag_id INT, -- Foreign key referencing rma_result.emag_id
+                    FOREIGN KEY (emag_id) REFERENCES rma_result(emag_id)
+                );
+                """)) {
+            s.execute();
+        }
+        try (var s = db.prepareStatement("""
+                CREATE TABLE status_history (
+                    uuid UUID PRIMARY KEY,
+                    code VARCHAR(255),
+                    emag_id INT, -- Foreign key referencing rma_result.emag_id
+                    FOREIGN KEY (emag_id) REFERENCES rma_result(emag_id)
+                );
+                """)) {
+            s.execute();
+        }
+        try (var s = db.prepareStatement("""
+                CREATE TABLE status_request (
+                    amount DECIMAL(19,2),
+                    created TIMESTAMP,
+                    refund_type VARCHAR(255),
+                    refund_status VARCHAR(255),
+                    rma_id VARCHAR(255),
+                    status_date TIMESTAMP,
+                    status_history_uuid UUID, -- Foreign key referencing status_history.uuid
+                    FOREIGN KEY (status_history_uuid) REFERENCES status_history(uuid)
+                );
+                """)) {
+            s.execute();
+        }
+        try (var s = db.prepareStatement("""
                 CREATE TABLE emag_fetch_log (
                     emag_login VARCHAR(255),
                     order_start TIMESTAMP NOT NULL,
                     order_end TIMESTAMP NOT NULL,
                     fetch_start TIMESTAMP NOT NULL,
                     fetch_end TIMESTAMP NOT NULL,
-                    error VARCHAR(1024),
+                    error VARCHAR(65536),
                     PRIMARY KEY (emag_login, order_start, order_end)
                 );
                 """)) {
