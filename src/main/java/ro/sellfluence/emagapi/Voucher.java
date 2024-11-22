@@ -12,6 +12,5 @@ public record Voucher (
     String voucher_name,
     BigDecimal vat,
     String issue_date,
-    //TODO: Additional fields
     String id
 ){}

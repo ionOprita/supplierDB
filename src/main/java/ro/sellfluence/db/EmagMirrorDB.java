@@ -4,6 +4,7 @@ import ch.claudio.db.DB;
 import ro.sellfluence.emagapi.AWB;
 import ro.sellfluence.emagapi.Attachment;
 import ro.sellfluence.emagapi.Customer;
+import ro.sellfluence.emagapi.Flag;
 import ro.sellfluence.emagapi.LockerDetails;
 import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.Product;
@@ -22,6 +23,7 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -61,7 +63,8 @@ public class EmagMirrorDB {
         var vendorId = getOrAddVendor(vendorName);
         database.writeTX(db -> {
                     if (order.customer() != null) insertCustomer(db, order.customer());
-                    if (order.details() != null && order.details().locker_id() != null) indertLockerDetails(db, order.details());
+                    if (order.details() != null && order.details().locker_id() != null)
+                        indertLockerDetails(db, order.details());
                     insertOrder(db, order, vendorId);
                     for (var product : order.products()) {
                         insertProduct(db, product, order.id(), vendorId);
@@ -80,6 +83,10 @@ public class EmagMirrorDB {
                     }
                     for (Voucher voucher : order.vouchers()) {
                         insertVoucher(db, voucher, order.id(), vendorId);
+
+                    }
+                    for (Flag flag : order.flags()) {
+                        insertFlag(db, flag, order.id(), vendorId);
 
                     }
                     return 0;
@@ -290,19 +297,30 @@ public class EmagMirrorDB {
     }
 
     private static int insertAttachment(Connection db, Attachment attachment, String orderId, UUID vendorId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO attachment (order_id, vendor_id, name, url, type, force_download) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(order_id, url) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO attachment (order_id, vendor_id, name, url, type, force_download, visibility) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(order_id, url) DO NOTHING")) {
             s.setString(1, orderId);
             s.setObject(2, vendorId);
             s.setString(3, attachment.name());
             s.setString(4, attachment.url());
             s.setInt(5, attachment.type());
             s.setInt(6, attachment.force_download());
+            s.setString(7, attachment.visibility());
+            return s.executeUpdate();
+        }
+    }
+
+    private static int insertFlag(Connection db, Flag flag, String orderId, UUID vendorId) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO flag (vendor_id, order_id, flag, value) VALUES (?, ?, ?, ?)")) {
+            s.setObject(1, vendorId);
+            s.setString(2, orderId);
+            s.setString(3, flag.flag());
+            s.setString(4, flag.value());
             return s.executeUpdate();
         }
     }
 
     private static int insertVoucher(Connection db, Voucher voucher, String orderId, UUID vendorId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO voucher (voucher_id, order_id, vendor_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO voucher (voucher_id, order_id, vendor_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
             s.setInt(1, voucher.voucher_id());
             s.setString(2, orderId);
             s.setObject(3, vendorId);
@@ -314,6 +332,7 @@ public class EmagMirrorDB {
             s.setString(9, voucher.voucher_name());
             s.setBigDecimal(10, voucher.vat());
             s.setString(11, voucher.issue_date());
+            s.setString(12, voucher.id());
             return s.executeUpdate();
         }
     }
@@ -330,13 +349,15 @@ public class EmagMirrorDB {
     }
 
     private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, String orderId, UUID vendorId, int productId) throws SQLException {
-        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, order_id, vendor_id, product_id, value, vat_value) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, order_id, vendor_id, product_id, value, vat_value, vat, offered_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id());
             s.setString(2, orderId);
             s.setObject(3, vendorId);
             s.setInt(4, productId);
             s.setBigDecimal(5, voucherSplit.value());
             s.setBigDecimal(6, voucherSplit.vat_value());
+            s.setString(7, voucherSplit.vat());
+            s.setString(8, voucherSplit.offered_by());
             return s.executeUpdate();
         }
     }
@@ -412,15 +433,52 @@ public class EmagMirrorDB {
     }
 
     private static int indertLockerDetails(Connection db, LockerDetails ld) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO locker_details (locker_id, locker_name) VALUES (?,?) ON CONFLICT(locker_id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO locker_details (locker_id, locker_name, locker_delivery_eligible, courier_external_office_id) VALUES (?,?,?,?) ON CONFLICT(locker_id) DO NOTHING")) {
             s.setString(1, ld.locker_id());
             s.setString(2, ld.locker_name());
+            s.setInt(3, ld.locker_delivery_eligible());
+            s.setString(4, ld.courier_external_office_id());
             return s.executeUpdate();
         }
     }
 
     private static int insertOrder(Connection db, OrderResult or, UUID vendorId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO emag_order (vendor_id, id, status, is_complete, type, payment_mode, payment_mode_id, delivery_payment_mode, delivery_mode, observation, details_id, date, payment_status, cashed_co, cashed_cod, shipping_tax, customer_id, is_storno, cancellation_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id, vendor_id) DO NOTHING")) {
+        try (var s = db.prepareStatement(
+                """
+                        INSERT INTO emag_order (
+                            vendor_id,
+                            id,
+                            status,
+                            is_complete,
+                            type,
+                            payment_mode,
+                            payment_mode_id,
+                            delivery_payment_mode,
+                            delivery_mode,
+                            observation,
+                            details_id,
+                            date,
+                            payment_status,
+                            cashed_co,
+                            cashed_cod,
+                            shipping_tax,
+                            customer_id,
+                            is_storno,
+                            cancellation_reason,
+                            refunded_amount,
+                            refund_status,
+                            maximum_date_for_shipment,
+                            finalization_date,
+                            parent_id,
+                            detailed_payment_method,
+                            proforms,
+                            cancellation_request,
+                            has_editable_products,
+                            late_shipment,
+                            emag_club,
+                            weekend_delivery
+                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id, vendor_id) DO NOTHING
+                        """)) {
             s.setObject(1, vendorId);
             s.setString(2, or.id());
             s.setInt(3, or.status());
@@ -437,9 +495,21 @@ public class EmagMirrorDB {
             s.setBigDecimal(14, or.cashed_co());
             s.setBigDecimal(15, or.cashed_cod());
             s.setBigDecimal(16, or.shipping_tax());
-            if (or.customer() != null) s.setInt(17, or.customer().id());
+            s.setObject(17, or.customer() != null ? or.customer().id() : null);
             s.setBoolean(18, or.is_storno());
             s.setObject(19, or.cancellation_reason());
+            s.setBigDecimal(20, or.refunded_amount());
+            s.setString(21, or.refund_status());
+            s.setTimestamp(22, or.maximum_date_for_shipment() != null ? Timestamp.valueOf(or.maximum_date_for_shipment()) : null);
+            s.setTimestamp(23, or.finalization_date() != null ? Timestamp.valueOf(or.finalization_date()) : null);
+            s.setString(24, or.parent_id());
+            s.setString(25, or.detailed_payment_method());
+            s.setString(26, String.join("", Arrays.asList(or.proforms())));
+            s.setString(27, or.cancellation_request());
+            s.setInt(28, or.has_editable_products());
+            s.setObject(29, or.late_shipment());
+            s.setInt(30, or.emag_club());
+            s.setInt(31, or.weekend_delivery());
             return s.executeUpdate();
         }
     }

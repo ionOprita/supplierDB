@@ -32,7 +32,6 @@ public class EmagDBApp {
     );
 
     //Vendor, day-requested, day-executed, error encountered (NULL if fully executed successfully)
-    //TODO: Store what has been done externally, so we don't need to refetch when error happens.
     public static void main(String[] args) throws Exception {
         //EmagApi.activateEmagJSONLog();
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");

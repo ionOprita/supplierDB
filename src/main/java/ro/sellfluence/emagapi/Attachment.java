@@ -6,6 +6,5 @@ public record Attachment (
     String url,
     Integer type,
     Integer force_download,
-    //TODO: Added field
     String visibility
 ){}

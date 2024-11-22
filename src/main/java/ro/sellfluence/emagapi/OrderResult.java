@@ -31,7 +31,6 @@ public record OrderResult(
         String refund_status,
         LocalDateTime maximum_date_for_shipment,
         LocalDateTime finalization_date,
-        //TODO: Additional fields
         String parent_id,
         String detailed_payment_method,
         String[] proforms,
