@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -215,9 +216,9 @@ public class EmagApi {
                             finished = true;
                         }
                     }
-                } catch (JsonSyntaxException e) {
+                } catch (MismatchedInputException e) {
                     logger.log(SEVERE, "JSON decoded ended with error %s".formatted(e.getMessage()));
-                    logger.log(INFO, receivedJSON);
+                    logger.log(SEVERE, receivedJSON);
                 }
             } else {
                 logger.log(SEVERE, "Received error status %s".formatted(statusCode));

@@ -1,5 +1,7 @@
 package ro.sellfluence.emagapi;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+
 import java.time.LocalDateTime;
 
 public record RMAResult(
@@ -33,13 +35,18 @@ public record RMAResult(
             int return_reason,
             LocalDateTime date,
             ReturnedProduct[] products,
-            String extra_info,
+            ExtraInfo extra_info,
             String return_tax_value,
             String swap,
             String return_address_snapshot,
             AWB[] awbs,
             StatusHistory[] status_history,
             String[] request_history,
-            String[] locker
-) {
+            @JsonDeserialize(using = LockerDeserializer.class)
+            Locker locker,
+            Integer return_address_id,
+            String country,
+            String address_type,
+            Integer request_status_reason
+            ) {
 }

@@ -383,8 +383,8 @@ public class EmagMirrorDB {
             s.setInt(17, product.reversible_vat_charging());
             s.setBigDecimal(18, product.sale_price());
             s.setBigDecimal(19, product.original_price());
-            s.setTimestamp(20, Timestamp.valueOf(product.created()));
-            s.setTimestamp(21, Timestamp.valueOf(product.modified()));
+            s.setTimestamp(20, toTimestamp(product.created()));
+            s.setTimestamp(21, toTimestamp(product.modified()));
             s.setString(22, String.join("\n", product.details()));
             s.setString(23, String.join("\n", product.recycle_warranties()));
             return s.executeUpdate();
@@ -426,8 +426,8 @@ public class EmagMirrorDB {
             s.setString(31, c.shipping_postal_code());
             s.setString(32, c.shipping_contact());
             s.setString(33, c.shipping_phone());
-            s.setTimestamp(34, Timestamp.valueOf(c.created()));
-            s.setTimestamp(35, Timestamp.valueOf(c.modified()));
+            s.setTimestamp(34, toTimestamp(c.created()));
+            s.setTimestamp(35, toTimestamp(c.modified()));
             return s.executeUpdate();
         }
     }
@@ -490,7 +490,7 @@ public class EmagMirrorDB {
             s.setString(9, or.delivery_mode());
             s.setString(10, or.observation());
             s.setString(11, or.details().locker_id());
-            s.setTimestamp(12, Timestamp.valueOf(or.date()));
+            s.setTimestamp(12, toTimestamp(or.date()));
             s.setInt(13, or.payment_status());
             s.setBigDecimal(14, or.cashed_co());
             s.setBigDecimal(15, or.cashed_cod());
@@ -500,8 +500,8 @@ public class EmagMirrorDB {
             s.setObject(19, or.cancellation_reason());
             s.setBigDecimal(20, or.refunded_amount());
             s.setString(21, or.refund_status());
-            s.setTimestamp(22, or.maximum_date_for_shipment() != null ? Timestamp.valueOf(or.maximum_date_for_shipment()) : null);
-            s.setTimestamp(23, or.finalization_date() != null ? Timestamp.valueOf(or.finalization_date()) : null);
+            s.setTimestamp(22, or.maximum_date_for_shipment() != null ? toTimestamp(or.maximum_date_for_shipment()) : null);
+            s.setTimestamp(23, or.finalization_date() != null ? toTimestamp(or.finalization_date()) : null);
             s.setString(24, or.parent_id());
             s.setString(25, or.detailed_payment_method());
             s.setString(26, String.join("", Arrays.asList(or.proforms())));
@@ -523,10 +523,11 @@ public class EmagMirrorDB {
     }
 
     private static int insertStatusHistory(Connection db, StatusHistory statusHistory, int emagId, UUID uuid) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO status_history (uuid, code, emag_id) VALUES (?, ?, ?)")) {
+        try (var s = db.prepareStatement("INSERT INTO status_history (uuid, code, event_date, emag_id) VALUES (?, ?, ?, ?)")) {
             s.setObject(1, uuid);
             s.setString(2, statusHistory.code());
-            s.setInt(3, emagId);
+            s.setTimestamp(3, statusHistory.event_date() == null ? null : toTimestamp(statusHistory.event_date()));
+            s.setInt(4, emagId);
             return s.executeUpdate();
         }
     }
@@ -534,11 +535,11 @@ public class EmagMirrorDB {
     private static int insertStatusRequest(Connection db, StatusRequest statusRequest, UUID statusHistoryUuid) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO status_request (amount, created, refund_type, refund_status, rma_id, status_date, status_history_uuid) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
             s.setBigDecimal(1, statusRequest.amount());
-            s.setTimestamp(2, Timestamp.valueOf(statusRequest.created()));
+            s.setTimestamp(2, toTimestamp(statusRequest.created()));
             s.setString(3, statusRequest.refund_type());
             s.setString(4, statusRequest.refund_status());
             s.setString(5, statusRequest.rma_id());
-            s.setTimestamp(6, Timestamp.valueOf(statusRequest.status_date()));
+            s.setTimestamp(6, toTimestamp(statusRequest.status_date()));
             s.setObject(7, statusHistoryUuid);
             return s.executeUpdate();
         }
@@ -562,7 +563,54 @@ public class EmagMirrorDB {
     }
 
     private static int insertRMAResult(Connection db, RMAResult rmaResult) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO rma_result (is_full_fbe, emag_id, return_parent_id, order_id, type, is_club, is_fast, customer_name, customer_company, customer_phone, pickup_country, pickup_suburb, pickup_city, pickup_address, pickup_zipcode, pickup_locality_id, pickup_method, customer_account_iban, customer_account_bank, customer_account_beneficiary, replacement_product_emag_id, replacement_product_id, replacement_product_name, replacement_product_quantity, observations, request_status, return_type, return_reason, date, extra_info, return_tax_value, swap, return_address_snapshot, request_history, locker) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+        try (var s = db.prepareStatement("""
+                INSERT INTO rma_result (
+                is_full_fbe,
+                emag_id,
+                return_parent_id,
+                order_id,
+                type,
+                is_club,
+                is_fast,
+                customer_name,
+                customer_company,
+                customer_phone,
+                pickup_country,
+                pickup_suburb,
+                pickup_city,
+                pickup_address,
+                pickup_zipcode,
+                pickup_locality_id,
+                pickup_method,
+                customer_account_iban,
+                customer_account_bank,
+                customer_account_beneficiary,
+                replacement_product_emag_id,
+                replacement_product_id,
+                replacement_product_name,
+                replacement_product_quantity,
+                observations,
+                request_status,
+                return_type,
+                return_reason,
+                date,
+                maximum_finalization_date,
+                first_pickup_date,
+                estimated_product_pickup,
+                estimated_product_reception,
+                return_tax_value,
+                swap,
+                return_address_snapshot,
+                request_history,
+                locker_hash,
+                locker_pin,
+                locker_pin_interval_end,
+                return_address_id,
+                country,
+                address_type,
+                request_status_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(emag_id) DO NOTHING""")) {
             s.setInt(1, rmaResult.is_full_fbe());
             s.setInt(2, rmaResult.emag_id());
             s.setObject(3, rmaResult.return_parent_id());
@@ -591,13 +639,22 @@ public class EmagMirrorDB {
             s.setInt(26, rmaResult.request_status());
             s.setInt(27, rmaResult.return_type());
             s.setInt(28, rmaResult.return_reason());
-            s.setTimestamp(29, Timestamp.valueOf(rmaResult.date()));
-            s.setString(30, rmaResult.extra_info());
-            s.setString(31, rmaResult.return_tax_value());
-            s.setString(32, rmaResult.swap());
-            s.setString(33, rmaResult.return_address_snapshot());
-            s.setString(34, String.join("\n", rmaResult.request_history()));
-            s.setString(35, String.join("\n", rmaResult.locker()));
+            s.setTimestamp(29, toTimestamp(rmaResult.date()));
+            s.setTimestamp(30, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().maximum_finalization_date().atStartOfDay()));
+            s.setTimestamp(31, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().first_pickup_date().atStartOfDay()));
+            s.setTimestamp(32, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().estimated_product_pickup().atStartOfDay()));
+            s.setTimestamp(33, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().estimated_product_reception().atStartOfDay()));
+            s.setString(34, rmaResult.return_tax_value());
+            s.setString(35, rmaResult.swap());
+            s.setString(36, rmaResult.return_address_snapshot());
+            s.setString(37, String.join("\n", rmaResult.request_history()));
+            s.setString(38, rmaResult.locker() == null ? null : rmaResult.locker().locker_hash());
+            s.setString(39, rmaResult.locker() == null ? null : rmaResult.locker().locker_pin());
+            s.setTimestamp(40, rmaResult.locker() == null ? null : toTimestamp(rmaResult.locker().locker_pin_interval_end()));
+            s.setObject(41, rmaResult.return_address_id());
+            s.setString(42, rmaResult.country());
+            s.setString(43, rmaResult.address_type());
+            s.setObject(44, rmaResult.request_status_reason());
             return s.executeUpdate();
         }
     }
@@ -616,10 +673,10 @@ public class EmagMirrorDB {
     private static int insertEmagLog(Connection db, String account, LocalDateTime startTime, LocalDateTime endTime, LocalDateTime fetchStartTime, LocalDateTime fetchEndTime, String error) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO emag_fetch_log (emag_login, order_start, order_end, fetch_start, fetch_end, error) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(emag_login, order_start, order_end) DO NOTHING")) {
             s.setString(1, account);
-            s.setTimestamp(2, Timestamp.valueOf(startTime));
-            s.setTimestamp(3, Timestamp.valueOf(endTime));
-            s.setTimestamp(4, Timestamp.valueOf(fetchStartTime));
-            s.setTimestamp(5, Timestamp.valueOf(fetchEndTime));
+            s.setTimestamp(2, toTimestamp(startTime));
+            s.setTimestamp(3, toTimestamp(endTime));
+            s.setTimestamp(4, toTimestamp(fetchStartTime));
+            s.setTimestamp(5, toTimestamp(fetchEndTime));
             s.setString(6, error);
             return s.executeUpdate();
         }
@@ -627,12 +684,12 @@ public class EmagMirrorDB {
 
     private static int updateEmagLog(Connection db, String account, LocalDateTime startTime, LocalDateTime endTime, LocalDateTime fetchStartTime, LocalDateTime fetchEndTime, String error) throws SQLException {
         try (var s = db.prepareStatement("UPDATE emag_fetch_log SET fetch_start=?, fetch_end=?, error=? WHERE emag_login=? AND order_start=? AND order_end=?")) {
-            s.setTimestamp(1, Timestamp.valueOf(fetchStartTime));
-            s.setTimestamp(2, Timestamp.valueOf(fetchEndTime));
+            s.setTimestamp(1, toTimestamp(fetchStartTime));
+            s.setTimestamp(2, toTimestamp(fetchEndTime));
             s.setString(3, error);
             s.setString(4, account);
-            s.setTimestamp(5, Timestamp.valueOf(startTime));
-            s.setTimestamp(6, Timestamp.valueOf(endTime));
+            s.setTimestamp(5, toTimestamp(startTime));
+            s.setTimestamp(6, toTimestamp(endTime));
             return s.executeUpdate();
         }
     }
@@ -648,8 +705,8 @@ public class EmagMirrorDB {
     private static List<EmagFetchLog> getEmagLog(Connection db, String account, LocalDateTime startTime, LocalDateTime endTime) throws SQLException {
         try (var s = db.prepareStatement("SELECT * FROM emag_fetch_log WHERE emag_login=? AND ? < order_end AND ? > order_start")) {
             s.setString(1, account);
-            s.setTimestamp(2, Timestamp.valueOf(startTime));
-            s.setTimestamp(3, Timestamp.valueOf(endTime));
+            s.setTimestamp(2, toTimestamp(startTime));
+            s.setTimestamp(3, toTimestamp(endTime));
             try (var rs = s.executeQuery()) {
                 var fetchLogs = new ArrayList<EmagFetchLog>();
                 while (rs.next()) {
@@ -665,5 +722,9 @@ public class EmagMirrorDB {
                 return fetchLogs;
             }
         }
+    }
+
+    private static Timestamp toTimestamp(LocalDateTime localDateTime) {
+        return localDateTime == null ? null : Timestamp.valueOf(localDateTime);
     }
 }

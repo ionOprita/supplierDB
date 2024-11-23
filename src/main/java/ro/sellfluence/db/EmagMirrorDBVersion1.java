@@ -73,6 +73,7 @@ class EmagMirrorDBVersion1 {
                 CREATE TABLE status_history (
                     uuid UUID PRIMARY KEY,
                     code VARCHAR(255),
+                    event_date TIMESTAMP,
                     emag_id INT, -- Foreign key referencing rma_result.emag_id
                     FOREIGN KEY (emag_id) REFERENCES rma_result(emag_id)
                 );
@@ -161,12 +162,21 @@ class EmagMirrorDBVersion1 {
                 return_type INT,
                 return_reason INT,
                 date TIMESTAMP,
-                extra_info TEXT,
+                maximum_finalization_date TIMESTAMP,
+                first_pickup_date TIMESTAMP,
+                estimated_product_pickup TIMESTAMP,
+                estimated_product_reception TIMESTAMP,
                 return_tax_value VARCHAR(255),
                 swap VARCHAR(255),
                 return_address_snapshot TEXT,
                 request_history TEXT,
-                locker TEXT
+                locker_hash VARCHAR(255),
+                locker_pin VARCHAR(255),
+                locker_pin_interval_end TIMESTAMP,
+                return_address_id INT,
+                country VARCHAR(255),
+                address_type VARCHAR(255),
+                request_status_reason INT
                             );
                 """)) {
             s.execute();

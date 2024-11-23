@@ -22,13 +22,13 @@ public class EmagDBApp {
 
     private static final Logger logger = Logger.getLogger(EmagDBApp.class.getName());
     private static final List<String> emagAccounts = List.of(
-            //"sellfluence",
-//            "zoopieconcept",
-//            "zoopieinvest",
-//            "zoopiesolutions",
-//            "judios",
-//            "koppel",
-//            "koppelfbe"
+            "sellfluence",
+            "zoopieconcept",
+            "zoopieinvest",
+            "zoopiesolutions",
+            "judios",
+            "koppel",
+            "koppelfbe",
             "sellfusion"
     );
 
@@ -56,6 +56,7 @@ public class EmagDBApp {
                                 transferRMAsToDatabase(account, mirrorDB, startTime, endTime);
                                 DB.printTimes();
                             } catch (Exception e) {
+                                logger.log(WARNING, "Some error occurred", e);
                                 exception = e;
                             } finally {
                                 var fetchEndTime = LocalDateTime.now();
