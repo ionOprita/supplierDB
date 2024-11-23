@@ -1,14 +1,18 @@
 package ch.claudio.db;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+
 import java.io.IOException;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.SQLTransactionRollbackException;
 import java.sql.SQLTransientConnectionException;
 import java.sql.SQLTransientException;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static ch.claudio.db.DBPass.findDB;
 import static java.sql.Connection.TRANSACTION_READ_COMMITTED;
@@ -47,9 +51,20 @@ public class DB {
     private static final String versionColumn = "version";
     private static final String dateColumn = "date";
     private final DBPass dbSpec;
+    private final HikariDataSource dataSource;
 
     public DB(String alias) throws IOException {
         dbSpec = findDB(alias);
+        // Configure the connection pool
+        HikariConfig config = new HikariConfig();
+        config.setJdbcUrl(dbSpec.connect());
+        if (dbSpec.user() != null) {
+            config.setUsername(dbSpec.user());
+            config.setPassword(dbSpec.pw());
+        }
+        config.setAutoCommit(false);
+        // Create the data source
+        dataSource = new HikariDataSource(config);
     }
 
     public interface Instructions {
@@ -146,11 +161,23 @@ public class DB {
     }
 
     private Connection createConnection() throws SQLException {
-        if (dbSpec.user() != null) {
-            return DriverManager.getConnection(dbSpec.connect(), dbSpec.user(), dbSpec.pw());
-        } else {
-            return DriverManager.getConnection(dbSpec.connect());
-        }
+        return dataSource.getConnection();
+    }
+
+    private static Map<String, Long> benchmark = new ConcurrentHashMap<>();
+
+    private static void addTime(String tag, long end, long start) {
+        benchmark.compute(tag, (_, value) -> {
+            if (value == null) {
+                return end - start;
+            } else {
+                return value + end - start;
+            }
+        });
+    }
+
+    public static void printTimes() {
+        benchmark.forEach((key,value) -> System.out.println(key+" "+value+" ms."));
     }
 
     /**
@@ -181,6 +208,7 @@ public class DB {
         OUT doResult;
         do {
             try (var db = createConnection()) {
+                var t0 = System.currentTimeMillis();
                 db.setAutoCommit(false);
                 try {
                     db.setTransactionIsolation(transactionIsolation);
@@ -222,6 +250,8 @@ public class DB {
                 } while (txResult == null);
                 doResult = txResult;
                 db.commit();
+                var t1 = System.currentTimeMillis();
+                addTime("Execute transaction", t1, t0);
             } catch (SQLTransientConnectionException e) {
                 delay = waitOrThrow(delay, e);
                 doResult = null;
