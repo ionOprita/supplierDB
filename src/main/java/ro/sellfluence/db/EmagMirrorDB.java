@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -555,7 +556,7 @@ public class EmagMirrorDB {
             s.setInt(6, returnedProduct.return_reason());
             s.setString(7, returnedProduct.observations());
             s.setObject(8, returnedProduct.diagnostic());
-            s.setInt(9, returnedProduct.reject_reason());
+            s.setObject(9, returnedProduct.reject_reason());
             s.setInt(10, returnedProduct.retained_amount());
             s.setInt(11, emagId);
             return s.executeUpdate();
@@ -640,10 +641,10 @@ public class EmagMirrorDB {
             s.setInt(27, rmaResult.return_type());
             s.setInt(28, rmaResult.return_reason());
             s.setTimestamp(29, toTimestamp(rmaResult.date()));
-            s.setTimestamp(30, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().maximum_finalization_date().atStartOfDay()));
-            s.setTimestamp(31, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().first_pickup_date().atStartOfDay()));
-            s.setTimestamp(32, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().estimated_product_pickup().atStartOfDay()));
-            s.setTimestamp(33, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().estimated_product_reception().atStartOfDay()));
+            s.setTimestamp(30, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().maximum_finalization_date()));
+            s.setTimestamp(31, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().first_pickup_date()));
+            s.setTimestamp(32, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().estimated_product_pickup()));
+            s.setTimestamp(33, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().estimated_product_reception()));
             s.setString(34, rmaResult.return_tax_value());
             s.setString(35, rmaResult.swap());
             s.setString(36, rmaResult.return_address_snapshot());
@@ -726,5 +727,8 @@ public class EmagMirrorDB {
 
     private static Timestamp toTimestamp(LocalDateTime localDateTime) {
         return localDateTime == null ? null : Timestamp.valueOf(localDateTime);
+    }
+    private static Timestamp toTimestamp(LocalDate localDate) {
+        return localDate == null ? null : Timestamp.valueOf(localDate.atStartOfDay());
     }
 }
