@@ -13,7 +13,6 @@ import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonSyntaxException;
 import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
@@ -35,6 +34,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Handler;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static java.net.HttpURLConnection.HTTP_OK;
@@ -228,13 +228,13 @@ public class EmagApi {
         return accumulatedResponses;
     }
 
-    public static void activateEmagJSONLog() {
-        logger.setLevel(FINE);
+    public static void setAPILogLevel(Level level) {
+        logger.setLevel(level);
         for (Handler handler : logger.getHandlers()) {
-            handler.setLevel(FINE);
+            handler.setLevel(level);
         }
         for (Handler handler : logger.getParent().getHandlers()) {
-            handler.setLevel(FINE);
+            handler.setLevel(level);
         }
     }
 }
