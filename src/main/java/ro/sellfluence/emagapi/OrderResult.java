@@ -40,7 +40,9 @@ public record OrderResult(
         Integer late_shipment,
         Flag[] flags,
         int emag_club,
-        int weekend_delivery
+        int weekend_delivery,
+        LocalDateTime created,
+        LocalDateTime modified
 ) {
 
     /**
