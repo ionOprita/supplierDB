@@ -6,9 +6,11 @@ import ro.sellfluence.support.UserPassword;
 
 import java.util.Map;
 
+import static java.util.logging.Level.FINE;
+
 public class FetchOneOrder {
     public static void main(String[] args) throws Exception {
-        EmagApi.activateEmagJSONLog();
+        EmagApi.setAPILogLevel(FINE);
         var emagCredentials = UserPassword.findAlias("sellfusion");
         var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
         //var response = emag.readRequest("order", Map.of("id","381040577"), null, OrderResult.class);
