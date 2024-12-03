@@ -42,7 +42,8 @@ public record OrderResult(
         int emag_club,
         int weekend_delivery,
         LocalDateTime created,
-        LocalDateTime modified
+        LocalDateTime modified,
+        String enforced_vendor_courier_accounts
 ) {
 
     /**
