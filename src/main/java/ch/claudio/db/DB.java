@@ -9,10 +9,8 @@ import java.sql.SQLException;
 import java.sql.SQLTransactionRollbackException;
 import java.sql.SQLTransientConnectionException;
 import java.sql.SQLTransientException;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 import static ch.claudio.db.DBPass.findDB;
 import static java.sql.Connection.TRANSACTION_READ_COMMITTED;
@@ -164,22 +162,6 @@ public class DB {
         return dataSource.getConnection();
     }
 
-    private static Map<String, Long> benchmark = new ConcurrentHashMap<>();
-
-    private static void addTime(String tag, long end, long start) {
-        benchmark.compute(tag, (_, value) -> {
-            if (value == null) {
-                return end - start;
-            } else {
-                return value + end - start;
-            }
-        });
-    }
-
-    public static void printTimes() {
-        benchmark.forEach((key,value) -> System.out.println(key+" "+value+" ms."));
-    }
-
     /**
      * Create a version table in the database [db] and add an entry with number 0
      * representing the version of the empty database.
@@ -208,7 +190,6 @@ public class DB {
         OUT doResult;
         do {
             try (var db = createConnection()) {
-                var t0 = System.currentTimeMillis();
                 db.setAutoCommit(false);
                 try {
                     db.setTransactionIsolation(transactionIsolation);
@@ -250,8 +231,6 @@ public class DB {
                 } while (txResult == null);
                 doResult = txResult;
                 db.commit();
-                var t1 = System.currentTimeMillis();
-                addTime("Execute transaction", t1, t0);
             } catch (SQLTransientConnectionException e) {
                 delay = waitOrThrow(delay, e);
                 doResult = null;

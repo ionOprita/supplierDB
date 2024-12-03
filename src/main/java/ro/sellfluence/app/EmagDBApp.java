@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
+import java.util.random.RandomGenerator;
 
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
@@ -32,47 +33,33 @@ public class EmagDBApp {
             "sellfusion"
     );
 
-    //Vendor, day-requested, day-executed, error encountered (NULL if fully executed successfully)
+    private static final RandomGenerator random = RandomGenerator.of("L64X128MixRandom");
+
     public static void main(String[] args) {
         //EmagApi.activateEmagJSONLog();
         boolean allFetched;
         do {
             try {
                 var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagRemote");
-                var startOfToday = LocalDate.now().atStartOfDay();
-                int weeksToRead = 5*53;
-                for (int pastWeek = 0; pastWeek < weeksToRead; pastWeek++) {
-                    var endTime = startOfToday.minusWeeks(pastWeek);
-                    var startTime = endTime.minusWeeks(1);
-                    for (String account : emagAccounts) {
-                        var wasFetched = mirrorDB.wasFetched(account, startTime, endTime);
-                        if (wasFetched != EmagMirrorDB.FetchStatus.yes) {
-                            logger.log(INFO, "Fetch from %s for %s - %s".formatted(account, startTime, endTime));
-                            var fetchStartTime = LocalDateTime.now();
-                            Exception exception = null;
-                            try {
-                                transferOrdersToDatabase(account, mirrorDB, startTime, endTime);
-                                DB.printTimes();
-                                transferRMAsToDatabase(account, mirrorDB, startTime, endTime);
-                                DB.printTimes();
-                            } catch (Exception e) {
-                                logger.log(WARNING, "Some error occurred", e);
-                                exception = e;
-                            } finally {
-                                var fetchEndTime = LocalDateTime.now();
-                                var error = (exception != null) ? exception.getMessage() : null;
-                                mirrorDB.addEmagLog(account, startTime, endTime, fetchStartTime, fetchEndTime, error);
-                                if (exception != null) throw exception;
-                            }
-                            Thread.sleep(1_000);
-                        }
+                var yesterday = LocalDate.now().atStartOfDay().minusDays(1);
+                fetchAllForDay(yesterday, mirrorDB);
+                var daysToConsider = 5 * 366;
+                var startOfFullPeriod = yesterday.minusDays(daysToConsider);
+                var sequenceOfDaysNotNeeded = 0;
+                do {
+                    var randomDay = startOfFullPeriod.plusDays(random.nextInt(daysToConsider));
+                    var dayWasFullyFetched = fetchAllForDay(randomDay, mirrorDB);
+                    if (dayWasFullyFetched) {
+                        sequenceOfDaysNotNeeded++;
+                    } else {
+                        sequenceOfDaysNotNeeded = 0;
                     }
-                    // to reads = 1325 sec = less than 1 hours
-                }
+                } while (sequenceOfDaysNotNeeded < 10_000);
+                // Assume all days done, when 10'000 random tries all fell on a date, which was already handled.
                 allFetched = true;
             } catch (Exception e) {
                 allFetched = false;
-                // After an error wait a minute before retrying
+                // After an error, wait a minute before retrying
                 try {
                     Thread.sleep(60_000); // 5 sec * 5 * 53 weeks = 5 sec * 265 weeks
                 } catch (InterruptedException ex) {
@@ -80,6 +67,34 @@ public class EmagDBApp {
                 }
             }
         } while (!allFetched);
+    }
+
+    private static boolean fetchAllForDay(LocalDateTime startTime, EmagMirrorDB mirrorDB) throws Exception {
+        var endTime = startTime.plusDays(1);
+        var dayWasFullyFetched = true;
+        for (String account : emagAccounts) {
+            var wasFetched = mirrorDB.wasFetched(account, startTime, endTime);
+            if (wasFetched != EmagMirrorDB.FetchStatus.yes) {
+                dayWasFullyFetched = false;
+                logger.log(INFO, "Fetch from %s for %s - %s".formatted(account, startTime, endTime));
+                var fetchStartTime = LocalDateTime.now();
+                Exception exception = null;
+                try {
+                    transferOrdersToDatabase(account, mirrorDB, startTime, endTime);
+                    transferRMAsToDatabase(account, mirrorDB, startTime, endTime);
+                } catch (Exception e) {
+                    logger.log(WARNING, "Some error occurred", e);
+                    exception = e;
+                } finally {
+                    var fetchEndTime = LocalDateTime.now();
+                    var error = (exception != null) ? exception.getMessage() : null;
+                    mirrorDB.addEmagLog(account, startTime, endTime, fetchStartTime, fetchEndTime, error);
+                    if (exception != null) throw exception;
+                }
+                Thread.sleep(1_000);
+            }
+        }
+        return dayWasFullyFetched;
     }
 
     private static void transferOrdersToDatabase(String account, EmagMirrorDB mirrorDB, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
@@ -138,9 +153,9 @@ public class EmagDBApp {
             var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
             return emag.readRequest("rma",
                     Map.of(
-                            "createdAfter",
+                            "date_start",
                             startTime,
-                            "createdBefore",
+                            "date_end",
                             endTime),
                     null,
                     RMAResult.class);

@@ -67,28 +67,41 @@ public class EmagMirrorDB {
                     if (order.details() != null && order.details().locker_id() != null)
                         indertLockerDetails(db, order.details());
                     insertOrder(db, order, vendorId);
-                    for (var product : order.products()) {
-                        insertProduct(db, product, order.id(), vendorId);
-                        for (var voucherSplit : product.product_voucher_split()) {
-                            insertVoucherSplit(db, voucherSplit, order.id(), vendorId, product.id());
+                    if (order.products() != null) {
+                        for (var product : order.products()) {
+                            insertProduct(db, product, order.id(), vendorId);
+                            for (var voucherSplit : product.product_voucher_split()) {
+                                insertVoucherSplit(db, voucherSplit, order.id(), vendorId, product.id());
+                            }
                         }
                     }
-                    for (var voucherSplit : order.shipping_tax_voucher_split()) {
-                        insertVoucherSplit(db, voucherSplit, order.id(), vendorId);
-                    }
-                    for (var attachment : order.attachments()) {
-                        if (attachment.order_id() != null && !order.id().equals(attachment.order_id())) {
-                            logger.log(WARNING, "Attachment order_id mismatch, order has " + order.id() + " but attachment has " + attachment.order_id());
+                    if (order.shipping_tax_voucher_split() != null) {
+                        for (var voucherSplit : order.shipping_tax_voucher_split()) {
+                            insertVoucherSplit(db, voucherSplit, order.id(), vendorId);
                         }
-                        insertAttachment(db, attachment, order.id(), vendorId);
                     }
-                    for (Voucher voucher : order.vouchers()) {
-                        insertVoucher(db, voucher, order.id(), vendorId);
-
+                    if (order.attachments() != null) {
+                        for (var attachment : order.attachments()) {
+                            if (attachment.order_id() != null && !order.id().equals(attachment.order_id())) {
+                                logger.log(WARNING, "Attachment order_id mismatch, order has " + order.id() + " but attachment has " + attachment.order_id());
+                            }
+                            insertAttachment(db, attachment, order.id(), vendorId);
+                        }
                     }
-                    for (Flag flag : order.flags()) {
-                        insertFlag(db, flag, order.id(), vendorId);
-
+                    if (order.vouchers() != null) {
+                        for (Voucher voucher : order.vouchers()) {
+                            insertVoucher(db, voucher, order.id(), vendorId);
+                        }
+                    }
+                    if (order.flags() != null) {
+                        for (Flag flag : order.flags()) {
+                            insertFlag(db, flag, order.id(), vendorId);
+                        }
+                    }
+                    if (order.enforced_vendor_courier_accounts() != null) {
+                        for (String enforced_vendor_courier_account : order.enforced_vendor_courier_accounts()) {
+                            insertEnforcedVendorCourierAccount(db, enforced_vendor_courier_account, order.id(), vendorId);
+                        }
                     }
                     return 0;
                 }
@@ -99,17 +112,25 @@ public class EmagMirrorDB {
         database.writeTX(db -> {
             var emagId = rmaResult.emag_id();
             insertRMAResult(db, rmaResult);
-            for (var product : rmaResult.products()) {
-                insertReturnedProduct(db, product, emagId);
+            if (rmaResult.products() != null) {
+                for (var product : rmaResult.products()) {
+                    insertReturnedProduct(db, product, emagId);
+                }
             }
-            for (var awb : rmaResult.awbs()) {
-                insertAWB(db, awb, emagId);
+            if (rmaResult.awbs() != null) {
+                for (var awb : rmaResult.awbs()) {
+                    insertAWB(db, awb, emagId);
+                }
             }
-            for (var statusHistory : rmaResult.status_history()) {
-                var historyUUID = UUID.randomUUID();
-                insertStatusHistory(db, statusHistory, emagId, historyUUID);
-                for (var statusRequest : statusHistory.requests()) {
-                    insertStatusRequest(db, statusRequest, historyUUID);
+            if (rmaResult.status_history() != null) {
+                for (var statusHistory : rmaResult.status_history()) {
+                    var historyUUID = UUID.randomUUID();
+                    insertStatusHistory(db, statusHistory, emagId, historyUUID);
+                    if (statusHistory.requests() != null) {
+                        for (var statusRequest : statusHistory.requests()) {
+                            insertStatusRequest(db, statusRequest, historyUUID);
+                        }
+                    }
                 }
             }
             return 0;
@@ -320,6 +341,15 @@ public class EmagMirrorDB {
         }
     }
 
+    private static int insertEnforcedVendorCourierAccount(Connection db, String enforcedVendorCourierAccount, String orderId, UUID vendorId) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO enforced_vendor_courier_account (vendor_id, order_id, courier) VALUES (?, ?, ?)")) {
+            s.setObject(1, vendorId);
+            s.setString(2, orderId);
+            s.setString(3, enforcedVendorCourierAccount);
+            return s.executeUpdate();
+        }
+    }
+
     private static int insertVoucher(Connection db, Voucher voucher, String orderId, UUID vendorId) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO voucher (voucher_id, order_id, vendor_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
             s.setInt(1, voucher.voucher_id());
@@ -477,8 +507,10 @@ public class EmagMirrorDB {
                             has_editable_products,
                             late_shipment,
                             emag_club,
-                            weekend_delivery
-                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id, vendor_id) DO NOTHING
+                            weekend_delivery,
+                            created,
+                            modified
+                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id, vendor_id) DO NOTHING
                         """)) {
             s.setObject(1, vendorId);
             s.setString(2, or.id());
@@ -501,8 +533,8 @@ public class EmagMirrorDB {
             s.setObject(19, or.cancellation_reason());
             s.setBigDecimal(20, or.refunded_amount());
             s.setString(21, or.refund_status());
-            s.setTimestamp(22, or.maximum_date_for_shipment() != null ? toTimestamp(or.maximum_date_for_shipment()) : null);
-            s.setTimestamp(23, or.finalization_date() != null ? toTimestamp(or.finalization_date()) : null);
+            s.setTimestamp(22, toTimestamp(or.maximum_date_for_shipment()));
+            s.setTimestamp(23, toTimestamp(or.finalization_date()));
             s.setString(24, or.parent_id());
             s.setString(25, or.detailed_payment_method());
             s.setString(26, String.join("", Arrays.asList(or.proforms())));
@@ -511,6 +543,8 @@ public class EmagMirrorDB {
             s.setObject(29, or.late_shipment());
             s.setInt(30, or.emag_club());
             s.setInt(31, or.weekend_delivery());
+            s.setTimestamp(32, toTimestamp(or.created()));
+            s.setTimestamp(33, toTimestamp(or.modified()));
             return s.executeUpdate();
         }
     }
@@ -728,6 +762,7 @@ public class EmagMirrorDB {
     private static Timestamp toTimestamp(LocalDateTime localDateTime) {
         return localDateTime == null ? null : Timestamp.valueOf(localDateTime);
     }
+
     private static Timestamp toTimestamp(LocalDate localDate) {
         return localDate == null ? null : Timestamp.valueOf(localDate.atStartOfDay());
     }

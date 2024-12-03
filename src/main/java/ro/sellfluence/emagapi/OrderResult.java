@@ -43,7 +43,7 @@ public record OrderResult(
         int weekend_delivery,
         LocalDateTime created,
         LocalDateTime modified,
-        String enforced_vendor_courier_accounts
+        String[] enforced_vendor_courier_accounts
 ) {
 
     /**

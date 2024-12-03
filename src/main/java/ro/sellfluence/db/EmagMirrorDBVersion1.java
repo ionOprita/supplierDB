@@ -18,6 +18,7 @@ class EmagMirrorDBVersion1 {
         createLockerDetailTable(db);
         createCustomerTable(db);
         createEmagOrderTable(db);
+        createEnforcedVendorCourierAccountsTable(db);
         createFlagTable(db);
         createAttachmentTable(db);
         createVoucherTable(db);
@@ -36,7 +37,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createEmagFetchLogTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE emag_fetch_log (
                     emag_login VARCHAR(255),
                     order_start TIMESTAMP NOT NULL,
@@ -46,13 +47,11 @@ class EmagMirrorDBVersion1 {
                     error VARCHAR(65536),
                     PRIMARY KEY (emag_login, order_start, order_end)
                 );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
     private static void createStatusRequestTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE status_request (
                     amount DECIMAL(19,2),
                     created TIMESTAMP,
@@ -63,13 +62,11 @@ class EmagMirrorDBVersion1 {
                     status_history_uuid UUID, -- Foreign key referencing status_history.uuid
                     FOREIGN KEY (status_history_uuid) REFERENCES status_history(uuid)
                 );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
     private static void createStatusHistoryTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE status_history (
                     uuid UUID PRIMARY KEY,
                     code VARCHAR(255),
@@ -77,25 +74,21 @@ class EmagMirrorDBVersion1 {
                     emag_id INT, -- Foreign key referencing rma_result.emag_id
                     FOREIGN KEY (emag_id) REFERENCES rma_result(emag_id)
                 );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
     private static void createAWBTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE awb (
                     reservation_id INT PRIMARY KEY,
                     emag_id INT, -- Foreign key referencing rma_result.emag_id
                     FOREIGN KEY (emag_id) REFERENCES rma_result(emag_id)
                 );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
     private static void createProductTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE product (
                     id UUID PRIMARY KEY,
                     emag_pnk VARCHAR(255) UNIQUE,
@@ -104,13 +97,11 @@ class EmagMirrorDBVersion1 {
                     message_keyword VARCHAR(255)
                     -- and so on, this data will be filled in initially from "Date produse & angajati" sheet "Cons. Date. Prod."
                 );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
     private static void createEmagReturnedProductaTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                             CREATE TABLE emag_returned_products (
                 id INT PRIMARY KEY,
                 product_emag_id INT,
@@ -125,13 +116,11 @@ class EmagMirrorDBVersion1 {
                 emag_id INT, -- Foreign key referencing rma_result.emag_id
                 FOREIGN KEY (emag_id) REFERENCES rma_result(emag_id)
                             );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
     private static void createRMAResultTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                             CREATE TABLE rma_result (
                 emag_id INT PRIMARY KEY,
                 is_full_fbe INT,
@@ -178,13 +167,11 @@ class EmagMirrorDBVersion1 {
                 address_type VARCHAR(255),
                 request_status_reason INT
                             );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
     private static void createVoucherSplitTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE voucher_split(
                     voucher_id INTEGER,
                     order_id VARCHAR(255),
@@ -198,13 +185,11 @@ class EmagMirrorDBVersion1 {
                     FOREIGN KEY (order_id, vendor_id) REFERENCES emag_order(id, vendor_id),
                     FOREIGN KEY (product_id) REFERENCES product_in_order(id)
                 );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
     private static void createProductInOrderTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE product_in_order(
                     id INTEGER,
                     order_id VARCHAR(255),
@@ -232,13 +217,11 @@ class EmagMirrorDBVersion1 {
                     PRIMARY KEY (id),
                     FOREIGN KEY (order_id, vendor_id) REFERENCES emag_order(id, vendor_id)
                 );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
     private static void createVoucherTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                  CREATE TABLE voucher(
                     voucher_id INT,
                     order_id VARCHAR(255),
@@ -255,14 +238,12 @@ class EmagMirrorDBVersion1 {
                     PRIMARY KEY (voucher_id),
                     FOREIGN KEY (order_id, vendor_id) REFERENCES emag_order(id, vendor_id)
                  );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
 
     private static void createAttachmentTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE attachment(
                     order_id VARCHAR(255),
                     vendor_id UUID,
@@ -274,13 +255,11 @@ class EmagMirrorDBVersion1 {
                     PRIMARY KEY (order_id, url),
                     FOREIGN KEY (order_id, vendor_id) REFERENCES emag_order(id, vendor_id)
                 );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
     private static void createFlagTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE flag(
                     order_id VARCHAR(255),
                     vendor_id UUID,
@@ -288,12 +267,10 @@ class EmagMirrorDBVersion1 {
                     value VARCHAR(255),
                     FOREIGN KEY (order_id, vendor_id) REFERENCES emag_order(id, vendor_id)
                 );
-                """)) {
-            s.execute();
-        }
+                """);
     }
     private static void createEmagOrderTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE emag_order(
                   id VARCHAR(255),
                   vendor_id UUID,
@@ -326,17 +303,28 @@ class EmagMirrorDBVersion1 {
                   late_shipment INT,
                   emag_club INT,
                   weekend_delivery INT,
+                  created TIMESTAMP,
+                  modified TIMESTAMP,
                   PRIMARY KEY (id, vendor_id),
                   FOREIGN KEY (details_id) REFERENCES locker_details(locker_id),
                   FOREIGN KEY (customer_id) REFERENCES customer(id)
                 );
-                """)) {
-            s.execute();
-        }
+                """);
+    }
+
+    private static void createEnforcedVendorCourierAccountsTable(Connection db) throws SQLException {
+        cresteTable(db, """
+                CREATE TABLE enforced_vendor_courier_account(
+                    order_id VARCHAR(255),
+                    vendor_id UUID,
+                    courier VARCHAR(255),
+                    FOREIGN KEY (order_id, vendor_id) REFERENCES emag_order(id, vendor_id)
+                );
+                """);
     }
 
     private static void createCustomerTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE customer(
                   id INTEGER,
                   mkt_id INTEGER,
@@ -375,13 +363,11 @@ class EmagMirrorDBVersion1 {
                   modified TIMESTAMP,
                   PRIMARY KEY (id)
                 );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
     private static void createLockerDetailTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE locker_details(
                   locker_id VARCHAR(255),
                   locker_name VARCHAR(255),
@@ -389,20 +375,22 @@ class EmagMirrorDBVersion1 {
                   courier_external_office_id VARCHAR(255),
                   PRIMARY KEY (locker_id)
                 );
-                """)) {
-            s.execute();
-        }
+                """);
     }
 
     private static void createVendorTable(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("""
+        cresteTable(db, """
                 CREATE TABLE vendor(
                   id UUID,
                   vendor_name VARCHAR(255) UNIQUE NOT NULL,
                   isFBE BOOLEAN,
                   PRIMARY KEY (id)
                 );
-                """)) {
+                """);
+    }
+
+    private static void cresteTable(Connection db, String createStatement) throws SQLException {
+        try (var s = db.prepareStatement(createStatement)) {
             s.execute();
         }
     }

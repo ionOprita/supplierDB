@@ -36,6 +36,11 @@ To quickly drop all tables for testing, execute this:
 ```
 psql -t -d emag -c "SELECT 'DROP TABLE IF EXISTS ' || tablename || ' CASCADE;' FROM pg_tables WHERE schemaname = 'public';" | psql -d emag
 ```
+for the remote database use
+
+```
+psql -t -h 86.124.84.214 -U emag -d emag -c "SELECT 'DROP TABLE IF EXISTS ' || tablename || ' CASCADE;' FROM pg_tables WHERE schemaname = 'public';" | psql -h 86.124.84.214 -U emag -d emag
+```
 
 Stuff related to scraping app
 =
