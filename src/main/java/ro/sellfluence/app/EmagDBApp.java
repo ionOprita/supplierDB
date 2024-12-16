@@ -38,9 +38,16 @@ public class EmagDBApp {
     public static void main(String[] args) {
         //EmagApi.activateEmagJSONLog();
         boolean allFetched;
+        EmagMirrorDB mirrorDB = null;
+        try {
+            mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagOprita");
+        } catch (SQLException e) {
+            throw new RuntimeException("error initializing database", e);
+        } catch (IOException e) {
+            throw new RuntimeException("error connecting to the database", e);
+        }
         do {
             try {
-                var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagRemote");
                 var yesterday = LocalDate.now().atStartOfDay().minusDays(1);
                 fetchAllForDay(yesterday, mirrorDB);
                 var daysToConsider = 5 * 366;
