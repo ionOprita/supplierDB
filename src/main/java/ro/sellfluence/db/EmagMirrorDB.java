@@ -226,44 +226,160 @@ public class EmagMirrorDB {
                                 String customerName = rs.getString(8);
                                 boolean isFBE = rs.getBoolean(15);
                                 var row = List.of(
+                                        // Group 0
                                         Stream.of(
                                                 rs.getTimestamp(1).toLocalDateTime().format(formatDate), // creation date
                                                 rs.getString(2), // id
                                                 statusToString(rs.getInt(3)) // status
                                         ).map(Object.class::cast).toList(),
+                                        // Group 1
                                         Stream.of(
                                                 rs.getString(4),
                                                 rs.getInt(5), // quantity
                                                 priceWithoutVAT.setScale(2, HALF_EVEN),
                                                 priceWithVAT.setScale(2, HALF_EVEN)
                                         ).map(Object.class::cast).toList(),
+                                        // Group 2
                                         Stream.of(
                                                 rs.getString(7), // deliver mode
                                                 customerName, // customerName
                                                 customerName, // customer shipment name
                                                 rs.getString(9) // customer shipping phone
                                         ).map(Object.class::cast).toList(),
+                                        // Group 3
                                         Stream.of(
                                                 rs.getString(10), // customer billing name
                                                 rs.getString(11) // customer billing phone
                                         ).map(Object.class::cast).toList(),
+                                        // Group 4
                                         Stream.of(
                                                 rs.getString(12), // company code
                                                 rs.getString(13) // observation
                                         ).map(Object.class::cast).toList(),
+                                        // Group 5
                                         Stream.of(
                                                 rs.getString(14), // company name
                                                 booleanToFBE(isFBE) // platform
                                         ).map(Object.class::cast).toList(),
+                                        // Group 6
                                         Stream.of(
                                                 isFBE,
                                                 isFBE,
                                                 isFBE,
                                                 false
                                         ).map(Object.class::cast).toList(),
+                                        // Group 7
                                         Stream.of(
                                                 rs.getString(16)
                                         ).map(Object.class::cast).toList()
+                                );
+                                rows.add(row);
+                            }
+                        }
+                    }
+                    return rows;
+                }
+        );
+    }
+    /**
+     * Read database information and prepare them for inclusion in the spreadsheet.
+     *
+     * @return list of rows containing a list of cell groups. Each cell group is a list of cells.
+     * @throws SQLException
+     */
+    public List<List<Object>> readForComparisonApp() throws SQLException {
+        return database.readTX(db ->
+                {
+                    List<List<Object>> rows = new ArrayList<>();
+                    try (var s = db.prepareStatement(
+                            //language=sql
+                            """
+                                    SELECT
+                                      o.id,
+                                      v.vendor_name,
+                                      v.isFBE,
+                                      pi.emag_pnk,
+                                      o.date,
+                                      o.status,
+                                      pi.name,
+                                      p.quantity,
+                                      p.sale_price,
+                                      o.delivery_mode,
+                                      c.name,
+                                      c.shipping_phone,
+                                      c.billing_name,
+                                      c.billing_phone,
+                                      c.code,
+                                      o.observation,
+                                      pi.message_keyword
+                                    FROM emag_order as o
+                                    LEFT JOIN customer as c
+                                    ON o.customer_id = c.id
+                                    LEFT JOIN vendor as v
+                                    ON o.vendor_id = v.id
+                                    LEFT JOIN product_in_order as p
+                                    ON p.order_id = o.id
+                                    JOIN product as pi
+                                    ON p.part_number_key = pi.emag_pnk
+                                    """
+                    )) {
+                        try (var rs = s.executeQuery()) {
+                            while (rs.next()) {
+// 2024-10-17 16:49:51
+                                var priceWithoutVAT = rs.getBigDecimal(6);
+                                var priceWithVAT = priceWithoutVAT.multiply(BigDecimal.valueOf(1.19)); // TODO: Proper handling of VAT required
+                                String customerName = rs.getString(8);
+                                var row = List.<Object>of(
+                                        rs.getString(0), // id
+                                        rs.getString(1), // company name
+                                        rs.getBoolean(2), // platform
+                                        rs.getString(2) // PNK
+                                        /*
+                                        // Group 0
+                                        Stream.of(
+                                                rs.getTimestamp(1).toLocalDateTime().format(formatDate), // creation date
+                                                statusToString(rs.getInt(3)) // status
+                                        ).map(Object.class::cast).toList(),
+                                        // Group 1
+                                        Stream.of(
+                                                rs.getString(4),
+                                                rs.getInt(5), // quantity
+                                                priceWithoutVAT.setScale(2, HALF_EVEN),
+                                                priceWithVAT.setScale(2, HALF_EVEN)
+                                        ).map(Object.class::cast).toList(),
+                                        // Group 2
+                                        Stream.of(
+                                                rs.getString(7), // deliver mode
+                                                customerName, // customerName
+                                                customerName, // customer shipment name
+                                                rs.getString(9) // customer shipping phone
+                                        ).map(Object.class::cast).toList(),
+                                        // Group 3
+                                        Stream.of(
+                                                rs.getString(10), // customer billing name
+                                                rs.getString(11) // customer billing phone
+                                        ).map(Object.class::cast).toList(),
+                                        // Group 4
+                                        Stream.of(
+                                                rs.getString(12), // company code
+                                                rs.getString(13) // observation
+                                        ).map(Object.class::cast).toList(),
+                                        // Group 5
+                                        Stream.of(
+                                        ).map(Object.class::cast).toList(),
+                                        // Group 6
+                                        Stream.of(
+                                                rs.getBoolean(2),
+                                                rs.getBoolean(2),
+                                                rs.getBoolean(2),
+                                                false
+                                        ).map(Object.class::cast).toList(),
+                                        // Group 7
+                                        Stream.of(
+                                                rs.getString(16)
+                                        ).map(Object.class::cast).toList()
+
+                                        */
                                 );
                                 rows.add(row);
                             }
