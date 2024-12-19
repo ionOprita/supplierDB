@@ -34,10 +34,13 @@ public class CompareDBWithDataComenzi {
         final DriveAPI drive = DriveAPI.getDriveAPI(appName);
         var spreadSheetId = drive.getFileId(spreadSheetName);
         var spreadSheet = SheetsAPI.getSpreadSheet(appName, spreadSheetId);
-        var dataFromSheet = sheetDataToOrderList(spreadSheet.getRowsInColumnRange(sheetName, "A", "AF"));
+        System.out.println("Reading spreadsheet ...");
+        var dataFromSheet = sheetDataToOrderList(spreadSheet.getRowsInColumnRange(sheetName, "A", "AF").stream().skip(3).toList());
         try {
+            System.out.println("Reading database ...");
             var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagOprita");
             var dataFromDB = dbDataToOrderList(mirrorDB.readForComparisonApp());
+            System.out.println("Compare data ...");
             compare(dataFromDB, dataFromSheet);
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -58,15 +61,15 @@ public class CompareDBWithDataComenzi {
 
         static Vendor fromSheet(String name, boolean isFBE) {
             return switch (name) {
-                case "Judios Concept SRL" -> judios;
+                case "Judios Concept SRL", "Judios Concept" -> judios;
                 case "Koppel SRL", "Koppel" -> isFBE ? koppelfbe : koppel;
-                case "Sellfluence" -> sellfluence;
-                case "Sellfusion SRL" -> sellfusion;
+                case "Sellfluence SRL", "Sellfluence" -> sellfluence;
+                case "Sellfusion SRL", "Sellflusion SRL", "SELLFUSION FBE" -> sellfusion;
                 case "Zoopie Concept SRL", "Zoopie Concept" -> zoopieconcept;
                 case "Zoopie Invest SRL", "Zoopie Invest" -> zoopieinvest;
                 case "Zoopie Solutions SRL", "Zoopie Solutions" -> zoopiesolutions;
                 default ->
-                        throw new IllegalArgumentException("Unrecognized vendor " + name + " " + (isFBE ? "FBE" : ""));
+                        throw new IllegalArgumentException("Unrecognized vendor '" + name + "' " + (isFBE ? "FBE" : ""));
             };
         }
     }
@@ -110,11 +113,17 @@ public class CompareDBWithDataComenzi {
         };
     }
 
-    private static void compare(List<OrderLine> dataFromDB, List<OrderLine> dataFromSheet) {
-        dataFromDB.sort(Comparator.comparing(OrderLine::vendor).thenComparing(OrderLine::orderId));
-        dataFromSheet.sort(Comparator.comparing(OrderLine::vendor).thenComparing(OrderLine::orderId));
+    private static void compare(List<OrderLine> unsortedDataFromDB, List<OrderLine> unsortedDataFromSheet) {
+        System.out.println("Sort datbase values ...");
+        var dataFromDB = unsortedDataFromDB.stream()
+                .sorted(Comparator.comparing(OrderLine::vendor).thenComparing(OrderLine::orderId))
+                .toList();
+        System.out.println("Sort sheet values ...");
+        var dataFromSheet = unsortedDataFromSheet.stream().sorted(Comparator.comparing(OrderLine::vendor).thenComparing(OrderLine::orderId)).toList();
+        System.out.println("Find ones only in sheet ...");
         var onlyInSheet = dataFromSheet.stream().filter(it -> !dataFromDB.contains(it)).toList();
-        var onlyInDB = dataFromSheet.stream().filter(it -> !dataFromSheet.contains(it)).toList();
+        System.out.println("Find ones only in DB ...");
+        var onlyInDB = dataFromDB.stream().filter(it -> !dataFromSheet.contains(it)).toList();
         System.out.println("# elements from sheet "+dataFromSheet.size());
         System.out.println("# elements only in sheet "+onlyInSheet.size());
         System.out.println("# elements from db "+dataFromDB.size());
