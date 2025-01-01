@@ -1,6 +1,5 @@
 package ro.sellfluence.app;
 
-import ch.claudio.db.DB;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.emagapi.EmagApi;
 import ro.sellfluence.emagapi.OrderResult;
@@ -38,7 +37,7 @@ public class EmagDBApp {
     public static void main(String[] args) {
         //EmagApi.activateEmagJSONLog();
         boolean allFetched;
-        EmagMirrorDB mirrorDB = null;
+        EmagMirrorDB mirrorDB;
         try {
             mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagOprita");
         } catch (SQLException e) {
@@ -58,7 +57,11 @@ public class EmagDBApp {
                     var dayWasFullyFetched = fetchAllForDay(randomDay, mirrorDB);
                     if (dayWasFullyFetched) {
                         sequenceOfDaysNotNeeded++;
+                        if (sequenceOfDaysNotNeeded%1000==0) {
+                            logger.log(INFO, "Skipped %d already done days...".formatted(sequenceOfDaysNotNeeded));
+                        }
                     } else {
+                        logger.log(INFO, "Skipped %d already done days!".formatted(sequenceOfDaysNotNeeded));
                         sequenceOfDaysNotNeeded = 0;
                     }
                 } while (sequenceOfDaysNotNeeded < 10_000);
