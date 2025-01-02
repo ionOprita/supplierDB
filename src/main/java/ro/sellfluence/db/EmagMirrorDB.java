@@ -212,8 +212,8 @@ public class EmagMirrorDB {
                                     LEFT JOIN vendor as v
                                     ON o.vendor_id = v.id
                                     LEFT JOIN product_in_order as p
-                                    ON p.order_id = o.id
-                                    JOIN product as pi
+                                    ON p.order_id = o.id AND p.vendor_id = o.vendor_id
+                                    LEFT JOIN product as pi
                                     ON p.part_number_key = pi.emag_pnk
                                     WHERE o.status = 4 OR o.status = 5
                                     """
@@ -298,7 +298,7 @@ public class EmagMirrorDB {
                                       o.id,
                                       v.vendor_name,
                                       v.isFBE,
-                                      pi.emag_pnk,
+                                      p.part_number_key,
                                       o.date,
                                       o.status,
                                       pi.name,
@@ -318,8 +318,8 @@ public class EmagMirrorDB {
                                     LEFT JOIN vendor as v
                                     ON o.vendor_id = v.id
                                     LEFT JOIN product_in_order as p
-                                    ON p.order_id = o.id
-                                    JOIN product as pi
+                                    ON p.order_id = o.id AND p.vendor_id = o.vendor_id
+                                    LEFT JOIN product as pi
                                     ON p.part_number_key = pi.emag_pnk
                                     """
                     )) {
@@ -329,11 +329,12 @@ public class EmagMirrorDB {
                                 var priceWithoutVAT = rs.getBigDecimal(6);
                                 var priceWithVAT = priceWithoutVAT.multiply(BigDecimal.valueOf(1.19)); // TODO: Proper handling of VAT required
                                 String customerName = rs.getString(8);
-                                var row = List.<Object>of(
-                                        rs.getString(0), // id
-                                        rs.getString(1), // company name
-                                        rs.getBoolean(2), // platform
-                                        rs.getString(2) // PNK
+                                var row = Arrays.<Object>asList(
+                                        rs.getString(1), // id
+                                        rs.getString(2), // company name
+                                        rs.getBoolean(3), // platform
+                                        rs.getString(4), // PNK
+                                        rs.getTimestamp(5).toLocalDateTime() // creation date
                                         /*
                                         // Group 0
                                         Stream.of(
