@@ -56,6 +56,7 @@ public class EmagApi {
     private static final String orderURI = emagRO + "/order";
 
     private static final String readOrder = orderURI + "/read";
+    private static final String countOrders = orderURI + "/count";
 
     private final String credentials;
     private final HttpClient httpClient;
@@ -113,7 +114,7 @@ public class EmagApi {
                     .addDeserializer(LocalDateTime.class, new LocalDateTimeDeserializer())
                     .addSerializer(LocalDate.class, new LocalDateSerializer())
                     .addDeserializer(LocalDate.class, new LocalDateDeserializer()));
-            //.registerModule(new JavaTimeModule());
+    //.registerModule(new JavaTimeModule());
 
     private static class LocalDateTimeSerializer extends JsonSerializer<LocalDateTime> {
         private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
@@ -155,6 +156,46 @@ public class EmagApi {
     public EmagApi(String username, String password) {
         credentials = Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
         httpClient = HttpClient.newHttpClient();
+    }
+
+    public CountResponse countOrderRequest() throws IOException, InterruptedException {
+        var httpRequest = HttpRequest.newBuilder()
+                .uri(URI.create(countOrders))
+                .header("Authorization", "Basic " + credentials)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("")).build();
+        HttpResponse<String> httpResponse = null;
+        CountResponse counterResponse = null;
+        httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+        int statusCode = httpResponse.statusCode();
+        logger.log(FINE, "Status code = " + statusCode);
+        if (statusCode == HTTP_OK) {
+            String receivedJSON = httpResponse.body();
+            logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
+            try {
+                var typeRef = new TypeReference<SingleResponse<CountResponse>>() {
+                    @Override
+                    public Type getType() {
+                        return objectMapper.getTypeFactory().constructParametricType(SingleResponse.class, CountResponse.class);
+                    }
+                };
+                var response = objectMapper.readValue(receivedJSON, typeRef);
+
+                if (response.isError) {
+                    logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
+                    if (Arrays.stream(response.messages).anyMatch(x -> x.contains("Invalid vendor ip"))) {
+                        logger.log(INFO, "Please register your IP address in the EMAG dashboard.");
+                    }
+                } else {
+                    logger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
+                    counterResponse = response.results;
+                }
+            } catch (MismatchedInputException e) {
+                logger.log(SEVERE, "JSON decoded ended with error %s".formatted(e.getMessage()));
+                logger.log(SEVERE, receivedJSON);
+            }
+        }
+        return counterResponse;
     }
 
     public <T> List<T> readRequest(String category, Map<String, Object> filter, Map<String, Object> data, Class<T> responseClass) throws IOException, InterruptedException {
