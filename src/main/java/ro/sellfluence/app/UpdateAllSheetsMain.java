@@ -12,7 +12,7 @@ public class UpdateAllSheetsMain {
         try {
             new TransferFromEmagToSheets(
                     "sellfluence1",
-                    "2024 - Date produse & angajati",
+                    "2025 - Date produse & angajati",
                     "Cons. Date Prod."
             )
                     .transferFromEmagToSheet("sellfluence", "sellfusion", "zoopieconcept", "zoopieinvest", "zoopiesolutions", "judios", "koppel", "koppelfbe");
