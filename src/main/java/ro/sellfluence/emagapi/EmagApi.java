@@ -159,18 +159,9 @@ public class EmagApi {
     }
 
     public CountResponse countOrderRequest() throws IOException, InterruptedException {
-        var httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(countOrders))
-                .header("Authorization", "Basic " + credentials)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString("")).build();
-        HttpResponse<String> httpResponse = null;
+        var receivedJSON = countOrderRequestRaw();
         CountResponse counterResponse = null;
-        httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-        int statusCode = httpResponse.statusCode();
-        logger.log(FINE, "Status code = " + statusCode);
-        if (statusCode == HTTP_OK) {
-            String receivedJSON = httpResponse.body();
+        if (receivedJSON!=null) {
             logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
             try {
                 var typeRef = new TypeReference<SingleResponse<CountResponse>>() {
@@ -196,6 +187,22 @@ public class EmagApi {
             }
         }
         return counterResponse;
+    }
+
+    public String countOrderRequestRaw() throws IOException, InterruptedException {
+        var httpRequest = HttpRequest.newBuilder()
+                .uri(URI.create(countOrders))
+                .header("Authorization", "Basic " + credentials)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("")).build();
+        var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+        int statusCode = httpResponse.statusCode();
+        logger.log(FINE, "Status code = " + statusCode);
+        String receivedJSON = null;
+        if (statusCode == HTTP_OK) {
+            receivedJSON = httpResponse.body();
+        }
+        return receivedJSON;
     }
 
     public <T> List<T> readRequest(String category, Map<String, Object> filter, Map<String, Object> data, Class<T> responseClass) throws IOException, InterruptedException {
