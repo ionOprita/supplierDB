@@ -2,16 +2,21 @@ package ro.sellfluence.app;
 
 import org.jetbrains.annotations.NotNull;
 import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.emagapi.EmagApi;
+import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.googleapi.DriveAPI;
 import ro.sellfluence.googleapi.SheetsAPI;
+import ro.sellfluence.support.UserPassword;
 
 import java.io.IOException;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Month;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.SignStyle;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -159,6 +164,12 @@ public class CompareDBWithDataComenzi {
         }
     }
 
+    /**
+     * Convert the data from the database into a list of OrderLine.
+     *
+     * @param dataFromDB list of database rows.
+     * @return OrderLine list
+     */
     private static List<OrderLine> dbDataToOrderList(List<List<Object>> dataFromDB) {
         return dataFromDB.stream().map(row ->
                 new OrderLine(
@@ -170,6 +181,12 @@ public class CompareDBWithDataComenzi {
         ).toList();
     }
 
+    /**
+     * Convert data from the spreadsheet into a list of OrderLine.
+     *
+     * @param dataFromSheet the data as list of rows.
+     * @return OrderLine list
+     */
     private static List<OrderLine> sheetDataToOrderList(List<List<String>> dataFromSheet) {
         return dataFromSheet.stream().<OrderLine>mapMulti((row, next) -> {
             if (!isTemplate(row)) {
@@ -184,6 +201,12 @@ public class CompareDBWithDataComenzi {
         }).toList();
     }
 
+    /**
+     * Detect the template line so it can be excluded.
+     *
+     * @param row spreadsheet row.
+     * @return true if it is a template line.
+     */
     private static boolean isTemplate(List<String> row) {
         return row.get(7).equals("XXX.XX") && row.get(8).equals("XXX.XX");
     }
@@ -206,6 +229,12 @@ public class CompareDBWithDataComenzi {
         return date;
     }
 
+    /**
+     * Decodes the FBE column in the spreadsheet.
+     *
+     * @param fbe
+     * @return
+     */
     private static boolean isEMAGFbe(String fbe) {
         return switch (fbe) {
             case "eMAG FBE" -> true;
@@ -215,21 +244,89 @@ public class CompareDBWithDataComenzi {
     }
 
     private static void compare(List<OrderLine> unsortedDataFromDB, List<OrderLine> unsortedDataFromSheet) {
-        System.out.println("Sort database values ...");
-        var dataFromDB = unsortedDataFromDB.stream()
-                .sorted(Comparator.comparing(OrderLine::vendor).thenComparing(OrderLine::orderId))
-                .toList();
-        System.out.println("Sort sheet values ...");
-        var dataFromSheet = unsortedDataFromSheet.stream().sorted(Comparator.comparing(OrderLine::vendor).thenComparing(OrderLine::orderId)).toList();
-        System.out.println("# elements from db " + dataFromDB.size());
-        System.out.println("# elements from sheet " + dataFromSheet.size());
-        var dbGroupedByOrderId = dataFromDB.stream().collect(Collectors.groupingBy(OrderLine::orderId));
-        System.out.println("# elements from database with unique order id " + dbGroupedByOrderId.size());
-        var orderIdsWithMultipleEntries = dbGroupedByOrderId.entrySet().stream()
-                .filter(entry -> entry.getValue().size() > 1) // Filter for entries with more than one OrderLine
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-        System.out.println("# of order id with more than one OrderLine " + orderIdsWithMultipleEntries.size());
-        var ordersWithMultipleVendors = orderIdsWithMultipleEntries.entrySet().stream()
+        var dataFromDB = sortOrders(unsortedDataFromDB, "Sort database values ...");
+        var dataFromSheet = sortOrders(unsortedDataFromSheet, "Sort sheet values ...");
+        printSizes(dataFromDB, dataFromSheet);
+        var dbGroupedByOrderId = groupByOrderId(dataFromDB, "database");
+        var orderIdsWithMultipleEntries = filterOrdersWithMultipleEntries(dbGroupedByOrderId);
+        findOrdersWithMultipleVendors(orderIdsWithMultipleEntries);
+        // dumpOrderLines(ordersWithMultipleVendors);
+        var sheetGroupedByOrderId = groupByOrderId(dataFromSheet, "sheet");
+        var onlyInSheet = getDifference(dataFromSheet, dbGroupedByOrderId, "sheet");
+        // Print first ten orders that were not found.
+        onlyInSheet.stream().filter(it -> it.vendor() != Vendor.judios).limit(10).forEach(System.out::println);
+        // Print number of orders that are missing by vendor
+        var onlyInSheetGroupedByVendor = onlyInSheet.stream()
+                //.filter(it -> it.orderId().length()!=9)
+                .collect(Collectors.groupingBy(OrderLine::vendor));
+        onlyInSheetGroupedByVendor.entrySet().stream()
+                .sorted(Comparator.comparing(it -> it.getKey().name()))
+                .forEach(it -> System.out.printf("%-20s %4d%n", it.getKey().name(), it.getValue().size()));
+        // Output some examples
+        var notFound = new ArrayList<OrderLine>();
+        var found = new ArrayList<OrderLine>();
+        onlyInSheetGroupedByVendor.entrySet().stream()
+                .sorted(Comparator.comparing(it -> it.getKey().name()))
+                .forEach(entry -> {
+                    entry.getValue().stream()
+                            .filter(orderLine -> orderLine.date().getYear() == 2024 && orderLine.date().getMonth() == Month.AUGUST)
+                            //.filter(orderLine -> orderLine.orderId().length() == 9)
+                            //.min(Comparator.comparing(OrderLine::date));
+                            .forEach(orderLine -> {
+                                var emagCredentials = UserPassword.findAlias(orderLine.vendor().name());
+                                var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+                                try {
+                                    var response = emag.readRequest("order", Map.of("id", orderLine.orderId()), null, OrderResult.class);
+                                    if (response.isEmpty()) {
+                                        notFound.add(orderLine);
+                                    } else {
+                                        found.add(orderLine);
+                                    }
+                                } catch (IOException e) {
+                                    throw new RuntimeException(e);
+                                } catch (InterruptedException e) {
+                                    throw new RuntimeException(e);
+                                }
+
+                            });
+                    //exampleOrder.ifPresent(OrderLine::println);
+                    //exampleOrder.ifPresent(orderLine -> System.out.printf("fetchOrder(\"%s\",\"%s\");%n", orderLine.vendor(),orderLine.orderId()));
+                });
+        found.stream()
+                .map(it -> "delete from emag_fetch_log where emag_login = '%s' and order_start = '%04d-%02d-%02d';".formatted(
+                        it.vendor.name(), it.date.getYear(), it.date.getMonthValue(), it.date.getDayOfMonth())
+                )
+                .sorted()
+                .distinct()
+                .forEach(System.out::println);
+        var onlyInDB = getDifference(dataFromDB, sheetGroupedByOrderId, "DB");
+    }
+
+    /**
+     * Get the difference between two order lists.
+     *
+     * @param firstList list of orders
+     * @param secondList map of orders grouped by orderId
+     * @param sourceOfFirst text used in output to indicate the origin of the orders in firstList.
+     * @return the orders from firstList not found in secondList.
+     */
+    private static @NotNull List<OrderLine> getDifference(List<OrderLine> firstList, Map<String, List<OrderLine>> secondList, final String sourceOfFirst) {
+        System.out.println("Find ones only in " + sourceOfFirst + " ...");
+        var onlyInFirst = firstList.stream().filter(it -> {
+            var potentialOrder = secondList.get(it.orderId);
+            return potentialOrder == null || !potentialOrder.contains(it);
+        }).toList();
+        System.out.println("# elements only in " + sourceOfFirst + " " + onlyInFirst.size());
+        return onlyInFirst;
+    }
+
+    /**
+     * Find orders, that have products provided by different vendors.
+     *
+     * @param ordersByOrderId
+     */
+    private static void findOrdersWithMultipleVendors(Map<String, List<OrderLine>> ordersByOrderId) {
+        var ordersWithMultipleVendors = ordersByOrderId.entrySet().stream()
                 .filter(entry -> {
                     var orders = entry.getValue();
                     var vendors = orders.stream().map(OrderLine::vendor).collect(Collectors.toSet());
@@ -237,39 +334,67 @@ public class CompareDBWithDataComenzi {
                 })
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         System.out.println("# of orders with different vendors " + ordersWithMultipleVendors.size());
-        // dumpOrderLines(ordersWithMultipleVendors);
-        var sheetGroupedByOrderId = dataFromSheet.stream().collect(Collectors.groupingBy(OrderLine::orderId));
-        System.out.println("# elements from sheet with unique order id " + sheetGroupedByOrderId.size());
-        System.out.println("Find ones only in sheet ...");
-        var onlyInSheet = dataFromSheet.stream().filter(it -> {
-            var potentialOrder = dbGroupedByOrderId.get(it.orderId);
-            return potentialOrder == null || !potentialOrder.contains(it);
-        }).toList();
-        System.out.println("# elements only in sheet " + onlyInSheet.size());
-        onlyInSheet.stream().filter(it -> it.vendor() != Vendor.judios).limit(10).forEach(System.out::println);
-        var onlyInSheetGroupedByVendor = onlyInSheet.stream().collect(Collectors.groupingBy(OrderLine::vendor));
-        onlyInSheetGroupedByVendor.entrySet().stream()
-                .sorted(Comparator.comparing(it->it.getKey().name()))
-                .forEach(it-> System.out.printf("%-20s %4d%n", it.getKey().name(),it.getValue().size()));
-        onlyInSheetGroupedByVendor.entrySet().stream()
-                .sorted(Comparator.comparing(it->it.getKey().name()))
-                .forEach(it-> {
-                    var exampleOrder = it.getValue().stream()
-                            .filter(orderLine -> orderLine.date().getYear() == 2024)
-                            .min(Comparator.comparing(OrderLine::date));
-                    exampleOrder.ifPresent(OrderLine::println);
-                });
-
-        System.out.println("Find ones only in DB ...");
-        var onlyInDB = dataFromDB.stream().filter(it -> {
-            var potentialOrder = sheetGroupedByOrderId.get(it.orderId);
-            return potentialOrder == null || !potentialOrder.contains(it);
-        }).toList();
-        System.out.println("# elements only in db " + onlyInDB.size());
     }
 
-    private static void dumpOrderLines(Map<String, @NotNull List<OrderLine>> ordersWithMultipleVendors) {
-        ordersWithMultipleVendors.forEach((_, orders) -> {
+    /**
+     * Filter out those orders, which have more than one product.
+     *
+     * @param ordersByOrderId map from orderId to OrderLine.
+     * @return map containing only those entries, which map to a list with more than one element.
+     */
+    private static @NotNull Map<String, List<OrderLine>> filterOrdersWithMultipleEntries(Map<String, List<OrderLine>> ordersByOrderId) {
+        var orderIdsWithMultipleEntries = ordersByOrderId.entrySet().stream()
+                .filter(entry -> entry.getValue().size() > 1) // Filter for entries with more than one OrderLine
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        System.out.println("# of order id with more than one OrderLine " + orderIdsWithMultipleEntries.size());
+        return orderIdsWithMultipleEntries;
+    }
+
+    /**
+     * Group the orders by their order ID.
+     *
+     * @param orders list of orders.
+     * @param source text included in output to distinguish, which data is treated.
+     * @return map from orderId to list of associated ORderLine.
+     */
+    private static @NotNull Map<String, List<OrderLine>> groupByOrderId(List<OrderLine> orders, final String source) {
+        var groupedByOrderId = orders.stream().collect(Collectors.groupingBy(OrderLine::orderId));
+        System.out.println("# elements from " + source + " with unique order id " + groupedByOrderId.size());
+        return groupedByOrderId;
+    }
+
+    /**
+     * Print the sizes of the two lists.
+     *
+     * @param dataFromDB list of orders from the database.
+     * @param dataFromSheet list of orders from the spreadsheet.
+     */
+    private static void printSizes(List<OrderLine> dataFromDB, List<OrderLine> dataFromSheet) {
+        System.out.println("# elements from db " + dataFromDB.size());
+        System.out.println("# elements from sheet " + dataFromSheet.size());
+    }
+
+    /**
+     * Create a new list where the orders are sorted first by the vendor and then by the orderId.
+     * @param orders list of orders.
+     * @param title Text printed to identify the step.
+     * @return sorted order list.
+     */
+    private static @NotNull List<OrderLine> sortOrders(List<OrderLine> orders, String title) {
+        System.out.println(title);
+        return orders.stream()
+                .sorted(Comparator.comparing(OrderLine::vendor).thenComparing(OrderLine::orderId))
+                .toList();
+    }
+
+    /**
+     * Given a map from vendors to their orders, dump the orders.
+     * A blank line separates the orders of different vendors, but no vendor name is printed.
+     *
+     * @param ordersByVendors map having the vendor as key and the list of orders as value.
+     */
+    private static void dumpOrderLines(Map<String, @NotNull List<OrderLine>> ordersByVendors) {
+        ordersByVendors.forEach((_, orders) -> {
             orders.forEach(OrderLine::println);
             System.out.println();
         });
