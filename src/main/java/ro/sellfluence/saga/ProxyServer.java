@@ -8,6 +8,8 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.http.HttpObjectAggregator;
+import io.netty.handler.codec.http.HttpServerCodec;
 
 public class ProxyServer {
 
@@ -29,6 +31,11 @@ public class ProxyServer {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         public void initChannel(SocketChannel ch) throws Exception {
+                            // Add the HTTP server codec to handle HTTP requests
+                            ch.pipeline().addLast(new HttpServerCodec());
+                            // Add the HttpObjectAggregator to combine headers and body
+                            ch.pipeline().addLast(new HttpObjectAggregator(1048576)); // 1 MB max content length
+                            // Add your custom handler
                             ch.pipeline().addLast(new ProxyHandler());
                         }
                     });
