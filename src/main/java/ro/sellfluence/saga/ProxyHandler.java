@@ -15,6 +15,8 @@ import org.apache.xml.serializer.utils.MsgKey;
 import ro.sellfluence.emagapi.EmagApi;
 import ro.sellfluence.support.UserPassword;
 
+import java.nio.charset.StandardCharsets;
+
 import static java.util.logging.Level.FINE;
 
 public class ProxyHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
@@ -26,7 +28,8 @@ public class ProxyHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
         if (requestURI.contains("api-3/order/count HTTP/1.1")) {
             EmagApi.setAPILogLevel(FINE);
             var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
-            var responseBody = emag.countOrderRequestRaw();
+            var requestBody = msg.content().toString(StandardCharsets.UTF_8);
+            var responseBody = emag.countOrderRequestRaw(requestBody);
             if (responseBody != null) {
                 // Create a response
                 FullHttpResponse httpResponse = new DefaultFullHttpResponse(

@@ -159,7 +159,7 @@ public class EmagApi {
     }
 
     public CountResponse countOrderRequest() throws IOException, InterruptedException {
-        var receivedJSON = countOrderRequestRaw();
+        var receivedJSON = countOrderRequestRaw("");
         CountResponse counterResponse = null;
         if (receivedJSON!=null) {
             logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
@@ -189,12 +189,12 @@ public class EmagApi {
         return counterResponse;
     }
 
-    public String countOrderRequestRaw() throws IOException, InterruptedException {
+    public String countOrderRequestRaw(String requestBody) throws IOException, InterruptedException {
         var httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(countOrders))
                 .header("Authorization", "Basic " + credentials)
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString("")).build();
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody)).build();
         var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
         int statusCode = httpResponse.statusCode();
         logger.log(FINE, "Status code = " + statusCode);
