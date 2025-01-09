@@ -281,6 +281,7 @@ public class EmagMirrorDB {
                 }
         );
     }
+
     /**
      * Read database information and prepare them for inclusion in the spreadsheet.
      *
@@ -667,7 +668,11 @@ public class EmagMirrorDB {
     }
 
     private static int insertAWB(Connection db, AWB awb, int emagId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO awb (reservation_id, emag_id) VALUES (?, ?)")) {
+        try (var s = db.prepareStatement("""
+                INSERT INTO awb (
+                reservation_id, 
+                emag_id
+                ) VALUES (?, ?) ON CONFLICT(reservation_id) DO NOTHING""")) {
             s.setInt(1, awb.reservation_id());
             s.setInt(2, emagId);
             return s.executeUpdate();
@@ -698,7 +703,19 @@ public class EmagMirrorDB {
     }
 
     private static int insertReturnedProduct(Connection db, ReturnedProduct returnedProduct, int emagId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO emag_returned_products (id, product_emag_id, product_id, quantity, product_name, return_reason, observations, diagnostic, reject_reason, retained_amount, emag_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+        try (var s = db.prepareStatement("""
+                INSERT INTO emag_returned_products (
+                id, 
+                product_emag_id, 
+                product_id, quantity, 
+                product_name, 
+                return_reason, 
+                observations, 
+                diagnostic, 
+                reject_reason, 
+                retained_amount, 
+                emag_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING""")) {
             s.setInt(1, returnedProduct.id());
             s.setInt(2, returnedProduct.product_emag_id());
             s.setInt(3, returnedProduct.product_id());
