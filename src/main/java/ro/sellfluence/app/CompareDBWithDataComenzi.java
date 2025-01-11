@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import static java.time.format.DateTimeFormatter.ISO_LOCAL_DATE;
@@ -45,8 +46,8 @@ public class CompareDBWithDataComenzi {
     private static final String appName = "sellfluence1";
     private static final String spreadSheetName = "Testing Coding 2024 - Date comenzi";
     private static final String sheetName = "Date";
-    private static final String databseName = "emagLocal";
-    private static final DateTimeFormatter rfc1123_2digityear;
+    private static final String databaseName = "emagLocal";
+    private static final DateTimeFormatter rfc1123_2digit_year;
     private static final DateTimeFormatter isoLikeLocalDateTime;
 
     static {
@@ -77,7 +78,7 @@ public class CompareDBWithDataComenzi {
         moy.put(10L, "Oct");
         moy.put(11L, "Nov");
         moy.put(12L, "Dec");
-        rfc1123_2digityear = new DateTimeFormatterBuilder()
+        rfc1123_2digit_year = new DateTimeFormatterBuilder()
                 .parseCaseInsensitive()
                 .parseLenient()
                 .optionalStart()
@@ -98,15 +99,6 @@ public class CompareDBWithDataComenzi {
                 .toFormatter(Locale.ENGLISH);
     }
 
-
-    // Fetch all orders from google sheet.
-    // Store them in a list of objects.
-    // Read from database and produse same data structure.
-    // Compare to find:
-    // a) items in emag db missing from google sheet.
-    // b) items in google sheet and missing in emag db
-    // c) orders which are in both lists but differ in data.
-
     public static void main(String[] args) {
         final DriveAPI drive = DriveAPI.getDriveAPI(appName);
         var spreadSheetId = drive.getFileId(spreadSheetName);
@@ -115,7 +107,7 @@ public class CompareDBWithDataComenzi {
         var dataFromSheet = sheetDataToOrderList(spreadSheet.getRowsInColumnRange(sheetName, "A", "AF").stream().skip(3).toList());
         try {
             System.out.println("Reading database ...");
-            var mirrorDB = EmagMirrorDB.getEmagMirrorDB(databseName);
+            var mirrorDB = EmagMirrorDB.getEmagMirrorDB(databaseName);
             var dataFromDB = dbDataToOrderList(mirrorDB.readForComparisonApp());
             System.out.println("Compare data ...");
             compare(dataFromDB, dataFromSheet);
@@ -151,16 +143,39 @@ public class CompareDBWithDataComenzi {
     }
 
     /**
-     * Store all data belonging to a single order line as found in the google sheet.
+     * Store all data belonging to a single order line as found in the Google sheet.
      */
     record OrderLine(
             String orderId,
             Vendor vendor,
             String PNK,
-            LocalDateTime date
+            LocalDateTime date,
+            int status
     ) {
         public void println() {
             System.out.printf("%tF %-10s %-20s %s%n", date(), orderId(), vendor.name(), PNK());
+        }
+
+        public boolean equalExceptStatus(Object o) {
+            if (!(o instanceof OrderLine orderLine)) return false;
+            return Objects.equals(PNK, orderLine.PNK)
+                   && vendor == orderLine.vendor
+                   && Objects.equals(orderId, orderLine.orderId)
+                   && Objects.equals(date, orderLine.date);
+        }
+
+        public boolean equalExceptStatusAndPNK(Object o) {
+            if (!(o instanceof OrderLine orderLine)) return false;
+            return vendor == orderLine.vendor
+                   && Objects.equals(orderId, orderLine.orderId)
+                   && Objects.equals(date, orderLine.date);
+        }
+
+        public boolean equalsExceptStatusAndVendor(Object o) {
+            if (!(o instanceof OrderLine orderLine)) return false;
+            return Objects.equals(PNK, orderLine.PNK)
+                   && Objects.equals(orderId, orderLine.orderId)
+                   && Objects.equals(date, orderLine.date);
         }
     }
 
@@ -176,7 +191,9 @@ public class CompareDBWithDataComenzi {
                         (String) row.get(0),
                         Vendor.fromSheet((String) row.get(1), (Boolean) row.get(2)),
                         (String) row.get(3),
-                        (LocalDateTime) row.get(4)
+                        (LocalDateTime) row.get(4),
+                        (Integer) row.get(5)
+                        // , (Integer) row.get(6)
                 )
         ).toList();
     }
@@ -193,12 +210,26 @@ public class CompareDBWithDataComenzi {
                 try {
                     String vendorName = row.get(23);
                     Vendor vendor = Vendor.fromSheet(vendorName, isEMAGFbe(row.get(24)));
-                    next.accept(new OrderLine(row.get(1), vendor, row.get(4), toLocalDateTime(row.get(0))));
+                    next.accept(new OrderLine(row.get(1), vendor, row.get(4), toLocalDateTime(row.get(0)), toNumericStatus(row.get(2))));
                 } catch (Exception e) {
                     throw new RuntimeException("Error in row " + Arrays.toString(row.toArray()), e);
                 }
             }
         }).toList();
+    }
+
+    /**
+     * Convert test status in spreadsheet to numeric value.
+     *
+     * @param s status as text.
+     * @return numeric status value.
+     */
+    private static int toNumericStatus(String s) {
+        return switch (s.trim()) {
+            case "Finished", "Finalizata" -> 4;
+            case "Stornata" -> 5;
+            default -> throw new IllegalArgumentException("Unknown status " + s);
+        };
     }
 
     /**
@@ -220,7 +251,7 @@ public class CompareDBWithDataComenzi {
                 date = LocalDateTime.parse(s, DateTimeFormatter.RFC_1123_DATE_TIME);
             } catch (Exception ex) {
                 try {
-                    date = LocalDateTime.parse(s, rfc1123_2digityear);
+                    date = LocalDateTime.parse(s, rfc1123_2digit_year);
                 } catch (Exception exc) {
                     date = LocalDateTime.parse(s, isoLikeLocalDateTime);
                 }
@@ -232,8 +263,8 @@ public class CompareDBWithDataComenzi {
     /**
      * Decodes the FBE column in the spreadsheet.
      *
-     * @param fbe
-     * @return
+     * @param fbe Textual information if it is FBE or not.
+     * @return true if it is FBE, false otherwise.
      */
     private static boolean isEMAGFbe(String fbe) {
         return switch (fbe) {
@@ -253,16 +284,165 @@ public class CompareDBWithDataComenzi {
         // dumpOrderLines(ordersWithMultipleVendors);
         var sheetGroupedByOrderId = groupByOrderId(dataFromSheet, "sheet");
         var onlyInSheet = getDifference(dataFromSheet, dbGroupedByOrderId, "sheet");
-        // Print first ten orders that were not found.
+        findOrdersWithMismatches(onlyInSheet, dbGroupedByOrderId, sheetGroupedByOrderId);
+        // Print the first ten orders that were not found.
         onlyInSheet.stream().filter(it -> it.vendor() != Vendor.judios).limit(10).forEach(System.out::println);
-        // Print number of orders that are missing by vendor
+        // Print the number of orders that are missing by vendor
         var onlyInSheetGroupedByVendor = onlyInSheet.stream()
                 //.filter(it -> it.orderId().length()!=9)
                 .collect(Collectors.groupingBy(OrderLine::vendor));
         onlyInSheetGroupedByVendor.entrySet().stream()
                 .sorted(Comparator.comparing(it -> it.getKey().name()))
                 .forEach(it -> System.out.printf("%-20s %4d%n", it.getKey().name(), it.getValue().size()));
-        // Output some examples
+        //doNotDoNow(onlyInSheetGroupedByVendor);
+        var onlyInDB = getDifference(dataFromDB, sheetGroupedByOrderId, "DB");
+    }
+
+    record VendorMismatch(String orderId, Vendor sheetVendor, Vendor dbVendor) {
+    }
+
+    record ComplexCase(String orderId, List<OrderLine> sheetVendor, List<OrderLine> dbVendor) {
+    }
+
+    /**
+     * See if the orderId is there, but there are other mismatches.
+     *
+     * @param ordersOnlyInOnePlace List of orders that are only in one place.
+     * @param dbGroupedByOrderId List of orders in the database grouped by orderId.
+     */
+    private static void findOrdersWithMismatches(List<OrderLine> ordersOnlyInOnePlace, Map<String, List<OrderLine>> dbGroupedByOrderId, Map<String, List<OrderLine>> sheetGroupedByOrderId) {
+        var orderIdsWithIssues = ordersOnlyInOnePlace.stream().map(OrderLine::orderId).collect(Collectors.toSet());
+        var statusFinalInsteadOfStorno = new ArrayList<OrderLine>();
+        var missingInDB = new ArrayList<OrderLine>();
+        var vendorMismatch = new ArrayList<VendorMismatch>();
+        var blankPNKInSheet = new ArrayList<OrderLine>();
+        var complexCases = new ArrayList<ComplexCase>();
+
+        orderIdsWithIssues.stream()
+                .filter(it -> it.length() == 9)
+                .sorted()
+                .forEach(orderId -> {
+                            var sheetOrders = sheetGroupedByOrderId.getOrDefault(orderId, new ArrayList<>());
+                            var dbOrders = dbGroupedByOrderId.getOrDefault(orderId, new ArrayList<>());
+                            var onlyInSheet = sheetOrders.stream().filter(orderLine -> !dbOrders.contains(orderLine)).toList();
+                            var onlyInDB = dbOrders.stream().filter(orderLine -> !sheetOrders.contains(orderLine)).toList();
+                            if (onlyInDB.isEmpty()) {
+                                missingInDB.addAll(onlyInSheet);
+                                //System.out.printf("DB is missing %s%n", orderLine)
+                            } else if (onlyInSheet.size() == 1 && onlyInDB.size() == 1) {
+                                var sheetOrder = onlyInSheet.getFirst();
+                                var dbOrder = onlyInDB.getFirst();
+                                if (sheetOrder.equalExceptStatus(dbOrder)) {
+                                    if (sheetOrder.status() == 4 && dbOrder.status() == 5) {
+                                        statusFinalInsteadOfStorno.add(sheetOrder);
+                                    } else {
+                                        System.out.printf("Mismatch in order %s%n Sheet has status %d, DB has %d.%n", orderId, sheetOrder.status(), dbOrder.status());
+                                    }
+                                } else if (sheetOrder.equalsExceptStatusAndVendor(dbOrder)) {
+                                    vendorMismatch.add(new VendorMismatch(orderId, sheetOrder.vendor(), dbOrder.vendor()));
+                                } else if (sheetOrder.equalExceptStatusAndPNK(dbOrder) && sheetOrder.PNK().isBlank()) {
+                                    blankPNKInSheet.add(dbOrder);
+                                } else {
+                                    System.out.printf("Mismatch in order %s%n Sheet has %s%n DB has %s%n", orderId, sheetOrder, dbOrder);
+                                }
+                            } else {
+                                complexCases.add(new ComplexCase(orderId, onlyInSheet, onlyInDB));
+                                //System.out.printf("Complex case %s: Sheet has %d entries and DB has %d entries that do not match.%n", orderId, onlyInSheet.size(), onlyInDB.size());
+                            }
+                        }
+                );
+        System.out.printf(
+                """
+                        Sheet status is final, emag reports storno: %d
+                        Order is missing in the database: %d
+                        Vendor in spreadsheet does not match vendor reported by emag: %d
+                        PNK is empty in spreadsheet: %d
+                        More complex cases to be analyzed by hand: %d
+                        """,
+                statusFinalInsteadOfStorno.size(),
+                missingInDB.size(),
+                vendorMismatch.size(),
+                blankPNKInSheet.size(),
+                complexCases.size()
+        );
+        dumpVendorMismatchByCase(vendorMismatch);
+        //generateDeleteStatements(missingInDB);
+        checkMissingWithEmag(missingInDB);
+    }
+
+    record OrderLineAndResponse(OrderLine orderLine, List<OrderResult> response) {
+    }
+
+    private static void checkMissingWithEmag(ArrayList<OrderLine> missingInDB) {
+        var missingOrderId = new ArrayList<OrderLine>();
+        var foundOrderId = new ArrayList<OrderLineAndResponse>();
+        missingInDB.forEach(orderLine -> {
+            var response = fetchFromEmag(orderLine);
+            if (response.isEmpty()) {
+                missingOrderId.add(orderLine);
+            } else {
+                foundOrderId.add(new OrderLineAndResponse(orderLine, response));
+            }
+        });
+        System.out.printf("""
+                        Orders not in emag %d
+                        Orders missing from db but in emag %d
+                        """,
+                missingOrderId.size(),
+                foundOrderId.size()
+        );
+        foundOrderId.forEach(it ->
+                System.out.printf("""
+                                Order %s was found in emag. Response is
+                                 %s
+                                """,
+                        it.orderLine,
+                        it.response));
+        missingOrderId.stream()
+                .sorted(Comparator.comparing(OrderLine::vendor).thenComparing(OrderLine::orderId))
+                .forEach(orderLine -> System.out.printf("%s\t%s%n", orderLine.orderId(), orderLine.vendor()));
+    }
+
+    private static void dumpVendorMismatchByCase(ArrayList<VendorMismatch> vendorMismatch) {
+        vendorMismatch.stream()
+                .collect(Collectors.groupingBy(x -> "Sheet: %s, DB: %s".formatted(x.sheetVendor, x.dbVendor)))
+                .entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(it ->
+                        System.out.printf("%s: %d, example orderId: %s%n", it.getKey(), it.getValue().size(), it.getValue().getFirst().orderId())
+                );
+    }
+
+    private static void generateDeleteStatements(ArrayList<OrderLine> missingInDB) {
+        missingInDB.stream().map(it -> "delete from emag_fetch_log where emag_login = '%s' and order_start = '%04d-%02d-%02d';".formatted(
+                        it.vendor.name(), it.date.getYear(), it.date.getMonthValue(), it.date.getDayOfMonth()))
+                .sorted()
+                .distinct()
+                .forEach(System.out::println);
+    }
+
+    private static void checkVendor(OrderLine orderFromSheet, OrderLine orderFromDB) {
+        if (orderFromSheet.vendor() != orderFromDB.vendor()) {
+            var resultWithSheetVendor = fetchFromEmag(orderFromSheet);
+            var resultWithDBVendor = fetchFromEmag(orderFromDB);
+            if (!resultWithSheetVendor.isEmpty()) {
+                System.out.printf("Emag confirms Sheet correct: %s%n", resultWithSheetVendor);
+            } else if (resultWithDBVendor.isEmpty()) {
+                System.out.printf("No result from emag with eithor vendor.%n sheet: %s%n DB: %s%n", orderFromSheet, orderFromDB);
+            } else {
+                System.out.printf("Database is correct on order %s%n", orderFromSheet.orderId());
+            }
+        } else {
+            System.out.printf(
+                    "!!! %s differs from %s but has same orderId %s",
+                    orderFromSheet,
+                    orderFromDB,
+                    orderFromSheet.orderId()
+            );
+        }
+    }
+
+    private static void doNotDoNow(Map<Vendor, @NotNull List<OrderLine>> onlyInSheetGroupedByVendor) {
         var notFound = new ArrayList<OrderLine>();
         var found = new ArrayList<OrderLine>();
         onlyInSheetGroupedByVendor.entrySet().stream()
@@ -282,9 +462,7 @@ public class CompareDBWithDataComenzi {
                                     } else {
                                         found.add(orderLine);
                                     }
-                                } catch (IOException e) {
-                                    throw new RuntimeException(e);
-                                } catch (InterruptedException e) {
+                                } catch (IOException | InterruptedException e) {
                                     throw new RuntimeException(e);
                                 }
 
@@ -292,14 +470,24 @@ public class CompareDBWithDataComenzi {
                     //exampleOrder.ifPresent(OrderLine::println);
                     //exampleOrder.ifPresent(orderLine -> System.out.printf("fetchOrder(\"%s\",\"%s\");%n", orderLine.vendor(),orderLine.orderId()));
                 });
-        found.stream()
-                .map(it -> "delete from emag_fetch_log where emag_login = '%s' and order_start = '%04d-%02d-%02d';".formatted(
-                        it.vendor.name(), it.date.getYear(), it.date.getMonthValue(), it.date.getDayOfMonth())
-                )
-                .sorted()
-                .distinct()
-                .forEach(System.out::println);
-        var onlyInDB = getDifference(dataFromDB, sheetGroupedByOrderId, "DB");
+        generateDeleteStatements(found);
+    }
+
+    /**
+     * Fetch order from emag.
+     *
+     * @return All orders found.
+     */
+    private static List<OrderResult> fetchFromEmag(OrderLine orderLine) {
+        var emagCredentials = UserPassword.findAlias(orderLine.vendor().name());
+        var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+        List<OrderResult> response;
+        try {
+            response = emag.readRequest("order", Map.of("id", orderLine.orderId()), null, OrderResult.class);
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        return response;
     }
 
     /**
@@ -316,14 +504,14 @@ public class CompareDBWithDataComenzi {
             var potentialOrder = secondList.get(it.orderId);
             return potentialOrder == null || !potentialOrder.contains(it);
         }).toList();
-        System.out.println("# elements only in " + sourceOfFirst + " " + onlyInFirst.size());
+        System.out.println("Number of elements only in " + sourceOfFirst + " " + onlyInFirst.size());
         return onlyInFirst;
     }
 
     /**
      * Find orders, that have products provided by different vendors.
      *
-     * @param ordersByOrderId
+     * @param ordersByOrderId Map of orderId to the associated OrderLine.
      */
     private static void findOrdersWithMultipleVendors(Map<String, List<OrderLine>> ordersByOrderId) {
         var ordersWithMultipleVendors = ordersByOrderId.entrySet().stream()
@@ -333,7 +521,7 @@ public class CompareDBWithDataComenzi {
                     return vendors.size() > 1;
                 })
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-        System.out.println("# of orders with different vendors " + ordersWithMultipleVendors.size());
+        System.out.println("Number of orders with different vendors " + ordersWithMultipleVendors.size());
     }
 
     /**
@@ -346,7 +534,7 @@ public class CompareDBWithDataComenzi {
         var orderIdsWithMultipleEntries = ordersByOrderId.entrySet().stream()
                 .filter(entry -> entry.getValue().size() > 1) // Filter for entries with more than one OrderLine
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-        System.out.println("# of order id with more than one OrderLine " + orderIdsWithMultipleEntries.size());
+        System.out.println("Number of order ID with more than one OrderLine " + orderIdsWithMultipleEntries.size());
         return orderIdsWithMultipleEntries;
     }
 
@@ -355,11 +543,11 @@ public class CompareDBWithDataComenzi {
      *
      * @param orders list of orders.
      * @param source text included in output to distinguish, which data is treated.
-     * @return map from orderId to list of associated ORderLine.
+     * @return map from orderId to list of associated OrderLine.
      */
     private static @NotNull Map<String, List<OrderLine>> groupByOrderId(List<OrderLine> orders, final String source) {
         var groupedByOrderId = orders.stream().collect(Collectors.groupingBy(OrderLine::orderId));
-        System.out.println("# elements from " + source + " with unique order id " + groupedByOrderId.size());
+        System.out.println("Number of elements from " + source + " with unique order ID " + groupedByOrderId.size());
         return groupedByOrderId;
     }
 

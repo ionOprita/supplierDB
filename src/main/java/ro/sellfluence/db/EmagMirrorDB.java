@@ -302,6 +302,7 @@ public class EmagMirrorDB {
                                       p.part_number_key,
                                       o.date,
                                       o.status,
+                                      o.type,
                                       pi.name,
                                       p.quantity,
                                       p.sale_price,
@@ -335,7 +336,9 @@ public class EmagMirrorDB {
                                         rs.getString(2), // company name
                                         rs.getBoolean(3), // platform
                                         rs.getString(4), // PNK
-                                        rs.getTimestamp(5).toLocalDateTime() // creation date
+                                        rs.getTimestamp(5).toLocalDateTime(), // creation date
+                                        rs.getInt(6), // status
+                                        rs.getInt(7) // type
                                         /*
                                         // Group 0
                                         Stream.of(
