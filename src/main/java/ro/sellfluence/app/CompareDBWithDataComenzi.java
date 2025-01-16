@@ -373,7 +373,12 @@ public class CompareDBWithDataComenzi {
     record OrderLineAndResponse(OrderLine orderLine, List<OrderResult> response) {
     }
 
-    private static void checkMissingWithEmag(ArrayList<OrderLine> missingInDB) {
+    /**
+     * Check the missing orders with emag.
+     *
+     * @param missingInDB list of orders to check.
+     */
+    private static void checkMissingWithEmag(List<OrderLine> missingInDB) {
         var missingOrderId = new ArrayList<OrderLine>();
         var foundOrderId = new ArrayList<OrderLineAndResponse>();
         missingInDB.forEach(orderLine -> {
@@ -398,12 +403,14 @@ public class CompareDBWithDataComenzi {
                                 """,
                         it.orderLine,
                         it.response));
+        System.out.println("Days having orders that are found if searched by orderId");
+        generateDeleteStatements(foundOrderId.stream().map(OrderLineAndResponse::orderLine).toList());
         missingOrderId.stream()
                 .sorted(Comparator.comparing(OrderLine::vendor).thenComparing(OrderLine::orderId))
                 .forEach(orderLine -> System.out.printf("%s\t%s%n", orderLine.orderId(), orderLine.vendor()));
     }
 
-    private static void dumpVendorMismatchByCase(ArrayList<VendorMismatch> vendorMismatch) {
+    private static void dumpVendorMismatchByCase(List<VendorMismatch> vendorMismatch) {
         vendorMismatch.stream()
                 .collect(Collectors.groupingBy(x -> "Sheet: %s, DB: %s".formatted(x.sheetVendor, x.dbVendor)))
                 .entrySet().stream()
@@ -413,7 +420,7 @@ public class CompareDBWithDataComenzi {
                 );
     }
 
-    private static void generateDeleteStatements(ArrayList<OrderLine> missingInDB) {
+    private static void generateDeleteStatements(List<OrderLine> missingInDB) {
         missingInDB.stream().map(it -> "delete from emag_fetch_log where emag_login = '%s' and order_start = '%04d-%02d-%02d';".formatted(
                         it.vendor.name(), it.date.getYear(), it.date.getMonthValue(), it.date.getDayOfMonth()))
                 .sorted()
