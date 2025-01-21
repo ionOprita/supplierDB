@@ -14,6 +14,7 @@ import ro.sellfluence.emagapi.StatusHistory;
 import ro.sellfluence.emagapi.StatusRequest;
 import ro.sellfluence.emagapi.Voucher;
 import ro.sellfluence.emagapi.VoucherSplit;
+import ro.sellfluence.sheetSupport.Conversions;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -22,7 +23,6 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -33,6 +33,7 @@ import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import static java.math.RoundingMode.HALF_EVEN;
+import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 
@@ -41,7 +42,6 @@ public class EmagMirrorDB {
     private static final Map<String, EmagMirrorDB> openDatabases = new HashMap<>();
     private static final Logger logger = Logger.getLogger(EmagMirrorDB.class.getName());
 
-    private static final DateTimeFormatter formatDate = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private final DB database;
 
     private EmagMirrorDB(DB database) {
@@ -52,7 +52,7 @@ public class EmagMirrorDB {
         var mirrorDB = openDatabases.get(alias);
         if (mirrorDB == null) {
             var db = new DB(alias);
-            db.prepareDB(EmagMirrorDBVersion1::version1);
+            db.prepareDB(EmagMirrorDBVersion1::version1, EmagMirrorDBVersion2::version2);
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }
@@ -63,10 +63,13 @@ public class EmagMirrorDB {
         var vendorName = order.vendor_name();
         var vendorId = getOrAddVendor(vendorName);
         database.writeTX(db -> {
-                    if (order.customer() != null) insertCustomer(db, order.customer());
-                    if (order.details() != null && order.details().locker_id() != null)
-                        indertLockerDetails(db, order.details());
-                    insertOrder(db, order, vendorId);
+                    if (order.customer() != null) {
+                        insertOrUpdateCustomer(db, order.customer());
+                    }
+                    if (order.details() != null && order.details().locker_id() != null) {
+                        insertOrUpdateLockerDetails(db, order.details());
+                    }
+                    insertOrUpdateOrder(order, db, vendorId);
                     if (order.products() != null) {
                         for (var product : order.products()) {
                             insertProduct(db, product, order.id(), vendorId);
@@ -106,6 +109,50 @@ public class EmagMirrorDB {
                     return 0;
                 }
         );
+    }
+
+/*TODO
+    public Order readOrder(String orderId, String vendorName) {
+        database.readTX(db -> {
+            var customer = selectCustomer(db, orderId, vendorName);
+
+        });
+    }
+*/
+
+    private static void insertOrUpdateLockerDetails(Connection db, final LockerDetails details) throws SQLException {
+        var added = insertLockerDetails(db, details);
+        if (added == 0) {
+            var current = selectLockerDetails(db, details.locker_id());
+            if (!details.equals(current)) {
+                logger.log(INFO, () -> "LockerDetails differs:%n old: %s%nnew: %s%n".formatted(current, details));
+                updateLockerDetails(db, details);
+            }
+        }
+    }
+
+    private static void insertOrUpdateCustomer(Connection db, final Customer customer) throws SQLException {
+        var added = insertCustomer(db, customer);
+        if (added == 0) {
+            var current = selectCustomer(db, customer.id());
+            if (!customer.equals(current)) {
+                logger.log(INFO, () -> "Customer differs:%n old: %s%nnew: %s%n".formatted(current, customer));
+                updateCustomer(db, customer);
+            }
+        }
+    }
+
+    private void insertOrUpdateOrder(OrderResult order, Connection db, UUID vendorId) throws SQLException {
+        var ordersAdded = insertOrder(db, order, vendorId);
+        if (ordersAdded == 0) {
+/*TODO
+            var current = selectOrder(db, order.id(), vendorId);
+            if (!current.equals(order)) {
+                logger.log(INFO, () -> "Order differs:%n old: %s%nnew: %s%n".formatted(current, order));
+                updateOrder(db, order, vendorId);
+            }
+*/
+        }
     }
 
     public void addRMA(RMAResult rmaResult) throws SQLException {
@@ -216,6 +263,7 @@ public class EmagMirrorDB {
                                     LEFT JOIN product as pi
                                     ON p.part_number_key = pi.emag_pnk
                                     WHERE o.status = 4 OR o.status = 5
+                                    ORDER BY o.date
                                     """
                     )) {
                         try (var rs = s.executeQuery()) {
@@ -228,13 +276,13 @@ public class EmagMirrorDB {
                                 var row = List.of(
                                         // Group 0
                                         Stream.of(
-                                                rs.getTimestamp(1).toLocalDateTime().format(formatDate), // creation date
+                                                toLocalDateTime(rs.getTimestamp(1)).format(Conversions.isoLikeLocalDateTime), // creation date
                                                 rs.getString(2), // id
-                                                statusToString(rs.getInt(3)) // status
+                                                Conversions.statusToString(rs.getInt(3)) // status
                                         ).map(Object.class::cast).toList(),
                                         // Group 1
                                         Stream.of(
-                                                rs.getString(4),
+                                                rs.getString(4), // Product name
                                                 rs.getInt(5), // quantity
                                                 priceWithoutVAT.setScale(2, HALF_EVEN),
                                                 priceWithVAT.setScale(2, HALF_EVEN)
@@ -259,7 +307,7 @@ public class EmagMirrorDB {
                                         // Group 5
                                         Stream.of(
                                                 rs.getString(14), // company name
-                                                booleanToFBE(isFBE) // platform
+                                                Conversions.booleanToFBE(isFBE) // platform
                                         ).map(Object.class::cast).toList(),
                                         // Group 6
                                         Stream.of(
@@ -336,13 +384,13 @@ public class EmagMirrorDB {
                                         rs.getString(2), // company name
                                         rs.getBoolean(3), // platform
                                         rs.getString(4), // PNK
-                                        rs.getTimestamp(5).toLocalDateTime(), // creation date
+                                        toLocalDateTime(rs.getTimestamp(5)), // creation date
                                         rs.getInt(6), // status
                                         rs.getInt(7) // type
                                         /*
                                         // Group 0
                                         Stream.of(
-                                                rs.getTimestamp(1).toLocalDateTime().format(formatDate), // creation date
+                                                toLocalDateTime(rs.getTimestamp(1)).format(formatDate), // creation date
                                                 statusToString(rs.getInt(3)) // status
                                         ).map(Object.class::cast).toList(),
                                         // Group 1
@@ -395,20 +443,8 @@ public class EmagMirrorDB {
         );
     }
 
-    private String booleanToFBE(boolean isFBE) {
-        return isFBE ? "eMAG FBE" : "eMAG NON-FBE";
-    }
-
     private String modelToString(String pnk) {
         return "PNK:" + pnk;
-    }
-
-    private String statusToString(int status) {
-        return switch (status) {
-            case 4 -> "Finalizata";
-            case 5 -> "Stornata";
-            default -> "Status:" + status;
-        };
     }
 
     private UUID getOrAddVendor(String name) throws SQLException {
@@ -440,7 +476,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertAttachment(Connection db, Attachment attachment, String orderId, UUID vendorId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO attachment (order_id, vendor_id, name, url, type, force_download, visibility) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(order_id, url) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO attachment (order_id, vendor_id, name, url, type, force_download, visibility) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(order_id, vendor_id, url) DO NOTHING")) {
             s.setString(1, orderId);
             s.setObject(2, vendorId);
             s.setString(3, attachment.name());
@@ -452,8 +488,46 @@ public class EmagMirrorDB {
         }
     }
 
+/*TODO
+    private static Attachment selectAttachment(Connection db, String orderId, UUID vendorId, String url) throws SQLException {
+        String query = "SELECT name, url, type, force_download, visibility FROM attachment WHERE order_id = ? AND vendor_id = ? AND url = ?";
+        try (var s = db.prepareStatement(query)) {
+            s.setString(1, orderId);
+            s.setObject(2, vendorId);
+            s.setString(3, url);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return new Attachment(
+                            rs.getString("name"),
+                            rs.getString("url"),
+                            rs.getInt("type"),
+                            rs.getInt("force_download"),
+                            rs.getString("visibility")
+                    );
+                } else {
+                    return null; // or throw an exception if not found
+                }
+            }
+        }
+    }
+*/
+
+    private static int updateAttachment(Connection db, Attachment attachment, String orderId, UUID vendorId, String url) throws SQLException {
+        String query = "UPDATE attachment SET name = ?, type = ?, force_download = ?, visibility = ? WHERE order_id = ? AND vendor_id = ? AND url = ?";
+        try (var s = db.prepareStatement(query)) {
+            s.setString(1, attachment.name());
+            s.setInt(2, attachment.type());
+            s.setInt(3, attachment.force_download());
+            s.setString(4, attachment.visibility());
+            s.setString(5, orderId);
+            s.setObject(6, vendorId);
+            s.setString(7, url);
+            return s.executeUpdate();
+        }
+    }
+
     private static int insertFlag(Connection db, Flag flag, String orderId, UUID vendorId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO flag (vendor_id, order_id, flag, value) VALUES (?, ?, ?, ?)")) {
+        try (var s = db.prepareStatement("INSERT INTO flag (vendor_id, order_id, flag, value) VALUES (?, ?, ?, ?) ON CONFLICT(order_id, vendor_id, flag) DO NOTHING")) {
             s.setObject(1, vendorId);
             s.setString(2, orderId);
             s.setString(3, flag.flag());
@@ -462,11 +536,71 @@ public class EmagMirrorDB {
         }
     }
 
+/*TODO
+    private static Flag selectFlag(Connection db, String orderId, UUID vendorId, String flag) throws SQLException {
+        String query = "SELECT vendor_id, order_id, flag, value FROM flag WHERE order_id = ? AND vendor_id = ? AND flag = ?";
+        try (var s = db.prepareStatement(query)) {
+            s.setString(1, orderId);
+            s.setObject(2, vendorId);
+            s.setString(3, flag);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return new Flag(
+                            rs.getObject("vendor_id", UUID.class),
+                            rs.getString("order_id"),
+                            rs.getString("flag"),
+                            rs.getString("value")
+                    );
+                } else {
+                    return null; // or throw an exception if not found
+                }
+            }
+        }
+    }
+*/
+
+    private static int updateFlag(Connection db, Flag flag, String orderId, UUID vendorId) throws SQLException {
+        String query = "UPDATE flag SET value = ? WHERE order_id = ? AND vendor_id = ? AND flag = ?";
+        try (var s = db.prepareStatement(query)) {
+            s.setString(1, flag.value());
+            s.setString(2, orderId);
+            s.setObject(3, vendorId);
+            s.setString(4, flag.flag());
+            return s.executeUpdate();
+        }
+    }
+
     private static int insertEnforcedVendorCourierAccount(Connection db, String enforcedVendorCourierAccount, String orderId, UUID vendorId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO enforced_vendor_courier_account (vendor_id, order_id, courier) VALUES (?, ?, ?)")) {
+        try (var s = db.prepareStatement("INSERT INTO enforced_vendor_courier_account (vendor_id, order_id, courier) VALUES (?, ?, ?) ON CONFLICT(order_id, vendor_id, courier)")) {
             s.setObject(1, vendorId);
             s.setString(2, orderId);
             s.setString(3, enforcedVendorCourierAccount);
+            return s.executeUpdate();
+        }
+    }
+
+    private static String selectEnforcedVendorCourierAccount(Connection db, String orderId, UUID vendorId) throws SQLException {
+        String query = "SELECT vendor_id, order_id, courier FROM enforced_vendor_courier_account WHERE order_id = ? AND vendor_id = ? AND courier = ?";
+        try (var s = db.prepareStatement(query)) {
+            s.setString(1, orderId);
+            s.setObject(2, vendorId);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString("courier");
+                } else {
+                    return null; // or throw an exception if not found
+                }
+            }
+        }
+    }
+
+    private static int updateEnforcedVendorCourierAccount(Connection db, String enforcedVendorCourierAccount, String orderId, UUID vendorId) throws SQLException {
+        String query = "UPDATE enforced_vendor_courier_account SET courier = ? WHERE order_id = ? AND vendor_id = ? AND courier = ?";
+        try (var s = db.prepareStatement(query)) {
+            s.setString(1, enforcedVendorCourierAccount);
+            s.setString(2, orderId);
+            s.setObject(3, vendorId);
+            s.setString(4, enforcedVendorCourierAccount); // Assuming you want to update the same courier
             return s.executeUpdate();
         }
     }
@@ -489,6 +623,53 @@ public class EmagMirrorDB {
         }
     }
 
+    /*TODO
+        private static Voucher selectVoucher(Connection db, int voucherId) throws SQLException {
+            String query = "SELECT voucher_id, order_id, vendor_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date, id FROM voucher WHERE voucher_id = ?";
+            try (var s = db.prepareStatement(query)) {
+                s.setInt(1, voucherId);
+                try (var rs = s.executeQuery()) {
+                    if (rs.next()) {
+                        return new Voucher(
+                                rs.getInt("voucher_id"),
+                                rs.getString("order_id"),
+                                rs.getObject("vendor_id", UUID.class),
+                                rs.getString("modified"),
+                                rs.getString("created"),
+                                rs.getInt("status"),
+                                rs.getBigDecimal("sale_price_vat"),
+                                rs.getBigDecimal("sale_price"),
+                                rs.getString("voucher_name"),
+                                rs.getBigDecimal("vat"),
+                                rs.getString("issue_date"),
+                                rs.getString("id")
+                        );
+                    } else {
+                        return null; // or throw an exception if not found
+                    }
+                }
+            }
+        }
+    */
+    private static int updateVoucher(Connection db, Voucher voucher, String orderId, UUID vendorId) throws SQLException {
+        String query = "UPDATE voucher SET order_id = ?, vendor_id = ?, modified = ?, created = ?, status = ?, sale_price_vat = ?, sale_price = ?, voucher_name = ?, vat = ?, issue_date = ?, id = ? WHERE voucher_id = ?";
+        try (var s = db.prepareStatement(query)) {
+            s.setString(1, orderId);
+            s.setObject(2, vendorId);
+            s.setString(3, voucher.modified());
+            s.setString(4, voucher.created());
+            s.setInt(5, voucher.status());
+            s.setBigDecimal(6, voucher.sale_price_vat());
+            s.setBigDecimal(7, voucher.sale_price());
+            s.setString(8, voucher.voucher_name());
+            s.setBigDecimal(9, voucher.vat());
+            s.setString(10, voucher.issue_date());
+            s.setString(11, voucher.id());
+            s.setInt(12, voucher.voucher_id());
+            return s.executeUpdate();
+        }
+    }
+
     private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, String orderId, UUID vendorId) throws SQLException {
         try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, order_id, vendor_id, value, vat_value) VALUES (?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id());
@@ -500,6 +681,39 @@ public class EmagMirrorDB {
         }
     }
 
+    /*TODO
+        private static VoucherSplit selectVoucherSplit(Connection conn, int voucherId) throws SQLException {
+            String query = "SELECT voucher_id, order_id, vendor_id, value, vat_value FROM voucher_split WHERE voucher_id = ?";
+            try (var s = conn.prepareStatement(query)) {
+                s.setInt(1, voucherId);
+                try (var rs = s.executeQuery()) {
+                    if (rs.next()) {
+                        return new VoucherSplit(
+                                rs.getInt("voucher_id"),
+                                rs.getString("order_id"),
+                                rs.getObject("vendor_id", UUID.class),
+                                rs.getBigDecimal("value"),
+                                rs.getBigDecimal("vat_value")
+                        );
+                    } else {
+                        return null; // or throw an exception if not found
+                    }
+                }
+            }
+        }
+
+        private static int updateVoucherSplit(Connection conn, VoucherSplit voucherSplit) throws SQLException {
+            String query = "UPDATE voucher_split SET order_id = ?, vendor_id = ?, value = ?, vat_value = ? WHERE voucher_id = ?";
+            try (var s = conn.prepareStatement(query)) {
+                s.setString(1, voucherSplit.order_id());
+                s.setObject(2, voucherSplit.vendor_id());
+                s.setBigDecimal(3, voucherSplit.value());
+                s.setBigDecimal(4, voucherSplit.vat_value());
+                s.setInt(5, voucherSplit.voucher_id());
+                return s.executeUpdate();
+            }
+        }
+        */
     private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, String orderId, UUID vendorId, int productId) throws SQLException {
         try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, order_id, vendor_id, product_id, value, vat_value, vat, offered_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id());
@@ -510,6 +724,47 @@ public class EmagMirrorDB {
             s.setBigDecimal(6, voucherSplit.vat_value());
             s.setString(7, voucherSplit.vat());
             s.setString(8, voucherSplit.offered_by());
+            return s.executeUpdate();
+        }
+    }
+
+/*TODO
+    private static VoucherSplit selectVoucherSplit(Connection conn, int voucherId) throws SQLException {
+        String query = "SELECT voucher_id, order_id, vendor_id, product_id, value, vat_value, vat, offered_by FROM voucher_split WHERE voucher_id = ?";
+        try (var s = conn.prepareStatement(query)) {
+            s.setInt(1, voucherId);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return new VoucherSplit(
+                            rs.getInt("voucher_id"),
+                            rs.getString("order_id"),
+                            rs.getObject("vendor_id", UUID.class),
+                            rs.getInt("product_id"),
+                            rs.getBigDecimal("value"),
+                            rs.getBigDecimal("vat_value"),
+                            rs.getString("vat"),
+                            rs.getString("offered_by")
+                    );
+                } else {
+                    return null; // or throw an exception if preferred
+                }
+            }
+        }
+    }
+*/
+
+
+    private static int updateVoucherSplit(Connection conn, VoucherSplit voucherSplit, String orderId, UUID vendorId, int productId) throws SQLException {
+        String query = "UPDATE voucher_split SET order_id = ?, vendor_id = ?, product_id = ?, value = ?, vat_value = ?, vat = ?, offered_by = ? WHERE voucher_id = ?";
+        try (var s = conn.prepareStatement(query)) {
+            s.setString(1, orderId);
+            s.setObject(2, vendorId);
+            s.setInt(3, productId);
+            s.setBigDecimal(4, voucherSplit.value());
+            s.setBigDecimal(5, voucherSplit.vat_value());
+            s.setString(6, voucherSplit.vat());
+            s.setString(7, voucherSplit.offered_by());
+            s.setInt(8, voucherSplit.voucher_id());
             return s.executeUpdate();
         }
     }
@@ -543,8 +798,82 @@ public class EmagMirrorDB {
         }
     }
 
+/*TODO
+    private static Product selectProduct(Connection db, int id, String orderId, UUID vendorId) throws SQLException {
+        String query = "SELECT id, order_id, vendor_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties FROM product_in_order WHERE id = ? AND order_id = ? AND vendor_id = ?";
+        try (var s = db.prepareStatement(query)) {
+            s.setInt(1, id);
+            s.setString(2, orderId);
+            s.setObject(3, vendorId);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return new Product(
+                            rs.getInt("id"),
+                            rs.getString("order_id"),
+                            rs.getObject("vendor_id", UUID.class),
+                            rs.getInt("product_id"),
+                            rs.getInt("mkt_id"),
+                            rs.getString("name"),
+                            rs.getInt("status"),
+                            rs.getString("ext_part_number"),
+                            rs.getString("part_number"),
+                            rs.getString("part_number_key"),
+                            rs.getString("currency"),
+                            rs.getString("vat"),
+                            rs.getInt("retained_amount"),
+                            rs.getInt("quantity"),
+                            rs.getInt("initial_qty"),
+                            rs.getInt("storno_qty"),
+                            rs.getInt("reversible_vat_charging"),
+                            rs.getBigDecimal("sale_price"),
+                            rs.getBigDecimal("original_price"),
+                            toLocalDateTime(rs.getTimestamp("created")),
+                            toLocalDateTime(rs.getTimestamp("modified")),
+                            List.of(rs.getString("details").split("\\n")),
+                            List.of(rs.getString("recycle_warranties").split("\\n"))
+                    );
+                } else {
+                    return null;
+                }
+            }
+        }
+    }
+*/
+
+    private static int updateProduct(Connection db, Product product, String orderId, UUID vendorId) throws SQLException {
+        String query = "UPDATE product_in_order SET product_id = ?, mkt_id = ?, name = ?, status = ?, ext_part_number = ?, part_number = ?, part_number_key = ?, currency = ?, vat = ?, retained_amount = ?, quantity = ?, initial_qty = ?, storno_qty = ?, reversible_vat_charging = ?, sale_price = ?, original_price = ?, created = ?, modified = ?, details = ?, recycle_warranties = ? WHERE id = ? AND order_id = ? AND vendor_id = ?";
+        try (var s = db.prepareStatement(query)) {
+            s.setInt(1, product.product_id());
+            s.setInt(2, product.mkt_id());
+            s.setString(3, product.name());
+            s.setInt(4, product.status());
+            s.setString(5, product.ext_part_number());
+            s.setString(6, product.part_number());
+            s.setString(7, product.part_number_key());
+            s.setString(8, product.currency());
+            s.setString(9, product.vat());
+            s.setInt(10, product.retained_amount());
+            s.setInt(11, product.quantity());
+            s.setInt(12, product.initial_qty());
+            s.setInt(13, product.storno_qty());
+            s.setInt(14, product.reversible_vat_charging());
+            s.setBigDecimal(15, product.sale_price());
+            s.setBigDecimal(16, product.original_price());
+            s.setTimestamp(17, toTimestamp(product.created()));
+            s.setTimestamp(18, toTimestamp(product.modified()));
+            s.setString(19, String.join("\n", product.details()));
+            s.setString(20, String.join("\n", product.recycle_warranties()));
+            s.setInt(21, product.id());
+            s.setString(22, orderId);
+            s.setObject(23, vendorId);
+            return s.executeUpdate();
+        }
+    }
+
     private static int insertCustomer(Connection db, Customer c) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO customer (id, mkt_id, name, email, company, gender, code, registration_number, bank, iban, fax, legal_entity, is_vat_payer, phone_1, phone_2, phone_3, billing_name, billing_phone, billing_country, billing_suburb, billing_city, billing_locality_id, billing_street, billing_postal_code, liable_person, shipping_country, shipping_suburb, shipping_city, shipping_locality_id, shipping_street, shipping_postal_code, shipping_contact, shipping_phone, created, modified) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING")) {
+        try (var s = db.prepareStatement("""
+                INSERT INTO customer (id, mkt_id, name, email, company, gender, code, registration_number, bank, iban, fax, legal_entity, is_vat_payer, phone_1, phone_2, phone_3, billing_name, billing_phone, billing_country, billing_suburb, billing_city, billing_locality_id, billing_street, billing_postal_code, liable_person, shipping_country, shipping_suburb, shipping_city, shipping_locality_id, shipping_street, shipping_postal_code, shipping_contact, shipping_phone, created, modified) 
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING""")) {
             s.setInt(1, c.id());
             s.setInt(2, c.mkt_id());
             s.setString(3, c.name());
@@ -584,12 +913,131 @@ public class EmagMirrorDB {
         }
     }
 
-    private static int indertLockerDetails(Connection db, LockerDetails ld) throws SQLException {
+
+    private static Customer selectCustomer(Connection db, int customerId) throws SQLException {
+        Customer customer = null;
+        try (var s = db.prepareStatement("SELECT * FROM customer WHERE id = ?")) {
+            s.setInt(1, customerId);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    customer = new Customer(
+                            customerId,
+                            rs.getInt("mkt_id"),
+                            rs.getString("name"),
+                            rs.getString("email"),
+                            rs.getString("company"),
+                            rs.getString("gender"),
+                            rs.getString("code"),
+                            rs.getString("registration_number"),
+                            rs.getString("bank"),
+                            rs.getString("iban"),
+                            rs.getString("fax"),
+                            rs.getInt("legal_entity"),
+                            rs.getInt("is_vat_payer"),
+                            rs.getString("phone_1"),
+                            rs.getString("phone_2"),
+                            rs.getString("phone_3"),
+                            rs.getString("billing_name"),
+                            rs.getString("billing_phone"),
+                            rs.getString("billing_country"),
+                            rs.getString("billing_suburb"),
+                            rs.getString("billing_city"),
+                            rs.getString("billing_locality_id"),
+                            rs.getString("billing_street"),
+                            rs.getString("billing_postal_code"),
+                            rs.getString("liable_person"),
+                            rs.getString("shipping_country"),
+                            rs.getString("shipping_suburb"),
+                            rs.getString("shipping_city"),
+                            rs.getString("shipping_locality_id"),
+                            rs.getString("shipping_street"),
+                            rs.getString("shipping_postal_code"),
+                            rs.getString("shipping_contact"),
+                            rs.getString("shipping_phone"),
+                            toLocalDateTime(rs.getTimestamp("created")),
+                            toLocalDateTime(rs.getTimestamp("modified"))
+                    );
+                }
+            }
+        }
+        return customer;
+    }
+
+
+    private static int updateCustomer(Connection db, Customer c) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE customer SET mkt_id = ?, name = ?, email = ?, company = ?, gender = ?, code = ?, registration_number = ?, bank = ?, iban = ?, fax = ?, legal_entity = ?, is_vat_payer = ?, phone_1 = ?, phone_2 = ?, phone_3 = ?, billing_name = ?, billing_phone = ?, billing_country = ?, billing_suburb = ?, billing_city = ?, billing_locality_id = ?, billing_street = ?, billing_postal_code = ?, liable_person = ?, shipping_country = ?, shipping_suburb = ?, shipping_city = ?, shipping_locality_id = ?, shipping_street = ?, shipping_postal_code = ?, shipping_contact = ?, shipping_phone = ?, modified = ? WHERE id = ?")) {
+            s.setInt(1, c.mkt_id());
+            s.setString(2, c.name());
+            s.setString(3, c.email());
+            s.setString(4, c.company());
+            s.setString(5, c.gender());
+            s.setString(6, c.code());
+            s.setString(7, c.registration_number());
+            s.setString(8, c.bank());
+            s.setString(9, c.iban());
+            s.setString(10, c.fax());
+            s.setInt(11, c.legal_entity());
+            s.setInt(12, c.is_vat_payer());
+            s.setString(13, c.phone_1());
+            s.setString(14, c.phone_2());
+            s.setString(15, c.phone_3());
+            s.setString(16, c.billing_name());
+            s.setString(17, c.billing_phone());
+            s.setString(18, c.billing_country());
+            s.setString(19, c.billing_suburb());
+            s.setString(20, c.billing_city());
+            s.setString(21, c.billing_locality_id());
+            s.setString(22, c.billing_street());
+            s.setString(23, c.billing_postal_code());
+            s.setString(24, c.liable_person());
+            s.setString(25, c.shipping_country());
+            s.setString(26, c.shipping_suburb());
+            s.setString(27, c.shipping_city());
+            s.setString(28, c.shipping_locality_id());
+            s.setString(29, c.shipping_street());
+            s.setString(30, c.shipping_postal_code());
+            s.setString(31, c.shipping_contact());
+            s.setString(32, c.shipping_phone());
+            s.setTimestamp(33, toTimestamp(c.modified()));
+            s.setInt(34, c.id());
+            return s.executeUpdate();
+        }
+    }
+
+    private static int insertLockerDetails(Connection db, LockerDetails ld) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO locker_details (locker_id, locker_name, locker_delivery_eligible, courier_external_office_id) VALUES (?,?,?,?) ON CONFLICT(locker_id) DO NOTHING")) {
             s.setString(1, ld.locker_id());
             s.setString(2, ld.locker_name());
             s.setInt(3, ld.locker_delivery_eligible());
             s.setString(4, ld.courier_external_office_id());
+            return s.executeUpdate();
+        }
+    }
+
+    private static LockerDetails selectLockerDetails(Connection db, String lockerId) throws SQLException {
+        LockerDetails lockerDetails = null;
+        try (var s = db.prepareStatement("SELECT * FROM locker_details WHERE locker_id = ?")) {
+            s.setString(1, lockerId);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    lockerDetails = new LockerDetails(
+                            rs.getString("locker_id"),
+                            rs.getString("locker_name"),
+                            rs.getInt("locker_delivery_eligible"),
+                            rs.getString("courier_external_office_id")
+                    );
+                }
+            }
+        }
+        return lockerDetails;
+    }
+
+    private static int updateLockerDetails(Connection db, LockerDetails ld) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE locker_details SET locker_name = ?, locker_delivery_eligible = ?, courier_external_office_id = ? WHERE locker_id = ?")) {
+            s.setString(1, ld.locker_name());
+            s.setInt(2, ld.locker_delivery_eligible());
+            s.setString(3, ld.courier_external_office_id());
+            s.setString(4, ld.locker_id());
             return s.executeUpdate();
         }
     }
@@ -670,6 +1118,127 @@ public class EmagMirrorDB {
         }
     }
 
+/*TODO
+        private static OrderResult selectOrder(Connection db, String orderId, UUID vendorId) throws SQLException {
+            OrderResult order = null;
+            try (var s = db.prepareStatement("SELECT * FROM emag_order WHERE id = ? AND vendor_id = ?")) {
+                s.setString(1, orderId);
+                s.setObject(2, vendorId);
+                try (var rs = s.executeQuery()) {
+                    if (rs.next()) {
+                        order = new OrderResult(
+                                vendorId,
+                                orderId,
+                                rs.getInt("status"),
+                                rs.getInt("is_complete"),
+                                rs.getInt("type"),
+                                rs.getString("payment_mode"),
+                                rs.getInt("payment_mode_id"),
+                                rs.getString("delivery_payment_mode"),
+                                rs.getString("delivery_mode"),
+                                rs.getString("observation"),
+                                new LockerDetails(rs.getString("details_id"), null, 0, null), // Assuming LockerDetails has a constructor that takes locker_id
+                                toLocalDateTime(rs.getTimestamp("date")),
+                                rs.getInt("payment_status"),
+                                rs.getBigDecimal("cashed_co"),
+                                rs.getBigDecimal("cashed_cod"),
+                                rs.getBigDecimal("shipping_tax"),
+                                rs.getObject("customer_id", UUID.class), // Assuming customer_id is a UUID
+                                rs.getBoolean("is_storno"),
+                                rs.getString("cancellation_reason"),
+                                rs.getBigDecimal("refunded_amount"),
+                                rs.getString("refund_status"),
+                                rs.getTimestamp("maximum_date_for_shipment"),
+                                rs.getTimestamp("finalization_date"),
+                                rs.getString("parent_id"),
+                                rs.getString("detailed_payment_method"),
+                                rs.getString("proforms").split(""), // Split the string back into an array
+                                rs.getString("cancellation_request"),
+                                rs.getInt("has_editable_products"),
+                                rs.getObject("late_shipment", Timestamp.class), // Assuming late_shipment is a Timestamp
+                                rs.getInt("emag_club"),
+                                rs.getInt("weekend_delivery"),
+                                rs.getTimestamp("created"),
+                                rs.getTimestamp("modified")
+                        );
+                    }
+                }
+            }
+            return order;
+        }
+
+        private static int updateOrder(Connection db, OrderResult or, UUID vendorId) throws SQLException {
+            try (var s = db.prepareStatement(
+                    """
+                    UPDATE emag_order SET
+                        status = ?,
+                        is_complete = ?,
+                        type = ?,
+                        payment_mode = ?,
+                        payment_mode_id = ?,
+                        delivery_payment_mode = ?,
+                        delivery_mode = ?,
+                        observation = ?,
+                        details_id = ?,
+                        date = ?,
+                        payment_status = ?,
+                        cashed_co = ?,
+                        cashed_cod = ?,
+                        shipping_tax = ?,
+                        customer_id = ?,
+                        is_storno = ?,
+                        cancellation_reason = ?,
+                        refunded_amount = ?,
+                        refund_status = ?,
+                        maximum_date_for_shipment = ?,
+                        finalization_date = ?,
+                        parent_id = ?,
+                        detailed_payment_method = ?,
+                        proforms = ?,
+                        cancellation_request = ?,
+                        has_editable_products = ?,
+                        late_shipment = ?,
+                        emag_club = ?,
+                        weekend_delivery = ?,
+                        modified = ?
+                    WHERE id = ? AND vendor_id = ?
+                    """)) {
+                s.setInt(1, or.status());
+                s.setInt(2, or.is_complete());
+                s.setInt(3, or.type());
+                s.setString(4, or.payment_mode());
+                s.setInt(5, or.payment_mode_id());
+                s.setString(6, or.delivery_payment_mode());
+                s.setString(7, or.delivery_mode());
+                s.setString(8, or.observation());
+                s.setString(9, or.details().locker_id());
+                s.setTimestamp(10, toTimestamp(or.date()));
+                s.setInt(11, or.payment_status());
+                s.setBigDecimal(12, or.cashed_co());
+                s.setBigDecimal(13, or.cashed_cod());
+                s.setBigDecimal(14, or.shipping_tax());
+                s.setObject(15, or.customer() != null ? or.customer().id() : null);
+                s.setBoolean(16, or.is_storno());
+                s.setObject(17, or.cancellation_reason());
+                s.setBigDecimal(18, or.refunded_amount());
+                s.setString(19, or.refund_status());
+                s.setTimestamp(20, toTimestamp(or.maximum_date_for_shipment()));
+                s.setTimestamp(21, toTimestamp(or.finalization_date()));
+                s.setString(22, or.parent_id());
+                s.setString(23, or.detailed_payment_method());
+                s.setString(24, String.join("", Arrays.asList(or.proforms())));
+                s.setString(25, or.cancellation_request());
+                s.setInt(26, or.has_editable_products());
+                s.setObject(27, or.late_shipment());
+                s.setInt(28, or.emag_club());
+                s.setInt(29, or.weekend_delivery());
+                s.setTimestamp(30, toTimestamp(or.modified()));
+                s.setString(31, or.id());
+                s.setObject(32, vendorId);
+                return s.executeUpdate();
+            }
+        }
+*/
     private static int insertAWB(Connection db, AWB awb, int emagId) throws SQLException {
         try (var s = db.prepareStatement("""
                 INSERT INTO awb (
@@ -682,8 +1251,34 @@ public class EmagMirrorDB {
         }
     }
 
+/*TODO
+    private static AWB selectAWB(Connection db, int reservationId) throws SQLException {
+        AWB awb = null;
+        try (var s = db.prepareStatement("SELECT * FROM awb WHERE reservation_id = ?")) {
+            s.setInt(1, reservationId);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    awb = new AWB(
+                            rs.getInt("reservation_id"),
+                            rs.getInt("emag_id")
+                    );
+                }
+            }
+        }
+        return awb;
+    }
+*/
+
+    private static int updateAWB(Connection db, AWB awb, int emagId) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE awb SET emag_id = ? WHERE reservation_id = ?")) {
+            s.setInt(1, emagId);
+            s.setInt(2, awb.reservation_id());
+            return s.executeUpdate();
+        }
+    }
+
     private static int insertStatusHistory(Connection db, StatusHistory statusHistory, int emagId, UUID uuid) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO status_history (uuid, code, event_date, emag_id) VALUES (?, ?, ?, ?)")) {
+        try (var s = db.prepareStatement("INSERT INTO status_history (uuid, code, event_date, emag_id) VALUES (?, ?, ?, ?) ON CONFLICT(uuid) DO NOTHING")) {
             s.setObject(1, uuid);
             s.setString(2, statusHistory.code());
             s.setTimestamp(3, statusHistory.event_date() == null ? null : toTimestamp(statusHistory.event_date()));
@@ -692,8 +1287,67 @@ public class EmagMirrorDB {
         }
     }
 
+/*TODO
+    private static StatusHistory selectStatusHistory(Connection db, UUID uuid) throws SQLException {
+        try (var s = db.prepareStatement("SELECT uuid, code, event_date, emag_id FROM status_history WHERE uuid = ?")) {
+            s.setObject(1, uuid);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return new StatusHistory(
+                            rs.getString("code"),
+                            toLocalDateTime(rs.getTimestamp("event_date"))
+                    );
+                }
+                return null;
+            }
+        }
+    }
+*/
+
+    private static int updateStatusHistory(Connection db, StatusHistory statusHistory, UUID uuid) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE status_history SET code = ?, event_date = ? WHERE uuid = ?")) {
+            s.setString(1, statusHistory.code());
+            s.setTimestamp(2, statusHistory.event_date() == null ? null : toTimestamp(statusHistory.event_date()));
+            s.setObject(3, uuid);
+            return s.executeUpdate();
+        }
+    }
+
+
     private static int insertStatusRequest(Connection db, StatusRequest statusRequest, UUID statusHistoryUuid) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO status_request (amount, created, refund_type, refund_status, rma_id, status_date, status_history_uuid) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+            s.setBigDecimal(1, statusRequest.amount());
+            s.setTimestamp(2, toTimestamp(statusRequest.created()));
+            s.setString(3, statusRequest.refund_type());
+            s.setString(4, statusRequest.refund_status());
+            s.setString(5, statusRequest.rma_id());
+            s.setTimestamp(6, toTimestamp(statusRequest.status_date()));
+            s.setObject(7, statusHistoryUuid);
+            return s.executeUpdate();
+        }
+    }
+
+    private static StatusRequest selectStatusRequest(Connection db, UUID statusHistoryUuid) throws SQLException {
+        try (var s = db.prepareStatement("SELECT amount, created, refund_type, refund_status, rma_id, status_date, status_history_uuid FROM status_request WHERE status_history_uuid = ?")) {
+            s.setObject(1, statusHistoryUuid);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return new StatusRequest(
+                            rs.getBigDecimal("amount"),
+                            toLocalDateTime(rs.getTimestamp("created")),
+                            rs.getString("refund_type"),
+                            rs.getString("refund_status"),
+                            rs.getString("rma_id"),
+                            toLocalDateTime(rs.getTimestamp("status_date"))
+                    );
+                }
+                return null;
+            }
+        }
+    }
+
+    private static int updateStatusRequest(Connection db, StatusRequest statusRequest, UUID statusHistoryUuid) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE status_request SET amount = ?, created = ?, refund_type = ?, refund_status = ?, rma_id = ?, status_date = ? WHERE status_history_uuid = ?")) {
             s.setBigDecimal(1, statusRequest.amount());
             s.setTimestamp(2, toTimestamp(statusRequest.created()));
             s.setString(3, statusRequest.refund_type());
@@ -730,6 +1384,56 @@ public class EmagMirrorDB {
             s.setObject(9, returnedProduct.reject_reason());
             s.setInt(10, returnedProduct.retained_amount());
             s.setInt(11, emagId);
+            return s.executeUpdate();
+        }
+    }
+
+/*TODO
+    private static ReturnedProduct selectReturnedProduct(Connection db, int id) throws SQLException {
+        try (var s = db.prepareStatement("""
+            SELECT id, product_emag_id, product_id, quantity, product_name, return_reason, 
+            observations, diagnostic, reject_reason, retained_amount, emag_id 
+            FROM emag_returned_products WHERE id = ?""")) {
+            s.setInt(1, id);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return new ReturnedProduct(
+                            rs.getInt("id"),
+                            rs.getInt("product_emag_id"),
+                            rs.getInt("product_id"),
+                            rs.getInt("quantity"),
+                            rs.getString("product_name"),
+                            rs.getInt("return_reason"),
+                            rs.getString("observations"),
+                            rs.getString("diagnostic"),
+                            rs.getString("reject_reason"),
+                            rs.getInt("retained_amount")
+                    );
+                }
+                return null;
+            }
+        }
+    }
+*/
+
+    private static int updateReturnedProduct(Connection db, ReturnedProduct returnedProduct, int id, int emagId) throws SQLException {
+        try (var s = db.prepareStatement("""
+                UPDATE emag_returned_products SET 
+                product_emag_id = ?, product_id = ?, quantity = ?, product_name = ?, 
+                return_reason = ?, observations = ?, diagnostic = ?, reject_reason = ?, 
+                retained_amount = ?, emag_id = ? 
+                WHERE id = ?""")) {
+            s.setInt(1, returnedProduct.product_emag_id());
+            s.setInt(2, returnedProduct.product_id());
+            s.setInt(3, returnedProduct.quantity());
+            s.setString(4, returnedProduct.product_name());
+            s.setInt(5, returnedProduct.return_reason());
+            s.setString(6, returnedProduct.observations());
+            s.setObject(7, returnedProduct.diagnostic());
+            s.setObject(8, returnedProduct.reject_reason());
+            s.setInt(9, returnedProduct.retained_amount());
+            s.setInt(10, emagId);
+            s.setInt(11, id);
             return s.executeUpdate();
         }
     }
@@ -831,6 +1535,135 @@ public class EmagMirrorDB {
         }
     }
 
+    /*TODO
+        private static RMAResult selectRMAResult(Connection db, int emagId) throws SQLException {
+            try (var s = db.prepareStatement("""
+                SELECT * FROM rma_result WHERE emag_id = ?""")) {
+                s.setInt(1, emagId);
+                try (var rs = s.executeQuery()) {
+                    if (rs.next()) {
+                        return new RMAResult(
+                                rs.getInt("is_full_fbe"),
+                                rs.getInt("emag_id"),
+                                rs.getObject("return_parent_id", Integer.class),
+                                rs.getString("order_id"),
+                                rs.getInt("type"),
+                                rs.getInt("is_club"),
+                                rs.getInt("is_fast"),
+                                rs.getString("customer_name"),
+                                rs.getString("customer_company"),
+                                rs.getString("customer_phone"),
+                                rs.getString("pickup_country"),
+                                rs.getString("pickup_suburb"),
+                                rs.getString("pickup_city"),
+                                rs.getString("pickup_address"),
+                                rs.getString("pickup_zipcode"),
+                                rs.getInt("pickup_locality_id"),
+                                rs.getInt("pickup_method"),
+                                rs.getString("customer_account_iban"),
+                                rs.getString("customer_account_bank"),
+                                rs.getString("customer_account_beneficiary"),
+                                rs.getObject("replacement_product_emag_id", Integer.class),
+                                rs.getObject("replacement_product_id", Integer.class),
+                                rs.getString("replacement_product_name"),
+                                rs.getObject("replacement_product_quantity", Integer.class),
+                                rs.getString("observations"),
+                                rs.getInt("request_status"),
+                                rs.getInt("return_type"),
+                                rs.getInt("return_reason"),
+                                toLocalDateTime(rs.getTimestamp("date")),
+                                new ExtraInfo(
+                                        toLocalDateTime(rs.getTimestamp("maximum_finalization_date")),
+                                        toLocalDateTime(rs.getTimestamp("first_pickup_date")),
+                                        toLocalDateTime(rs.getTimestamp("estimated_product_pickup")),
+                                        toLocalDateTime(rs.getTimestamp("estimated_product_reception"))
+                                ),
+                                rs.getString("return_tax_value"),
+                                rs.getString("swap"),
+                                rs.getString("return_address_snapshot"),
+                                Arrays.asList(rs.getString("request_history").split("\n")),
+                                rs.getString("locker_hash") != null ? new Locker(
+                                        rs.getString("locker_hash"),
+                                        rs.getString("locker_pin"),
+                                        toLocalDateTime(rs.getTimestamp("locker_pin_interval_end"))
+                                ) : null,
+                                rs.getObject("return_address_id", Integer.class),
+                                rs.getString("country"),
+                                rs.getString("address_type"),
+                                rs.getObject("request_status_reason", Integer.class)
+                        );
+                    }
+                    return null;
+                }
+            }
+        }
+    */
+    private static int updateRMAResult(Connection db, RMAResult rmaResult) throws SQLException {
+        try (var s = db.prepareStatement("""
+                UPDATE rma_result SET
+                is_full_fbe = ?, return_parent_id = ?, order_id = ?, type = ?, is_club = ?, is_fast = ?,
+                customer_name = ?, customer_company = ?, customer_phone = ?, pickup_country = ?,
+                pickup_suburb = ?, pickup_city = ?, pickup_address = ?, pickup_zipcode = ?,
+                pickup_locality_id = ?, pickup_method = ?, customer_account_iban = ?,
+                customer_account_bank = ?, customer_account_beneficiary = ?,
+                replacement_product_emag_id = ?, replacement_product_id = ?,
+                replacement_product_name = ?, replacement_product_quantity = ?,
+                observations = ?, request_status = ?, return_type = ?, return_reason = ?,
+                date = ?, maximum_finalization_date = ?, first_pickup_date = ?,
+                estimated_product_pickup = ?, estimated_product_reception = ?,
+                return_tax_value = ?, swap = ?, return_address_snapshot = ?,
+                request_history = ?, locker_hash = ?, locker_pin = ?,
+                locker_pin_interval_end = ?, return_address_id = ?, country = ?,
+                address_type = ?, request_status_reason = ?
+                WHERE emag_id = ?""")) {
+            s.setInt(1, rmaResult.is_full_fbe());
+            s.setObject(2, rmaResult.return_parent_id());
+            s.setString(3, rmaResult.order_id());
+            s.setInt(4, rmaResult.type());
+            s.setInt(5, rmaResult.is_club());
+            s.setInt(6, rmaResult.is_fast());
+            s.setString(7, rmaResult.customer_name());
+            s.setString(8, rmaResult.customer_company());
+            s.setString(9, rmaResult.customer_phone());
+            s.setString(10, rmaResult.pickup_country());
+            s.setString(11, rmaResult.pickup_suburb());
+            s.setString(12, rmaResult.pickup_city());
+            s.setString(13, rmaResult.pickup_address());
+            s.setString(14, rmaResult.pickup_zipcode());
+            s.setInt(15, rmaResult.pickup_locality_id());
+            s.setInt(16, rmaResult.pickup_method());
+            s.setString(17, rmaResult.customer_account_iban());
+            s.setString(18, rmaResult.customer_account_bank());
+            s.setString(19, rmaResult.customer_account_beneficiary());
+            s.setObject(20, rmaResult.replacement_product_emag_id());
+            s.setObject(21, rmaResult.replacement_product_id());
+            s.setString(22, rmaResult.replacement_product_name());
+            s.setObject(23, rmaResult.replacement_product_quantity());
+            s.setString(24, rmaResult.observations());
+            s.setInt(25, rmaResult.request_status());
+            s.setInt(26, rmaResult.return_type());
+            s.setInt(27, rmaResult.return_reason());
+            s.setTimestamp(28, toTimestamp(rmaResult.date()));
+            s.setTimestamp(29, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().maximum_finalization_date()));
+            s.setTimestamp(30, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().first_pickup_date()));
+            s.setTimestamp(31, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().estimated_product_pickup()));
+            s.setTimestamp(32, rmaResult.extra_info() == null ? null : toTimestamp(rmaResult.extra_info().estimated_product_reception()));
+            s.setString(33, rmaResult.return_tax_value());
+            s.setString(34, rmaResult.swap());
+            s.setString(35, rmaResult.return_address_snapshot());
+            s.setString(36, String.join("\n", rmaResult.request_history()));
+            s.setString(37, rmaResult.locker() == null ? null : rmaResult.locker().locker_hash());
+            s.setString(38, rmaResult.locker() == null ? null : rmaResult.locker().locker_pin());
+            s.setTimestamp(39, rmaResult.locker() == null ? null : toTimestamp(rmaResult.locker().locker_pin_interval_end()));
+            s.setObject(40, rmaResult.return_address_id());
+            s.setString(41, rmaResult.country());
+            s.setString(42, rmaResult.address_type());
+            s.setObject(43, rmaResult.request_status_reason());
+            s.setInt(44, rmaResult.emag_id());
+            return s.executeUpdate();
+        }
+    }
+
     private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO product (id, emag_pnk, name, category, message_keyword) VALUES (?, ?, ?, ?, ?) ON CONFLICT(emag_pnk) DO NOTHING")) {
             s.setObject(1, UUID.randomUUID());
@@ -838,6 +1671,33 @@ public class EmagMirrorDB {
             s.setString(3, productInfo.name());
             s.setString(4, productInfo.category());
             s.setString(5, productInfo.messageKeyword());
+            return s.executeUpdate();
+        }
+    }
+
+    private static ProductInfo selectProduct(Connection db, String emagPnk) throws SQLException {
+        try (var s = db.prepareStatement("SELECT id, emag_pnk, name, category, message_keyword FROM product WHERE emag_pnk = ?")) {
+            s.setString(1, emagPnk);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return new ProductInfo(
+                            rs.getString("emag_pnk"),
+                            rs.getString("name"),
+                            rs.getString("category"),
+                            rs.getString("message_keyword")
+                    );
+                }
+                return null;
+            }
+        }
+    }
+
+    private static int updateProduct(Connection db, ProductInfo productInfo, String emagPnk) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE product SET name = ?, category = ?, message_keyword = ? WHERE emag_pnk = ?")) {
+            s.setString(1, productInfo.name());
+            s.setString(2, productInfo.category());
+            s.setString(3, productInfo.messageKeyword());
+            s.setString(4, emagPnk);
             return s.executeUpdate();
         }
     }
@@ -884,10 +1744,10 @@ public class EmagMirrorDB {
                 while (rs.next()) {
                     fetchLogs.add(new EmagFetchLog(
                             rs.getString(1),
-                            rs.getTimestamp(2).toLocalDateTime(),
-                            rs.getTimestamp(3).toLocalDateTime(),
-                            rs.getTimestamp(4).toLocalDateTime(),
-                            rs.getTimestamp(5).toLocalDateTime(),
+                            toLocalDateTime(rs.getTimestamp(2)),
+                            toLocalDateTime(rs.getTimestamp(3)),
+                            toLocalDateTime(rs.getTimestamp(4)),
+                            toLocalDateTime(rs.getTimestamp(5)),
                             rs.getString(6)
                     ));
                 }
@@ -902,5 +1762,9 @@ public class EmagMirrorDB {
 
     private static Timestamp toTimestamp(LocalDate localDate) {
         return localDate == null ? null : Timestamp.valueOf(localDate.atStartOfDay());
+    }
+
+    private static LocalDateTime toLocalDateTime(Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toLocalDateTime();
     }
 }

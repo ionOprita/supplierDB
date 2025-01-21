@@ -6,6 +6,7 @@ import ro.sellfluence.emagapi.EmagApi;
 import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.googleapi.DriveAPI;
 import ro.sellfluence.googleapi.SheetsAPI;
+import ro.sellfluence.sheetSupport.Conversions;
 import ro.sellfluence.support.UserPassword;
 
 import java.io.IOException;
@@ -13,7 +14,6 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Month;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.SignStyle;
 import java.util.ArrayList;
@@ -47,57 +47,7 @@ public class CompareDBWithDataComenzi {
     private static final String spreadSheetName = "Testing Coding 2024 - Date comenzi";
     private static final String sheetName = "Date";
     private static final String databaseName = "emagLocal";
-    private static final DateTimeFormatter rfc1123_2digit_year;
-    private static final DateTimeFormatter isoLikeLocalDateTime;
 
-    static {
-        isoLikeLocalDateTime = new DateTimeFormatterBuilder()
-                .parseCaseInsensitive()
-                .append(ISO_LOCAL_DATE)
-                .appendLiteral(' ')
-                .append(ISO_LOCAL_TIME)
-                .toFormatter(Locale.ENGLISH);
-        Map<Long, String> dow = new HashMap<>();
-        dow.put(1L, "Mon");
-        dow.put(2L, "Tue");
-        dow.put(3L, "Wed");
-        dow.put(4L, "Thu");
-        dow.put(5L, "Fri");
-        dow.put(6L, "Sat");
-        dow.put(7L, "Sun");
-        Map<Long, String> moy = new HashMap<>();
-        moy.put(1L, "Jan");
-        moy.put(2L, "Feb");
-        moy.put(3L, "Mar");
-        moy.put(4L, "Apr");
-        moy.put(5L, "May");
-        moy.put(6L, "Jun");
-        moy.put(7L, "Jul");
-        moy.put(8L, "Aug");
-        moy.put(9L, "Sep");
-        moy.put(10L, "Oct");
-        moy.put(11L, "Nov");
-        moy.put(12L, "Dec");
-        rfc1123_2digit_year = new DateTimeFormatterBuilder()
-                .parseCaseInsensitive()
-                .parseLenient()
-                .optionalStart()
-                .appendText(DAY_OF_WEEK, dow)
-                .appendLiteral(", ")
-                .optionalEnd()
-                .appendValue(DAY_OF_MONTH, 1, 2, SignStyle.NOT_NEGATIVE)
-                .appendLiteral(' ')
-                .appendText(MONTH_OF_YEAR, moy)
-                .appendLiteral(' ')
-                .appendValueReduced(YEAR, 2, 2, LocalDate.of(1970, 1, 1))
-                .appendLiteral(", ")
-                .appendValue(HOUR_OF_DAY, 2)
-                .appendLiteral(':')
-                .appendValue(MINUTE_OF_HOUR, 2)
-                .appendLiteral(':')
-                .appendValue(SECOND_OF_MINUTE, 2)
-                .toFormatter(Locale.ENGLISH);
-    }
 
     public static void main(String[] args) {
         final DriveAPI drive = DriveAPI.getDriveAPI(appName);
@@ -113,32 +63,6 @@ public class CompareDBWithDataComenzi {
             compare(dataFromDB, dataFromSheet);
         } catch (SQLException | IOException e) {
             throw new RuntimeException(e);
-        }
-    }
-
-    enum Vendor {
-        judios,
-        koppel,
-        koppelfbe,
-        sellfluence,
-        sellfusion,
-        zoopieconcept,
-        zoopieinvest,
-        zoopiesolutions;
-
-        static Vendor fromSheet(String name, boolean isFBE) {
-            return switch (name) {
-                case "Judios Concept SRL", "Judios RO FBE", "Judios Concept" -> judios;
-                case "Koppel SRL", "Koppel" -> isFBE ? koppelfbe : koppel;
-                case "Koppel FBE" -> koppelfbe;
-                case "Sellfluence SRL", "Sellfluence FBE", "Sellfluence" -> sellfluence;
-                case "Sellfusion SRL", "Sellflusion SRL", "SELLFUSION FBE" -> sellfusion;
-                case "Zoopie Concept SRL", "Zoopie Concept FBE", "Zoopie Concept" -> zoopieconcept;
-                case "Zoopie Invest SRL", "Zoopie Invest" -> zoopieinvest;
-                case "Zoopie Solutions SRL", "Zoopie Solutions FBE", "Zoopie Solutions" -> zoopiesolutions;
-                default ->
-                        throw new IllegalArgumentException("Unrecognized vendor '" + name + "' " + (isFBE ? "FBE" : ""));
-            };
         }
     }
 
@@ -206,11 +130,11 @@ public class CompareDBWithDataComenzi {
      */
     private static List<OrderLine> sheetDataToOrderList(List<List<String>> dataFromSheet) {
         return dataFromSheet.stream().<OrderLine>mapMulti((row, next) -> {
-            if (!isTemplate(row)) {
+            if (!Conversions.isTemplate(row)) {
                 try {
                     String vendorName = row.get(23);
-                    Vendor vendor = Vendor.fromSheet(vendorName, isEMAGFbe(row.get(24)));
-                    next.accept(new OrderLine(row.get(1), vendor, row.get(4), toLocalDateTime(row.get(0)), toNumericStatus(row.get(2))));
+                    Vendor vendor = Vendor.fromSheet(vendorName, Conversions.isEMAGFbe(row.get(24)));
+                    next.accept(new OrderLine(row.get(1), vendor, row.get(4), Conversions.toLocalDateTime(row.get(0)), toNumericStatus(row.get(2))));
                 } catch (Exception e) {
                     throw new RuntimeException("Error in row " + Arrays.toString(row.toArray()), e);
                 }
@@ -229,48 +153,6 @@ public class CompareDBWithDataComenzi {
             case "Finished", "Finalizata" -> 4;
             case "Stornata" -> 5;
             default -> throw new IllegalArgumentException("Unknown status " + s);
-        };
-    }
-
-    /**
-     * Detect the template line so it can be excluded.
-     *
-     * @param row spreadsheet row.
-     * @return true if it is a template line.
-     */
-    private static boolean isTemplate(List<String> row) {
-        return row.get(7).equals("XXX.XX") && row.get(8).equals("XXX.XX");
-    }
-
-    private static LocalDateTime toLocalDateTime(String s) {
-        LocalDateTime date;
-        try {
-            date = LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-        } catch (Exception e) {
-            try {
-                date = LocalDateTime.parse(s, DateTimeFormatter.RFC_1123_DATE_TIME);
-            } catch (Exception ex) {
-                try {
-                    date = LocalDateTime.parse(s, rfc1123_2digit_year);
-                } catch (Exception exc) {
-                    date = LocalDateTime.parse(s, isoLikeLocalDateTime);
-                }
-            }
-        }
-        return date;
-    }
-
-    /**
-     * Decodes the FBE column in the spreadsheet.
-     *
-     * @param fbe Textual information if it is FBE or not.
-     * @return true if it is FBE, false otherwise.
-     */
-    private static boolean isEMAGFbe(String fbe) {
-        return switch (fbe) {
-            case "eMAG FBE" -> true;
-            case "eMAG NON-FBE" -> false;
-            default -> throw new IllegalArgumentException("Unrecognized FBE value " + fbe);
         };
     }
 
@@ -327,6 +209,10 @@ public class CompareDBWithDataComenzi {
                             var onlyInSheet = sheetOrders.stream().filter(orderLine -> !dbOrders.contains(orderLine)).toList();
                             var onlyInDB = dbOrders.stream().filter(orderLine -> !sheetOrders.contains(orderLine)).toList();
                             if (onlyInDB.isEmpty()) {
+                                if (!onlyInSheet.isEmpty()) {
+                                    System.out.printf("!!! Order %s did not match with %s%n", dbOrders, sheetOrders);
+                                    System.out.printf("!!! Order %s is missing%n", onlyInSheet);
+                                }
                                 missingInDB.addAll(onlyInSheet);
                                 //System.out.printf("DB is missing %s%n", orderLine)
                             } else if (onlyInSheet.size() == 1 && onlyInDB.size() == 1) {
@@ -407,7 +293,7 @@ public class CompareDBWithDataComenzi {
         generateDeleteStatements(foundOrderId.stream().map(OrderLineAndResponse::orderLine).toList());
         missingOrderId.stream()
                 .sorted(Comparator.comparing(OrderLine::vendor).thenComparing(OrderLine::orderId))
-                .forEach(orderLine -> System.out.printf("%s\t%s%n", orderLine.orderId(), orderLine.vendor()));
+                .forEach(orderLine -> System.out.printf("Missing %s\t%s%n", orderLine.orderId(), orderLine.vendor()));
     }
 
     private static void dumpVendorMismatchByCase(List<VendorMismatch> vendorMismatch) {

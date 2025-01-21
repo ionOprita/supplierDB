@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.5</version>
+        <version>3.4.1</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>ro.koppel</groupId>
@@ -14,7 +14,7 @@
     <name>supplierDB</name>
     <description>Search Suppliers in Globalsources</description>
     <properties>
-        <java.version>22</java.version>
+        <java.version>23</java.version>
     </properties>
 
     <dependencies>

@@ -41,6 +41,7 @@ import static java.net.HttpURLConnection.HTTP_OK;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
+import static ro.sellfluence.sheetSupport.Conversions.isoLikeLocalDateTime;
 
 /**
  * Class for dealing with the emag API.
@@ -61,7 +62,6 @@ public class EmagApi {
     private final String credentials;
     private final HttpClient httpClient;
 
-    private static final DateTimeFormatter emagDateTime = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter emagDate = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     public static int statusFinalized = 4;
@@ -73,7 +73,7 @@ public class EmagApi {
                     if (time == null) {
                         writer.nullValue();
                     } else {
-                        writer.value(emagDateTime.format(time));
+                        writer.value(isoLikeLocalDateTime.format(time));
                     }
                 }
 
@@ -83,7 +83,7 @@ public class EmagApi {
                         reader.nextNull();
                         return null;
                     }
-                    return LocalDateTime.parse(reader.nextString(), emagDateTime);
+                    return LocalDateTime.parse(reader.nextString(), isoLikeLocalDateTime);
                 }
             })
             .registerTypeAdapter(LocalDate.class, new TypeAdapter<LocalDate>() {
@@ -126,11 +126,10 @@ public class EmagApi {
     }
 
     private static class LocalDateTimeDeserializer extends JsonDeserializer<LocalDateTime> {
-        private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
         @Override
         public LocalDateTime deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
-            return LocalDateTime.parse(p.getText(), formatter);
+            return LocalDateTime.parse(p.getText(), isoLikeLocalDateTime);
         }
     }
 

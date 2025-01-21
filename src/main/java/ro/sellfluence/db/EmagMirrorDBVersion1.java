@@ -5,7 +5,6 @@ import java.sql.SQLException;
 
 class EmagMirrorDBVersion1 {
 
-
     /**
      * Create the tables for the first version of the database.
      * Reset the database with DROP TABLE VoucherSplit, Product, Voucher, Attachment, Order, Customer;
@@ -240,7 +239,6 @@ class EmagMirrorDBVersion1 {
                  );
                 """);
     }
-
 
     private static void createAttachmentTable(Connection db) throws SQLException {
         cresteTable(db, """
