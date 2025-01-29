@@ -54,7 +54,9 @@ public class EmagMirrorDB {
         var mirrorDB = openDatabases.get(alias);
         if (mirrorDB == null) {
             var db = new DB(alias);
-            db.prepareDB(EmagMirrorDBVersion1::version1, EmagMirrorDBVersion2::version2);
+            db.prepareDB(EmagMirrorDBVersion1::version1,
+                    EmagMirrorDBVersion2::version2,
+                    EmagMirrorDBVersion3::version3);
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }
@@ -70,6 +72,9 @@ public class EmagMirrorDB {
             }
             if (order.details() != null && order.details().locker_id() != null) {
                 insertOrUpdateLockerDetails(db, order.details());
+            }
+            if (order.reason_cancellation()!=null) {
+                insertCancellationReason(db,order.reason_cancellation());
             }
             var orderInserted = insertOrder(db, order, vendorId);
             if (orderInserted == 1) {
@@ -1088,6 +1093,14 @@ public class EmagMirrorDB {
             s.setString(32, c.shipping_phone());
             s.setTimestamp(33, toTimestamp(c.modified()));
             s.setInt(34, c.id());
+            return s.executeUpdate();
+        }
+    }
+
+    private static int insertCancellationReason(Connection db, CancellationReason cr) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO cancellation_reason (id, name) VALUES (?, ?) ON CONFLICT(id) DO NOTHING")) {
+            s.setInt(1, cr.id());
+            s.setString(2, cr.name());
             return s.executeUpdate();
         }
     }
