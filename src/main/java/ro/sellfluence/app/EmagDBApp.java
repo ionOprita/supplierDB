@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.logging.Logger;
 import java.util.random.RandomGenerator;
 
+import static java.time.temporal.ChronoUnit.DAYS;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
 
@@ -33,9 +34,11 @@ public class EmagDBApp {
     );
 
     private static final RandomGenerator random = RandomGenerator.of("L64X128MixRandom");
+    private static final LocalDateTime today = LocalDate.now().atStartOfDay();
 
     public static void main(String[] args) {
-        //EmagApi.activateEmagJSONLog();
+        //EmagApi.setAPILogLevel(FINEST);
+        EmagApi.setAPILogLevel(WARNING);
         boolean allFetched;
         EmagMirrorDB mirrorDB;
         try {
@@ -47,7 +50,7 @@ public class EmagDBApp {
         }
         do {
             try {
-                var yesterday = LocalDate.now().atStartOfDay().minusDays(1);
+                var yesterday = today.minusDays(1);
                 fetchAllForDay(yesterday, mirrorDB);
                 var daysToConsider = 5 * 366;
                 var startOfFullPeriod = yesterday.minusDays(daysToConsider);
@@ -57,7 +60,7 @@ public class EmagDBApp {
                     var dayWasFullyFetched = fetchAllForDay(randomDay, mirrorDB);
                     if (dayWasFullyFetched) {
                         sequenceOfDaysNotNeeded++;
-                        if (sequenceOfDaysNotNeeded%1000==0) {
+                        if (sequenceOfDaysNotNeeded % 1000 == 0) {
                             logger.log(INFO, "Skipped %d already done days...".formatted(sequenceOfDaysNotNeeded));
                         }
                     } else {
@@ -83,8 +86,9 @@ public class EmagDBApp {
         var endTime = startTime.plusDays(1);
         var dayWasFullyFetched = true;
         for (String account : emagAccounts) {
-            var wasFetched = mirrorDB.wasFetched(account, startTime, endTime);
-            if (wasFetched != EmagMirrorDB.FetchStatus.yes) {
+            var wasFetched = mirrorDB.wasFetched(account, startTime, endTime) == EmagMirrorDB.FetchStatus.yes;
+            wasFetched = randomRefetch(wasFetched, startTime);
+            if (wasFetched) {
                 dayWasFullyFetched = false;
                 logger.log(INFO, "Fetch from %s for %s - %s".formatted(account, startTime, endTime));
                 var fetchStartTime = LocalDateTime.now();
@@ -105,6 +109,40 @@ public class EmagDBApp {
             }
         }
         return dayWasFullyFetched;
+    }
+
+    /**
+     * If a day was already fetched, then randomly refetch it again, just to see if anything changed.
+     * Days in the near past are given higher probability to be refetched.
+     *
+     * @param wasFetched original information whether the day was already fetched.
+     * @param startTime day considered.
+     * @return modified value.
+     */
+    private static boolean randomRefetch(boolean wasFetched, LocalDateTime startTime) {
+        // If it was not fetched that's it.
+        if (!wasFetched) {
+            return false;   // Needs to be fetched.
+        }
+        var daysPassed = startTime.until(today, DAYS);
+        double probability; // Probability to fetch again.
+        if (daysPassed <= 7) {
+            probability = 1.0;
+        } else if (daysPassed <= 30) {
+            probability = 0.8;
+        } else if (daysPassed <= 180) {
+            probability = 0.5;
+        } else if (daysPassed <= 366) {
+            probability = 0.2;
+        } else {
+            probability = 0.05;
+        }
+        // Return false and thus refetch only if the random value is smaller than the probability.
+        boolean newWasFetched = random.nextDouble() > probability;
+        if (!newWasFetched) {
+            System.out.printf("Refetching %s (probability was %d)%%%n", startTime.toLocalDate(), Math.round(probability * 100));
+        }
+        return newWasFetched;
     }
 
     private static void transferOrdersToDatabase(String account, EmagMirrorDB mirrorDB, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {

@@ -1,7 +1,7 @@
 package ro.sellfluence.emagapi;
 
 public record CancellationReason(
-        String id,
+        Integer id,
         String name
 ) {
 }
