@@ -49,4 +49,19 @@ public record RMAResult(
             String address_type,
             Integer request_status_reason
             ) {
+    public RMAResult {
+        if (products == null) {
+            products = new ReturnedProduct[0];
+        }
+        if (awbs == null) {
+            awbs = new AWB[0];
+        }
+        if (status_history == null) {
+            status_history = new StatusHistory[0];
+        }
+        if (request_history == null) {
+            request_history = new String[0];
+        }
+
+    }
 }

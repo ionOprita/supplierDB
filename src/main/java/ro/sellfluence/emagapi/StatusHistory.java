@@ -6,4 +6,10 @@ public record StatusHistory(
         String code,
         LocalDateTime event_date,
         StatusRequest[] requests
-) { }
+) {
+    public StatusHistory {
+        if (requests == null) {
+            requests = new StatusRequest[0];
+        }
+    }
+}
