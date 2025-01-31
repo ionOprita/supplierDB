@@ -73,8 +73,8 @@ public class EmagMirrorDB {
             if (order.details() != null && order.details().locker_id() != null) {
                 insertOrUpdateLockerDetails(db, order.details());
             }
-            if (order.reason_cancellation()!=null) {
-                insertCancellationReason(db,order.reason_cancellation());
+            if (order.reason_cancellation() != null) {
+                insertCancellationReason(db, order.reason_cancellation());
             }
             var orderInserted = insertOrder(db, order, vendorId);
             if (orderInserted == 1) {
@@ -182,11 +182,20 @@ public class EmagMirrorDB {
         }
     }
 
+    /**
+     * Insert a customer into the database.
+     * If there is already a customer by the same ID the record is updated if the data differ and the new receord has
+     * a more recent modified date.
+     *
+     * @param db database
+     * @param customer new customer record
+     * @throws SQLException in case of malfunction
+     */
     private static void insertOrUpdateCustomer(Connection db, final Customer customer) throws SQLException {
         var added = insertCustomer(db, customer);
         if (added == 0) {
             var current = selectCustomer(db, customer.id());
-            if (!customer.equals(current)) {
+            if (!customer.equals(current) && customer.modified().isAfter(current.modified())) {
                 logger.log(INFO, () -> "Customer differs:%n old: %s%nnew: %s%n".formatted(current, customer));
                 updateCustomer(db, customer);
             }
@@ -253,7 +262,7 @@ public class EmagMirrorDB {
         yes, no, partially
     }
 
-    public FetchStatus wasFetched(String account, LocalDateTime startTime, LocalDateTime endTime) throws SQLException {
+    public FetchStatus getFetchStatus(String account, LocalDateTime startTime, LocalDateTime endTime) throws SQLException {
         var fetches = database.readTX(db -> getEmagLog(db, account, startTime, endTime));
         if (fetches.isEmpty()) {
             return FetchStatus.no;
