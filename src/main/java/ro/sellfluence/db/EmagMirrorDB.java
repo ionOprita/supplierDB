@@ -37,7 +37,6 @@ import java.util.stream.Stream;
 import static java.math.RoundingMode.HALF_EVEN;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
-import static java.util.logging.Level.WARNING;
 
 public class EmagMirrorDB {
 
@@ -73,14 +72,11 @@ public class EmagMirrorDB {
             if (order.details() != null && order.details().locker_id() != null) {
                 insertOrUpdateLockerDetails(db, order.details());
             }
-            if (order.reason_cancellation() != null) {
-                insertCancellationReason(db, order.reason_cancellation());
-            }
             var orderInserted = insertOrder(db, order, vendorId);
             if (orderInserted == 1) {
                 insertOrderDependents(db, order, vendorId);
             } else {
-                var oldOrder = selectWholeOrderResult(db, order.id(), vendorId);
+                var oldOrder = selectWholeOrderResult(db, order.id(), vendorId, vendorName);
                 var hasChanges = oldOrder.findDifferences(order);
                 if (hasChanges) {
                     //TODO: Depending on hasChanges update the record.
@@ -106,9 +102,6 @@ public class EmagMirrorDB {
         }
         if (order.attachments() != null) {
             for (var attachment : order.attachments()) {
-                if (attachment.order_id() != null && !order.id().equals(attachment.order_id())) {
-                    logger.log(WARNING, "Attachment order_id mismatch, order has " + order.id() + " but attachment has " + attachment.order_id());
-                }
                 insertAttachment(db, attachment, order.id(), vendorId);
             }
         }
@@ -133,34 +126,35 @@ public class EmagMirrorDB {
     public OrderResult readOrder(String orderId, String vendorName) throws SQLException {
         return database.readTX(db -> {
             var vendorId = selectVendorIdByName(db, vendorName);
-            return selectWholeOrderResult(db, orderId, vendorId);
+            return selectWholeOrderResult(db, orderId, vendorId, vendorName);
         });
     }
 
-    private OrderResult selectWholeOrderResult(Connection db, String orderId, UUID vendorId) throws SQLException {
+    private OrderResult selectWholeOrderResult(Connection db, String orderId, UUID vendorId, String vendorName) throws SQLException {
         var customer = selectCustomerByOrderId(db, orderId, vendorId);
         var productIds = selectProductIdByOrderId(db, orderId, vendorId);
         var products = productIds.stream().map(productId -> {
-            VoucherSplit[] voucherSplits;
+        List<VoucherSplit> voucherSplits;
             try {
                 voucherSplits = selectVoucherSplitsByProductId(db, productId);
                 try {
-                    return selectProduct(db, productId, voucherSplits, null);
+                return selectProduct(db, productId, voucherSplits, new ArrayList<>());
                 } catch (SQLException e) {
                     throw new RuntimeException("Error retrieving product with productId " + productId, e);
                 }
             } catch (SQLException e) {
-                throw new RuntimeException("Error retrieving voucher_splits with produt productId " + productId, e);
+            throw new RuntimeException("Error retrieving voucher_splits with product productId " + productId, e);
             }
-        }).toArray(Product[]::new);
+    }).toList();
         var voucherSplits = selectVoucherSplitsByOrderId(db, orderId, vendorId);
-        Attachment[] attachments = selectAttachmentsByOrderId(db, orderId, vendorId);
-        Voucher[] vouchers = selectVouchersByOrderId(db, orderId, vendorId);
+    List<Attachment> attachments = selectAttachmentsByOrderId(db, orderId, vendorId);
+    List<Voucher> vouchers = selectVouchersByOrderId(db, orderId, vendorId);
         var enforcedVendorCourierAccounts = selectEnforcedVendorCourierAccountsByOrderId(db, orderId, vendorId);
         var flags = selectFlagsByOrderId(db, orderId, vendorId);
         return selectOrder(db,
                 orderId,
                 vendorId,
+                vendorName,
                 customer,
                 voucherSplits,
                 products,
@@ -196,7 +190,7 @@ public class EmagMirrorDB {
         if (added == 0) {
             var current = selectCustomer(db, customer.id());
             if (!customer.equals(current) && customer.modified().isAfter(current.modified())) {
-                logger.log(INFO, () -> "Customer differs:%n old: %s%nnew: %s%n".formatted(current, customer));
+                logger.log(INFO, () -> "Customer differs:%n old: %s%n new: %s%n".formatted(current, customer));
                 updateCustomer(db, customer);
             }
         }
@@ -525,7 +519,7 @@ public class EmagMirrorDB {
         }
     }
 
-    private Attachment[] selectAttachmentsByOrderId(Connection db, String orderId, UUID vendorId) throws SQLException {
+    private List<Attachment> selectAttachmentsByOrderId(Connection db, String orderId, UUID vendorId) throws SQLException {
         String query = "SELECT name, url, type, force_download, visibility FROM attachment WHERE order_id = ? AND vendor_id = ?";
         var list = new ArrayList<Attachment>();
         try (var s = db.prepareStatement(query)) {
@@ -533,11 +527,11 @@ public class EmagMirrorDB {
             s.setObject(2, vendorId);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
-                    list.add(new Attachment(orderId, rs.getString("name"), rs.getString("url"), rs.getInt("type"), rs.getInt("force_download"), rs.getString("visibility")));
+                    list.add(new Attachment(rs.getString("name"), rs.getString("url"), rs.getInt("type"), rs.getInt("force_download"), rs.getString("visibility")));
                 }
             }
         }
-        return list.toArray(Attachment[]::new);
+        return list;
     }
 
 
@@ -589,7 +583,7 @@ public class EmagMirrorDB {
         }
     }
 
-    private Flag[] selectFlagsByOrderId(Connection db, String orderId, UUID vendorId) throws SQLException {
+    private List<Flag> selectFlagsByOrderId(Connection db, String orderId, UUID vendorId) throws SQLException {
         var list = new ArrayList<Flag>();
         String query = "SELECT vendor_id, order_id, flag, value FROM flag WHERE order_id = ? AND vendor_id = ?";
         try (var s = db.prepareStatement(query)) {
@@ -606,7 +600,7 @@ public class EmagMirrorDB {
                 }
             }
         }
-        return list.toArray(Flag[]::new);
+        return list;
     }
 
     private static int updateFlag(Connection db, Flag flag, String orderId, UUID vendorId) throws SQLException {
@@ -629,7 +623,7 @@ public class EmagMirrorDB {
         }
     }
 
-    private static String[] selectEnforcedVendorCourierAccountsByOrderId(Connection db, String orderId, UUID vendorId) throws SQLException {
+    private static List<String> selectEnforcedVendorCourierAccountsByOrderId(Connection db, String orderId, UUID vendorId) throws SQLException {
         var list = new ArrayList<String>();
         String query = "SELECT courier FROM enforced_vendor_courier_account WHERE order_id = ? AND vendor_id = ?";
         try (var s = db.prepareStatement(query)) {
@@ -641,7 +635,7 @@ public class EmagMirrorDB {
                 }
             }
         }
-        return list.toArray(String[]::new);
+        return list;
     }
 
     private static int updateEnforcedVendorCourierAccount(Connection db, String enforcedVendorCourierAccount, String orderId, UUID vendorId) throws SQLException {
@@ -673,7 +667,7 @@ public class EmagMirrorDB {
         }
     }
 
-    private Voucher[] selectVouchersByOrderId(Connection db, String orderId, UUID vendorId) throws SQLException {
+    private List<Voucher> selectVouchersByOrderId(Connection db, String orderId, UUID vendorId) throws SQLException {
         var list = new ArrayList<Voucher>();
         String query = """
                 SELECT voucher_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date, id
@@ -698,7 +692,7 @@ public class EmagMirrorDB {
                 }
             }
         }
-        return list.toArray(Voucher[]::new);
+        return list;
     }
 
     /*TODO
@@ -735,35 +729,43 @@ public class EmagMirrorDB {
         }
     }
 
-    private VoucherSplit[] selectVoucherSplitsByProductId(Connection db, int productId) throws SQLException {
+    private List<VoucherSplit> selectVoucherSplitsByProductId(Connection db, int productId) throws SQLException {
         var list = new ArrayList<VoucherSplit>();
         try (var s = db.prepareStatement("""
-                SELECT voucher_id, value, vat_value FROM voucher_split WHERE product_id = ?
+                SELECT voucher_id, value, vat_value, vat, offered_by FROM voucher_split WHERE product_id = ?
                 """)) {
             s.setInt(1, productId);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
-                    list.add(new VoucherSplit(rs.getObject("voucher_id", Integer.class), rs.getBigDecimal("value"), rs.getBigDecimal("vat_value"), rs.getString("vat"), rs.getString("offered_by")));
+                    list.add(new VoucherSplit(rs.getObject("voucher_id", Integer.class),
+                            rs.getBigDecimal("value"),
+                            rs.getBigDecimal("vat_value"),
+                            rs.getString("vat"),
+                            rs.getString("offered_by")));
                 }
             }
         }
-        return list.toArray(new VoucherSplit[0]);
+        return list;
     }
 
-    private VoucherSplit[] selectVoucherSplitsByOrderId(Connection db, String orderId, UUID vendorId) throws SQLException {
+    private List<VoucherSplit> selectVoucherSplitsByOrderId(Connection db, String orderId, UUID vendorId) throws SQLException {
         var list = new ArrayList<VoucherSplit>();
         try (var s = db.prepareStatement("""
-                SELECT voucher_id, value, vat_value FROM voucher_split WHERE order_id = ? AND vendor_id = ?
+                SELECT voucher_id, value, vat_value, vat, offered_by FROM voucher_split WHERE order_id = ? AND vendor_id = ?
                 """)) {
             s.setString(1, orderId);
             s.setObject(2, vendorId);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
-                    list.add(new VoucherSplit(rs.getObject("voucher_id", Integer.class), rs.getBigDecimal("value"), rs.getBigDecimal("vat_value"), rs.getString("vat"), rs.getString("offered_by")));
+                    list.add(new VoucherSplit(rs.getObject("voucher_id", Integer.class),
+                            rs.getBigDecimal("value"),
+                            rs.getBigDecimal("vat_value"),
+                            rs.getString("vat"),
+                            rs.getString("offered_by")));
                 }
             }
         }
-        return list.toArray(new VoucherSplit[0]);
+        return list;
     }
 
 
@@ -892,7 +894,7 @@ public class EmagMirrorDB {
 
     }
 
-    private Product selectProduct(Connection db, int productId, VoucherSplit[] product_voucher_splits, Attachment[] attachments) throws SQLException {
+    private Product selectProduct(Connection db, int productId, List<VoucherSplit> product_voucher_splits, List<Attachment> attachments) throws SQLException {
         Product product = null;
         try (var s = db.prepareStatement("""
                 SELECT id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties
@@ -902,7 +904,29 @@ public class EmagMirrorDB {
             s.setInt(1, productId);
             try (var rs = s.executeQuery()) {
                 if (rs.next()) {
-                    product = new Product(rs.getInt("id"), rs.getInt("product_id"), rs.getInt("mkt_id"), rs.getString("name"), product_voucher_splits, rs.getInt("status"), rs.getString("ext_part_number"), rs.getString("part_number"), rs.getString("part_number_key"), rs.getString("currency"), rs.getString("vat"), rs.getInt("retained_amount"), rs.getInt("quantity"), rs.getInt("initial_qty"), rs.getInt("storno_qty"), rs.getInt("reversible_vat_charging"), rs.getBigDecimal("sale_price"), rs.getBigDecimal("original_price"), toLocalDateTime(rs.getTimestamp("created")), toLocalDateTime(rs.getTimestamp("modified")), rs.getString("details").split("\\n"), rs.getString("recycle_warranties").split("\\n"), attachments);
+                    product = new Product(rs.getInt("id"),
+                            rs.getInt("product_id"),
+                            rs.getInt("mkt_id"),
+                            rs.getString("name"),
+                            product_voucher_splits,
+                            rs.getInt("status"),
+                            rs.getString("ext_part_number"),
+                            rs.getString("part_number"),
+                            rs.getString("part_number_key"),
+                            rs.getString("currency"),
+                            rs.getString("vat"),
+                            rs.getInt("retained_amount"),
+                            rs.getInt("quantity"),
+                            rs.getInt("initial_qty"),
+                            rs.getInt("storno_qty"),
+                            rs.getInt("reversible_vat_charging"),
+                            rs.getBigDecimal("sale_price"),
+                            rs.getBigDecimal("original_price"),
+                            toLocalDateTime(rs.getTimestamp("created")),
+                            toLocalDateTime(rs.getTimestamp("modified")),
+                            Arrays.asList(rs.getString("details").split("\\n")),
+                            Arrays.asList(rs.getString("recycle_warranties").split("\\n")),
+                            attachments);
                 }
                 if (rs.next()) {
                     throw new RuntimeException("More than one product with same id " + productId);
@@ -1106,14 +1130,6 @@ public class EmagMirrorDB {
         }
     }
 
-    private static int insertCancellationReason(Connection db, CancellationReason cr) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO cancellation_reason (id, name) VALUES (?, ?) ON CONFLICT(id) DO NOTHING")) {
-            s.setInt(1, cr.id());
-            s.setString(2, cr.name());
-            return s.executeUpdate();
-        }
-    }
-
     private static int insertLockerDetails(Connection db, LockerDetails ld) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO locker_details (locker_id, locker_name, locker_delivery_eligible, courier_external_office_id) VALUES (?,?,?,?) ON CONFLICT(locker_id) DO NOTHING")) {
             s.setString(1, ld.locker_id());
@@ -1182,8 +1198,9 @@ public class EmagMirrorDB {
                     emag_club,
                     weekend_delivery,
                     created,
-                    modified
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id, vendor_id) DO NOTHING
+                    modified,
+                    cancellation_reason_text
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id, vendor_id) DO NOTHING
                 """)) {
             s.setObject(1, vendorId);
             s.setString(2, or.id());
@@ -1210,7 +1227,7 @@ public class EmagMirrorDB {
             s.setTimestamp(23, toTimestamp(or.finalization_date()));
             s.setString(24, or.parent_id());
             s.setString(25, or.detailed_payment_method());
-            s.setString(26, String.join("", Arrays.asList(or.proforms())));
+            s.setString(26, String.join("", or.proforms()));
             s.setString(27, or.cancellation_request());
             s.setInt(28, or.has_editable_products());
             s.setObject(29, or.late_shipment());
@@ -1218,6 +1235,7 @@ public class EmagMirrorDB {
             s.setInt(31, or.weekend_delivery());
             s.setTimestamp(32, toTimestamp(or.created()));
             s.setTimestamp(33, toTimestamp(or.modified()));
+            s.setString(34, or.reason_cancellation() == null ? null : or.reason_cancellation().name());
             return s.executeUpdate();
         }
     }
@@ -1225,13 +1243,14 @@ public class EmagMirrorDB {
     private static OrderResult selectOrder(Connection db,
                                            String orderId,
                                            UUID vendorId,
+                                           String vendorName,
                                            Customer customer,
-                                           VoucherSplit[] shipping_tax_voucher_split,
-                                           Product[] products,
-                                           Attachment[] attachments,
-                                           Voucher[] vouchers,
-                                           String[] enforcedVendorCourierAccounts,
-                                           Flag[] flags) throws SQLException {
+                                       List<VoucherSplit> shipping_tax_voucher_split,
+                                       List<Product> products,
+                                       List<Attachment> attachments,
+                                       List<Voucher> vouchers,
+                                       List<String> enforcedVendorCourierAccounts,
+                                       List<Flag> flags) throws SQLException {
         OrderResult order = null;
         try (var s = db.prepareStatement("SELECT * FROM emag_order WHERE id = ? AND vendor_id = ?")) {
             s.setString(1, orderId);
@@ -1239,7 +1258,7 @@ public class EmagMirrorDB {
             try (var rs = s.executeQuery()) {
                 if (rs.next()) {
                     order = new OrderResult(
-                            null, orderId, rs.getInt("status"), rs.getInt("is_complete"), rs.getInt("type"), rs.getString("payment_mode"),
+                            vendorName, orderId, rs.getInt("status"), rs.getInt("is_complete"), rs.getInt("type"), rs.getString("payment_mode"),
                             rs.getInt("payment_mode_id"), rs.getString("delivery_payment_mode"), rs.getString("delivery_mode"), rs.getString("observation"),
                             new LockerDetails(rs.getString("details_id"), null, 0, null), // Assuming LockerDetails has a constructor that takes locker_id
                             toLocalDateTime(rs.getTimestamp("date")), rs.getInt("payment_status"), rs.getBigDecimal("cashed_co"), rs.getBigDecimal("cashed_cod"),
@@ -1252,7 +1271,7 @@ public class EmagMirrorDB {
                             toLocalDateTime(rs.getTimestamp("finalization_date")),
                             rs.getString("parent_id"),
                             rs.getString("detailed_payment_method"),
-                            rs.getString("proforms").split("\n"), // Split the string back into an array
+                            Arrays.asList(rs.getString("proforms").split("\n")), // Split the string back into a list
                             rs.getString("cancellation_request"),
                             rs.getInt("has_editable_products"),
                             new CancellationReason(rs.getObject("cancellation_reason", Integer.class),
@@ -1328,7 +1347,7 @@ public class EmagMirrorDB {
             s.setTimestamp(21, toTimestamp(or.finalization_date()));
             s.setString(22, or.parent_id());
             s.setString(23, or.detailed_payment_method());
-            s.setString(24, String.join("", Arrays.asList(or.proforms())));
+            s.setString(24, String.join("", or.proforms()));
             s.setString(25, or.cancellation_request());
             s.setInt(26, or.has_editable_products());
             s.setObject(27, or.late_shipment());

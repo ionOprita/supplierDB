@@ -11,7 +11,7 @@ public class UsefulMethods {
      * @param bd2 second number
      * @return true if they represent the same value.
      */
-    public static boolean equals(BigDecimal bd1, BigDecimal bd2) {
+    public static boolean bdEquals(BigDecimal bd1, BigDecimal bd2) {
         if (bd1 == null) {
             return bd2 == null;
         }

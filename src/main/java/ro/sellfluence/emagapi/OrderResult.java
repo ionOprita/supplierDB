@@ -4,9 +4,12 @@ import ro.sellfluence.support.UsefulMethods;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
+import static ro.sellfluence.emagapi.Product.plEquals;
+import static ro.sellfluence.support.UsefulMethods.bdEquals;
 import static ro.sellfluence.support.UsefulMethods.round;
 
 //TODO: Normalize the order after reading from JSON or from DB.
@@ -30,50 +33,49 @@ public record OrderResult(
         BigDecimal cashed_co,
         BigDecimal cashed_cod,
         BigDecimal shipping_tax,
-        VoucherSplit[] shipping_tax_voucher_split,
+        List<VoucherSplit> shipping_tax_voucher_split,
         Customer customer,
-        Product[] products,
-        Attachment[] attachments,
-        Voucher[] vouchers,
+        List<Product> products,
+        List<Attachment> attachments,
+        List<Voucher> vouchers,
         boolean is_storno,
-        //Integer cancellation_reason,
         BigDecimal refunded_amount,
         String refund_status,
         LocalDateTime maximum_date_for_shipment,
         LocalDateTime finalization_date,
         String parent_id,
         String detailed_payment_method,
-        String[] proforms,
+        List<String> proforms,
         String cancellation_request,
         int has_editable_products,
         CancellationReason reason_cancellation,
         Integer late_shipment,
-        Flag[] flags,
+        List<Flag> flags,
         int emag_club,
         int weekend_delivery,
         LocalDateTime created,
         LocalDateTime modified,
-        String[] enforced_vendor_courier_accounts
+        List<String> enforced_vendor_courier_accounts
 ) {
     public OrderResult {
-        // Normalize Arrays and BigDecimals
+        // Normalize Lists and BigDecimals
         if (products == null) {
-            products = new Product[0];
+            products = new ArrayList<>();
         }
         if (attachments == null) {
-            attachments = new Attachment[0];
+            attachments = new ArrayList<>();
         }
         if (vouchers == null) {
-            vouchers = new Voucher[0];
+            vouchers = new ArrayList<>();
         }
         if (proforms == null) {
-            proforms = new String[0];
+            proforms = new ArrayList<>();
         }
         if (flags == null) {
-            flags = new Flag[0];
+            flags = new ArrayList<>();
         }
         if (enforced_vendor_courier_accounts == null) {
-            enforced_vendor_courier_accounts = new String[0];
+            enforced_vendor_courier_accounts = new ArrayList<>();
         }
         if (reason_cancellation!=null && reason_cancellation.id() == null) {
             reason_cancellation = null;
@@ -118,7 +120,6 @@ public record OrderResult(
      */
     public boolean findDifferences(OrderResult other) {
         boolean hasDifference = false;
-
         if (status != other.status) {
             System.out.printf("%s:%s -> %s:%s Status changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, status, other.status);
             hasDifference = true;
@@ -171,43 +172,43 @@ public record OrderResult(
             System.out.printf("%s:%s -> %s:%s Payment status changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, payment_status, other.payment_status);
             hasDifference = true;
         }
-        if (!UsefulMethods.equals(cashed_co, other.cashed_co)) {
+        if (!bdEquals(cashed_co, other.cashed_co)) {
             System.out.printf("%s:%s -> %s:%s Cashed CO changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, cashed_co, other.cashed_co);
             hasDifference = true;
         }
-        if (!UsefulMethods.equals(cashed_cod, other.cashed_cod)) {
+        if (!bdEquals(cashed_cod, other.cashed_cod)) {
             System.out.printf("%s:%s -> %s:%s Cashed COD changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, cashed_cod, other.cashed_cod);
             hasDifference = true;
         }
-        if (!UsefulMethods.equals(shipping_tax, other.shipping_tax)) {
+        if (!bdEquals(shipping_tax, other.shipping_tax)) {
             System.out.printf("%s:%s -> %s:%s Shipping tax changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, shipping_tax, other.shipping_tax);
             hasDifference = true;
         }
-        if (!Arrays.deepEquals(shipping_tax_voucher_split, other.shipping_tax_voucher_split)) {
+        if (!shipping_tax_voucher_split.equals(other.shipping_tax_voucher_split)) {
             System.out.printf(
                     "%s:%s -> %s:%s Shipping tax voucher split changed.%n old: %s%n new: %s%n",
-                    vendor_name, id, other.vendor_name, other.id, Arrays.toString(shipping_tax_voucher_split), Arrays.toString(other.shipping_tax_voucher_split)
+                    vendor_name, id, other.vendor_name, other.id, shipping_tax_voucher_split, other.shipping_tax_voucher_split
             );
             hasDifference = true;
         }
-        if (!Arrays.deepEquals(products, other.products)) {
+        if (!plEquals(products, other.products)) {
             System.out.printf(
                     "%s:%s -> %s:%s Products changed.%n old: %s%n new: %s%n",
-                    vendor_name, id, other.vendor_name, other.id, Arrays.toString(products), Arrays.toString(other.products)
+                    vendor_name, id, other.vendor_name, other.id, products, other.products
             );
             hasDifference = true;
         }
-        if (!Arrays.deepEquals(attachments, other.attachments)) {
+        if (!Objects.equals(attachments, other.attachments)) {
             System.out.printf(
                     "%s:%s -> %s:%s Attachments changed.%n old: %s%n new: %s%n",
-                    vendor_name, id, other.vendor_name, other.id, Arrays.toString(attachments), Arrays.toString(other.attachments)
+                    vendor_name, id, other.vendor_name, other.id, attachments, other.attachments
             );
             hasDifference = true;
         }
-        if (!Arrays.deepEquals(vouchers, other.vouchers)) {
+        if (!Objects.equals(vouchers, other.vouchers)) {
             System.out.printf(
                     "%s:%s -> %s:%s Vouchers changed.%n old: %s%n new: %s%n",
-                    vendor_name, id, other.vendor_name, other.id, Arrays.toString(vouchers), Arrays.toString(other.vouchers)
+                    vendor_name, id, other.vendor_name, other.id, vouchers, other.vouchers
             );
             hasDifference = true;
         }
@@ -215,7 +216,7 @@ public record OrderResult(
             System.out.printf("%s:%s -> %s:%s Cancellation reason changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, reason_cancellation, other.reason_cancellation);
             hasDifference = true;
         }
-        if (!UsefulMethods.equals(refunded_amount, other.refunded_amount)) {
+        if (!bdEquals(refunded_amount, other.refunded_amount)) {
             System.out.printf("%s:%s -> %s:%s The refunded amount changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, refunded_amount, other.refunded_amount);
             hasDifference = true;
         }
@@ -239,8 +240,8 @@ public record OrderResult(
             System.out.printf("%s:%s -> %s:%s Detailed payment method changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, detailed_payment_method, other.detailed_payment_method);
             hasDifference = true;
         }
-        if (!Arrays.equals(proforms, other.proforms)) {
-            System.out.println("Proforms changed.");
+        if (!Objects.equals(proforms, other.proforms)) {
+            System.out.printf("%s:%s -> %s:%s Proforms changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, proforms, other.proforms);
             hasDifference = true;
         }
         if (!Objects.equals(cancellation_request, other.cancellation_request)) {
@@ -255,8 +256,8 @@ public record OrderResult(
             System.out.printf("%s:%s -> %s:%s Late shipment changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, late_shipment, other.late_shipment);
             hasDifference = true;
         }
-        if (!Arrays.equals(flags, other.flags)) {
-            System.out.println("Flags changed.");
+        if (!Objects.equals(flags, other.flags)) {
+            System.out.printf("%s:%s -> %s:%s Flags changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, flags, other.flags);
             hasDifference = true;
         }
         if (emag_club != other.emag_club) {
@@ -267,7 +268,7 @@ public record OrderResult(
             System.out.printf("%s:%s -> %s:%s Weekend delivery changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, weekend_delivery, other.weekend_delivery);
             hasDifference = true;
         }
-        if (!Arrays.equals(enforced_vendor_courier_accounts, other.enforced_vendor_courier_accounts)) {
+        if (!Objects.equals(enforced_vendor_courier_accounts, other.enforced_vendor_courier_accounts)) {
             System.out.println("Enforced vendor courier accounts changed.");
             hasDifference = true;
         }
@@ -275,6 +276,4 @@ public record OrderResult(
 
         return hasDifference;
     }
-
-
 }

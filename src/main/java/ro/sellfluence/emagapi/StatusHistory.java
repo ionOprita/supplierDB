@@ -1,15 +1,17 @@
 package ro.sellfluence.emagapi;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 public record StatusHistory(
         String code,
         LocalDateTime event_date,
-        StatusRequest[] requests
+        List<StatusRequest> requests
 ) {
     public StatusHistory {
         if (requests == null) {
-            requests = new StatusRequest[0];
+            requests = new ArrayList<>();
         }
     }
 }
