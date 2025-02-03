@@ -61,7 +61,7 @@ public class EmagDBApp {
                     if (dayWasFullyFetched) {
                         sequenceOfDaysNotNeeded++;
                         if (sequenceOfDaysNotNeeded % 1000 == 0) {
-                            logger.log(INFO, "Skipped %d already done days...".formatted(sequenceOfDaysNotNeeded));
+                            logger.log(INFO, "Skipped %d already done days…".formatted(sequenceOfDaysNotNeeded));
                         }
                     } else {
                         logger.log(INFO, "Skipped %d already done days!".formatted(sequenceOfDaysNotNeeded));
@@ -86,9 +86,9 @@ public class EmagDBApp {
         var endTime = startTime.plusDays(1);
         var dayWasFullyFetched = true;
         for (String account : emagAccounts) {
-            var wasFetched = mirrorDB.wasFetched(account, startTime, endTime) == EmagMirrorDB.FetchStatus.yes;
-            wasFetched = randomRefetch(wasFetched, startTime);
-            if (wasFetched) {
+            var needsFetching = mirrorDB.getFetchStatus(account, startTime, endTime) != EmagMirrorDB.FetchStatus.yes;
+            needsFetching = randomRefetch(needsFetching, startTime);
+            if (needsFetching) {
                 dayWasFullyFetched = false;
                 logger.log(INFO, "Fetch from %s for %s - %s".formatted(account, startTime, endTime));
                 var fetchStartTime = LocalDateTime.now();
@@ -113,16 +113,16 @@ public class EmagDBApp {
 
     /**
      * If a day was already fetched, then randomly refetch it again, just to see if anything changed.
-     * Days in the near past are given higher probability to be refetched.
+     * Days in the near past are given higher probability to be fetched again.
      *
-     * @param wasFetched original information whether the day was already fetched.
+     * @param needsFetching original information whether the day was already fetched.
      * @param startTime day considered.
      * @return modified value.
      */
-    private static boolean randomRefetch(boolean wasFetched, LocalDateTime startTime) {
-        // If it was not fetched that's it.
-        if (!wasFetched) {
-            return false;   // Needs to be fetched.
+    private static boolean randomRefetch(boolean needsFetching, LocalDateTime startTime) {
+        // If it needs fetching thn return unchanged.
+        if (needsFetching) {
+            return true;
         }
         var daysPassed = startTime.until(today, DAYS);
         double probability; // Probability to fetch again.
@@ -137,12 +137,12 @@ public class EmagDBApp {
         } else {
             probability = 0.05;
         }
-        // Return false and thus refetch only if the random value is smaller than the probability.
-        boolean newWasFetched = random.nextDouble() > probability;
-        if (!newWasFetched) {
+        // Return true and thus refetch only if the random value is smaller than the probability.
+        boolean newNeedsFetching = random.nextDouble() < probability;
+        if (newNeedsFetching) {
             System.out.printf("Refetching %s (probability was %d)%%%n", startTime.toLocalDate(), Math.round(probability * 100));
         }
-        return newWasFetched;
+        return newNeedsFetching;
     }
 
     private static void transferOrdersToDatabase(String account, EmagMirrorDB mirrorDB, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
