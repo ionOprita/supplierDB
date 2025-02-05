@@ -2,6 +2,7 @@ package ro.sellfluence.support;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 
 public class UsefulMethods {
     /**
@@ -31,4 +32,15 @@ public class UsefulMethods {
         return bd == null ? null : bd.setScale(2, RoundingMode.HALF_EVEN);
     }
 
+    /**
+     * Extended test for a list to be empty.
+     * In some cases, a list might contain a single empty string.
+     * Such a list is also considered to be empty.
+     *
+     * @param list List of string or null
+     * @return true if the list is to be considered empty.
+     */
+    public static boolean isEmpty(List<? extends String> list) {
+        return list==null || list.isEmpty() || (list.size() == 1 && (list.getFirst() == null || list.getFirst().isEmpty()));
+    }
 }

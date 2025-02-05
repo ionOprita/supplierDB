@@ -11,6 +11,7 @@ import java.util.Objects;
 
 import static ro.sellfluence.emagapi.LockerDetails.ldlEquals;
 import static ro.sellfluence.emagapi.VoucherSplit.vslEquals;
+import static ro.sellfluence.support.UsefulMethods.isEmpty;
 
 public record Product(
         int id,
@@ -41,14 +42,10 @@ public record Product(
         if (product_voucher_split == null) {
             product_voucher_split = new ArrayList<>();
         }
-        if (details == null) {
-            details = new ArrayList<>();
-        } else if (details.size() == 1 && (details.getFirst() == null || details.getFirst().isBlank())) {
+        if (isEmpty(details)) {
             details = new ArrayList<>();
         }
-        if (recycle_warranties == null) {
-            recycle_warranties = new ArrayList<>();
-        } else if (recycle_warranties.size() == 1 && (recycle_warranties.getFirst() == null || recycle_warranties.getFirst().isBlank())) {
+        if (isEmpty(recycle_warranties)) {
             recycle_warranties = new ArrayList<>();
         }
         if (attachments == null) {

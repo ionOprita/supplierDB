@@ -30,6 +30,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -77,9 +78,10 @@ public class EmagMirrorDB {
                 insertOrderDependents(db, order, vendorId);
             } else {
                 var oldOrder = selectWholeOrderResult(db, order.id(), vendorId, vendorName);
-                var hasChanges = oldOrder.findDifferences(order);
-                if (hasChanges) {
-                    //TODO: Depending on hasChanges update the record.
+
+                var modifiedOrder = oldOrder.findDifferencesAndModify(order);
+                if (modifiedOrder!=null) {
+                    //TODO: updated in the database
                 }
             }
             return 0;
