@@ -6,8 +6,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
 
 import static ro.sellfluence.emagapi.Product.plEquals;
 import static ro.sellfluence.support.UsefulMethods.bdEquals;
@@ -305,7 +308,28 @@ public record OrderResult(
             hasDifference = true;
         }
         if (!Objects.equals(flags, other.flags)) {
-            System.out.printf("%s:%s -> %s:%s Flags changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, flags, other.flags);
+            System.out.printf("%s:%s -> %s:%s Flags differ:%n old: %s%n new: %s%n", vendor_name, id, other.vendor_name, other.id, flags, other.flags);
+            var oldElements = flags.stream().map(Flag::flag).collect(Collectors.toSet());
+            var newElements = other.flags.stream().map(Flag::flag).collect(Collectors.toSet());
+            var addedFlagNames = newElements;
+            addedFlagNames.removeAll(oldElements);
+            var addedFlags = other.flags.stream().filter(it -> addedFlagNames.contains(it.flag())).toList();
+            var removedFlagNames = oldElements;
+            removedFlagNames.removeAll(newElements);
+            var removedFlags = flags.stream().filter(it -> removedFlagNames.contains(it.flag())).toList();
+            var potentiallyChangedFlags = oldElements.stream().filter(newElements::contains).collect(Collectors.toSet());
+            var changedFlagNames = potentiallyChangedFlags.stream()
+                    .filter(flagName -> {
+                        var oldValue = flags.stream().filter(it -> flagName.equals(it.flag())).findFirst().get().value();
+                        var newValue = other.flags.stream().filter(it -> flagName.equals(it.flag())).findFirst().get().value();
+                        return !Objects.equals(oldValue,newValue);
+                    }).collect(Collectors.toSet());
+            var changedFlagsOld = flags.stream().filter(it -> changedFlagNames.contains(it.flag())).toList();
+            var changedFlagsNew = other.flags.stream().filter(it -> changedFlagNames.contains(it.flag())).toList();
+
+            if (!addedFlags.isEmpty()) System.out.printf("%s:%s -> %s:%s Added Flags: %s%n", vendor_name, id, other.vendor_name, other.id, addedFlags);
+            if (!removedFlags.isEmpty()) System.out.printf("%s:%s -> %s:%s Removed Flags: %s%n", vendor_name, id, other.vendor_name, other.id, removedFlags);
+            if (!changedFlagNames.isEmpty()) System.out.printf("%s:%s -> %s:%s Changed Flags: %s -> %s%n", vendor_name, id, other.vendor_name, other.id, changedFlagsOld, changedFlagsNew);
             hasDifference = true;
         }
         if (emag_club != other.emag_club) {

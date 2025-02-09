@@ -192,7 +192,7 @@ public class EmagMirrorDB {
         if (added == 0) {
             var current = selectCustomer(db, customer.id());
             if (!customer.equals(current) && customer.modified().isAfter(current.modified())) {
-                logger.log(INFO, () -> "Customer differs:%n old: %s%n new: %s%n".formatted(current, customer));
+                logger.log(INFO, () -> "Updating customer:%n old: %s%n new: %s%n".formatted(current, customer));
                 updateCustomer(db, customer);
             }
         }
