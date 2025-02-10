@@ -36,6 +36,7 @@ import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import static java.math.RoundingMode.HALF_EVEN;
+import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 
@@ -78,50 +79,233 @@ public class EmagMirrorDB {
                 insertOrderDependents(db, order, vendorId);
             } else {
                 var oldOrder = selectWholeOrderResult(db, order.id(), vendorId, vendorName);
-
-                var modifiedOrder = oldOrder.findDifferencesAndModify(order);
-                if (modifiedOrder!=null) {
-                    //TODO: updated in the database
+                oldOrder.findDifferencesAndModify(order);
+                if (order.modified() != null) {
+                    if ((oldOrder.modified() == null) || order.modified().isAfter(oldOrder.modified())) {
+                        updateTimestamp(db, order.id(), vendorId, "modified", order.modified());
+                    } else if (order.modified().isBefore(oldOrder.modified())) {
+                        System.out.printf("%s:%s -> %s:%s Modified date changed to an older date, from %s to %s%n", oldOrder.vendor_name(), oldOrder.id(), order.vendor_name(), order.id(), oldOrder.modified(), order.modified());
+                    }
                 }
+                if (oldOrder.status() != order.status()) {
+                    updateInt(db, order.id(), vendorId, "status", order.status());
+                }
+                if (!Objects.equals(oldOrder.is_complete(), order.is_complete())) {
+                    updateInt(db, order.id(), vendorId, "is_complete", order.status());
+                }
+                if (!Objects.equals(oldOrder.late_shipment(), order.late_shipment())) {
+                    updateInt(db, order.id(), vendorId, "late_shipment", order.late_shipment());
+                }
+                if (!Objects.equals(oldOrder.payment_status(), order.payment_mode())) {
+                    updateInt(db, order.id(), vendorId, "payment_status", order.payment_status());
+                }
+                if (!Objects.equals(oldOrder.reason_cancellation(), order.reason_cancellation())) {
+                    updateCancellationReason(db, order.id(), vendorId, order.reason_cancellation());
+                }
+                if (!Objects.equals(order.maximum_date_for_shipment(), oldOrder.maximum_date_for_shipment())) {
+                    updateTimestamp(db, order.id(), vendorId, "maximum_date_for_shipment", order.maximum_date_for_shipment());
+                }
+                if (!Objects.equals(oldOrder.finalization_date(), order.finalization_date())) {
+                    updateTimestamp(db, order.id(), vendorId, "finalization_date", order.finalization_date());
+                }
+                if (!Objects.equals(oldOrder.cashed_co(), order.cashed_co())) {
+                    updateNumeric(db, order.id(), vendorId, "cashed_co", order.cashed_co());
+                }
+                if (!Objects.equals(oldOrder.cashed_cod(), order.cashed_cod())) {
+                    updateNumeric(db, order.id(), vendorId, "cashed_cod", order.cashed_cod());
+                }
+                if (!Objects.equals(oldOrder.refunded_amount(), order.refunded_amount())) {
+                    updateNumeric(db, order.id(), vendorId, "refunded_amount", order.refunded_amount());
+                }
+                if (!Objects.equals(oldOrder.refund_status(), order.refund_status())) {
+                    updateString(db, order.id(), vendorId, "refund_status", order.refund_status());
+                }
+                updateOrderDependents(db, order, oldOrder, vendorId);
             }
             return 0;
         });
     }
 
-    private static void insertOrderDependents(Connection db, OrderResult order, UUID vendorId) throws SQLException {
-        if (order.products() != null) {
-            for (var product : order.products()) {
-                insertProduct(db, product, order.id(), vendorId);
-                for (var voucherSplit : product.product_voucher_split()) {
-                    insertVoucherSplit(db, voucherSplit, order.id(), vendorId, product.id());
-                }
-            }
+    private static int updateNumeric(Connection db, String orderId, UUID vendorId, final String field, BigDecimal newValue) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE emag_order SET " + field + " =? WHERE vendor_id = ? AND id= ?")) {
+            s.setObject(1, newValue);
+            s.setObject(2, vendorId);
+            s.setString(3, orderId);
+            return s.executeUpdate();
         }
+    }
+
+    private static int updateInt(Connection db, String orderId, UUID vendorId, final String field, int newValue) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE emag_order SET " + field + " =? WHERE vendor_id = ? AND id= ?")) {
+            s.setInt(1, newValue);
+            s.setObject(2, vendorId);
+            s.setString(3, orderId);
+            return s.executeUpdate();
+        }
+    }
+
+    private static int updateString(Connection db, String orderId, UUID vendorId, final String field, String newValue) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE emag_order SET " + field + " =? WHERE vendor_id = ? AND id= ?")) {
+            s.setString(1, newValue);
+            s.setObject(2, vendorId);
+            s.setString(3, orderId);
+            return s.executeUpdate();
+        }
+    }
+
+    private static int updateTimestamp(Connection db, String orderId, UUID vendorId, String field, LocalDateTime date) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE emag_order SET " + field + " =? WHERE vendor_id = ? AND id= ?")) {
+            s.setTimestamp(1, toTimestamp(date));
+            s.setObject(2, vendorId);
+            s.setString(3, orderId);
+            return s.executeUpdate();
+        }
+    }
+
+    private static int updateCancellationReason(Connection db, String orderId, UUID vendorId, CancellationReason reason) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE emag_order SET cancellation_reason = ?, cancellation_reason_text = ?  WHERE vendor_id = ? AND id= ?")) {
+            s.setInt(1, reason.id());
+            s.setString(2, reason.name());
+            s.setObject(3, vendorId);
+            s.setString(4, orderId);
+            return s.executeUpdate();
+        }
+    }
+
+    private void updateOrderDependents(Connection db, OrderResult order, OrderResult oldOrder, UUID vendorId) throws SQLException {
+        if (!Objects.equals(oldOrder.flags(), order.flags())) {
+            updateFlags(db, order, vendorId);
+        }
+        if (!Objects.equals(oldOrder.products(), order.products())) {
+            updateProducts(db, order, vendorId);
+        }
+        if (!Objects.equals(oldOrder.attachments(), order.attachments())) {
+            updateAttachments(db, order, vendorId);
+        }
+        if (!Objects.equals(oldOrder.vouchers(), order.vouchers())) {
+            updateVouchers(db, order, vendorId);
+        }
+
+    }
+
+    private static void insertOrderDependents(Connection db, OrderResult order, UUID vendorId) throws SQLException {
+        insertProducts(db, order, vendorId);
         if (order.shipping_tax_voucher_split() != null) {
             for (var voucherSplit : order.shipping_tax_voucher_split()) {
                 insertVoucherSplit(db, voucherSplit, order.id(), vendorId);
             }
         }
-        if (order.attachments() != null) {
-            for (var attachment : order.attachments()) {
-                insertAttachment(db, attachment, order.id(), vendorId);
-            }
-        }
-        if (order.vouchers() != null) {
-            for (Voucher voucher : order.vouchers()) {
-                insertVoucher(db, voucher, order.id(), vendorId);
-            }
-        }
-        if (order.flags() != null) {
-            for (Flag flag : order.flags()) {
-                insertFlag(db, flag, order.id(), vendorId);
-            }
-        }
+        insertAttachments(db, order, vendorId);
+        insertVouchers(db, order, vendorId);
+        insertFlags(db, order, vendorId);
         if (order.enforced_vendor_courier_accounts() != null) {
             for (String enforced_vendor_courier_account : order.enforced_vendor_courier_accounts()) {
                 insertEnforcedVendorCourierAccount(db, enforced_vendor_courier_account, order.id(), vendorId);
             }
         }
+    }
+
+    private static void insertVouchers(Connection db, OrderResult order, UUID vendorId) throws SQLException {
+        if (order.vouchers() != null) {
+            for (Voucher voucher : order.vouchers()) {
+                insertVoucher(db, voucher, order.id(), vendorId);
+            }
+        }
+    }
+
+    private static void insertAttachments(Connection db, OrderResult order, UUID vendorId) throws SQLException {
+        if (order.attachments() != null) {
+            for (var attachment : order.attachments()) {
+                insertAttachment(db, attachment, order.id(), vendorId);
+            }
+        }
+    }
+
+    private static void insertProducts(Connection db, OrderResult order, UUID vendorId) throws SQLException {
+        if (order.products() != null) {
+            for (var product : order.products()) {
+                insertProduct(db, product, order.id(), vendorId);
+                insertVoucherSplits(db, order, vendorId, product);
+            }
+        }
+    }
+
+    private static int deleteProducts(Connection db, String orderId, UUID vendorId) throws SQLException {
+        try (var s = db.prepareStatement("DELETE FROM product_in_order WHERE vendor_id = ? AND order_id= ?")) {
+            s.setObject(1, vendorId);
+            s.setString(2, orderId);
+            return s.executeUpdate();
+        }
+    }
+
+    private static void updateProducts(Connection db, OrderResult order, UUID vendorId) throws SQLException {
+        deleteVoucherSplits(db, order.id(), vendorId);
+        deleteProducts(db, order.id(), vendorId);
+        if (order.products() != null) {
+            for (var product : order.products()) {
+                insertProduct(db, product, order.id(), vendorId);
+                insertVoucherSplits(db, order, vendorId, product);
+            }
+        }
+    }
+
+    private static void insertVoucherSplits(Connection db, OrderResult order, UUID vendorId, Product product) throws SQLException {
+        for (var voucherSplit : product.product_voucher_split()) {
+            insertVoucherSplit(db, voucherSplit, order.id(), vendorId, product.id());
+        }
+    }
+
+    private static int deleteVoucherSplits(Connection db, String orderId, UUID vendorId) throws SQLException {
+        try (var s = db.prepareStatement("DELETE FROM voucher_split WHERE vendor_id = ? AND order_id= ?")) {
+            s.setObject(1, vendorId);
+            s.setString(2, orderId);
+            return s.executeUpdate();
+        }
+    }
+
+    private static void insertFlags(Connection db, OrderResult order, UUID vendorId) throws SQLException {
+        if (order.flags() != null) {
+            for (Flag flag : order.flags()) {
+                insertFlag(db, flag, order.id(), vendorId);
+            }
+        }
+    }
+
+    private static int deleteFlags(Connection db, String orderId, UUID vendorId) throws SQLException {
+        try (var s = db.prepareStatement("DELETE FROM flag WHERE vendor_id = ? AND order_id= ?")) {
+            s.setObject(1, vendorId);
+            s.setString(2, orderId);
+            return s.executeUpdate();
+        }
+    }
+
+    private static int deleteAttachments(Connection db, String orderId, UUID vendorId) throws SQLException {
+        try (var s = db.prepareStatement("DELETE FROM attachment WHERE vendor_id = ? AND order_id= ?")) {
+            s.setObject(1, vendorId);
+            s.setString(2, orderId);
+            return s.executeUpdate();
+        }
+    }
+
+    private static int deleteVouchers(Connection db, String orderId, UUID vendorId) throws SQLException {
+        try (var s = db.prepareStatement("DELETE FROM voucher WHERE vendor_id = ? AND order_id= ?")) {
+            s.setObject(1, vendorId);
+            s.setString(2, orderId);
+            return s.executeUpdate();
+        }
+    }
+
+    private static void updateFlags(Connection db, OrderResult order, UUID vendorId) throws SQLException {
+        deleteFlags(db, order.id(), vendorId);
+        insertFlags(db, order, vendorId);
+    }
+    private static void updateAttachments(Connection db, OrderResult order, UUID vendorId) throws SQLException {
+        deleteAttachments(db, order.id(), vendorId);
+        insertAttachments(db, order, vendorId);
+    }
+    private static void updateVouchers(Connection db, OrderResult order, UUID vendorId) throws SQLException {
+        deleteVouchers(db, order.id(), vendorId);
+        insertVouchers(db, order, vendorId);
     }
 
 
@@ -136,21 +320,21 @@ public class EmagMirrorDB {
         var customer = selectCustomerByOrderId(db, orderId, vendorId);
         var productIds = selectProductIdByOrderId(db, orderId, vendorId);
         var products = productIds.stream().map(productId -> {
-        List<VoucherSplit> voucherSplits;
+            List<VoucherSplit> voucherSplits;
             try {
                 voucherSplits = selectVoucherSplitsByProductId(db, productId);
                 try {
-                return selectProduct(db, productId, voucherSplits, new ArrayList<>());
+                    return selectProduct(db, productId, voucherSplits, new ArrayList<>());
                 } catch (SQLException e) {
                     throw new RuntimeException("Error retrieving product with productId " + productId, e);
                 }
             } catch (SQLException e) {
-            throw new RuntimeException("Error retrieving voucher_splits with product productId " + productId, e);
+                throw new RuntimeException("Error retrieving voucher_splits with product productId " + productId, e);
             }
-    }).toList();
+        }).toList();
         var voucherSplits = selectVoucherSplitsByOrderId(db, orderId, vendorId);
-    List<Attachment> attachments = selectAttachmentsByOrderId(db, orderId, vendorId);
-    List<Voucher> vouchers = selectVouchersByOrderId(db, orderId, vendorId);
+        List<Attachment> attachments = selectAttachmentsByOrderId(db, orderId, vendorId);
+        List<Voucher> vouchers = selectVouchersByOrderId(db, orderId, vendorId);
         var enforcedVendorCourierAccounts = selectEnforcedVendorCourierAccountsByOrderId(db, orderId, vendorId);
         var flags = selectFlagsByOrderId(db, orderId, vendorId);
         return selectOrder(db,
@@ -172,7 +356,7 @@ public class EmagMirrorDB {
         if (added == 0) {
             var current = selectLockerDetails(db, details.locker_id());
             if (!details.equals(current)) {
-                logger.log(INFO, () -> "LockerDetails differs:%n old: %s%nnew: %s%n".formatted(current, details));
+                logger.log(FINE, () -> "LockerDetails differs:%n old: %s%n new: %s%n".formatted(current, details));
                 updateLockerDetails(db, details);
             }
         }
@@ -191,8 +375,8 @@ public class EmagMirrorDB {
         var added = insertCustomer(db, customer);
         if (added == 0) {
             var current = selectCustomer(db, customer.id());
-            if (!customer.equals(current) && customer.modified().isAfter(current.modified())) {
-                logger.log(INFO, () -> "Updating customer:%n old: %s%n new: %s%n".formatted(current, customer));
+            if (!customer.sameExceptForDate(current) && customer.modified().isAfter(current.modified())) {
+                logger.log(FINE, () -> "Updating customer:%n old: %s%n new: %s%n".formatted(current, customer));
                 updateCustomer(db, customer);
             }
         }
@@ -1247,12 +1431,12 @@ public class EmagMirrorDB {
                                            UUID vendorId,
                                            String vendorName,
                                            Customer customer,
-                                       List<VoucherSplit> shipping_tax_voucher_split,
-                                       List<Product> products,
-                                       List<Attachment> attachments,
-                                       List<Voucher> vouchers,
-                                       List<String> enforcedVendorCourierAccounts,
-                                       List<Flag> flags) throws SQLException {
+                                           List<VoucherSplit> shipping_tax_voucher_split,
+                                           List<Product> products,
+                                           List<Attachment> attachments,
+                                           List<Voucher> vouchers,
+                                           List<String> enforcedVendorCourierAccounts,
+                                           List<Flag> flags) throws SQLException {
         OrderResult order = null;
         try (var s = db.prepareStatement("SELECT * FROM emag_order WHERE id = ? AND vendor_id = ?")) {
             s.setString(1, orderId);
