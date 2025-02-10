@@ -140,7 +140,7 @@ public class EmagDBApp {
         // Return true and thus refetch only if the random value is smaller than the probability.
         boolean newNeedsFetching = random.nextDouble() < probability;
         if (newNeedsFetching) {
-            System.out.printf("Refetching %s (probability was %d)%%%n", startTime.toLocalDate(), Math.round(probability * 100));
+            System.out.printf("Refetching %s (probability was %d%%)%n", startTime.toLocalDate(), Math.round(probability * 100));
         }
         return newNeedsFetching;
     }
