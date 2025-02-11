@@ -11,6 +11,7 @@ import ro.sellfluence.emagapi.LockerDetails;
 import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.Product;
 import ro.sellfluence.emagapi.RMAResult;
+import ro.sellfluence.emagapi.RequestHistory;
 import ro.sellfluence.emagapi.ReturnedProduct;
 import ro.sellfluence.emagapi.StatusHistory;
 import ro.sellfluence.emagapi.StatusRequest;
@@ -60,7 +61,8 @@ public class EmagMirrorDB {
             db.prepareDB(EmagMirrorDBVersion1::version1,
                     EmagMirrorDBVersion2::version2,
                     EmagMirrorDBVersion3::version3,
-                    EmagMirrorDBVersion4::version4);
+                    EmagMirrorDBVersion4::version4,
+                    EmagMirrorDBVersion5::version5);
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }
@@ -410,6 +412,11 @@ public class EmagMirrorDB {
             if (rmaResult.awbs() != null) {
                 for (var awb : rmaResult.awbs()) {
                     insertAWB(db, awb, emagId);
+                }
+            }
+            if (rmaResult.request_history() != null) {
+                for (var requestHistory : rmaResult.request_history()) {
+                    insertRequestHistory(db, requestHistory, emagId);
                 }
             }
             if (rmaResult.status_history() != null) {
@@ -1569,6 +1576,26 @@ public class EmagMirrorDB {
         }
     }
 
+    private static int insertRequestHistory(Connection db, RequestHistory requestHistory, int emagId) throws SQLException {
+        try (var s = db.prepareStatement("""
+                INSERT INTO request_history (
+                emag_id,
+                id,
+                user,
+                action,
+                action_type,
+                source
+                ) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING""")) {
+            s.setInt(1, emagId);
+            s.setLong(2,requestHistory.id());
+            s.setString(3,requestHistory.user());
+            s.setString(4,requestHistory.action());
+            s.setString(5,requestHistory.action_type());
+            s.setString(6,requestHistory.source());
+            return s.executeUpdate();
+        }
+    }
+
     private static int insertStatusHistory(Connection db, StatusHistory statusHistory, int emagId, UUID uuid) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO status_history (uuid, code, event_date, emag_id) VALUES (?, ?, ?, ?) ON CONFLICT(uuid) DO NOTHING")) {
             s.setObject(1, uuid);
@@ -1762,7 +1789,6 @@ public class EmagMirrorDB {
                 return_tax_value,
                 swap,
                 return_address_snapshot,
-                request_history,
                 locker_hash,
                 locker_pin,
                 locker_pin_interval_end,
@@ -1770,7 +1796,7 @@ public class EmagMirrorDB {
                 country,
                 address_type,
                 request_status_reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT(emag_id) DO NOTHING""")) {
             s.setInt(1, rmaResult.is_full_fbe());
             s.setInt(2, rmaResult.emag_id());
@@ -1808,14 +1834,13 @@ public class EmagMirrorDB {
             s.setString(34, rmaResult.return_tax_value());
             s.setString(35, rmaResult.swap());
             s.setString(36, rmaResult.return_address_snapshot());
-            s.setString(37, String.join("\n", rmaResult.request_history()));
-            s.setString(38, rmaResult.locker() == null ? null : rmaResult.locker().locker_hash());
-            s.setString(39, rmaResult.locker() == null ? null : rmaResult.locker().locker_pin());
-            s.setTimestamp(40, rmaResult.locker() == null ? null : toTimestamp(rmaResult.locker().locker_pin_interval_end()));
-            s.setObject(41, rmaResult.return_address_id());
-            s.setString(42, rmaResult.country());
-            s.setString(43, rmaResult.address_type());
-            s.setObject(44, rmaResult.request_status_reason());
+            s.setString(37, rmaResult.locker() == null ? null : rmaResult.locker().locker_hash());
+            s.setString(38, rmaResult.locker() == null ? null : rmaResult.locker().locker_pin());
+            s.setTimestamp(39, rmaResult.locker() == null ? null : toTimestamp(rmaResult.locker().locker_pin_interval_end()));
+            s.setObject(40, rmaResult.return_address_id());
+            s.setString(41, rmaResult.country());
+            s.setString(42, rmaResult.address_type());
+            s.setObject(43, rmaResult.request_status_reason());
             return s.executeUpdate();
         }
     }
@@ -1936,7 +1961,7 @@ public class EmagMirrorDB {
             s.setString(33, rmaResult.return_tax_value());
             s.setString(34, rmaResult.swap());
             s.setString(35, rmaResult.return_address_snapshot());
-            s.setString(36, String.join("\n", rmaResult.request_history()));
+            //s.setString(36, String.join("\n", rmaResult.request_history()));
             s.setString(37, rmaResult.locker() == null ? null : rmaResult.locker().locker_hash());
             s.setString(38, rmaResult.locker() == null ? null : rmaResult.locker().locker_pin());
             s.setTimestamp(39, rmaResult.locker() == null ? null : toTimestamp(rmaResult.locker().locker_pin_interval_end()));

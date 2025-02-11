@@ -43,7 +43,7 @@ public record RMAResult(
         String return_address_snapshot,
         List<AWB> awbs,
         List<StatusHistory> status_history,
-        List<String> request_history,
+        List<RequestHistory> request_history,
         @JsonDeserialize(using = LockerDeserializer.class)
         Locker locker,
         Integer return_address_id,

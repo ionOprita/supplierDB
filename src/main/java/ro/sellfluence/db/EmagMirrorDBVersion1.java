@@ -387,7 +387,7 @@ class EmagMirrorDBVersion1 {
                 """);
     }
 
-    private static void cresteTable(Connection db, String createStatement) throws SQLException {
+    static void cresteTable(Connection db, String createStatement) throws SQLException {
         try (var s = db.prepareStatement(createStatement)) {
             s.execute();
         }
