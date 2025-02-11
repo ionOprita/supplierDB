@@ -60,7 +60,6 @@ public class EmagDBExplorer {
             JFrame frame = new JFrame("Emag DB Browser");
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-
             var outerBox = Box.createVerticalBox();
             frame.setContentPane(outerBox);
 
@@ -89,6 +88,10 @@ public class EmagDBExplorer {
             outerBox.add(setupAndReturnOrderTable());
             // Customer table
             outerBox.add(setupAndReturnCustomerTable());
+
+            var histogramButton = new JButton("Show fetch histogram");
+            outerBox.add(histogramButton);
+            histogramButton.addActionListener(EmagDBExplorer::showFetchHistogram);
 
             frame.pack();
             frame.setVisible(true);
@@ -175,6 +178,29 @@ public class EmagDBExplorer {
             throw new RuntimeException(e);
         }
     }
+
+    static JFrame histogramWindow = null;
+    static HistogramPanel histogramPanel = null;
+
+    private static void showFetchHistogram(ActionEvent actionEvent) {
+        try {
+            var data = emagDB.readTX(EmagFetchHistogram::getHistogram);
+            if (histogramPanel == null) {
+                histogramPanel = new HistogramPanel(data);
+            } else {
+                histogramPanel.setData(data);
+            }
+            if (histogramWindow == null) {
+                histogramWindow = new JFrame("Fetch log histogram");
+                histogramWindow.getContentPane().add(histogramPanel);
+            }
+            histogramWindow.setVisible(true);
+            histogramWindow.pack();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
 
     private static void updateTables(List<OrderRecord> orders) {
         orderTableModel.updateOrders(orders);
