@@ -43,11 +43,11 @@ public class EmagDBApp {
     public static void main(String[] args) {
         System.setProperty("java.util.logging.SimpleFormatter.format", "%1$tF %1$tT %4$s %5$s (%2$s)%n");
         //EmagApi.setAPILogLevel(FINEST);
-        EmagApi.setAPILogLevel(WARNING);
+        EmagApi.setAPILogLevel(INFO);
         boolean allFetched;
         EmagMirrorDB mirrorDB;
         try {
-            mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagOprita");
+            mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
         } catch (SQLException e) {
             throw new RuntimeException("error initializing database", e);
         } catch (IOException e) {
@@ -55,31 +55,18 @@ public class EmagDBApp {
         }
         do {
             try {
-                var yesterday = today.minusDays(1);
-                fetchAllForDay(yesterday, mirrorDB);
                 var daysToConsider = 5 * 366;
-                var startOfFullPeriod = yesterday.minusDays(daysToConsider);
-                var sequenceOfDaysNotNeeded = 0;
-                do {
-                    var randomDay = startOfFullPeriod.plusDays(random.nextInt(daysToConsider));
-                    var dayWasFullyFetched = fetchAllForDay(randomDay, mirrorDB);
-                    if (dayWasFullyFetched) {
-                        sequenceOfDaysNotNeeded++;
-                        if (sequenceOfDaysNotNeeded % 100 == 0) {
-                            logger.log(INFO, "Skipped %d already done days…".formatted(sequenceOfDaysNotNeeded));
-                        }
-                    } else {
-                        logger.log(INFO, "Skipped %d already done days!".formatted(sequenceOfDaysNotNeeded));
-                        sequenceOfDaysNotNeeded = 0;
-                    }
-                } while (sequenceOfDaysNotNeeded < 10_000);
-                // Assume all days done, when 10'000 random tries all fell on a date, which was already handled.
+                var oldestDay = today.minusDays(daysToConsider);
+                var day = today;
+                while (day.isAfter(oldestDay)) {
+                    fetchAllForDay(day, mirrorDB);
+                    day = day.minusDays(1);
+                }
                 allFetched = true;
             } catch (Exception e) {
                 allFetched = false;
                 logger.log(WARNING, "Waiting for a minute because of an exception ",e);
                 e.printStackTrace();
-                // After an error, wait a minute before retrying
                 try {
                     Thread.sleep(60_000); // 5 sec * 5 * 53 weeks = 5 sec * 265 weeks
                 } catch (InterruptedException ex) {
