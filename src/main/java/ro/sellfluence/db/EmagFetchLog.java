@@ -1,13 +1,11 @@
 package ro.sellfluence.db;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 public record EmagFetchLog(
-        String account,
-        LocalDateTime startTime,
-        LocalDateTime endTime,
-        LocalDateTime fetchStartTime,
-        LocalDateTime fetchEndTime,
-        String error
-) {
+        String emagLogin,
+        LocalDate date,
+        LocalDateTime fetchTime,
+        String error) {
 }

@@ -1,5 +1,6 @@
 package ro.sellfluence.app;
 
+import ro.sellfluence.db.EmagFetchLog;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.emagapi.EmagApi;
 import ro.sellfluence.emagapi.OrderResult;
@@ -16,8 +17,11 @@ import java.util.logging.Logger;
 import java.util.random.RandomGenerator;
 
 import static java.time.temporal.ChronoUnit.DAYS;
+import static java.time.temporal.ChronoUnit.MILLIS;
+import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.support.UsefulMethods.isBlank;
 
 public class EmagDBApp {
 
@@ -34,9 +38,10 @@ public class EmagDBApp {
     );
 
     private static final RandomGenerator random = RandomGenerator.of("L64X128MixRandom");
-    private static final LocalDateTime today = LocalDate.now().atStartOfDay();
+    private static final LocalDate today = LocalDate.now();
 
     public static void main(String[] args) {
+        System.setProperty("java.util.logging.SimpleFormatter.format", "%1$tF %1$tT %4$s %5$s (%2$s)%n");
         //EmagApi.setAPILogLevel(FINEST);
         EmagApi.setAPILogLevel(WARNING);
         boolean allFetched;
@@ -60,7 +65,7 @@ public class EmagDBApp {
                     var dayWasFullyFetched = fetchAllForDay(randomDay, mirrorDB);
                     if (dayWasFullyFetched) {
                         sequenceOfDaysNotNeeded++;
-                        if (sequenceOfDaysNotNeeded % 1000 == 0) {
+                        if (sequenceOfDaysNotNeeded % 100 == 0) {
                             logger.log(INFO, "Skipped %d already done days…".formatted(sequenceOfDaysNotNeeded));
                         }
                     } else {
@@ -72,6 +77,8 @@ public class EmagDBApp {
                 allFetched = true;
             } catch (Exception e) {
                 allFetched = false;
+                logger.log(WARNING, "Waiting for a minute because of an exception ",e);
+                e.printStackTrace();
                 // After an error, wait a minute before retrying
                 try {
                     Thread.sleep(60_000); // 5 sec * 5 * 53 weeks = 5 sec * 265 weeks
@@ -82,27 +89,30 @@ public class EmagDBApp {
         } while (!allFetched);
     }
 
-    private static boolean fetchAllForDay(LocalDateTime startTime, EmagMirrorDB mirrorDB) throws Exception {
+    private static boolean fetchAllForDay(LocalDate day, EmagMirrorDB mirrorDB) throws Exception {
+        var startTime = day.atStartOfDay();
         var endTime = startTime.plusDays(1);
         var dayWasFullyFetched = true;
         for (String account : emagAccounts) {
-            var needsFetching = mirrorDB.getFetchStatus(account, startTime, endTime) != EmagMirrorDB.FetchStatus.yes;
-            needsFetching = randomRefetch(needsFetching, startTime);
-            if (needsFetching) {
-                dayWasFullyFetched = false;
+            var fetchStatus = mirrorDB.getFetchStatus(account, day).orElse(null);
+            dayWasFullyFetched = dayWasFullyFetched && isDone(fetchStatus);
+            if (needsFetch(fetchStatus)) {
                 logger.log(INFO, "Fetch from %s for %s - %s".formatted(account, startTime, endTime));
                 var fetchStartTime = LocalDateTime.now();
                 Exception exception = null;
+                var ordersTransferred = 0;
+                var rmasTransferred = 0;
                 try {
-                    transferOrdersToDatabase(account, mirrorDB, startTime, endTime);
-                    transferRMAsToDatabase(account, mirrorDB, startTime, endTime);
+                    ordersTransferred = transferOrdersToDatabase(account, mirrorDB, startTime, endTime);
+                    rmasTransferred = transferRMAsToDatabase(account, mirrorDB, startTime, endTime);
                 } catch (Exception e) {
                     logger.log(WARNING, "Some error occurred", e);
                     exception = e;
                 } finally {
                     var fetchEndTime = LocalDateTime.now();
                     var error = (exception != null) ? exception.getMessage() : null;
-                    mirrorDB.addEmagLog(account, startTime, endTime, fetchStartTime, fetchEndTime, error);
+                    mirrorDB.addEmagLog(account, day, fetchEndTime, error);
+                    logger.log(FINE, "Transferred %d orders and %d RMAs in %.2f seconds".formatted(ordersTransferred, rmasTransferred, fetchStartTime.until(fetchEndTime, MILLIS) / 1000.0));
                     if (exception != null) throw exception;
                 }
                 Thread.sleep(1_000);
@@ -112,40 +122,64 @@ public class EmagDBApp {
     }
 
     /**
-     * If a day was already fetched, then randomly refetch it again, just to see if anything changed.
-     * Days in the near past are given higher probability to be fetched again.
+     * Report if the log indicates that this day is done.
      *
-     * @param needsFetching original information whether the day was already fetched.
-     * @param startTime day considered.
-     * @return modified value.
+     * @param fetchStatus for a particular account and day or null if non was found.
+     * @return true if the entry existed and had a blank error message.
      */
-    private static boolean randomRefetch(boolean needsFetching, LocalDateTime startTime) {
-        // If it needs fetching thn return unchanged.
-        if (needsFetching) {
+    private static boolean isDone(EmagFetchLog fetchStatus) {
+        return fetchStatus != null && isBlank(fetchStatus.error());
+    }
+
+    /**
+     * Determine from the status found in the fetch log, whether the day needs to be fetched.
+     * A null value in fetchLog means, that no record was found, thus this will return true.
+     * The same happens if there is an error message.
+     *
+     * <p>If the day was already processed successfully, then it is still proposed to be
+     * fetched again with a certain probability based on when it was last fetched
+     * and how old the day is.</p>
+     *
+     * @param fetchLog as retrieved from the database or null.
+     * @return true if this day and account needs to be fetched.
+     */
+    private static boolean needsFetch(EmagFetchLog fetchLog) {
+        // If this day was never retrieved, then we must do it now.
+        if (!isDone(fetchLog)) {
             return true;
         }
-        var daysPassed = startTime.until(today, DAYS);
+        var daysPassed = fetchLog.date().until(today, DAYS);
+        var daysPassedSinceLastFetch = fetchLog.fetchTime().toLocalDate().until(today, DAYS);
+        double probability = computeProbability(daysPassed, daysPassedSinceLastFetch);
+        // Return true and fetch only if the random value is smaller than the probability.
+        return random.nextDouble() < probability;
+    }
+
+    /**
+     * Determine the probability depending on the number of days passed and the number of days since the
+     * last time that day was fetched.
+     *
+     * @param daysPassed Number of days between order creation and today.
+     * @param daysPassedSinceLastFetch Number of days since last fetch and today.
+     * @return a probability between 0.0 and 1.0
+     */
+    private static double computeProbability(long daysPassed, long daysPassedSinceLastFetch) {
         double probability; // Probability to fetch again.
         if (daysPassed <= 7) {
             probability = 1.0;
         } else if (daysPassed <= 30) {
-            probability = 0.8;
+            probability = (daysPassedSinceLastFetch <= 2) ? 0.1 : 0.5;
         } else if (daysPassed <= 180) {
-            probability = 0.5;
+            probability = (daysPassedSinceLastFetch <= 7) ? 0.02 : 0.1;
         } else if (daysPassed <= 366) {
-            probability = 0.2;
+            probability = (daysPassedSinceLastFetch <= 30) ? 0.01 : 0.05;
         } else {
-            probability = 0.05;
+            probability = (daysPassedSinceLastFetch <= 30) ? 0.0 : 0.01;
         }
-        // Return true and thus refetch only if the random value is smaller than the probability.
-        boolean newNeedsFetching = random.nextDouble() < probability;
-        if (newNeedsFetching) {
-            System.out.printf("Refetching %s (probability was %d%%)%n", startTime.toLocalDate(), Math.round(probability * 100));
-        }
-        return newNeedsFetching;
+        return probability;
     }
 
-    private static void transferOrdersToDatabase(String account, EmagMirrorDB mirrorDB, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
+    private static int transferOrdersToDatabase(String account, EmagMirrorDB mirrorDB, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
         var orders = readFromEmag(account, startTime, endTime);
         if (orders != null) {
             orders.forEach(orderResult ->
@@ -157,10 +191,12 @@ public class EmagDBApp {
                         }
                     }
             );
+            return orders.size();
         }
+        return 0;
     }
 
-    private static void transferRMAsToDatabase(String account, EmagMirrorDB mirrorDB, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
+    private static int transferRMAsToDatabase(String account, EmagMirrorDB mirrorDB, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
         var rmas = readRMAFromEmag(account, startTime, endTime);
         if (rmas != null) {
             rmas.forEach(rma ->
@@ -172,7 +208,9 @@ public class EmagDBApp {
                         }
                     }
             );
+            return rmas.size();
         }
+        return 0;
     }
 
     private static List<OrderResult> readFromEmag(String alias, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {

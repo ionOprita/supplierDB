@@ -8,7 +8,7 @@ public record ReturnedProduct(
         String product_name,
         int return_reason,
         String observations,
-        Integer diagnostic,
+        String diagnostic,
         Integer reject_reason,
         int retained_amount
 ) {}

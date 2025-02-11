@@ -33,6 +33,26 @@ public class UsefulMethods {
     }
 
     /**
+     * Extended and null safe test for a string to be blank.
+     *
+     * @param s String or null
+     * @return true if the string is null or blank.
+     */
+    public static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    /**
+     * Extended and null safe test for a string to be empty.
+     *
+     * @param s String or null
+     * @return true if the string is null or emtpy.
+     */
+    public static boolean isEmpty(String s) {
+        return s == null || s.isEmpty();
+    }
+
+    /**
      * Extended test for a list to be empty.
      * In some cases, a list might contain a single empty string.
      * Such a list is also considered to be empty.
@@ -41,6 +61,6 @@ public class UsefulMethods {
      * @return true if the list is to be considered empty.
      */
     public static boolean isEmpty(List<? extends String> list) {
-        return list==null || list.isEmpty() || (list.size() == 1 && (list.getFirst() == null || list.getFirst().isEmpty()));
+        return list == null || list.isEmpty() || (list.size() == 1 && isEmpty(list.getFirst()));
     }
 }

@@ -221,7 +221,6 @@ public class EmagApi {
         while (!finished) {
             page++;
             jsonInput.put("currentPage", page);
-            System.out.println("Requesting page " + page);
             // Filter items are on the first level together with the pagination items.
             // The data item which is also on the first level is used only for submitting data.
             var jsonAsString = gson.toJson(jsonInput);
