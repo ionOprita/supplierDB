@@ -36,7 +36,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createEmagFetchLogTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE emag_fetch_log (
                     emag_login VARCHAR(255),
                     order_start TIMESTAMP NOT NULL,
@@ -50,7 +50,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createStatusRequestTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE status_request (
                     amount DECIMAL(19,2),
                     created TIMESTAMP,
@@ -65,7 +65,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createStatusHistoryTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE status_history (
                     uuid UUID PRIMARY KEY,
                     code VARCHAR(255),
@@ -77,7 +77,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createAWBTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE awb (
                     reservation_id INT PRIMARY KEY,
                     emag_id INT, -- Foreign key referencing rma_result.emag_id
@@ -87,7 +87,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createProductTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE product (
                     id UUID PRIMARY KEY,
                     emag_pnk VARCHAR(255) UNIQUE,
@@ -100,7 +100,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createEmagReturnedProductaTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                             CREATE TABLE emag_returned_products (
                 id INT PRIMARY KEY,
                 product_emag_id INT,
@@ -119,7 +119,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createRMAResultTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                             CREATE TABLE rma_result (
                 emag_id INT PRIMARY KEY,
                 is_full_fbe INT,
@@ -170,7 +170,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createVoucherSplitTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE voucher_split(
                     voucher_id INTEGER,
                     order_id VARCHAR(255),
@@ -188,7 +188,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createProductInOrderTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE product_in_order(
                     id INTEGER,
                     order_id VARCHAR(255),
@@ -220,7 +220,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createVoucherTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                  CREATE TABLE voucher(
                     voucher_id INT,
                     order_id VARCHAR(255),
@@ -241,7 +241,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createAttachmentTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE attachment(
                     order_id VARCHAR(255),
                     vendor_id UUID,
@@ -257,7 +257,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createFlagTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE flag(
                     order_id VARCHAR(255),
                     vendor_id UUID,
@@ -268,7 +268,7 @@ class EmagMirrorDBVersion1 {
                 """);
     }
     private static void createEmagOrderTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE emag_order(
                   id VARCHAR(255),
                   vendor_id UUID,
@@ -311,7 +311,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createEnforcedVendorCourierAccountsTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE enforced_vendor_courier_account(
                     order_id VARCHAR(255),
                     vendor_id UUID,
@@ -322,7 +322,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createCustomerTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE customer(
                   id INTEGER,
                   mkt_id INTEGER,
@@ -365,7 +365,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createLockerDetailTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE locker_details(
                   locker_id VARCHAR(255),
                   locker_name VARCHAR(255),
@@ -377,7 +377,7 @@ class EmagMirrorDBVersion1 {
     }
 
     private static void createVendorTable(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 CREATE TABLE vendor(
                   id UUID,
                   vendor_name VARCHAR(255) UNIQUE NOT NULL,
@@ -387,7 +387,7 @@ class EmagMirrorDBVersion1 {
                 """);
     }
 
-    static void cresteTable(Connection db, String createStatement) throws SQLException {
+    static void executeStatement(Connection db, String createStatement) throws SQLException {
         try (var s = db.prepareStatement(createStatement)) {
             s.execute();
         }

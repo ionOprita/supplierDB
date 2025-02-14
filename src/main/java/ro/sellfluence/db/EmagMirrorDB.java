@@ -63,7 +63,8 @@ public class EmagMirrorDB {
                     EmagMirrorDBVersion3::version3,
                     EmagMirrorDBVersion4::version4,
                     EmagMirrorDBVersion5::version5,
-                    EmagMirrorDBVersion6::version6);
+                    EmagMirrorDBVersion6::version6,
+                    EmagMirrorDBVersion7::version7);
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }

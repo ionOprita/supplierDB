@@ -3,7 +3,7 @@ package ro.sellfluence.db;
 import java.sql.Connection;
 import java.sql.SQLException;
 
-import static ro.sellfluence.db.EmagMirrorDBVersion1.cresteTable;
+import static ro.sellfluence.db.EmagMirrorDBVersion1.executeStatement;
 
 class EmagMirrorDBVersion6 {
 
@@ -15,7 +15,7 @@ class EmagMirrorDBVersion6 {
      * @throws SQLException all errors are passed back to caller.
      */
     static void version6(Connection db) throws SQLException {
-        cresteTable(db, """
+        executeStatement(db, """
                 ALTER TABLE request_history ADD COLUMN date TIMESTAMP;
                 """);
     }

@@ -5,7 +5,7 @@ import java.sql.SQLException;
 
 import static ro.sellfluence.db.EmagMirrorDBVersion1.executeStatement;
 
-class EmagMirrorDBVersion5 {
+class EmagMirrorDBVersion7 {
 
     /**
      * Create the tables for the first version of the database.
@@ -14,16 +14,15 @@ class EmagMirrorDBVersion5 {
      * @param db database connection to use.
      * @throws SQLException all errors are passed back to caller.
      */
-    static void version5(Connection db) throws SQLException {
+    static void version7(Connection db) throws SQLException {
         executeStatement(db, """
-                CREATE TABLE request_history (
-                    id INT,
-                    req_user VARCHAR(255),
-                    action VARCHAR(255),
-                    action_type VARCHAR(255),
-                    source VARCHAR(255),
-                    PRIMARY KEY (id)
-                );
+                ALTER TABLE request_history ADD COLUMN emag_id INT;
+                """);
+        executeStatement(db, """
+                ALTER TABLE request_history ADD FOREIGN KEY (emag_id) REFERENCES rma_result(emag_id);
+                """);
+        executeStatement(db, """
+                ALTER TABLE rma_result DROP COLUMN request_history;
                 """);
     }
 }
