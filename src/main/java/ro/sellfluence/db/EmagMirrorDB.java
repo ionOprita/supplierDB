@@ -1582,7 +1582,7 @@ public class EmagMirrorDB {
                 INSERT INTO request_history (
                 emag_id,
                 id,
-                user,
+                req_user,
                 action,
                 action_type,
                 source,
