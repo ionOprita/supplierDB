@@ -62,7 +62,8 @@ public class EmagMirrorDB {
                     EmagMirrorDBVersion2::version2,
                     EmagMirrorDBVersion3::version3,
                     EmagMirrorDBVersion4::version4,
-                    EmagMirrorDBVersion5::version5);
+                    EmagMirrorDBVersion5::version5,
+                    EmagMirrorDBVersion6::version6);
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }
@@ -1584,7 +1585,8 @@ public class EmagMirrorDB {
                 user,
                 action,
                 action_type,
-                source
+                source,
+                date
                 ) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING""")) {
             s.setInt(1, emagId);
             s.setLong(2,requestHistory.id());
@@ -1592,6 +1594,7 @@ public class EmagMirrorDB {
             s.setString(4,requestHistory.action());
             s.setString(5,requestHistory.action_type());
             s.setString(6,requestHistory.source());
+            s.setTimestamp(7,toTimestamp(requestHistory.date()));
             return s.executeUpdate();
         }
     }
