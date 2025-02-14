@@ -53,11 +53,11 @@ public class EmagDBApp {
         } catch (IOException e) {
             throw new RuntimeException("error connecting to the database", e);
         }
+        var daysToConsider = 5 * 366;
+        var oldestDay = today.minusDays(daysToConsider);
+        var day = today;
         do {
             try {
-                var daysToConsider = 5 * 366;
-                var oldestDay = today.minusDays(daysToConsider);
-                var day = today;
                 while (day.isAfter(oldestDay)) {
                     fetchAllForDay(day, mirrorDB);
                     day = day.minusDays(1);
