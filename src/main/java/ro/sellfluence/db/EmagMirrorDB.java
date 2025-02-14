@@ -1587,7 +1587,7 @@ public class EmagMirrorDB {
                 action_type,
                 source,
                 date
-                ) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING""")) {
+                ) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING""")) {
             s.setInt(1, emagId);
             s.setLong(2,requestHistory.id());
             s.setString(3,requestHistory.user());
