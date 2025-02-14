@@ -32,6 +32,11 @@ public class Conversions {
     private static final DateTimeFormatter rfc1123_2digit_year;
 
     /**
+     * Formatter for parsing the date as seen in request_history date field.
+     */
+    public static final DateTimeFormatter requestHistoryFormat;
+
+    /**
      * Formatter, which is similar to {@link DateTimeFormatter#ISO_LOCAL_DATE_TIME}
      * but does separate date and time with a blank character instead of 'T'.
      */
@@ -65,6 +70,12 @@ public class Conversions {
         monthOfYearEN.put(11L, "Nov");
         monthOfYearEN.put(12L, "Dec");
         rfc1123_2digit_year = new DateTimeFormatterBuilder().parseCaseInsensitive().parseLenient().optionalStart().appendText(DAY_OF_WEEK, dayOfWeekEN).appendLiteral(", ").optionalEnd().appendValue(DAY_OF_MONTH, 1, 2, SignStyle.NOT_NEGATIVE).appendLiteral(' ').appendText(MONTH_OF_YEAR, monthOfYearEN).appendLiteral(' ').appendValueReduced(YEAR, 2, 2, LocalDate.of(1970, 1, 1)).appendLiteral(", ").appendValue(HOUR_OF_DAY, 2).appendLiteral(':').appendValue(MINUTE_OF_HOUR, 2).appendLiteral(':').appendValue(SECOND_OF_MINUTE, 2).toFormatter(Locale.ENGLISH);
+        requestHistoryFormat = new DateTimeFormatterBuilder().parseCaseInsensitive().parseLenient().optionalStart()
+                .appendValue(DAY_OF_MONTH, 1, 2, SignStyle.NOT_NEGATIVE).appendLiteral(' ')
+                .appendText(MONTH_OF_YEAR, monthOfYearEN).appendLiteral(' ')
+                .appendValue(YEAR).appendLiteral(", ")
+                .appendValue(HOUR_OF_DAY, 2).appendLiteral(':').appendValue(MINUTE_OF_HOUR, 2)
+                .toFormatter(Locale.ENGLISH);
     }
 
     /**

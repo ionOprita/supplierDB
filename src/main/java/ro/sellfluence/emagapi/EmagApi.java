@@ -27,6 +27,7 @@ import java.net.http.HttpResponse;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -42,6 +43,7 @@ import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 import static ro.sellfluence.sheetSupport.Conversions.isoLikeLocalDateTime;
+import static ro.sellfluence.sheetSupport.Conversions.requestHistoryFormat;
 
 /**
  * Class for dealing with the emag API.
@@ -83,7 +85,14 @@ public class EmagApi {
                         reader.nextNull();
                         return null;
                     }
-                    return LocalDateTime.parse(reader.nextString(), isoLikeLocalDateTime);
+                    var dateAsString = reader.nextString();
+                    try {
+                        // This is the most used format
+                        return LocalDateTime.parse(dateAsString, isoLikeLocalDateTime);
+                    } catch (DateTimeParseException e) {
+                        // This is used in request_history date field.
+                        return LocalDateTime.parse(dateAsString, requestHistoryFormat);
+                    }
                 }
             })
             .registerTypeAdapter(LocalDate.class, new TypeAdapter<LocalDate>() {
