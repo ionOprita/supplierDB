@@ -159,9 +159,9 @@ public class EmagDBApp {
         } else if (daysPassed <= 180) {
             probability = (daysPassedSinceLastFetch <= 7) ? 0.02 : 0.3;
         } else if (daysPassed <= 366) {
-            probability = (daysPassedSinceLastFetch <= 30) ? 0.01 : 0.1;
+            probability = (daysPassedSinceLastFetch <= 7) ? 0.01 : 0.1;
         } else {
-            probability = (daysPassedSinceLastFetch <= 30) ? 0.0 : 0.05;
+            probability = (daysPassedSinceLastFetch <= 7) ? 0.0 : 0.05;
         }
         return probability;
     }
