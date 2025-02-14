@@ -105,7 +105,11 @@ public class Conversions {
                 try {
                     date = LocalDateTime.parse(s, rfc1123_2digit_year);
                 } catch (Exception exc) {
-                    date = LocalDateTime.parse(s, isoLikeLocalDateTime);
+                    try {
+                        date = LocalDateTime.parse(s, isoLikeLocalDateTime);
+                    } catch (Exception exception) {
+                        date = LocalDateTime.parse(s, requestHistoryFormat);
+                    }
                 }
             }
         }
