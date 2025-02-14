@@ -155,13 +155,13 @@ public class EmagDBApp {
         if (daysPassed <= 7) {
             probability = 1.0;
         } else if (daysPassed <= 30) {
-            probability = (daysPassedSinceLastFetch <= 2) ? 0.1 : 0.5;
+            probability = (daysPassedSinceLastFetch <= 2) ? 0.1 : 0.7;
         } else if (daysPassed <= 180) {
-            probability = (daysPassedSinceLastFetch <= 7) ? 0.02 : 0.1;
+            probability = (daysPassedSinceLastFetch <= 7) ? 0.02 : 0.3;
         } else if (daysPassed <= 366) {
-            probability = (daysPassedSinceLastFetch <= 30) ? 0.01 : 0.05;
+            probability = (daysPassedSinceLastFetch <= 30) ? 0.01 : 0.1;
         } else {
-            probability = (daysPassedSinceLastFetch <= 30) ? 0.0 : 0.01;
+            probability = (daysPassedSinceLastFetch <= 30) ? 0.0 : 0.05;
         }
         return probability;
     }
