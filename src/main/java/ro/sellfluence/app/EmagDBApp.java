@@ -47,7 +47,7 @@ public class EmagDBApp {
         boolean allFetched;
         EmagMirrorDB mirrorDB;
         try {
-            mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
+            mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagOprita");
         } catch (SQLException e) {
             throw new RuntimeException("error initializing database", e);
         } catch (IOException e) {

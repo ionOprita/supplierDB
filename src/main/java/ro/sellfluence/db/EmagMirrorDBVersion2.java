@@ -31,6 +31,18 @@ class EmagMirrorDBVersion2 {
                 ALTER TABLE flag DROP CONSTRAINT flag_order_id_vendor_id_fkey;
                 """);
         executeStatement(db, """
+                CREATE TEMP TABLE flag_temp AS SELECT DISTINCT ON (order_id, vendor_id, flag) * FROM flag ORDER BY order_id, vendor_id, flag;
+                """);
+        executeStatement(db, """
+                TRUNCATE flag;
+                """);
+        executeStatement(db, """
+                INSERT INTO flag SELECT * FROM flag_temp;
+                """);
+        executeStatement(db, """
+                DROP TABLE flag_temp;
+                """);
+        executeStatement(db, """
                 ALTER TABLE flag ADD PRIMARY KEY (order_id, vendor_id, flag);
                 """);
     }
