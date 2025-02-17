@@ -7,12 +7,13 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
+//TODO: EXTRACT(DAY FROM is wrong, it gives the day part but ignores months and years.
 public record EmagFetchHistogram(long days, int count) {
     public static List<EmagFetchHistogram> getHistogram(Connection db) throws SQLException {
         var histogram = new ArrayList<EmagFetchHistogram>();
         String query = """
                         SELECT
-                            EXTRACT(DAY FROM AGE(NOW(), fetch_time)) AS days_old,
+                            NOW()::DATE - fetch_time::DATE AS days_old,
                             COUNT(*) AS count
                         FROM
                             emag_fetch_log
