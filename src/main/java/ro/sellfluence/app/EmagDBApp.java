@@ -53,7 +53,7 @@ public class EmagDBApp {
         } catch (IOException e) {
             throw new RuntimeException("error connecting to the database", e);
         }
-        var daysToConsider = 5 * 366;
+        var daysToConsider = 3 * 366;   // 3 Years
         var oldestDay = today.minusDays(daysToConsider);
         var day = today;
         do {
@@ -81,6 +81,7 @@ public class EmagDBApp {
         var endTime = startTime.plusDays(1);
         var dayWasFullyFetched = true;
         for (String account : emagAccounts) {
+            // Check in the database when it was last fetched.
             var fetchStatus = mirrorDB.getFetchStatus(account, day).orElse(null);
             dayWasFullyFetched = dayWasFullyFetched && isDone(fetchStatus);
             if (needsFetch(fetchStatus)) {
@@ -102,7 +103,7 @@ public class EmagDBApp {
                     logger.log(FINE, "Transferred %d orders and %d RMAs in %.2f seconds".formatted(ordersTransferred, rmasTransferred, fetchStartTime.until(fetchEndTime, MILLIS) / 1000.0));
                     if (exception != null) throw exception;
                 }
-                Thread.sleep(1_000);
+                // If emag connection issue get high, maybe add in again Thread.sleep(1_000);
             }
         }
         return dayWasFullyFetched;
@@ -159,9 +160,9 @@ public class EmagDBApp {
         } else if (daysPassed <= 180) {
             probability = (daysPassedSinceLastFetch <= 7) ? 0.02 : 0.3;
         } else if (daysPassed <= 366) {
-            probability = (daysPassedSinceLastFetch <= 7) ? 0.01 : 0.1;
+            probability = (daysPassedSinceLastFetch <= 7) ? 0.01 : 0.3;// 0.1;
         } else {
-            probability = (daysPassedSinceLastFetch <= 7) ? 0.0 : 0.05;
+            probability = (daysPassedSinceLastFetch <= 7) ? 0.0 : 0.3; //0.05;
         }
         return probability;
     }
