@@ -34,13 +34,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Scanner;
 import java.util.UUID;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import static java.math.RoundingMode.HALF_EVEN;
 import static java.util.logging.Level.FINE;
-import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 
 public class EmagMirrorDB {
@@ -71,6 +71,12 @@ public class EmagMirrorDB {
         return mirrorDB;
     }
 
+    /**
+     * Add or update the order in the database.
+     *
+     * @param order as received from eMAG.
+     * @throws SQLException if something goes wrong.
+     */
     public void addOrder(OrderResult order) throws SQLException {
         var vendorName = order.vendor_name();
         var vendorId = getOrAddVendor(vendorName);
@@ -82,11 +88,21 @@ public class EmagMirrorDB {
                 insertOrUpdateLockerDetails(db, order.details());
             }
             var orderInserted = insertOrder(db, order, vendorId);
+            order.products().stream()
+                    .filter(product -> product.attachments() != null && product.attachments().size() > 1)
+                    .forEach(product -> {
+                                System.out.printf("Product %s in order %s of vendor %s has attachments.", product.part_number_key(), order.id(), order.vendor_name());
+                                reportIssue(order);
+                            }
+                    );
             if (orderInserted == 1) {
                 insertOrderDependents(db, order, vendorId);
             } else {
                 var oldOrder = selectWholeOrderResult(db, order.id(), vendorId, vendorName);
-                oldOrder.findDifferencesAndModify(order);
+                var hasDifferences = oldOrder.reportUnhandledDifferences(order);
+                if (hasDifferences) {
+                    reportIssue(order);
+                }
                 if (order.modified() != null) {
                     if ((oldOrder.modified() == null) || order.modified().isAfter(oldOrder.modified())) {
                         updateTimestamp(db, order.id(), vendorId, "modified", order.modified());
@@ -131,6 +147,21 @@ public class EmagMirrorDB {
             }
             return 0;
         });
+    }
+
+    private static final Scanner scanner = new Scanner(System.in);
+
+    private void reportIssue(OrderResult order) {
+        System.out.println("The above message indicates that for some changes, there is no code to handle them.");
+        System.out.println("A fix to the program is needed. You need to report this error to the developer.");
+        System.out.printf("Please report the vendor '%s' and order ID '%s'.%n", order.vendor_name(), order.id());
+        System.out.println("If you want, you can continue with the program, or wait until a fix is provided.");
+        System.out.println("Please type the word \"Yes\" if you want the program to continue and fix the problem some other time. Type \"No\" if you want the program to stop and wait until you receive a fixed version of the program.");
+        System.out.println("If you type anything else, the program will stop now.");
+        String input = scanner.nextLine().trim().toLowerCase();
+        boolean isYes = input.equals("yes");
+        System.out.println("You entered: " + (isYes ? "YES and the program will continue" : "NO thus the program will terminate now."));
+        if (!isYes) System.exit(1);
     }
 
     private static int updateNumeric(Connection db, String orderId, UUID vendorId, final String field, BigDecimal newValue) throws SQLException {
@@ -654,6 +685,14 @@ public class EmagMirrorDB {
         return "PNK:" + pnk;
     }
 
+    /**
+     * Map the vendor name found in the eMAG order to a UUID we can use in the database.
+     * It will add an entry whenever a new vendor name appears.
+     *
+     * @param name of vendor.
+     * @return UUID associated with the vendor.
+     * @throws SQLException
+     */
     private UUID getOrAddVendor(String name) throws SQLException {
         return database.writeTX(db -> {
             UUID id = selectVendorIdByName(db, name);

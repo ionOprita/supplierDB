@@ -147,7 +147,7 @@ public record OrderResult(
      * @param other Another OrderResult.
      * @return null if no differences are detected otherwise a new Order.
      */
-    public boolean findDifferencesAndModify(OrderResult other) {
+    public boolean reportUnhandledDifferences(OrderResult other) {
         boolean hasDifference = false;
         if (is_storno != other.is_storno) {
             System.out.printf("%s:%s -> %s:%s Storno changed from %b to %b%n", vendor_name, id, other.vendor_name, other.id, is_storno, other.is_storno);
