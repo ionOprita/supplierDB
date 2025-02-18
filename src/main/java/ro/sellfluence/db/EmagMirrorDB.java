@@ -487,11 +487,13 @@ public class EmagMirrorDB {
 
     /**
      * Read database information and prepare them for inclusion in the spreadsheet.
+     * Only orders with status finalized or returned matching the year are provided.
      *
+     * @param year Return only orders where the date has this as year value.
      * @return list of rows containing a list of cell groups. Each cell group is a list of cells.
      * @throws SQLException on database error
      */
-    public List<List<List<Object>>> readForSheet() throws SQLException {
+    public List<List<List<Object>>> readForSheet(int year) throws SQLException {
         return database.readTX(db -> {
             List<List<List<Object>>> rows = new ArrayList<>();
             try (var s = db.prepareStatement(
@@ -523,9 +525,10 @@ public class EmagMirrorDB {
                             ON p.order_id = o.id AND p.vendor_id = o.vendor_id
                             LEFT JOIN product as pi
                             ON p.part_number_key = pi.emag_pnk
-                            WHERE o.status = 4 OR o.status = 5
+                            WHERE EXTRACT(YEAR FROM o.date) = ? AND (o.status = 4 OR o.status = 5)
                             ORDER BY o.date
                             """)) {
+                s.setInt(1, year);
                 try (var rs = s.executeQuery()) {
                     while (rs.next()) {
 // 2024-10-17 16:49:51
@@ -2017,6 +2020,15 @@ public class EmagMirrorDB {
         }
     }
 
+    /**
+     * Insert a product in the table that records our information about a product and associates our name and
+     * category with the PNK used by emag.
+     *
+     * @param db database
+     * @param productInfo record mapping to column
+     * @return 1 or 0 depending on whether the insertion was successful or not.
+     * @throws SQLException if anything bad happens.
+     */
     private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO product (id, emag_pnk, name, category, message_keyword) VALUES (?, ?, ?, ?, ?) ON CONFLICT(emag_pnk) DO NOTHING")) {
             s.setObject(1, UUID.randomUUID());
