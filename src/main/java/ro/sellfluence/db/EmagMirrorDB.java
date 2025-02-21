@@ -538,7 +538,7 @@ public class EmagMirrorDB {
                         boolean isFBE = rs.getBoolean(15);
                         var row = List.of(
                                 // Group 0
-                                Stream.of(toLocalDateTime(rs.getTimestamp(1)).format(Conversions.isoLikeLocalDateTime), // creation date
+                                Stream.of(toLocalDateTime(rs.getTimestamp(1)).toString(), // creation date
                                         rs.getString(2), // id
                                         Conversions.statusToString(rs.getInt(3)) // status
                                 ).map(Object.class::cast).toList(),

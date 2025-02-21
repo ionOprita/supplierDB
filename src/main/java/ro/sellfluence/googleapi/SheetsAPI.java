@@ -189,7 +189,7 @@ public class SheetsAPI {
         for (int i = 0; i < ranges.length; i++) {
             updateList.add(new ValueRange().setRange(ranges[i]).setValues(groupOfTables.get(i)));
         }
-        var body = new BatchUpdateValuesRequest().setValueInputOption("RAW").setData(updateList);
+        var body = new BatchUpdateValuesRequest().setValueInputOption(USER_ENTERED).setData(updateList);
         try {
             return getSheetsService().spreadsheets().values().batchUpdate(spreadSheetId, body).execute();
         } catch (IOException cause) {

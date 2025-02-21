@@ -79,6 +79,13 @@ public class PopulateDateComenziFromDB {
     record OrderLine(String orderId, /*Vendor vendor,*/ String productName) {
     }
 
+    /**
+     * Extract from the spreadsheet lines just the order and product information
+     * and store it in a set.
+     *
+     * @param sheetData cells as read from spreadsheet.
+     * @return set of {@link  }
+     */
     private static Set<OrderLine> simplify(List<List<Object>> sheetData) {
         return sheetData.stream().skip(3).map(row -> {
             //String vendorName = (String) row.get(3);
