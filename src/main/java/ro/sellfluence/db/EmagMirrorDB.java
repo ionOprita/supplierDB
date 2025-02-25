@@ -524,7 +524,8 @@ public class EmagMirrorDB {
                               o.detailed_payment_method,
                               o.payment_status,
                               CONCAT_WS(', ', c.billing_locality_id, c.billing_street, c.billing_country, c.billing_postal_code, c.billing_suburb, c.billing_city) AS billing_address,
-                              CONCAT_WS(', ', c.shipping_locality_id, c.shipping_street, c.shipping_country, c.shipping_postal_code, c.shipping_suburb, c.shipping_city) AS shipping_address
+                              CONCAT_WS(', ', c.shipping_locality_id, c.shipping_street, c.shipping_country, c.shipping_postal_code, c.shipping_suburb, c.shipping_city) AS shipping_address,
+                              p.storno_qty as storno_quantity
                             FROM emag_order as o
                             LEFT JOIN customer as c
                             ON o.customer_id = c.id
@@ -547,16 +548,18 @@ public class EmagMirrorDB {
                         boolean isFBE = rs.getBoolean(15);
                         String modPlata = rs.getString(21);
                         String statusPlata = modPlata.equals("RAMBURS") ? "Ramburs" : rs.getInt(22) == 1 ? "Incasata" : "Neincasata";
+                        int status = rs.getInt(3);
+                        int quantity = status == 5 ? -rs.getInt("storno_quantity") : rs.getInt(5);
                         var row = List.of(
                                 // Group 0
                                 Stream.of(
                                         toLocalDateTime(rs.getTimestamp(1)).toString(), // creation date
                                         rs.getString(2), // id
-                                        Conversions.statusToString(rs.getInt(3)), // status
+                                        Conversions.statusToString(status), // status
                                         rs.getString(18), // product code
                                         rs.getString(19), // PNK
                                         rs.getString(4), // Product name
-                                        rs.getInt(5), // quantity
+                                        quantity, // quantity
                                         priceWithoutVAT.setScale(2, HALF_EVEN),
                                         priceWithVAT.setScale(2, HALF_EVEN),
                                         rs.getString(17), // Currency
