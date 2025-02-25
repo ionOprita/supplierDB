@@ -704,7 +704,8 @@ public class EmagMirrorDB {
                 try (var s = db.prepareStatement("INSERT INTO vendor (id, vendor_name, isfbe) VALUES (?,?,?)")) {
                     s.setObject(1, id);
                     s.setString(2, name);
-                    s.setBoolean(3, name.contains("FBE")); //TODO: Is this ok?
+                    // Zoopie Invest is a special case, it does not contain FBE in the name, but is FBE.
+                    s.setBoolean(3, name.contains("FBE") || name.contains("Zoopie Invest"));
                     s.executeUpdate();
                 }
             }
