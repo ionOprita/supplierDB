@@ -14,9 +14,11 @@ import com.google.api.services.sheets.v4.model.BatchUpdateValuesRequest;
 import com.google.api.services.sheets.v4.model.BatchUpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.BooleanCondition;
 import com.google.api.services.sheets.v4.model.CellData;
+import com.google.api.services.sheets.v4.model.CellFormat;
 import com.google.api.services.sheets.v4.model.DataValidationRule;
 import com.google.api.services.sheets.v4.model.ExtendedValue;
 import com.google.api.services.sheets.v4.model.GridRange;
+import com.google.api.services.sheets.v4.model.NumberFormat;
 import com.google.api.services.sheets.v4.model.ProtectedRange;
 import com.google.api.services.sheets.v4.model.RepeatCellRequest;
 import com.google.api.services.sheets.v4.model.Request;
@@ -196,6 +198,45 @@ public class SheetsAPI {
             throw new RuntimeException("Issue in updateRanges for sheet %s".formatted(spreadSheetName), cause);
         }
     }
+
+    public BatchUpdateSpreadsheetResponse formatDate(String spreadSheetId, int startColumn, int endColumn, int startRow, int endRow) {
+        // Create the number format object
+        NumberFormat numberFormat = new NumberFormat()
+                .setType("DATE_TIME")
+                .setPattern("dd/MM/yyyy hh:mm:ss");
+
+        // Create the cell format object
+        CellFormat cellFormat = new CellFormat()
+                .setNumberFormat(numberFormat);
+
+        var range = new GridRange()
+                .setSheetId(getSheetId(spreadSheetId))
+                .setStartColumnIndex(startColumn)
+                .setEndColumnIndex(endColumn)
+                .setStartRowIndex(startRow)
+                .setEndRowIndex(endRow);
+        // Create a repeat cell request
+        RepeatCellRequest repeatCellRequest = new RepeatCellRequest()
+                .setCell(new CellData().setUserEnteredFormat(cellFormat))
+                .setRange(range)
+                .setFields("userEnteredFormat.numberFormat");
+
+        // Create a request to update the spreadsheet
+        Request request = new Request().setRepeatCell(repeatCellRequest);
+        var updateList = new ArrayList<Request>();
+        updateList.add(request);
+
+        var body = new BatchUpdateSpreadsheetRequest()
+                .setRequests(updateList);
+
+        // Execute the request
+        try {
+            return getSheetsService().spreadsheets().batchUpdate(spreadSheetId, body).execute();
+        } catch (IOException cause) {
+            throw new RuntimeException("Issue in updateRanges for sheet %s".formatted(spreadSheetName), cause);
+        }
+    }
+
 
     public BatchUpdateSpreadsheetResponse formatAsCheckboxes(String spreadSheetId, int startColumn, int endColumn, int startRow, int endRow) {
         // Create a data validation rule

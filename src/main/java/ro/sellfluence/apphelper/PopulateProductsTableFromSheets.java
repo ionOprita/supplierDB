@@ -23,7 +23,8 @@ public class PopulateProductsTableFromSheets {
         } catch (Exception e) {
             throw new RuntimeException("Could not open database", e);
         }
-        populateFrom("sellfluence1", "2025 - Date produse & angajati", "Cons. Date Prod.").forEach(productInfo -> {
+        populateFrom("sellfluence1", "2025 - Date produse & angajati", "Cons. Date Prod.")
+                .forEach(productInfo -> {
             try {
                 mirrorDB.addProduct(productInfo);
             } catch (SQLException e) {
@@ -47,14 +48,15 @@ public class PopulateProductsTableFromSheets {
             throw new RuntimeException("Spreadsheet %s not found.".formatted(spreadSheetName));
         }
         var spreadSheet = SheetsAPI.getSpreadSheet(appName, spreadSheetId);
-        return spreadSheet.getMultipleColumns(overviewSheetName, "C", "BH", "CN", "DW").stream().skip(3)
+        return spreadSheet.getMultipleColumns(overviewSheetName, "C", "K", "BH", "CN", "DW").stream().skip(3)
                 .<ProductInfo>mapMulti((row, nextConsumer) -> {
-                            var pnk = row.get(1).toString();
+                            var pnk = row.get(2).toString();
+                            var productCode = row.get(1).toString();
                             var name = row.get(0).toString();
-                            var category = row.get(2).toString();
-                            var messageKeyword = row.get(3).toString();
+                            var category = row.get(3).toString();
+                            var messageKeyword = row.get(4).toString();
                             if (!(pnk.isBlank() || pnk.equals("0") || name.isBlank() || name.equals("-"))) {
-                                nextConsumer.accept(new ProductInfo(pnk, name, category, messageKeyword));
+                                nextConsumer.accept(new ProductInfo(pnk, productCode, name, category, messageKeyword));
                             }
                         }
                 ).toList();

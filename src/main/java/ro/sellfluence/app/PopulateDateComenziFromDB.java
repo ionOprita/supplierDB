@@ -37,14 +37,15 @@ public class PopulateDateComenziFromDB {
         System.out.println("Read from the spreadsheet");
         List<List<Object>> sheetData = sheet.getMultipleColumns(sheetName, "A", "B", "F", "X", "Y");
         //TODO: The filter does not notice changed orders.
-        rows = filterOutExisting(rows, sheetData);
+        rows = filterOutExisting(rows, sheetData).subList(0, 19); // TODO: For test only limit to 20 rows.
         var lastRowNumber = sheetData.size();
         var nextRow = lastRowNumber + 1;
         var lastRow = lastRowNumber + rows.size();
         System.out.println("Now fixing cell format");
-        sheet.formatAsCheckboxes(spreadSheetId, 26, 30, lastRowNumber, lastRow);
+        sheet.formatDate(spreadSheetId, 0, 1, lastRowNumber, lastRow);
+        sheet.formatAsCheckboxes(spreadSheetId, 27, 31, lastRowNumber, lastRow);
         System.out.println("Now adding the rows");
-        sheet.updateRanges(rows, "%s!A%d".formatted(sheetName, nextRow), "%s!F%d".formatted(sheetName, nextRow), "%s!M%d".formatted(sheetName, nextRow), "%s!R%d".formatted(sheetName, nextRow), "%s!U%d".formatted(sheetName, nextRow), "%s!X%d".formatted(sheetName, nextRow), "%s!AA%d".formatted(sheetName, nextRow), "%s!AF%d".formatted(sheetName, nextRow));
+        sheet.updateRanges(rows, "%s!A%d".formatted(sheetName, nextRow), "%s!Y%d".formatted(sheetName, nextRow), "%s!AB%d".formatted(sheetName, nextRow), "%s!AG%d".formatted(sheetName, nextRow));
     }
 
     /**
@@ -61,8 +62,8 @@ public class PopulateDateComenziFromDB {
         return groupedRowsFromDB.stream()
                 .filter(groupedRow -> {
             var order_id = (String) groupedRow.get(0).get(1);
-            var vendor = Vendor.fromSheet((String) groupedRow.get(5).get(0), isEMAGFbe((String) groupedRow.get(5).get(1)));
-            var productName = (String) groupedRow.get(1).getFirst();
+            var vendor = Vendor.fromSheet((String) groupedRow.get(1).get(0), isEMAGFbe((String) groupedRow.get(1).get(1)));
+            var productName = (String) groupedRow.get(0).get(5);
             if (productName == null || productName.isBlank()) {
                 throw new RuntimeException("Could not find product name for order %s (%s)".formatted(order_id, vendor.name()));
             }

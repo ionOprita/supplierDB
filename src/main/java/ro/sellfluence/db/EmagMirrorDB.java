@@ -64,7 +64,8 @@ public class EmagMirrorDB {
                     EmagMirrorDBVersion4::version4,
                     EmagMirrorDBVersion5::version5,
                     EmagMirrorDBVersion6::version6,
-                    EmagMirrorDBVersion7::version7);
+                    EmagMirrorDBVersion7::version7,
+                    EmagMirrorDBVersion8::version8);
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }
@@ -515,7 +516,15 @@ public class EmagMirrorDB {
                               o.observation,
                               v.vendor_name,
                               v.isFBE,
-                              pi.message_keyword
+                              pi.message_keyword,
+                              p.currency,
+                              pi.product_code,
+                              pi.emag_pnk,
+                              p.vat,
+                              o.detailed_payment_method,
+                              o.payment_status,
+                              CONCAT_WS(', ', c.billing_locality_id, c.billing_street, c.billing_country, c.billing_postal_code, c.billing_suburb, c.billing_city) AS billing_address,
+                              CONCAT_WS(', ', c.shipping_locality_id, c.shipping_street, c.shipping_country, c.shipping_postal_code, c.shipping_suburb, c.shipping_city) AS shipping_address
                             FROM emag_order as o
                             LEFT JOIN customer as c
                             ON o.customer_id = c.id
@@ -536,37 +545,42 @@ public class EmagMirrorDB {
                         var priceWithVAT = priceWithoutVAT.multiply(BigDecimal.valueOf(1.19)); // TODO: Proper handling of VAT required
                         String customerName = rs.getString(8);
                         boolean isFBE = rs.getBoolean(15);
+                        String modPlata = rs.getString(21);
+                        String statusPlata = modPlata.equals("RAMBURS") ? "Ramburs" : rs.getInt(22) == 1 ? "Incasata" : "Neincasata";
                         var row = List.of(
                                 // Group 0
-                                Stream.of(toLocalDateTime(rs.getTimestamp(1)).toString(), // creation date
+                                Stream.of(
+                                        toLocalDateTime(rs.getTimestamp(1)).toString(), // creation date
                                         rs.getString(2), // id
-                                        Conversions.statusToString(rs.getInt(3)) // status
-                                ).map(Object.class::cast).toList(),
-                                // Group 1
-                                Stream.of(rs.getString(4), // Product name
+                                        Conversions.statusToString(rs.getInt(3)), // status
+                                        rs.getString(18), // product code
+                                        rs.getString(19), // PNK
+                                        rs.getString(4), // Product name
                                         rs.getInt(5), // quantity
-                                        priceWithoutVAT.setScale(2, HALF_EVEN), priceWithVAT.setScale(2, HALF_EVEN)).map(Object.class::cast).toList(),
-                                // Group 2
-                                Stream.of(rs.getString(7), // deliver mode
+                                        priceWithoutVAT.setScale(2, HALF_EVEN),
+                                        priceWithVAT.setScale(2, HALF_EVEN),
+                                        rs.getString(17), // Currency
+                                        rs.getString(20), // TVA
+                                        modPlata, // Mod plata
+                                        statusPlata,
+                                        rs.getString(7), // deliver mode
                                         customerName, // customerName
                                         customerName, // customer shipment name
-                                        rs.getString(9) // customer shipping phone
-                                ).map(Object.class::cast).toList(),
-                                // Group 3
-                                Stream.of(rs.getString(10), // customer billing name
-                                        rs.getString(11) // customer billing phone
-                                ).map(Object.class::cast).toList(),
-                                // Group 4
-                                Stream.of(rs.getString(12), // company code
+                                        rs.getString(9), // customer shipping phone
+                                        rs.getString("shipping_address"),
+                                        rs.getString(10), // customer billing name
+                                        rs.getString(11), // customer billing phone
+                                        rs.getString("billing_address"),
+                                        rs.getString(12), // company code
                                         rs.getString(13) // observation
                                 ).map(Object.class::cast).toList(),
-                                // Group 5
-                                Stream.of(rs.getString(14), // company name
+                                // Group 1
+                                Stream.of(rs.getString(14), // vendor
                                         Conversions.booleanToFBE(isFBE) // platform
                                 ).map(Object.class::cast).toList(),
-                                // Group 6
+                                // Group 2
                                 Stream.of(isFBE, isFBE, isFBE, false).map(Object.class::cast).toList(),
-                                // Group 7
+                                // Group 3
                                 Stream.of(rs.getString(16)).map(Object.class::cast).toList());
                         rows.add(row);
                     }
@@ -2031,22 +2045,23 @@ public class EmagMirrorDB {
      * @throws SQLException if anything bad happens.
      */
     private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO product (id, emag_pnk, name, category, message_keyword) VALUES (?, ?, ?, ?, ?) ON CONFLICT(emag_pnk) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO product (id, emag_pnk, name, category, message_keyword, product_code) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(emag_pnk) DO NOTHING")) {
             s.setObject(1, UUID.randomUUID());
             s.setString(2, productInfo.pnk());
             s.setString(3, productInfo.name());
             s.setString(4, productInfo.category());
             s.setString(5, productInfo.messageKeyword());
+            s.setString(6, productInfo.productCode());
             return s.executeUpdate();
         }
     }
-
+/*
     private static ProductInfo selectProduct(Connection db, String emagPnk) throws SQLException {
         try (var s = db.prepareStatement("SELECT id, emag_pnk, name, category, message_keyword FROM product WHERE emag_pnk = ?")) {
             s.setString(1, emagPnk);
             try (var rs = s.executeQuery()) {
                 if (rs.next()) {
-                    return new ProductInfo(rs.getString("emag_pnk"), rs.getString("name"), rs.getString("category"), rs.getString("message_keyword"));
+                    return new ProductInfo(rs.getString("emag_pnk"), rs.getString("product_code"), rs.getString("name"), rs.getString("category"), rs.getString("message_keyword"));
                 }
                 return null;
             }
@@ -2062,7 +2077,7 @@ public class EmagMirrorDB {
             return s.executeUpdate();
         }
     }
-
+*/
     private static int insertEmagLog(Connection db, String account, LocalDate date, LocalDateTime fetchTime, String error) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO emag_fetch_log (emag_login, date, fetch_time, error) VALUES (?, ?, ?, ?) ON CONFLICT(emag_login, date) DO NOTHING")) {
             s.setString(1, account);
