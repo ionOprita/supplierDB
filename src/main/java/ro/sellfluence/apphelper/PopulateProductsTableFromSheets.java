@@ -1,4 +1,4 @@
-package ro.sellfluence.app;
+package ro.sellfluence.apphelper;
 
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductInfo;

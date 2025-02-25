@@ -1,6 +1,7 @@
 package ro.sellfluence.app;
 
 import com.google.api.client.auth.oauth2.TokenResponseException;
+import ro.sellfluence.apphelper.TransferFromEmagToSheets;
 import ro.sellfluence.emagapi.EmagApi;
 
 import static java.util.logging.Level.WARNING;

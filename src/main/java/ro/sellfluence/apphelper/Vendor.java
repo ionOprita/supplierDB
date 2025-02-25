@@ -1,4 +1,4 @@
-package ro.sellfluence.app;
+package ro.sellfluence.apphelper;
 
 public enum Vendor {
     judios,
@@ -10,7 +10,7 @@ public enum Vendor {
     zoopieinvest,
     zoopiesolutions;
 
-    static Vendor fromSheet(String name, boolean isFBE) {
+    public static Vendor fromSheet(String name, boolean isFBE) {
         return switch (name) {
             case "Judios Concept SRL", "Judios RO FBE", "Judios Concept" -> judios;
             case "Koppel SRL", "Koppel" -> isFBE ? koppelfbe : koppel;

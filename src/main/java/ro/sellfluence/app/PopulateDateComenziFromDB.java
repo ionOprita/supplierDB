@@ -1,5 +1,7 @@
 package ro.sellfluence.app;
 
+import ro.sellfluence.apphelper.PopulateProductsTableFromSheets;
+import ro.sellfluence.apphelper.Vendor;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.googleapi.DriveAPI;
 import ro.sellfluence.googleapi.SheetsAPI;

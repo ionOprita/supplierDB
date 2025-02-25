@@ -1,6 +1,6 @@
-package ro.sellfluence.app;
+package ro.sellfluence.apphelper;
 
-import ro.sellfluence.app.GetCustomerData.SheetData;
+import ro.sellfluence.apphelper.GetCustomerData.SheetData;
 import ro.sellfluence.googleapi.SheetsAPI;
 
 import java.time.LocalDate;
