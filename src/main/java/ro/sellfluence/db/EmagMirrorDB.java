@@ -594,6 +594,88 @@ public class EmagMirrorDB {
     }
 
     /**
+     * Given the vendor name find the UUID.
+     *
+     * @param vendorName vendor name
+     * @return UUID for vendor
+     * @throws SQLException for any database errors
+     */
+    public UUID getVendorByName(String vendorName) throws SQLException {
+        return database.readTX(db -> {
+            try (var s = db.prepareStatement(
+                    """
+                            select id from vendor where vendor_name = ?
+                            """
+            )) {
+                s.setString(1, vendorName);
+                try (var rs = s.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getObject(1, UUID.class);
+                    }
+                    return null;
+                }
+            }
+        });
+    }
+
+    /**
+     * <b>DEBUG ONLY!</b>
+     *
+     * <p>
+     *     This returns orders which are not fully filled for a given vendor, time range and status
+     * </p>
+     * @param startTime start time inclusive
+     * @param endTime end time exclusive
+     * @param vendorId vendor UUID
+     * @return Orders that are missing all dependents like products etc.
+     * @throws SQLException for database errors.
+     */
+    public List<OrderResult> readOrderByDateAndHardCodedStatus(LocalDateTime startTime, LocalDateTime endTime, UUID vendorId) throws SQLException {
+        return database.readTX(db -> {
+            List<OrderResult> results = new ArrayList<>();
+            try (var s = db.prepareStatement("SELECT * FROM emag_order WHERE vendor_id=? and modified >= ? and modified <? and status in (5)")) {
+                OrderResult order = null;
+                s.setObject(1, vendorId);
+                s.setTimestamp(2, toTimestamp(startTime));
+                s.setTimestamp(3, toTimestamp(endTime));
+                //s.setObject(4, statusList);
+                try (var rs = s.executeQuery()) {
+                    while (rs.next()) {
+                        order = new OrderResult(
+                                "", rs.getString("id"), rs.getInt("status"), rs.getInt("is_complete"), rs.getInt("type"), rs.getString("payment_mode"),
+                                rs.getInt("payment_mode_id"), rs.getString("delivery_payment_mode"), rs.getString("delivery_mode"), rs.getString("observation"),
+                                new LockerDetails(rs.getString("details_id"), null, 0, null), // Assuming LockerDetails has a constructor that takes locker_id
+                                toLocalDateTime(rs.getTimestamp("date")), rs.getInt("payment_status"), rs.getBigDecimal("cashed_co"), rs.getBigDecimal("cashed_cod"),
+                                rs.getBigDecimal("shipping_tax"),
+                                null, null, null, null, null,
+                                rs.getBoolean("is_storno"),
+                                rs.getBigDecimal("refunded_amount"),
+                                rs.getString("refund_status"),
+                                toLocalDateTime(rs.getTimestamp("maximum_date_for_shipment")),
+                                toLocalDateTime(rs.getTimestamp("finalization_date")),
+                                rs.getString("parent_id"),
+                                rs.getString("detailed_payment_method"),
+                                Arrays.asList(rs.getString("proforms").split("\n")), // Split the string back into a list
+                                rs.getString("cancellation_request"),
+                                rs.getInt("has_editable_products"),
+                                new CancellationReason(rs.getObject("cancellation_reason", Integer.class),
+                                        rs.getString("cancellation_reason_text")),
+                                rs.getObject("late_shipment", Integer.class), // Assuming late_shipment is a Timestamp
+                                null, rs.getInt("emag_club"),
+                                rs.getInt("weekend_delivery"),
+                                toLocalDateTime(rs.getTimestamp("created")),
+                                toLocalDateTime(rs.getTimestamp("modified")),
+                                null
+                        );
+                        results.add(order);
+                    }
+                }
+            }
+            return results;
+        });
+    }
+
+    /**
      * Read database information and prepare them for inclusion in the spreadsheet.
      *
      * @return list of rows containing a list of cell groups. Each cell group is a list of cells.
