@@ -11,14 +11,18 @@ import java.io.IOException;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Logger;
 import java.util.random.RandomGenerator;
+import java.util.stream.Collectors;
 
 import static java.time.temporal.ChronoUnit.DAYS;
 import static java.time.temporal.ChronoUnit.MILLIS;
 import static java.util.logging.Level.FINE;
+import static java.util.logging.Level.FINEST;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.support.UsefulMethods.isBlank;
@@ -42,17 +46,104 @@ public class EmagDBApp {
 
     public static void main(String[] args) {
         System.setProperty("java.util.logging.SimpleFormatter.format", "%1$tF %1$tT %4$s %5$s (%2$s)%n");
-        //EmagApi.setAPILogLevel(FINEST);
+        EmagApi.setAPILogLevel(FINEST);
         EmagApi.setAPILogLevel(INFO);
-        boolean allFetched;
-        EmagMirrorDB mirrorDB;
         try {
-            mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagOprita");
+            fetchAndStoreToDB(EmagMirrorDB.getEmagMirrorDB("emagLocal"));
         } catch (SQLException e) {
             throw new RuntimeException("error initializing database", e);
         } catch (IOException e) {
             throw new RuntimeException("error connecting to the database", e);
+        } catch (InterruptedException e) {
+            throw new RuntimeException("Unexpected interrupted exception", e);
         }
+    }
+
+    /**
+     * Logic for fetching data that follows this specification:
+     * <ul>
+     *     <li>Get orders with states 0-3 since the last time we fetched.</li>
+     *     <li>Get orders with states 5 for the last two years.</li>
+     *     <li>Reread all orders having status 0-3 in the database by order id to see if their value has changed.</li>
+     * </ul>
+     * @param mirrorDB
+     */
+    private static void fetchAndStoreToDB(EmagMirrorDB mirrorDB) throws IOException, InterruptedException, SQLException {
+        // time("Fetch storno orders", () -> fetchStornoOrders(mirrorDB));
+        time("Fetch new orders", () -> fetchNewOrders(mirrorDB));
+        time("Fetch orders not finalized in database", () -> fetchOrdersNotFinalizedInDB(mirrorDB));
+    }
+
+    private static void time(String title, Runnable method) {
+        System.out.printf("%s...%n", title);
+        long t0 = System.currentTimeMillis();
+        method.run();
+        long t1 = System.currentTimeMillis();
+        System.out.printf("%s took %.2f seconds to execute.%n", title, (t1 - t0) / 1000.0);
+    }
+
+    private static void fetchStornoOrders(EmagMirrorDB mirrorDB) {
+        for (String emagAccount : emagAccounts) {
+            System.out.println(emagAccount);
+            try {
+                transferOrdersToDatabase(emagAccount, mirrorDB, null, null, LocalDate.now().minusYears(2).atStartOfDay(), null, List.of(5), null);
+            } catch (IOException | InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    /**
+     * Look for new orders.
+     *
+     * @param mirrorDB
+     */
+    private static void fetchNewOrders(EmagMirrorDB mirrorDB) {
+        for (String emagAccount : emagAccounts) {
+            try {
+                var startOfFetch = LocalDateTime.now();
+                LocalDateTime lastFetchTime;
+                try {
+                    lastFetchTime = mirrorDB.getLastFetchTimeByAccount(emagAccount);
+                } catch (NullPointerException e) {
+                    lastFetchTime = null;
+                }
+                if (lastFetchTime == null) {
+                    lastFetchTime = startOfFetch.minusMonths(2);
+                }
+                System.out.printf("%s since %s.%n", emagAccount, lastFetchTime);
+                transferOrdersToDatabase(emagAccount, mirrorDB, lastFetchTime, null, null, null, List.of(1, 2, 3), null);
+                mirrorDB.saveLastFetchTime(emagAccount, startOfFetch);
+            } catch (IOException | InterruptedException | SQLException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private static void fetchOrdersNotFinalizedInDB(EmagMirrorDB mirrorDB) {
+        try {
+            var ordersInProgress = mirrorDB.readOrderIdForOpenOrdersByVendor();
+            for (String emagAccount : emagAccounts) {
+                System.out.println(emagAccount);
+                List<String> orderIds = ordersInProgress.get(emagAccount);
+                if (orderIds != null) {
+                    for (String orderId : orderIds) {
+                        transferOrdersToDatabase(emagAccount, mirrorDB, null, null, null, null, null, orderId);
+                    }
+                }
+            }
+        } catch (SQLException | IOException | InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Logic for fetching data that reads backwards from today 3 years. Newer dates are always processed,
+     * older dates are processed randomly with a probability depending on age.
+     * @param mirrorDB
+     */
+    private static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) {
+        boolean allFetched;
         var daysToConsider = 3 * 366;   // 3 Years
         var oldestDay = today.minusDays(daysToConsider);
         var day = today;
@@ -91,7 +182,7 @@ public class EmagDBApp {
                 var ordersTransferred = 0;
                 var rmasTransferred = 0;
                 try {
-                    ordersTransferred = transferOrdersToDatabase(account, mirrorDB, startTime, endTime);
+                    ordersTransferred = transferOrdersToDatabase(account, mirrorDB, startTime, endTime, null, null, null, null);
                     rmasTransferred = transferRMAsToDatabase(account, mirrorDB, startTime, endTime);
                 } catch (Exception e) {
                     logger.log(WARNING, "Some error occurred", e);
@@ -149,31 +240,50 @@ public class EmagDBApp {
      *
      * @param daysPassed Number of days between order creation and today.
      * @param daysPassedSinceLastFetch Number of days since last fetch and today.
-     * @return a probability between 0.0 and 1.0
+     * @return a probability between 0.0 and 1.0, 0.0 meaning never, 1.0 meaning 100% aka always will happen.
      */
     private static double computeProbability(long daysPassed, long daysPassedSinceLastFetch) {
         double probability; // Probability to fetch again.
         if (daysPassed <= 7) {
+            // For orders having a date within the last week.
             probability = 1.0;
         } else if (daysPassed <= 30) {
-            probability = (daysPassedSinceLastFetch <= 2) ? 0.1 : 0.7;
+            // For orders having a date within the last month
+            probability = (daysPassedSinceLastFetch <= 2) ? 0.1 : 1.;
         } else if (daysPassed <= 180) {
+            // For orders having a date within the last half-year.
             probability = (daysPassedSinceLastFetch <= 7) ? 0.02 : 0.3;
         } else if (daysPassed <= 366) {
+            // For orders having a date within the last year.
             probability = (daysPassedSinceLastFetch <= 7) ? 0.01 : 0.3;// 0.1;
         } else {
+            // For orders having a date older than a year.
             probability = (daysPassedSinceLastFetch <= 7) ? 0.0 : 0.3; //0.05;
         }
         return probability;
     }
 
-    private static int transferOrdersToDatabase(String account, EmagMirrorDB mirrorDB, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
-        var orders = readFromEmag(account, startTime, endTime);
+    private static int transferOrdersToDatabase(String account, EmagMirrorDB mirrorDB, LocalDateTime createdAfter, LocalDateTime createdBefore, LocalDateTime modifiedAfter, LocalDateTime modifiedBefore, List<Integer> statusList, String orderId) throws IOException, InterruptedException {
+        var orders = readFromEmag(account, createdAfter, createdBefore, modifiedAfter, modifiedBefore, statusList, orderId);
+        Set<String> distinctOrderIds = orders.stream().map(orderResult -> orderResult.id()).collect(Collectors.toSet());
+        System.out.printf("Received %d orders with %d unique order ids.%n", orders.size(), distinctOrderIds.size());
+        if (statusList != null && !statusList.isEmpty()) {
+            System.out.printf("Checking for status in %s.%n", statusList);
+            orders.stream()
+                    .filter(orderResult -> !statusList.contains(orderResult.status()))
+                    .forEach(orderResult -> System.out.printf("Order %s has status %d which is not in %s", orderResult.id(), orderResult.status(), statusList));
+        }
+        if (modifiedAfter != null) {
+            System.out.printf("Checking for modified after %s.%n", modifiedAfter);
+            orders.stream()
+                    .filter(orderResult -> orderResult.modified().isBefore(modifiedAfter))
+                    .forEach(orderResult -> System.out.printf("Order %s has modified %s which is before %s", orderResult.id(), orderResult.modified(), modifiedAfter));
+        }
         if (orders != null) {
             orders.forEach(orderResult ->
                     {
                         try {
-                            mirrorDB.addOrder(orderResult);
+                            mirrorDB.addOrder(orderResult, account);
                         } catch (SQLException e) {
                             throw new RuntimeException("Error inserting order " + orderResult, e);
                         }
@@ -201,20 +311,20 @@ public class EmagDBApp {
         return 0;
     }
 
-    private static List<OrderResult> readFromEmag(String alias, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
+    private static List<OrderResult> readFromEmag(String alias, LocalDateTime createdAfter, LocalDateTime createdBefore, LocalDateTime modifiedAfter, LocalDateTime modifiedBefore, List<Integer> statusList, String id) throws IOException, InterruptedException {
         var emagCredentials = UserPassword.findAlias(alias);
         if (emagCredentials == null) {
             logger.log(WARNING, "Missing credentials for alias " + alias);
         } else {
             var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
-            return emag.readRequest("order",
-                    Map.of(
-                            "createdAfter",
-                            startTime,
-                            "createdBefore",
-                            endTime),
-                    null,
-                    OrderResult.class);
+            var filter = new HashMap<String, Object>();
+            if (createdAfter != null) filter.put("createdAfter", createdAfter);
+            if (createdBefore != null) filter.put("createdBefore", createdBefore);
+            if (modifiedAfter != null) filter.put("modifiedAfter", modifiedAfter);
+            if (modifiedBefore != null) filter.put("modifiedBefore", modifiedBefore);
+            if (statusList != null) filter.put("status", statusList);
+            if (id != null) filter.put("id", id);
+            return emag.readRequest("order", filter, null, OrderResult.class);
         }
         return null;
     }

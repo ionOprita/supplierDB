@@ -65,7 +65,9 @@ public class EmagMirrorDB {
                     EmagMirrorDBVersion5::version5,
                     EmagMirrorDBVersion6::version6,
                     EmagMirrorDBVersion7::version7,
-                    EmagMirrorDBVersion8::version8);
+                    EmagMirrorDBVersion8::version8,
+                    EmagMirrorDBVersion9::version9,
+                    EmagMirrorDBVersion10::version10);
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }
@@ -75,12 +77,13 @@ public class EmagMirrorDB {
     /**
      * Add or update the order in the database.
      *
-     * @param order as received from eMAG.
+     * @param order   as received from eMAG.
+     * @param account
      * @throws SQLException if something goes wrong.
      */
-    public void addOrder(OrderResult order) throws SQLException {
+    public void addOrder(OrderResult order, String account) throws SQLException {
         var vendorName = order.vendor_name();
-        var vendorId = getOrAddVendor(vendorName);
+        var vendorId = getOrAddVendor(vendorName, account);
         database.writeTX(db -> {
             if (order.customer() != null) {
                 insertOrUpdateCustomer(db, order.customer());
@@ -112,6 +115,7 @@ public class EmagMirrorDB {
                     }
                 }
                 if (oldOrder.status() != order.status()) {
+                    System.out.printf("Update status for order %s, was %d will be %d%n.", order.id(), oldOrder.status(), order.status());
                     updateInt(db, order.id(), vendorId, "status", order.status());
                 }
                 if (!Objects.equals(oldOrder.is_complete(), order.is_complete())) {
@@ -355,6 +359,32 @@ public class EmagMirrorDB {
         });
     }
 
+    /**
+     * Return all orders that are open, grouped by vendor.
+     *
+     * @return Map from emag account to new orders associated with that account.
+     * @throws SQLException on database issues.
+     */
+    public Map<String, List<String>> readOrderIdForOpenOrdersByVendor() throws SQLException {
+        return database.singleReadTX(db -> {
+            var result = new HashMap<String, List<String>>();
+            try (var s = db.prepareStatement("""
+                    SELECT o.id, v.account
+                    FROM emag_order AS o
+                    INNER JOIN vendor AS v
+                    ON o.vendor_id = v.id
+                    WHERE status IN (1,2,3)
+                    """)) {
+                try (var rs = s.executeQuery()) {
+                    while (rs.next()) {
+                        result.computeIfAbsent(rs.getString(2), k -> new ArrayList<>()).add(rs.getString(1));
+                    }
+                }
+            }
+            return result;
+        });
+    }
+
     private OrderResult selectWholeOrderResult(Connection db, String orderId, UUID vendorId, String vendorName) throws SQLException {
         var customer = selectCustomerByOrderId(db, orderId, vendorId);
         var productIds = selectProductIdByOrderId(db, orderId, vendorId);
@@ -480,6 +510,14 @@ public class EmagMirrorDB {
             }
             return "";
         });
+    }
+
+    public LocalDateTime getLastFetchTimeByAccount(String account) throws SQLException {
+        return database.singleReadTX(db -> selectFetchTimeByAccount(db, account));
+    }
+
+    public int saveLastFetchTime(String account, LocalDateTime fetchTime) throws SQLException {
+        return database.writeTX(db -> updateFetchTimeByAccount(db, account, fetchTime));
     }
 
     public Optional<EmagFetchLog> getFetchStatus(String account, LocalDate date) throws SQLException {
@@ -795,16 +833,17 @@ public class EmagMirrorDB {
      * @return UUID associated with the vendor.
      * @throws SQLException
      */
-    private UUID getOrAddVendor(String name) throws SQLException {
+    private UUID getOrAddVendor(String name, String account) throws SQLException {
         return database.writeTX(db -> {
             UUID id = selectVendorIdByName(db, name);
             if (id == null) {
                 id = UUID.randomUUID();
-                try (var s = db.prepareStatement("INSERT INTO vendor (id, vendor_name, isfbe) VALUES (?,?,?)")) {
+                try (var s = db.prepareStatement("INSERT INTO vendor (id, vendor_name, isfbe, account) VALUES (?,?,?,?)")) {
                     s.setObject(1, id);
                     s.setString(2, name);
                     // Zoopie Invest is a special case, it does not contain FBE in the name, but is FBE.
                     s.setBoolean(3, name.contains("FBE") || name.contains("Zoopie Invest"));
+                    s.setString(4, account);
                     s.executeUpdate();
                 }
             }
@@ -826,6 +865,32 @@ public class EmagMirrorDB {
             }
         }
         return id;
+    }
+
+    private static @Nullable LocalDateTime selectFetchTimeByAccount(Connection db, String account) throws SQLException {
+        Timestamp timestamp = null;
+        try (var s = db.prepareStatement("SELECT last_fetch FROM vendor WHERE account=?")) {
+            s.setString(1, account);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    timestamp = rs.getTimestamp(1);
+                }
+                if (rs.next()) {
+                    logger.log(SEVERE, "More than one vendor with the same name ???");
+                }
+            }
+        }
+        return toLocalDateTime(timestamp);
+    }
+
+    private static @Nullable int updateFetchTimeByAccount(Connection db, String account, LocalDateTime fetchTime) throws SQLException {
+        Timestamp timestamp = null;
+        try (var s = db.prepareStatement("UPDATE vendor SET last_fetch=? WHERE account=?")) {
+            s.setTimestamp(1, toTimestamp(fetchTime));
+            s.setString(2, account);
+            return s.executeUpdate();
+
+        }
     }
 
     private static int insertAttachment(Connection db, Attachment attachment, String orderId, UUID vendorId) throws SQLException {

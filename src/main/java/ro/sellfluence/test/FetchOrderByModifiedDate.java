@@ -70,6 +70,6 @@ public class FetchOrderByModifiedDate {
     private static List<OrderResult> getFromDB(LocalDateTime startTime, LocalDateTime endTime, List<Integer> statusList, String vendorName) throws SQLException, IOException {
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB(databaseName);
         var vendorId = mirrorDB.getVendorByName(vendorName);
-        return mirrorDB.readOrderByDateAndStatus(startTime, endTime, statusList, vendorId);
+        return mirrorDB.readOrderByDateAndHardCodedStatus(startTime, endTime, vendorId);
     }
 }
