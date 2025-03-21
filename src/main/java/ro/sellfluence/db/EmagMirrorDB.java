@@ -105,6 +105,7 @@ public class EmagMirrorDB {
                 var oldOrder = selectWholeOrderResult(db, order.id(), vendorId, vendorName);
                 var hasDifferences = oldOrder.reportUnhandledDifferences(order);
                 if (hasDifferences) {
+                    System.out.printf("There are changes in order %s of vendor %s that are not handled yet.", order.id(), order.vendor_name());
                     reportIssue(order);
                 }
                 if (order.modified() != null) {

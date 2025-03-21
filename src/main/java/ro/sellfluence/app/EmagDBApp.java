@@ -69,9 +69,9 @@ public class EmagDBApp {
      * @param mirrorDB
      */
     private static void fetchAndStoreToDB(EmagMirrorDB mirrorDB) throws IOException, InterruptedException, SQLException {
-        // time("Fetch storno orders", () -> fetchStornoOrders(mirrorDB));
         time("Fetch new orders", () -> fetchNewOrders(mirrorDB));
         time("Fetch orders not finalized in database", () -> fetchOrdersNotFinalizedInDB(mirrorDB));
+        time("Fetch storno orders", () -> fetchStornoOrders(mirrorDB));
     }
 
     private static void time(String title, Runnable method) {
@@ -112,7 +112,7 @@ public class EmagDBApp {
                     lastFetchTime = startOfFetch.minusMonths(2);
                 }
                 System.out.printf("%s since %s.%n", emagAccount, lastFetchTime);
-                transferOrdersToDatabase(emagAccount, mirrorDB, lastFetchTime, null, null, null, List.of(1, 2, 3), null);
+                transferOrdersToDatabase(emagAccount, mirrorDB, lastFetchTime, null, null, null, List.of(1, 2, 3, 4), null);
                 mirrorDB.saveLastFetchTime(emagAccount, startOfFetch);
             } catch (IOException | InterruptedException | SQLException e) {
                 throw new RuntimeException(e);
@@ -265,20 +265,6 @@ public class EmagDBApp {
 
     private static int transferOrdersToDatabase(String account, EmagMirrorDB mirrorDB, LocalDateTime createdAfter, LocalDateTime createdBefore, LocalDateTime modifiedAfter, LocalDateTime modifiedBefore, List<Integer> statusList, String orderId) throws IOException, InterruptedException {
         var orders = readFromEmag(account, createdAfter, createdBefore, modifiedAfter, modifiedBefore, statusList, orderId);
-        Set<String> distinctOrderIds = orders.stream().map(orderResult -> orderResult.id()).collect(Collectors.toSet());
-        System.out.printf("Received %d orders with %d unique order ids.%n", orders.size(), distinctOrderIds.size());
-        if (statusList != null && !statusList.isEmpty()) {
-            System.out.printf("Checking for status in %s.%n", statusList);
-            orders.stream()
-                    .filter(orderResult -> !statusList.contains(orderResult.status()))
-                    .forEach(orderResult -> System.out.printf("Order %s has status %d which is not in %s", orderResult.id(), orderResult.status(), statusList));
-        }
-        if (modifiedAfter != null) {
-            System.out.printf("Checking for modified after %s.%n", modifiedAfter);
-            orders.stream()
-                    .filter(orderResult -> orderResult.modified().isBefore(modifiedAfter))
-                    .forEach(orderResult -> System.out.printf("Order %s has modified %s which is before %s", orderResult.id(), orderResult.modified(), modifiedAfter));
-        }
         if (orders != null) {
             orders.forEach(orderResult ->
                     {
@@ -318,6 +304,7 @@ public class EmagDBApp {
         } else {
             var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
             var filter = new HashMap<String, Object>();
+            filter.put("itemsPerPage", 1000);
             if (createdAfter != null) filter.put("createdAfter", createdAfter);
             if (createdBefore != null) filter.put("createdBefore", createdBefore);
             if (modifiedAfter != null) filter.put("modifiedAfter", modifiedAfter);
