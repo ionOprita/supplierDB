@@ -46,8 +46,7 @@ public class EmagDBApp {
 
     public static void main(String[] args) {
         System.setProperty("java.util.logging.SimpleFormatter.format", "%1$tF %1$tT %4$s %5$s (%2$s)%n");
-        EmagApi.setAPILogLevel(FINEST);
-        EmagApi.setAPILogLevel(INFO);
+        EmagApi.setAPILogLevel(WARNING);
         try {
             EmagMirrorDB mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
             if (args.length > 0 && Objects.equals(args[0], "refetch_some")) {
