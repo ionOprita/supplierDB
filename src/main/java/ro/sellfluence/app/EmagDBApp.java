@@ -15,10 +15,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.logging.Logger;
 import java.util.random.RandomGenerator;
-import java.util.stream.Collectors;
 
 import static java.time.temporal.ChronoUnit.DAYS;
 import static java.time.temporal.ChronoUnit.MILLIS;
@@ -75,9 +74,18 @@ public class EmagDBApp {
      * @param mirrorDB
      */
     private static void fetchAndStoreToDB(EmagMirrorDB mirrorDB) throws IOException, InterruptedException, SQLException {
-        time("Fetch new orders", () -> fetchNewOrders(mirrorDB));
-        time("Fetch orders not finalized in database", () -> fetchOrdersNotFinalizedInDB(mirrorDB));
-        time("Fetch storno orders", () -> fetchStornoOrders(mirrorDB));
+        time(
+                "Fetch new orders",
+                () -> repeatUntilDone(() -> fetchNewOrders(mirrorDB))
+        );
+        time(
+                "Fetch orders not finalized in database",
+                () -> repeatUntilDone(() -> fetchOrdersNotFinalizedInDB(mirrorDB))
+        );
+        time(
+                "Fetch storno orders",
+                () -> repeatUntilDone(() -> fetchStornoOrders(mirrorDB))
+        );
     }
 
     private static void time(String title, Runnable method) {
@@ -88,7 +96,7 @@ public class EmagDBApp {
         System.out.printf("%s took %.2f seconds to execute.%n", title, (t1 - t0) / 1000.0);
     }
 
-    private static void fetchStornoOrders(EmagMirrorDB mirrorDB) {
+    private static boolean fetchStornoOrders(EmagMirrorDB mirrorDB) {
         for (String emagAccount : emagAccounts) {
             System.out.println(emagAccount);
             try {
@@ -97,6 +105,7 @@ public class EmagDBApp {
                 throw new RuntimeException(e);
             }
         }
+        return true;
     }
 
     /**
@@ -104,7 +113,7 @@ public class EmagDBApp {
      *
      * @param mirrorDB
      */
-    private static void fetchNewOrders(EmagMirrorDB mirrorDB) {
+    private static boolean fetchNewOrders(EmagMirrorDB mirrorDB) {
         for (String emagAccount : emagAccounts) {
             try {
                 var startOfFetch = LocalDateTime.now();
@@ -124,9 +133,10 @@ public class EmagDBApp {
                 throw new RuntimeException(e);
             }
         }
+        return true;
     }
 
-    private static void fetchOrdersNotFinalizedInDB(EmagMirrorDB mirrorDB) {
+    private static boolean fetchOrdersNotFinalizedInDB(EmagMirrorDB mirrorDB) {
         try {
             var ordersInProgress = mirrorDB.readOrderIdForOpenOrdersByVendor();
             for (String emagAccount : emagAccounts) {
@@ -141,6 +151,7 @@ public class EmagDBApp {
         } catch (SQLException | IOException | InterruptedException e) {
             throw new RuntimeException(e);
         }
+        return true;
     }
 
     /**
@@ -149,20 +160,31 @@ public class EmagDBApp {
      * @param mirrorDB
      */
     private static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) {
-        boolean allFetched;
         var daysToConsider = 3 * 366;   // 3 Years
         var oldestDay = today.minusDays(daysToConsider);
-        var day = today;
+        repeatUntilDone(
+                () -> {
+                    boolean result = false;
+                    var day = today;
+                    while (day.isAfter(oldestDay)) {
+                        result = fetchAllForDay(day, mirrorDB);
+                        day = day.minusDays(1);
+                    }
+                    return result;
+                }
+        );
+    }
+
+    private static boolean repeatUntilDone(Callable<Boolean> callable) {
+        boolean allFetched;
+        var result = false;
         do {
             try {
-                while (day.isAfter(oldestDay)) {
-                    fetchAllForDay(day, mirrorDB);
-                    day = day.minusDays(1);
-                }
+                result = callable.call();
                 allFetched = true;
             } catch (Exception e) {
                 allFetched = false;
-                logger.log(WARNING, "Waiting for a minute because of an exception ",e);
+                logger.log(WARNING, "Waiting for a minute because of an exception ", e);
                 e.printStackTrace();
                 try {
                     Thread.sleep(60_000); // 5 sec * 5 * 53 weeks = 5 sec * 265 weeks
@@ -171,6 +193,7 @@ public class EmagDBApp {
                 }
             }
         } while (!allFetched);
+        return result;
     }
 
     private static boolean fetchAllForDay(LocalDate day, EmagMirrorDB mirrorDB) throws Exception {
