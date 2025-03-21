@@ -165,14 +165,6 @@ public record OrderResult(
             System.out.printf("%s:%s -> %s:%s Payment mode ID changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, payment_mode_id, other.payment_mode_id);
             hasDifference = true;
         }
-        if (!Objects.equals(delivery_payment_mode, other.delivery_payment_mode)) {
-            System.out.printf("%s:%s -> %s:%s Delivery payment mode changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, delivery_payment_mode, other.delivery_payment_mode);
-            hasDifference = true;
-        }
-        if (!Objects.equals(delivery_mode, other.delivery_mode)) {
-            System.out.printf("%s:%s -> %s:%s Delivery mode changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, delivery_mode, other.delivery_mode);
-            hasDifference = true;
-        }
         if (!Objects.equals(observation, other.observation)) {
             System.out.printf("%s:%s -> %s:%s Observation changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, observation, other.observation);
             hasDifference = true;

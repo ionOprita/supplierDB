@@ -149,6 +149,12 @@ public class EmagMirrorDB {
                 if (!Objects.equals(oldOrder.refund_status(), order.refund_status())) {
                     updateString(db, order.id(), vendorId, "refund_status", order.refund_status());
                 }
+                if (!Objects.equals(oldOrder.delivery_mode(), order.delivery_mode())) {
+                    updateString(db, order.id(), vendorId, "deliver mode", order.delivery_mode());
+                }
+                if (!Objects.equals(oldOrder.delivery_payment_mode(), order.delivery_payment_mode())) {
+                    updateString(db, order.id(), vendorId, "deliver payment mode", order.delivery_payment_mode());
+                }
                 updateOrderDependents(db, order, oldOrder, vendorId);
             }
             return 0;
