@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.logging.Logger;
 import java.util.random.RandomGenerator;
@@ -49,7 +50,12 @@ public class EmagDBApp {
         EmagApi.setAPILogLevel(FINEST);
         EmagApi.setAPILogLevel(INFO);
         try {
-            fetchAndStoreToDB(EmagMirrorDB.getEmagMirrorDB("emagLocal"));
+            EmagMirrorDB mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
+            if (args.length > 0 && Objects.equals(args[0], "refetch_some")) {
+                fetchAndStoreToDBProbabilistic(mirrorDB);
+            } else {
+                fetchAndStoreToDB(mirrorDB);
+            }
         } catch (SQLException e) {
             throw new RuntimeException("error initializing database", e);
         } catch (IOException e) {
