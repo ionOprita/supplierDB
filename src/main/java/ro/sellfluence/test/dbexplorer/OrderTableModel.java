@@ -20,6 +20,9 @@ class OrderTableModel extends AbstractTableModel {
 
     @Override
     public Object getValueAt(int rowIndex, int columnIndex) {
+        if (rowIndex < 0 || rowIndex >= orders.size()) {
+            return null;
+        }
         OrderRecord order = orders.get(rowIndex);
         return switch (columnIndex) {
             case 0 -> order.orderId();
