@@ -2,11 +2,11 @@ package ro.sellfluence.emagapi;
 
 import java.util.Arrays;
 
-public class Response<T> {
+public class SingleResponse<T> {
     public boolean isError;
     public String[] messages;
     public String[] errors;
-    public T[] results;
+    public T results;
 
     @Override
     public String toString() {
@@ -14,7 +14,7 @@ public class Response<T> {
                "isError=" + isError +
                ", messages=" + Arrays.toString(messages) +
                ", errors=" + Arrays.toString(errors) +
-               ", results=" + Arrays.toString(results) +
+               ", results=" +results +
                '}';
     }
 }

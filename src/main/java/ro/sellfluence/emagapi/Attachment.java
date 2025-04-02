@@ -1,20 +1,12 @@
 package ro.sellfluence.emagapi;
 
-public class Attachment {
-    public int order_id;
-    public String name;
-    public String url;
-    public Integer type;
-    public Integer force_download;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-    @Override
-    public String toString() {
-        return "Attachment{" +
-                "order_id=" + order_id +
-                ", name='" + name + '\'' +
-                ", url='" + url + '\'' +
-                ", type=" + type +
-                ", force_download=" + force_download +
-                '}';
-    }
-}
+@JsonIgnoreProperties({"order_id"})
+public record Attachment (
+    String name,
+    String url,
+    Integer type,
+    Integer force_download,
+    String visibility
+){ }

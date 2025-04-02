@@ -10,9 +10,17 @@ import com.google.api.services.sheets.v4.model.AppendCellsRequest;
 import com.google.api.services.sheets.v4.model.AppendValuesResponse;
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest;
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetResponse;
+import com.google.api.services.sheets.v4.model.BatchUpdateValuesRequest;
+import com.google.api.services.sheets.v4.model.BatchUpdateValuesResponse;
+import com.google.api.services.sheets.v4.model.BooleanCondition;
 import com.google.api.services.sheets.v4.model.CellData;
+import com.google.api.services.sheets.v4.model.CellFormat;
+import com.google.api.services.sheets.v4.model.DataValidationRule;
 import com.google.api.services.sheets.v4.model.ExtendedValue;
+import com.google.api.services.sheets.v4.model.GridRange;
+import com.google.api.services.sheets.v4.model.NumberFormat;
 import com.google.api.services.sheets.v4.model.ProtectedRange;
+import com.google.api.services.sheets.v4.model.RepeatCellRequest;
 import com.google.api.services.sheets.v4.model.Request;
 import com.google.api.services.sheets.v4.model.RowData;
 import com.google.api.services.sheets.v4.model.UpdateProtectedRangeRequest;
@@ -27,9 +35,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
+/**
+ * This class represents a spreadsheet in Google-Drive.
+ */
 public class SheetsAPI {
 
     public static final String COLUMNS = "COLUMNS";
@@ -164,6 +176,114 @@ public class SheetsAPI {
         } catch (IOException e) {
             throw new RuntimeException("Issue in updateRange(%s,%s)".formatted(range, values), e);
         }
+    }
+
+    public BatchUpdateValuesResponse updateRanges(List<List<List<Object>>> rows, String... ranges) {
+        var groupOfTables = transformList(rows);
+        if (groupOfTables.size() != ranges.length) {
+            throw new IllegalArgumentException(
+                    "The number of cell groups (%d) must match the number of ranges given (%d)".formatted(
+                            groupOfTables.size(), ranges.length
+                    )
+            );
+        }
+        var updateList = new ArrayList<ValueRange>();
+        for (int i = 0; i < ranges.length; i++) {
+            updateList.add(new ValueRange().setRange(ranges[i]).setValues(groupOfTables.get(i)));
+        }
+        var body = new BatchUpdateValuesRequest().setValueInputOption(USER_ENTERED).setData(updateList);
+        try {
+            return getSheetsService().spreadsheets().values().batchUpdate(spreadSheetId, body).execute();
+        } catch (IOException cause) {
+            throw new RuntimeException("Issue in updateRanges for sheet %s".formatted(spreadSheetName), cause);
+        }
+    }
+
+    public BatchUpdateSpreadsheetResponse formatDate(String spreadSheetId, int startColumn, int endColumn, int startRow, int endRow) {
+        // Create the number format object
+        NumberFormat numberFormat = new NumberFormat()
+                .setType("DATE_TIME")
+                .setPattern("dd/MM/yyyy hh:mm:ss");
+
+        // Create the cell format object
+        CellFormat cellFormat = new CellFormat()
+                .setNumberFormat(numberFormat);
+
+        var range = new GridRange()
+                .setSheetId(getSheetId(spreadSheetId))
+                .setStartColumnIndex(startColumn)
+                .setEndColumnIndex(endColumn)
+                .setStartRowIndex(startRow)
+                .setEndRowIndex(endRow);
+        // Create a repeat cell request
+        RepeatCellRequest repeatCellRequest = new RepeatCellRequest()
+                .setCell(new CellData().setUserEnteredFormat(cellFormat))
+                .setRange(range)
+                .setFields("userEnteredFormat.numberFormat");
+
+        // Create a request to update the spreadsheet
+        Request request = new Request().setRepeatCell(repeatCellRequest);
+        var updateList = new ArrayList<Request>();
+        updateList.add(request);
+
+        var body = new BatchUpdateSpreadsheetRequest()
+                .setRequests(updateList);
+
+        // Execute the request
+        try {
+            return getSheetsService().spreadsheets().batchUpdate(spreadSheetId, body).execute();
+        } catch (IOException cause) {
+            throw new RuntimeException("Issue in updateRanges for sheet %s".formatted(spreadSheetName), cause);
+        }
+    }
+
+
+    public BatchUpdateSpreadsheetResponse formatAsCheckboxes(String spreadSheetId, int startColumn, int endColumn, int startRow, int endRow) {
+        // Create a data validation rule
+        DataValidationRule rule = new DataValidationRule()
+                .setCondition(new BooleanCondition()
+                        .setType("BOOLEAN"));
+
+        // Create a cell style with the data validation rule
+        var cellStyle = new CellData().setDataValidation(rule);
+
+        var range = new GridRange()
+                .setSheetId(getSheetId(spreadSheetId))
+                .setStartColumnIndex(startColumn)
+                .setEndColumnIndex(endColumn)
+                .setStartRowIndex(startRow)
+                .setEndRowIndex(endRow);
+        // Create a repeat cell request
+        RepeatCellRequest repeatCellRequest = new RepeatCellRequest()
+                .setCell(cellStyle)
+                .setRange(range)
+                .setFields("*");
+
+        // Create a request to update the spreadsheet
+        Request request = new Request()
+                .setRepeatCell(repeatCellRequest);
+
+        var updateList = new ArrayList<Request>();
+        updateList.add(request);
+        var body = new BatchUpdateSpreadsheetRequest().setRequests(updateList);
+        try {
+            return getSheetsService().spreadsheets().batchUpdate(spreadSheetId, body).execute();
+        } catch (IOException cause) {
+            throw new RuntimeException("Issue in updateRanges for sheet %s".formatted(spreadSheetName), cause);
+        }
+    }
+
+    public static List<List<List<Object>>> transformList(List<List<List<Object>>> inputList) {
+        List<List<List<Object>>> outputList = new ArrayList<>();
+        var firstRow = inputList.getFirst();
+        var groupCount = firstRow.size();
+        for (int groupNumber = 0; groupNumber < groupCount; groupNumber++) {
+            var groupToFilter = groupNumber;
+            outputList.add(inputList.stream()
+                    .map(rowGroups -> rowGroups.get(groupToFilter))
+                    .collect(Collectors.toList()));
+        }
+        return outputList;
     }
 
     public List<List<Object>> getMultipleColumns(String sheetName, String... columns) {

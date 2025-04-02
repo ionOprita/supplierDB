@@ -1,4 +1,4 @@
-package ro.sellfluence.app;
+package ro.sellfluence.apphelper;
 
 import ro.sellfluence.emagapi.EmagApi;
 import ro.sellfluence.emagapi.OrderResult;
@@ -85,32 +85,32 @@ public class GetCustomerData {
                     null,
                     OrderResult.class);
             for (OrderResult order : responses) {
-                if (order.customer != null) {
-                    for (Product product : order.products) {
-                        List<SheetData> list = orderedProductsByPNK.getOrDefault(product.part_number_key, new ArrayList<>());
+                if (order.customer() != null) {
+                    for (Product product : order.products()) {
+                        List<SheetData> list = orderedProductsByPNK.getOrDefault(product.part_number_key(), new ArrayList<>());
                         list.add(new SheetData(
-                                        order.id,
-                                        product.quantity,
-                                        product.sale_price,
+                                        order.id(),
+                                        product.quantity(),
+                                        product.sale_price(),
                                         order.isCompany(),
-                                        order.date,
-                                        product.name,
-                                        product.part_number_key,
-                                        order.customer.name,
-                                        order.customer.billing_name,
-                                        order.customer.billing_phone,
-                                        order.customer.getBillingAddress(),
-                                        order.customer.name,
-                                        order.customer.phone_1,
-                                        order.customer.getShippingAddress(),
+                                        order.date(),
+                                        product.name(),
+                                        product.part_number_key(),
+                                        order.customer().name(),
+                                        order.customer().billing_name(),
+                                        order.customer().billing_phone(),
+                                        order.customer().getBillingAddress(),
+                                        order.customer().name(),
+                                        order.customer().phone_1(),
+                                        order.customer().getShippingAddress(),
                                         order.getDeliveryMode(),
                                         false
                                 )
                         );
-                        orderedProductsByPNK.put(product.part_number_key, list);
+                        orderedProductsByPNK.put(product.part_number_key(), list);
                     }
                 } else {
-                    System.out.printf("WARNING: order %s ignored because customer is null%n", order.id);
+                    System.out.printf("WARNING: order %s ignored because customer is null%n", order.id());
                 }
             }
         } catch (IOException | InterruptedException e) {
