@@ -54,6 +54,7 @@ public class EmagDBApp {
             } else {
                 fetchAndStoreToDB(mirrorDB);
             }
+            mirrorDB.updateGMVTable();
         } catch (SQLException e) {
             throw new RuntimeException("error initializing database", e);
         } catch (IOException e) {
