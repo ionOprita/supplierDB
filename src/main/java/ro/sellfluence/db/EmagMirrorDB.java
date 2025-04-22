@@ -36,6 +36,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Scanner;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -796,6 +798,23 @@ public class EmagMirrorDB {
             }
         }
         return products;
+    }
+
+    public Map<UUID, ProductInfo> readProducts() throws SQLException {
+        return database.readTX(db-> getProducts(db));
+    }
+
+    public SortedMap<String, SortedMap<YearMonth, BigDecimal>> getGMV() throws SQLException {
+        return database.readTX(db-> getGMV(db));
+    }
+
+    private SortedMap<String, SortedMap<YearMonth, BigDecimal>> getGMV(Connection db) throws SQLException {
+        var rows = new TreeMap<String, SortedMap<YearMonth, BigDecimal>>();
+        for (Map.Entry<UUID, ProductInfo> product : getProducts(db).entrySet()) {
+            var gmvs = getGMVByProductId(db, product.getKey());
+            rows.put(product.getValue().name(), new TreeMap<>(gmvs));
+        }
+        return rows;
     }
 
     private Map<UUID, ProductInfo> getProducts(Connection db) throws SQLException {
