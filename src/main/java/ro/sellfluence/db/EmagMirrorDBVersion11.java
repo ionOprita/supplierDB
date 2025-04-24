@@ -63,9 +63,13 @@ class EmagMirrorDBVersion11 {
         executeStatement(db, """
                 ALTER TABLE public.enforced_vendor_courier_account DROP CONSTRAINT enforced_vendor_courier_account_order_id_vendor_id_fkey;
                 """);
-        executeStatement(db, """
-                ALTER TABLE public.flag DROP CONSTRAINT flag_order_id_vendor_id_fkey;
-                """);
+        try {
+            executeStatement(db, """
+                    ALTER TABLE public.flag DROP CONSTRAINT flag_order_id_vendor_id_fkey;
+                    """);
+        } catch (SQLException e) {
+            System.out.println("Ignoring missing constraint.");
+        }
         executeStatement(db, """
                 ALTER TABLE public.product_in_order DROP CONSTRAINT product_in_order_order_id_vendor_id_fkey;
                 """);
