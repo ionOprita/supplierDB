@@ -65,7 +65,19 @@ class EmagMirrorDBVersion11 {
                 """);
         try {
             executeStatement(db, """
-                    ALTER TABLE public.flag DROP CONSTRAINT flag_order_id_vendor_id_fkey;
+                    DO $$
+                         BEGIN
+                             IF EXISTS (
+                                 SELECT 1
+                                 FROM information_schema.table_constraints
+                                 WHERE constraint_name = 'flag_order_id_vendor_id_fkey'
+                                   AND table_name = 'flag'
+                                   AND constraint_schema = 'public'
+                             ) THEN
+                                 EXECUTE 'ALTER TABLE public.flag DROP CONSTRAINT flag_order_id_vendor_id_fkey';
+                             END IF;
+                         END;
+                         $$;
                     """);
         } catch (SQLException e) {
             System.out.println("Ignoring missing constraint.");
