@@ -30,6 +30,7 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -733,9 +734,62 @@ public class EmagMirrorDB {
         gmvByMonth.put(yearMonth, gmv);
     }
 
-    record POInfo(String orderId, LocalDate orderDate, int orderStatus, String productName, int quantity,
+    public record POInfo(String orderId, LocalDate orderDate, int orderStatus, String productName, int quantity,
                   int initialQuantity, int stornoQuantity,
                   BigDecimal price) {
+    }
+
+    public List<POInfo> readProductInOrderByProductAndMonth(UUID productId, YearMonth yearMonth) throws SQLException {
+        return database.readTX(db -> {
+                    var result = new ArrayList<POInfo>();
+                    try (var s = db.prepareStatement("""
+                            SELECT p.name AS productName,
+                            pio.quantity AS quantity,
+                            pio.initial_qty AS initialQuantity, 
+                            pio.storno_qty AS stornoQuantity,
+                            pio.sale_price AS salePrice,
+                            pio.vat AS vat, 
+                            pio.created, pio.modified,
+                            o.status AS orderStatus,
+                            o.date AS orderDate, 
+                            o.modified, 
+                            o.id AS orderId
+                            FROM product_in_order AS pio
+                            INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
+                            INNER JOIN emag_order AS o ON pio.emag_order_surrogate_id = o.surrogate_id
+                            WHERE p.id = ? AND ( o.status = 4 OR o.status = 5 ) AND o.date >= ? AND o.date < ?
+                            ORDER BY o.id, o.status
+                            """)) {
+                        s.setObject(1, productId);
+                        s.setDate(2, toDate(yearMonth));
+                        s.setDate(3, toDate(yearMonth.plusMonths(1)));
+                        try (var rs = s.executeQuery()) {
+                            while (rs.next()) {
+                                var orderId = rs.getString("orderId");
+                                var quantity = rs.getInt("quantity");
+                                var initialQuantity = rs.getInt("initialQuantity");
+                                var stornoQuantity = rs.getInt("stornoQuantity");
+                                var salePrice = rs.getBigDecimal("salePrice");
+                                var vat = new BigDecimal(rs.getString("vat"));
+                                var price = vat.add(BigDecimal.ONE).multiply(salePrice).setScale(2, HALF_EVEN);
+                                var poInfo = new POInfo(
+                                        orderId,
+                                        toLocalDate(rs.getTimestamp("orderDate")),
+                                        rs.getInt("orderStatus"),
+                                        rs.getString("productName"),
+                                        quantity,
+                                        initialQuantity,
+                                        stornoQuantity,
+                                        price
+                                );
+                                result.add(poInfo);
+                            }
+
+                        }
+                    }
+                    return result;
+                }
+        );
     }
 
     private Map<String, List<POInfo>> getOrderDataByProduct(Connection db, UUID productId) throws SQLException {
@@ -768,7 +822,7 @@ public class EmagMirrorDB {
                     var stornoQuantity = rs.getInt("stornoQuantity");
                     var salePrice = rs.getBigDecimal("salePrice");
                     var vat = new BigDecimal(rs.getString("vat"));
-                    var price = vat.add(BigDecimal.ONE).multiply(salePrice);
+                    var price = vat.add(BigDecimal.ONE).multiply(salePrice).setScale(2, HALF_EVEN);
                     var poInfo = new POInfo(
                             orderId,
                             toLocalDate(rs.getTimestamp("orderDate")),
@@ -800,29 +854,35 @@ public class EmagMirrorDB {
         return products;
     }
 
-    public Map<UUID, ProductInfo> readProducts() throws SQLException {
+    public record ProductWithID(UUID id, ProductInfo product) {
+    }
+
+    public List<ProductWithID> readProducts() throws SQLException {
         return database.readTX(db-> getProducts(db));
     }
 
-    public SortedMap<String, SortedMap<YearMonth, BigDecimal>> getGMV() throws SQLException {
-        return database.readTX(db-> getGMV(db));
-    }
+//    public SortedMap<String, SortedMap<YearMonth, BigDecimal>> getGMV() throws SQLException {
+//        return database.readTX(db-> getGMV(db));
+//    }
 
-    private SortedMap<String, SortedMap<YearMonth, BigDecimal>> getGMV(Connection db) throws SQLException {
-        var rows = new TreeMap<String, SortedMap<YearMonth, BigDecimal>>();
-        for (Map.Entry<UUID, ProductInfo> product : getProducts(db).entrySet()) {
-            var gmvs = getGMVByProductId(db, product.getKey());
-            rows.put(product.getValue().name(), new TreeMap<>(gmvs));
+    public SortedMap<ProductWithID, SortedMap<YearMonth, BigDecimal>> getGMV(Connection db) throws SQLException {
+        var rows = new TreeMap<ProductWithID, SortedMap<YearMonth, BigDecimal>>(
+                Comparator.comparing(productWithID -> productWithID.product.name())
+        );
+        for (ProductWithID product : getProducts(db)) {
+            var gmvs = getGMVByProductId(db, product.id);
+            rows.put(product, new TreeMap<>(gmvs));
         }
         return rows;
     }
 
-    private Map<UUID, ProductInfo> getProducts(Connection db) throws SQLException {
-        var products = new HashMap<UUID, ProductInfo>();
+    private List<ProductWithID> getProducts(Connection db) throws SQLException {
+        var products = new ArrayList<ProductWithID>();
         try (var s = db.prepareStatement("SELECT id, emag_pnk, product_code, name, category, message_keyword FROM product")) {
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
-                    products.put(
+                    products.add(
+                            new ProductWithID(
                             rs.getObject("id", UUID.class),
                             new ProductInfo(
                                     rs.getString("emag_pnk"),
@@ -830,6 +890,7 @@ public class EmagMirrorDB {
                                     rs.getString("name"),
                                     rs.getString("category"),
                                     rs.getString("message_keyword")
+                            )
                             )
                     );
                 }
