@@ -235,51 +235,59 @@ public class EmagApi {
                     .header("Authorization", "Basic " + credentials)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonAsString)).build();
-            var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-            int statusCode = httpResponse.statusCode();
-            logger.log(FINE, "Status code = " + statusCode);
-            if (statusCode == HTTP_OK) {
-                String receivedJSON = httpResponse.body();
-                logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
-                try {
-                    //var responseItemClass = TypeToken.getParameterized(Response.class, responseClass);
-                    //Response<T> response = gson.fromJson(receivedJSON, responseItemClass.getType());
-                    var typeRef = new TypeReference<Response<T>>() {
-                        @Override
-                        public Type getType() {
-                            return objectMapper.getTypeFactory().constructParametricType(Response.class, responseClass);
-                        }
-                    };
-                    var response = objectMapper.readValue(receivedJSON, typeRef);
+            try {
+                var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+                int statusCode = httpResponse.statusCode();
+                logger.log(FINE, "Status code = " + statusCode);
+                if (statusCode == HTTP_OK) {
+                    String receivedJSON = httpResponse.body();
+                    logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
+                    try {
+                        //var responseItemClass = TypeToken.getParameterized(Response.class, responseClass);
+                        //Response<T> response = gson.fromJson(receivedJSON, responseItemClass.getType());
+                        var typeRef = new TypeReference<Response<T>>() {
+                            @Override
+                            public Type getType() {
+                                return objectMapper.getTypeFactory().constructParametricType(Response.class, responseClass);
+                            }
+                        };
+                        var response = objectMapper.readValue(receivedJSON, typeRef);
 
-                    if (response.isError) {
-                        logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
-                        if (Arrays.stream(response.messages).anyMatch(x -> x.contains("Invalid vendor ip"))) {
-                            logger.log(INFO, "Please register your IP address in the EMAG dashboard.");
-                            finished = true;
-                        }
-                    } else {
-                        logger.log(INFO, () -> "Received %d items.".formatted(response.results.length));
-                        logger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
-                        if (response.results.length > 0) {
-                            accumulatedResponses.addAll(Arrays.asList(response.results));
+                        if (response.isError) {
+                            logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
+                            if (Arrays.stream(response.messages).anyMatch(x -> x.contains("Invalid vendor ip"))) {
+                                logger.log(INFO, "Please register your IP address in the EMAG dashboard.");
+                                finished = true;
+                            }
                         } else {
-                            finished = true;
+                            logger.log(INFO, () -> "Received %d items.".formatted(response.results.length));
+                            logger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
+                            if (response.results.length > 0) {
+                                accumulatedResponses.addAll(Arrays.asList(response.results));
+                            } else {
+                                finished = true;
+                            }
                         }
+                    } catch (MismatchedInputException e) {
+                        logger.log(SEVERE, "JSON decoded ended with error %s".formatted(e.getMessage()));
+                        logger.log(SEVERE, receivedJSON);
                     }
-                } catch (MismatchedInputException e) {
-                    logger.log(SEVERE, "JSON decoded ended with error %s".formatted(e.getMessage()));
-                    logger.log(SEVERE, receivedJSON);
+                } else if (statusCode == HTTP_GATEWAY_TIMEOUT && retryCount > 0) {
+                    logger.log(WARNING, "Received 504, retrying, retryCount=%d, retryDelay=%d s".formatted(retryCount, retryDelay / 1000));
+                    retryCount--;
+                    Thread.sleep(retryDelay);
+                    retryDelay *= 2; // Double delay
+                    page--; // Refetch the same page.
+                } else {
+                    logger.log(SEVERE, "Received error status %s".formatted(statusCode));
+                    throw new RuntimeException(String.format("Emag API error %d", statusCode));
                 }
-            } else if (statusCode == HTTP_GATEWAY_TIMEOUT && retryCount > 0) {
-                logger.log(WARNING, "Received 504, retrying, retryCount=%d, retryDelay=%d s".formatted(retryCount,retryDelay/1000));
+            } catch (IOException e) {
+                logger.log(WARNING, "Received IOException %s,%n retrying, retryCount=%d, retryDelay=%d s".formatted(e.getMessage(), retryCount,retryDelay/1000));
                 retryCount--;
                 Thread.sleep(retryDelay);
                 retryDelay *= 2; // Double delay
                 page--; // Refetch the same page.
-            } else {
-                logger.log(SEVERE, "Received error status %s".formatted(statusCode));
-                throw new RuntimeException(String.format("Emag API error %d", statusCode));
             }
         }
         return accumulatedResponses;
