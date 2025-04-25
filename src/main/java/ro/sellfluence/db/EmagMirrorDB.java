@@ -944,7 +944,7 @@ public class EmagMirrorDB {
                             ON o.customer_id = c.id
                             LEFT JOIN vendor as v
                             ON o.vendor_id = v.id
-                            LEFT JOIN product_in_order as p
+                            INNER JOIN product_in_order as p
                             ON p.emag_order_surrogate_id = o.surrogate_id
                             LEFT JOIN product as pi
                             ON p.part_number_key = pi.emag_pnk
