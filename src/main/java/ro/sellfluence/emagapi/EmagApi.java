@@ -37,10 +37,12 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
+import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.sheetSupport.Conversions.isoLikeLocalDateTime;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 
@@ -219,6 +221,8 @@ public class EmagApi {
             jsonInput.put("data", data);
         }
         var accumulatedResponses = new ArrayList<T>();
+        var retryCount = 4;
+        var retryDelay = 10_000;
         while (!finished) {
             page++;
             jsonInput.put("currentPage", page);
@@ -267,6 +271,12 @@ public class EmagApi {
                     logger.log(SEVERE, "JSON decoded ended with error %s".formatted(e.getMessage()));
                     logger.log(SEVERE, receivedJSON);
                 }
+            } else if (statusCode == HTTP_GATEWAY_TIMEOUT && retryCount > 0) {
+                logger.log(WARNING, "Received 504, retrying, retryCount=%d, retryDelay=%d s".formatted(retryCount,retryDelay/1000));
+                retryCount--;
+                Thread.sleep(retryDelay);
+                retryDelay *= 2; // Double delay
+                page--; // Refetch the same page.
             } else {
                 logger.log(SEVERE, "Received error status %s".formatted(statusCode));
                 throw new RuntimeException(String.format("Emag API error %d", statusCode));
