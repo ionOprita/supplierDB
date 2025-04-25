@@ -555,7 +555,7 @@ public class EmagMirrorDB {
                     LEFT JOIN vendor as v
                     ON o.vendor_id = v.id
                     LEFT JOIN product_in_order as p
-                    ON p.order_id = o.id AND p.vendor_id = o.vendor_id
+                    ON p.emag_order_surrogate_id = o.surrogate_id
                     LEFT JOIN product as pi
                     ON p.part_number_key = pi.emag_pnk
                     WHERE EXTRACT(YEAR FROM o.date) = ? EXTRACT(MONTH FROM o.date) = ? AND (o.status = 4 OR o.status = 5)
@@ -945,7 +945,7 @@ public class EmagMirrorDB {
                             LEFT JOIN vendor as v
                             ON o.vendor_id = v.id
                             LEFT JOIN product_in_order as p
-                            ON p.order_id = o.id AND p.vendor_id = o.vendor_id
+                            ON p.emag_order_surrogate_id = o.surrogate_id
                             LEFT JOIN product as pi
                             ON p.part_number_key = pi.emag_pnk
                             WHERE EXTRACT(YEAR FROM o.date) = ? AND (o.status = 4 OR o.status = 5)
@@ -1125,7 +1125,7 @@ public class EmagMirrorDB {
                             LEFT JOIN vendor as v
                             ON o.vendor_id = v.id
                             LEFT JOIN product_in_order as p
-                            ON p.order_id = o.id AND p.vendor_id = o.vendor_id
+                            ON p.emag_order_surrogate_id = o.surrogate_id
                             LEFT JOIN product as pi
                             ON p.part_number_key = pi.emag_pnk
                             """)) {
@@ -1566,7 +1566,7 @@ public class EmagMirrorDB {
     }
 */
 
-
+/*
     private static int updateVoucherSplit(Connection conn, VoucherSplit voucherSplit, String orderId, UUID vendorId, int productId) throws SQLException {
         String query = "UPDATE voucher_split SET order_id = ?, vendor_id = ?, product_id = ?, value = ?, vat_value = ?, vat = ?, offered_by = ? WHERE voucher_id = ?";
         try (var s = conn.prepareStatement(query)) {
@@ -1581,7 +1581,7 @@ public class EmagMirrorDB {
             return s.executeUpdate();
         }
     }
-
+*/
     private static int insertProduct(Connection db, Product product, int surrogateId) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO product_in_order (id, emag_order_surrogate_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
             s.setInt(1, product.id());
