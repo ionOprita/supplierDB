@@ -79,7 +79,8 @@ public class EmagMirrorDB {
                     EmagMirrorDBVersion12::version12,
                     EmagMirrorDBVersion13::version13,
                     EmagMirrorDBVersion14::version14,
-                    EmagMirrorDBVersion15::version15);
+                    EmagMirrorDBVersion15::version15,
+                    EmagMirrorDBVersion16::version16);
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }
@@ -124,7 +125,7 @@ public class EmagMirrorDB {
                     if ((oldOrder.modified() == null) || order.modified().isAfter(oldOrder.modified())) {
                         updateTimestamp(db, orderInserted.surrogateId, "modified", order.modified());
                     } else if (order.modified().isBefore(oldOrder.modified())) {
-                        System.out.printf("%s:%s -> %s:%s Modified date changed to an older date, from %s to %s%n", oldOrder.vendor_name(), oldOrder.id(), order.vendor_name(), order.id(), oldOrder.modified(), order.modified());
+                        System.out.printf("%s:%s -> %s:%s Modified date changed to an older date, from %s to %s.%n", oldOrder.vendor_name(), oldOrder.id(), order.vendor_name(), order.id(), oldOrder.modified(), order.modified());
                     }
                 }
                 if (oldOrder.status() != order.status()) {
@@ -179,12 +180,12 @@ public class EmagMirrorDB {
         System.out.println("The above message indicates that for some changes, there is no code to handle them.");
         System.out.println("A fix to the program is needed. You need to report this error to the developer.");
         System.out.printf("Please report the vendor '%s' and order ID '%s'.%n", order.vendor_name(), order.id());
-        System.out.println("If you want, you can continue with the program, or wait until a fix is provided.");
+        System.out.println("If you want, you can continue with the program or wait until a fix is provided.");
         System.out.println("Please type the word \"Yes\" if you want the program to continue and fix the problem some other time. Type \"No\" if you want the program to stop and wait until you receive a fixed version of the program.");
         System.out.println("If you type anything else, the program will stop now.");
         String input = scanner.nextLine().trim().toLowerCase();
         boolean isYes = input.equals("yes");
-        System.out.println("You entered: " + (isYes ? "YES and the program will continue" : "NO thus the program will terminate now."));
+        System.out.println("You entered: " + (isYes ? "YES, and the program will continue" : "NO, thus the program will terminate now."));
         if (!isYes) System.exit(1);
     }
 
@@ -368,9 +369,9 @@ public class EmagMirrorDB {
     }
 
     /**
-     * Return all orders that are open, grouped by vendor.
+     * Return all orders that are open, grouped by the vendor.
      *
-     * @return Map from emag account to new orders associated with that account.
+     * @return Map from the emag account to new orders associated with that account.
      * @throws SQLException on database issues.
      */
     public Map<String, List<String>> readOrderIdForOpenOrdersByVendor() throws SQLException {
@@ -440,7 +441,7 @@ public class EmagMirrorDB {
 
     /**
      * Insert a customer into the database.
-     * If there is already a customer by the same ID the record is updated if the data differ and the new receord has
+     * If there is already a customer by the same ID, the record is updated if the data differs and the new record has
      * a more recent modified date.
      *
      * @param db database
@@ -585,32 +586,32 @@ public class EmagMirrorDB {
                         vendorMap.computeIfAbsent(productName, _ -> new ArrayList<>()).add(value);
                     }
                 }
-                map.forEach((vendorName, ordersByProduct) -> {
-                            ordersByProduct.forEach((productName, gmvOrders) -> {
-                                        var groupedByOrder = gmvOrders.stream().collect(Collectors.groupingBy(it -> it.id));
-                                        groupedByOrder.forEach((orderId, ordersById) -> {
-                                            var price = BigDecimal.ZERO;
-                                            if (ordersById.size() == 1) {
-                                                var order = ordersById.getFirst();
-                                                if (order.status == 4) {
-                                                    price = order.priceWithVAT.multiply(BigDecimal.valueOf(order.quantity));
-                                                } else if (order.status == 5) {
-                                                    //TODO:
-                                                    // This is correct
-                                                    // if there is no status==4 in a previous month,
-                                                    // otherwise we would need to subtract something.
-                                                    price = order.priceWithVAT.multiply(BigDecimal.valueOf(order.quantity));
-                                                } else {
-                                                    throw new RuntimeException("Unexpected status " + order.status);
+                map
+                        .forEach((vendorName, ordersByProduct) -> ordersByProduct
+                                .forEach((productName, gmvOrders) -> {
+                                            var groupedByOrder = gmvOrders.stream().collect(Collectors.groupingBy(it -> it.id));
+                                            groupedByOrder.forEach((orderId, ordersById) -> {
+                                                var price = BigDecimal.ZERO;
+                                                if (ordersById.size() == 1) {
+                                                    var order = ordersById.getFirst();
+                                                    if (order.status == 4) {
+                                                        price = order.priceWithVAT.multiply(BigDecimal.valueOf(order.quantity));
+                                                    } else if (order.status == 5) {
+                                                        //TODO:
+                                                        // This is correct
+                                                        // if there is no status==4 in a previous month,
+                                                        // otherwise we would need to subtract something.
+                                                        price = order.priceWithVAT.multiply(BigDecimal.valueOf(order.quantity));
+                                                    } else {
+                                                        throw new RuntimeException("Unexpected status " + order.status);
+                                                    }
                                                 }
-                                            }
-                                            //
-                                            var vendorMap = gmvByVendorAndProduct.computeIfAbsent(vendorName, s1 -> new HashMap<>());
-                                            vendorMap.merge(productName, price, BigDecimal::add);
-                                        });
-                                    }
-                            );
-                        }
+                                                //
+                                                var vendorMap = gmvByVendorAndProduct.computeIfAbsent(vendorName, s1 -> new HashMap<>());
+                                                vendorMap.merge(productName, price, BigDecimal::add);
+                                            });
+                                        }
+                                )
                 );
                 // TODO Take care of Storno.
             }
@@ -637,7 +638,7 @@ public class EmagMirrorDB {
                                     specialCase(gmvByMonth, finalized, storno);
                                 } else {
                                     if (storno.initialQuantity != finalized.quantity) {
-                                        logger.log(WARNING, "Mismatch in quantity between\n finalzed order: %s\n and storno order: %s".formatted(finalized, storno));
+                                        logger.log(WARNING, "Mismatch in quantity between\n finalzed order: %s\n and storno order: %s.".formatted(finalized, storno));
                                     }
                                     var finalizedMonth = YearMonth.from(finalized.orderDate);
                                     var stornoMonth = YearMonth.from(storno.orderDate);
@@ -704,6 +705,10 @@ public class EmagMirrorDB {
         return result;
     }
 
+    public Map<String, BigDecimal> readGMVByMonth(YearMonth month) throws SQLException {
+        return database.readTX(db -> getGMVByMonth(db, month));
+    }
+
     private Map<String, BigDecimal> getGMVByMonth(Connection db, YearMonth month) throws SQLException {
         var result = new HashMap<String, BigDecimal>();
         try (var s = db.prepareStatement("SELECT name, gmv FROM gmv INNER JOIN product ON gmv.product_id=product.id WHERE month = ? ORDER BY name")) {
@@ -745,19 +750,19 @@ public class EmagMirrorDB {
                     try (var s = db.prepareStatement("""
                             SELECT p.name AS productName,
                             pio.quantity AS quantity,
-                            pio.initial_qty AS initialQuantity, 
+                            pio.initial_qty AS initialQuantity,
                             pio.storno_qty AS stornoQuantity,
                             pio.sale_price AS salePrice,
-                            pio.vat AS vat, 
+                            pio.vat AS vat,
                             pio.created, pio.modified,
                             o.status AS orderStatus,
-                            o.date AS orderDate, 
-                            o.modified, 
+                            o.date AS orderDate,
+                            o.modified,
                             o.id AS orderId
                             FROM product_in_order AS pio
                             INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
                             INNER JOIN emag_order AS o ON pio.emag_order_surrogate_id = o.surrogate_id
-                            WHERE p.id = ? AND ( o.status = 4 OR o.status = 5 ) AND o.date >= ? AND o.date < ?
+                            WHERE p.id = ? AND (o.status = 4 OR o.status = 5) AND o.date >= ? AND o.date < ?
                             ORDER BY o.id, o.status
                             """)) {
                         s.setObject(1, productId);
@@ -797,19 +802,19 @@ public class EmagMirrorDB {
         try (var s = db.prepareStatement("""
                 SELECT p.name AS productName,
                 pio.quantity AS quantity,
-                pio.initial_qty AS initialQuantity, 
+                pio.initial_qty AS initialQuantity,
                 pio.storno_qty AS stornoQuantity,
                 pio.sale_price AS salePrice,
-                pio.vat AS vat, 
+                pio.vat AS vat,
                 pio.created, pio.modified,
                 o.status AS orderStatus,
-                o.date AS orderDate, 
-                o.modified, 
+                o.date AS orderDate,
+                o.modified,
                 o.id AS orderId
                 FROM product_in_order AS pio
                 INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
                 INNER JOIN emag_order AS o ON pio.emag_order_surrogate_id = o.surrogate_id
-                WHERE p.id = ? AND ( o.status = 4 OR o.status = 5 )
+                WHERE p.id = ? AND (o.status = 4 OR o.status = 5)
                 ORDER BY o.id, o.status
                 """)) {
             s.setObject(1, productId);
@@ -858,12 +863,8 @@ public class EmagMirrorDB {
     }
 
     public List<ProductWithID> readProducts() throws SQLException {
-        return database.readTX(db-> getProducts(db));
+        return database.readTX(this::getProducts);
     }
-
-//    public SortedMap<String, SortedMap<YearMonth, BigDecimal>> getGMV() throws SQLException {
-//        return database.readTX(db-> getGMV(db));
-//    }
 
     public SortedMap<ProductWithID, SortedMap<YearMonth, BigDecimal>> getGMV(Connection db) throws SQLException {
         var rows = new TreeMap<ProductWithID, SortedMap<YearMonth, BigDecimal>>(
@@ -878,7 +879,7 @@ public class EmagMirrorDB {
 
     private List<ProductWithID> getProducts(Connection db) throws SQLException {
         var products = new ArrayList<ProductWithID>();
-        try (var s = db.prepareStatement("SELECT id, emag_pnk, product_code, name, category, message_keyword FROM product")) {
+        try (var s = db.prepareStatement("SELECT id, emag_pnk, product_code, name, continue_to_sell, retracted, category, message_keyword FROM product")) {
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     products.add(
@@ -888,6 +889,8 @@ public class EmagMirrorDB {
                                     rs.getString("emag_pnk"),
                                     rs.getString("product_code"),
                                     rs.getString("name"),
+                                    rs.getBoolean("continue_to_sell"),
+                                    rs.getBoolean("retracted"),
                                     rs.getString("category"),
                                     rs.getString("message_keyword")
                             )
@@ -903,7 +906,7 @@ public class EmagMirrorDB {
      * Read database information and prepare them for inclusion in the spreadsheet.
      * Only orders with status finalized or returned matching the year are provided.
      *
-     * @param year Return only orders where the date has this as year value.
+     * @param year Return only orders where the date has this as its year value.
      * @return list of rows containing a list of cell groups. Each cell group is a list of cells.
      * @throws SQLException on database error
      */
@@ -1007,7 +1010,7 @@ public class EmagMirrorDB {
     }
 
     /**
-     * Given the vendor name find the UUID.
+     * Given the vendor name, find the UUID.
      *
      * @param vendorName vendor name
      * @return UUID for vendor
@@ -1035,12 +1038,12 @@ public class EmagMirrorDB {
      * <b>DEBUG ONLY!</b>
      *
      * <p>
-     *     This returns orders which are not fully filled for a given vendor, time range and status
+     *     This returns the orders, which are not fully filled for a given vendor, time range and status.
      * </p>
      * @param startTime start time inclusive
      * @param endTime end time exclusive
      * @param vendorId vendor UUID
-     * @return Orders that are missing all dependents like products etc.
+     * @return Orders that are missing all dependents like products, attachments, and so on.
      * @throws SQLException for database errors.
      */
     public List<OrderResult> readOrderByDateAndHardCodedStatus(LocalDateTime startTime, LocalDateTime endTime, UUID vendorId) throws SQLException {
@@ -1258,7 +1261,7 @@ public class EmagMirrorDB {
         return toLocalDateTime(timestamp);
     }
 
-    private static @Nullable int updateFetchTimeByAccount(Connection db, String account, LocalDateTime fetchTime) throws SQLException {
+    private static int updateFetchTimeByAccount(Connection db, String account, LocalDateTime fetchTime) throws SQLException {
         try (var s = db.prepareStatement("UPDATE vendor SET last_fetch=? WHERE account=?")) {
             s.setTimestamp(1, toTimestamp(fetchTime));
             s.setString(2, account);
@@ -1947,12 +1950,13 @@ public class EmagMirrorDB {
     }
 
     /**
-     * Insert an order if possible. If the order was i
-     * @param db
-     * @param or
-     * @param vendorId
-     * @return
-     * @throws SQLException
+     * Insert an order if possible.
+     *
+     * @param db the database.
+     * @param or the order to insert.
+     * @param vendorId the vendor to which this order belongs.
+     * @return both the status of the operation and if that is true also the surrogate id generated by the database.
+     * @throws SQLException if anything goes wrong.
      */
     private static InsertResult insertOrder(Connection db, OrderResult or, UUID vendorId) throws SQLException {
         try (var s = db.prepareStatement("""
@@ -2049,12 +2053,12 @@ public class EmagMirrorDB {
     /**
      * Find the surrogate id for a given (orderId, vendorName, status).
      *
-     * @param db
-     * @param orderId
-     * @param vendorName
-     * @param status
-     * @return
-     * @throws SQLException
+     * @param db the database.
+     * @param orderId the ID from emag.
+     * @param vendorName the name of the vendor.
+     * @param status the status.
+     * @return The surrogate ID or null.
+     * @throws SQLException if anything goes wrong.
      */
     private static Integer selectSurrogateId(Connection db, String orderId, String vendorName, int status) throws SQLException {
         Integer result = null;
@@ -2640,23 +2644,33 @@ public class EmagMirrorDB {
      * @throws SQLException if anything bad happens.
      */
     private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO product (id, emag_pnk, name, category, message_keyword, product_code) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(emag_pnk) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO product (id, emag_pnk, name, continue_to_sell, retracted, category, message_keyword, product_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(emag_pnk) DO NOTHING")) {
             s.setObject(1, UUID.randomUUID());
             s.setString(2, productInfo.pnk());
             s.setString(3, productInfo.name());
-            s.setString(4, productInfo.category());
-            s.setString(5, productInfo.messageKeyword());
-            s.setString(6, productInfo.productCode());
+            s.setBoolean(4, productInfo.continueToSell());
+            s.setBoolean(5, productInfo.retracted());
+            s.setString(6, productInfo.category());
+            s.setString(7, productInfo.messageKeyword());
+            s.setString(8, productInfo.productCode());
             return s.executeUpdate();
         }
     }
 
     private static ProductInfo selectProduct(Connection db, String emagPnk) throws SQLException {
-        try (var s = db.prepareStatement("SELECT id, emag_pnk, name, category, message_keyword FROM product WHERE emag_pnk = ?")) {
+        try (var s = db.prepareStatement("SELECT id, emag_pnk, name, continue_to_sell, retracted, category, message_keyword FROM product WHERE emag_pnk = ?")) {
             s.setString(1, emagPnk);
             try (var rs = s.executeQuery()) {
                 if (rs.next()) {
-                    return new ProductInfo(rs.getString("emag_pnk"), rs.getString("product_code"), rs.getString("name"), rs.getString("category"), rs.getString("message_keyword"));
+                    return new ProductInfo(
+                            rs.getString("emag_pnk"),
+                            rs.getString("product_code"),
+                            rs.getString("name"),
+                            rs.getBoolean("continue_to_sell"),
+                            rs.getBoolean("retracted"),
+                            rs.getString("category"),
+                            rs.getString("message_keyword")
+                    );
                 }
                 return null;
             }
