@@ -36,6 +36,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
@@ -44,6 +46,8 @@ import static ro.sellfluence.googleapi.Credentials.getCredentials;
  * This class represents a spreadsheet in Google-Drive.
  */
 public class SheetsAPI {
+
+    private static final Logger logger = Logger.getLogger(SheetsAPI.class.getName());
 
     public static final String COLUMNS = "COLUMNS";
     public static final String ROWS = "ROWS";
@@ -346,6 +350,7 @@ public class SheetsAPI {
                 if (retryCount == 0) {
                     throw new RuntimeException("Error when reading the columns %s from the sheet %s of spreadsheet %s (%s).".formatted(Arrays.toString(columns), sheetName, spreadSheetName, spreadSheetId), e);
                 }
+                logger.log(Level.WARNING, "Read error. Retrying after %d s. Retry count %d".formatted(retryDelay/1000, retryCount));
                 try {
                     Thread.sleep(retryDelay);
                 } catch (InterruptedException ex) {
