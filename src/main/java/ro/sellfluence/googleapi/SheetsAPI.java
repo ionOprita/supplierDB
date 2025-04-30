@@ -343,13 +343,15 @@ public class SheetsAPI {
                 }
             } catch (IOException e) {
                 retryCount--;
+                if (retryCount == 0) {
+                    throw new RuntimeException("Error when reading the columns %s from the sheet %s of spreadsheet %s (%s).".formatted(Arrays.toString(columns), sheetName, spreadSheetName, spreadSheetId), e);
+                }
                 try {
                     Thread.sleep(retryDelay);
                 } catch (InterruptedException ex) {
                     // Don't care about interrupts.
                 }
                 retryDelay*=2;
-                throw new RuntimeException("Error when reading the columns %s from the sheet %s of spreadsheet %s (%s).".formatted(Arrays.toString(columns), sheetName, spreadSheetName, spreadSheetId), e);
             }
         }
         return returnValue;
