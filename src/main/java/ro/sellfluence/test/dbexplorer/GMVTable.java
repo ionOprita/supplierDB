@@ -18,6 +18,7 @@ import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
@@ -152,17 +153,52 @@ public class GMVTable extends JPanel {
 
         // Match column widths
         for (int i = 0; i < sortedMonths.size(); i++) {
-            int width = 80;
+            int width = 100;
             mainTable.getColumnModel().getColumn(i).setPreferredWidth(width);
             columnHeaderTable.getColumnModel().getColumn(i).setPreferredWidth(width);
         }
 
+        // --- BEGIN: add totals for K, J, S, Z -----------------
+        // prefixes to group by:
+        List<String> groups = List.of("K", "J", "S", "Z");
+
+        // retrieve the models so we can append to them
+        DefaultTableModel mainM = (DefaultTableModel) mainTable.getModel();
+        DefaultTableModel rowHeaderM = (DefaultTableModel) rowHeaderTable.getModel();
+
+        for (String prefix : groups) {
+            // accumulate per-month sums
+            BigDecimal[] sums = new BigDecimal[sortedMonths.size()];
+            Arrays.fill(sums, BigDecimal.ZERO);
+
+            for (int r = 0; r < sortedProducts.size(); r++) {
+                String prodName = sortedProducts.get(r).product().name();
+                if (prodName.startsWith(prefix)) {
+                    // add each column's value
+                    for (int c = 0; c < sortedMonths.size(); c++) {
+                        Object cell = mainM.getValueAt(r, c);
+                        if (cell instanceof BigDecimal bd) {
+                            sums[c] = sums[c].add(bd);
+                        }
+                    }
+                }
+            }
+
+            // append row to main table
+            mainM.addRow(sums);
+            // append corresponding label to row‐header table
+            rowHeaderM.addRow(new Object[]{ prefix + " total" });
+        }
+
+        // recalc row‐header width in case a "X total" label needs more room
         FontMetrics fm = rowHeaderTable.getFontMetrics(rowHeaderTable.getFont());
-        int rowHeaderWidth = sortedProducts.stream()
-                .mapToInt(pi -> fm.stringWidth(pi.product().name()) + 20) // 20px padding
-                .max()
-                .orElse(150);
+        int rowHeaderWidth = 0;
+        for (int i = 0; i < rowHeaderM.getRowCount(); i++) {
+            String label = rowHeaderM.getValueAt(i, 0).toString();
+            rowHeaderWidth = Math.max(rowHeaderWidth, fm.stringWidth(label) + 20);
+        }
         rowHeaderTable.getColumnModel().getColumn(0).setPreferredWidth(rowHeaderWidth);
+        // --- END: add totals -----------------
     }
 
     public void setCellListener(BiFunction<ProductWithID, YearMonth, Void> listener) {
