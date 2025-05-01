@@ -26,6 +26,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -33,8 +34,11 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.FileHandler;
+import java.util.logging.Formatter;
 import java.util.logging.Handler;
 import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
 import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
@@ -55,6 +59,8 @@ public class EmagApi {
 
     private static final Logger logger = Logger.getLogger(EmagApi.class.getName());
 
+    private static final Logger fileLogger = Logger.getLogger(EmagApi.class.getName() + "_fileLogger");
+
     private static final String emagRO = "https://marketplace-api.emag.ro/api-3";
 
     private static final String orderURI = emagRO + "/order";
@@ -68,6 +74,22 @@ public class EmagApi {
     private static final DateTimeFormatter emagDate = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     public static int statusFinalized = 4;
+
+    static {
+        try {
+            var fileHandler = new FileHandler("%t/emag-api_%g.log", 10 * 1024 * 1024, 10, true);
+            fileHandler.setFormatter(new Formatter() {
+                @Override
+                public String format(LogRecord record) {
+                    return "%s %s%n".formatted(record.getInstant().atZone(ZoneId.systemDefault()), record.getMessage());
+                }
+            });
+            fileLogger.setLevel(INFO);
+            fileLogger.addHandler(fileHandler);
+        } catch (IOException e) {
+            logger.log(WARNING, "Failed to create a file logger", e);
+        }
+    }
 
     private final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new TypeAdapter<LocalDateTime>() {
@@ -227,7 +249,7 @@ public class EmagApi {
             page++;
             jsonInput.put("currentPage", page);
             // Filter items are on the first level together with the pagination items.
-            // The data item which is also on the first level is used only for submitting data.
+            // The data item, which is also on the first level, is used only for submitting data.
             var jsonAsString = gson.toJson(jsonInput);
             logger.log(FINE, "JSON = " + jsonAsString);
             var httpRequest = HttpRequest.newBuilder()
@@ -235,12 +257,14 @@ public class EmagApi {
                     .header("Authorization", "Basic " + credentials)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonAsString)).build();
+            fileLogger.log(INFO, () -> "Sent " + jsonAsString);
             try {
                 var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
                 int statusCode = httpResponse.statusCode();
                 logger.log(FINE, "Status code = " + statusCode);
                 if (statusCode == HTTP_OK) {
                     String receivedJSON = httpResponse.body();
+                    fileLogger.log(INFO, () -> "Received " + receivedJSON);
                     logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
                     try {
                         //var responseItemClass = TypeToken.getParameterized(Response.class, responseClass);
@@ -283,7 +307,7 @@ public class EmagApi {
                     throw new RuntimeException(String.format("Emag API error %d", statusCode));
                 }
             } catch (IOException e) {
-                logger.log(WARNING, "Received IOException %s,%n retrying, retryCount=%d, retryDelay=%d s".formatted(e.getMessage(), retryCount,retryDelay/1000));
+                logger.log(WARNING, "Received IOException %s, %n retrying, retryCount=%d, retryDelay=%d s".formatted(e.getMessage(), retryCount,retryDelay/1000));
                 retryCount--;
                 Thread.sleep(retryDelay);
                 retryDelay *= 2; // Double delay
