@@ -85,6 +85,7 @@ public class EmagApi {
                 }
             });
             fileLogger.setLevel(INFO);
+            fileLogger.setUseParentHandlers(false);
             fileLogger.addHandler(fileHandler);
         } catch (IOException e) {
             logger.log(WARNING, "Failed to create a file logger", e);

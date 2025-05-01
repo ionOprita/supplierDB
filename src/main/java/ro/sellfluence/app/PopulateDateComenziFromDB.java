@@ -68,6 +68,14 @@ public class PopulateDateComenziFromDB {
      */
     private static void updateGMVs(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
         var month = YearMonth.from(LocalDate.now());
+        updateGMVForMonth(mirrorDB, sheet, month);
+        updateGMVForMonth(mirrorDB, sheet, month.minusMonths(1));
+        updateGMVForMonth(mirrorDB, sheet, month.minusMonths(2));
+        updateGMVForMonth(mirrorDB, sheet, month.minusMonths(3));
+        updateGMVForMonth(mirrorDB, sheet, month.minusMonths(4));
+    }
+
+    private static void updateGMVForMonth(EmagMirrorDB mirrorDB, SheetsAPI sheet, YearMonth month) throws SQLException {
         System.out.printf("Read %s from the database", month);
         var gmvs = mirrorDB.readGMVByMonth(month);
         System.out.println("Read from the spreadsheet");
