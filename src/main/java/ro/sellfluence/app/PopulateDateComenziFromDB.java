@@ -131,7 +131,7 @@ public class PopulateDateComenziFromDB {
         System.out.println("Read from the spreadsheet");
         List<List<Object>> sheetData = sheet.getMultipleColumns(dateSheetName, "A", "B", "F", "X", "Y");
         //TODO: The filter does not notice changed orders.
-        rows = filterOutExisting(rows, sheetData).subList(0, 19); // TODO: For test only limit to 20 rows.
+        rows = filterOutExisting(rows, sheetData);
         var lastRowNumber = sheetData.size();
         var nextRow = lastRowNumber + 1;
         var lastRow = lastRowNumber + rows.size();
