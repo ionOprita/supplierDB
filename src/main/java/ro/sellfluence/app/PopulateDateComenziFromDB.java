@@ -30,9 +30,20 @@ public class PopulateDateComenziFromDB {
     private static final Logger logger = java.util.logging.Logger.getLogger(PopulateDateComenziFromDB.class.getName());
     private static final String appName = "sellfluence1";
     private static final int year = 2025;
+
+    /**
+     * Target spreadsheet.
+     */
     private static final String spreadSheetName = "Testing Coding " + year + " - Date comenzi";
 
+    /**
+     * Target sheet for the orders.
+     */
     private static final String dateSheetName = "Date";
+
+    /**
+     * Target sheet for the GMVs.
+     */
     private static final String gmvSheetName = "T. GMW/M.";
 
     public static void main(String[] args) throws SQLException, IOException {
@@ -45,9 +56,16 @@ public class PopulateDateComenziFromDB {
         System.out.println("--- Update GMVs --------------------------");
         updateGMVs(mirrorDB, sheet);
         System.out.println("--- Update orders ------------------------");
-        //       updateOrders(mirrorDB, sheet, spreadSheetId);
+        updateOrders(mirrorDB, sheet, spreadSheetId);
     }
 
+    /**
+     * Transfer the GMV values from the database to the spreadsheet.
+     *
+     * @param mirrorDB source database.
+     * @param sheet target sheet.
+     * @throws SQLException if something goes wrong.
+     */
     private static void updateGMVs(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
         var month = YearMonth.from(LocalDate.now());
         System.out.printf("Read %s from the database", month);
@@ -99,6 +117,14 @@ public class PopulateDateComenziFromDB {
         }
     }
 
+    /**
+     * Transfer new orders from the database to the spreadsheet.
+     *
+     * @param mirrorDB source database.
+     * @param sheet target sheet.
+     * @param spreadSheetId id of the spreadsheet.
+     * @throws SQLException if something goes wrong.
+     */
     private static void updateOrders(EmagMirrorDB mirrorDB, SheetsAPI sheet, String spreadSheetId) throws SQLException {
         System.out.println("Read from the database");
         var rows = mirrorDB.readForSheet(year);
@@ -178,8 +204,17 @@ public class PopulateDateComenziFromDB {
         return columnName.toString();
     }
 
+    /**
+     * Reference date of Google Sheets serial numbers.
+     */
     private static final LocalDate EXCEL_EPOCH = LocalDate.of(1899, 12, 30);
 
+    /**
+     * Convert a Google Sheets serial number to a LocalDate.
+     *
+     * @param serial serial number as read from the spreadsheet.
+     * @return LocalDate.
+     */
     public static LocalDate fromExcelSerialBigDecimal(BigDecimal serial) {
         if (serial == null) {
             return null;
