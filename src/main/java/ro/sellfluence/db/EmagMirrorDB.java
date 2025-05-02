@@ -225,7 +225,7 @@ public class EmagMirrorDB {
         try (var s = db.prepareStatement("UPDATE emag_order SET cancellation_reason = ?, cancellation_reason_text = ?  WHERE surrogate_id = ?")) {
             s.setInt(1, reason.id());
             s.setString(2, reason.name());
-            s.setInt(2, surrogateId);
+            s.setInt(3, surrogateId);
             return s.executeUpdate();
         }
     }
