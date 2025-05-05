@@ -140,14 +140,16 @@ public class PopulateDateComenziFromDB {
         List<List<Object>> sheetData = sheet.getMultipleColumns(dateSheetName, "A", "B", "F", "X", "Y");
         //TODO: The filter does not notice changed orders.
         rows = filterOutExisting(rows, sheetData);
-        var lastRowNumber = sheetData.size();
-        var nextRow = lastRowNumber + 1;
-        var lastRow = lastRowNumber + rows.size();
-        System.out.println("Now fixing cell format");
-        sheet.formatDate(spreadSheetId, 0, 1, lastRowNumber, lastRow);
-        sheet.formatAsCheckboxes(spreadSheetId, 27, 31, lastRowNumber, lastRow);
-        System.out.println("Now adding the rows");
-        sheet.updateRanges(rows, "%s!A%d".formatted(dateSheetName, nextRow), "%s!Y%d".formatted(dateSheetName, nextRow), "%s!AB%d".formatted(dateSheetName, nextRow), "%s!AG%d".formatted(dateSheetName, nextRow));
+        if (!rows.isEmpty()) {
+            var lastRowNumber = sheetData.size();
+            var nextRow = lastRowNumber + 1;
+            var lastRow = lastRowNumber + rows.size();
+            System.out.println("Now fixing cell format");
+            sheet.formatDate(spreadSheetId, 0, 1, lastRowNumber, lastRow);
+            sheet.formatAsCheckboxes(spreadSheetId, 27, 31, lastRowNumber, lastRow);
+            System.out.println("Now adding the rows");
+            sheet.updateRanges(rows, "%s!A%d".formatted(dateSheetName, nextRow), "%s!Y%d".formatted(dateSheetName, nextRow), "%s!AB%d".formatted(dateSheetName, nextRow), "%s!AG%d".formatted(dateSheetName, nextRow));
+        }
     }
 
     /**
