@@ -31,10 +31,13 @@ import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
@@ -43,6 +46,8 @@ import static ro.sellfluence.googleapi.Credentials.getCredentials;
  * This class represents a spreadsheet in Google-Drive.
  */
 public class SheetsAPI {
+
+    private static final Logger logger = Logger.getLogger(SheetsAPI.class.getName());
 
     public static final String COLUMNS = "COLUMNS";
     public static final String ROWS = "ROWS";
@@ -148,6 +153,33 @@ public class SheetsAPI {
             var range = "%1$s!%2$s:%2$s".formatted(sheetName, columnName);
             var result = getSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(COLUMNS).execute().getValues().getFirst();
             return result.stream().map(o -> (String) o).toList();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public List<String> getRow(String sheetName, int rowNumber) {
+        try {
+            var range = "%1$s!%2$s:%2$s".formatted(sheetName, rowNumber);
+            var result = getSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(ROWS).execute().getValues();
+            if (result == null || result.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return result.getFirst().stream().map(o -> (String) o).toList();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public List<Object> getRowAsDates(String sheetName, int rowNumber) {
+        try {
+            var range = "%1$s!%2$s:%2$s".formatted(sheetName, rowNumber);
+            ValueRange response = getSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension("ROWS").setValueRenderOption("UNFORMATTED_VALUE").execute();
+            List<List<Object>> values = response.getValues();
+            if (values == null || values.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return values.getFirst();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -288,31 +320,46 @@ public class SheetsAPI {
 
     public List<List<Object>> getMultipleColumns(String sheetName, String... columns) {
         var ranges = Arrays.stream(columns).map(c -> "%1$s!%2$s:%2$s".formatted(sheetName, c)).toList();
-        try {
-            var result = getSheetsService().spreadsheets().values().batchGet(spreadSheetId).setRanges(ranges).setMajorDimension(COLUMNS).setValueRenderOption(UNFORMATTED_VALUE).execute().getValueRanges();
-            if (result != null && result.size() == columns.length) {
-                var maxColumn = columns.length;
-                var rows = new ArrayList<List<Object>>();
-                int[] columnSizes = result.stream().mapToInt(valueRange -> valueRange.getValues().getFirst().size()).toArray();
-                var maxRow = Arrays.stream(columnSizes).max().getAsInt();
-                for (int rowNumber = 0; rowNumber < maxRow; rowNumber++) {
-                    var row = new ArrayList<>();
-                    for (int columnNumber = 0; columnNumber < maxColumn; columnNumber++) {
-                        if (rowNumber < columnSizes[columnNumber]) {
-                            row.add(result.get(columnNumber).getValues().getFirst().get(rowNumber));
-                        } else {
-                            row.add(0);
+        var retryCount =  4;
+        var retryDelay = 5_000;
+        List<List<Object>> returnValue = null;
+        while (retryCount>0) {
+            try {
+                var result = getSheetsService().spreadsheets().values().batchGet(spreadSheetId).setRanges(ranges).setMajorDimension(COLUMNS).setValueRenderOption(UNFORMATTED_VALUE).execute().getValueRanges();
+                retryCount = 0; // No need to retry, we got everything.
+                if (result != null && result.size() == columns.length) {
+                    var maxColumn = columns.length;
+                    var rows = new ArrayList<List<Object>>();
+                    int[] columnSizes = result.stream().mapToInt(valueRange -> valueRange.getValues().getFirst().size()).toArray();
+                    var maxRow = Arrays.stream(columnSizes).max().getAsInt();
+                    for (int rowNumber = 0; rowNumber < maxRow; rowNumber++) {
+                        var row = new ArrayList<>();
+                        for (int columnNumber = 0; columnNumber < maxColumn; columnNumber++) {
+                            if (rowNumber < columnSizes[columnNumber]) {
+                                row.add(result.get(columnNumber).getValues().getFirst().get(rowNumber));
+                            } else {
+                                row.add(0);
+                            }
                         }
+                        rows.add(row);
                     }
-                    rows.add(row);
+                    returnValue = rows;
                 }
-                return rows;
-            } else {
-                return null;
+            } catch (IOException e) {
+                retryCount--;
+                if (retryCount == 0) {
+                    throw new RuntimeException("Error when reading the columns %s from the sheet %s of spreadsheet %s (%s).".formatted(Arrays.toString(columns), sheetName, spreadSheetName, spreadSheetId), e);
+                }
+                logger.log(Level.WARNING, "Read error. Retrying after %d s. Retry count %d".formatted(retryDelay/1000, retryCount));
+                try {
+                    Thread.sleep(retryDelay);
+                } catch (InterruptedException ex) {
+                    // Don't care about interrupts.
+                }
+                retryDelay*=2;
             }
-        } catch (IOException e) {
-            throw new RuntimeException("Error when reading the columns %s from the sheet %s of spreadsheet %s (%s).".formatted(columns, sheetName, spreadSheetName, spreadSheetId), e);
         }
+        return returnValue;
     }
 
     /**

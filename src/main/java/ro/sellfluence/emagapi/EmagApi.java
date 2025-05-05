@@ -26,6 +26,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -33,14 +34,19 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.FileHandler;
+import java.util.logging.Formatter;
 import java.util.logging.Handler;
 import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
+import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
+import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.sheetSupport.Conversions.isoLikeLocalDateTime;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 
@@ -52,6 +58,8 @@ import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 public class EmagApi {
 
     private static final Logger logger = Logger.getLogger(EmagApi.class.getName());
+
+    private static final Logger fileLogger = Logger.getLogger(EmagApi.class.getName() + "_fileLogger");
 
     private static final String emagRO = "https://marketplace-api.emag.ro/api-3";
 
@@ -66,6 +74,23 @@ public class EmagApi {
     private static final DateTimeFormatter emagDate = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     public static int statusFinalized = 4;
+
+    static {
+        try {
+            var fileHandler = new FileHandler("%t/emag-api_%g.log", 10 * 1024 * 1024, 10, true);
+            fileHandler.setFormatter(new Formatter() {
+                @Override
+                public String format(LogRecord record) {
+                    return "%s %s%n".formatted(record.getInstant().atZone(ZoneId.systemDefault()), record.getMessage());
+                }
+            });
+            fileLogger.setLevel(INFO);
+            fileLogger.setUseParentHandlers(false);
+            fileLogger.addHandler(fileHandler);
+        } catch (IOException e) {
+            logger.log(WARNING, "Failed to create a file logger", e);
+        }
+    }
 
     private final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new TypeAdapter<LocalDateTime>() {
@@ -219,11 +244,13 @@ public class EmagApi {
             jsonInput.put("data", data);
         }
         var accumulatedResponses = new ArrayList<T>();
+        var retryCount = 4;
+        var retryDelay = 10_000;
         while (!finished) {
             page++;
             jsonInput.put("currentPage", page);
             // Filter items are on the first level together with the pagination items.
-            // The data item which is also on the first level is used only for submitting data.
+            // The data item, which is also on the first level, is used only for submitting data.
             var jsonAsString = gson.toJson(jsonInput);
             logger.log(FINE, "JSON = " + jsonAsString);
             var httpRequest = HttpRequest.newBuilder()
@@ -231,45 +258,61 @@ public class EmagApi {
                     .header("Authorization", "Basic " + credentials)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonAsString)).build();
-            var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-            int statusCode = httpResponse.statusCode();
-            logger.log(FINE, "Status code = " + statusCode);
-            if (statusCode == HTTP_OK) {
-                String receivedJSON = httpResponse.body();
-                logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
-                try {
-                    //var responseItemClass = TypeToken.getParameterized(Response.class, responseClass);
-                    //Response<T> response = gson.fromJson(receivedJSON, responseItemClass.getType());
-                    var typeRef = new TypeReference<Response<T>>() {
-                        @Override
-                        public Type getType() {
-                            return objectMapper.getTypeFactory().constructParametricType(Response.class, responseClass);
-                        }
-                    };
-                    var response = objectMapper.readValue(receivedJSON, typeRef);
+            fileLogger.log(INFO, () -> "Sent " + jsonAsString);
+            try {
+                var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+                int statusCode = httpResponse.statusCode();
+                logger.log(FINE, "Status code = " + statusCode);
+                if (statusCode == HTTP_OK) {
+                    String receivedJSON = httpResponse.body();
+                    fileLogger.log(INFO, () -> "Received " + receivedJSON);
+                    logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
+                    try {
+                        //var responseItemClass = TypeToken.getParameterized(Response.class, responseClass);
+                        //Response<T> response = gson.fromJson(receivedJSON, responseItemClass.getType());
+                        var typeRef = new TypeReference<Response<T>>() {
+                            @Override
+                            public Type getType() {
+                                return objectMapper.getTypeFactory().constructParametricType(Response.class, responseClass);
+                            }
+                        };
+                        var response = objectMapper.readValue(receivedJSON, typeRef);
 
-                    if (response.isError) {
-                        logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
-                        if (Arrays.stream(response.messages).anyMatch(x -> x.contains("Invalid vendor ip"))) {
-                            logger.log(INFO, "Please register your IP address in the EMAG dashboard.");
-                            finished = true;
-                        }
-                    } else {
-                        logger.log(INFO, () -> "Received %d items.".formatted(response.results.length));
-                        logger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
-                        if (response.results.length > 0) {
-                            accumulatedResponses.addAll(Arrays.asList(response.results));
+                        if (response.isError) {
+                            logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
+                            if (Arrays.stream(response.messages).anyMatch(x -> x.contains("Invalid vendor ip"))) {
+                                logger.log(INFO, "Please register your IP address in the EMAG dashboard.");
+                                finished = true;
+                            }
                         } else {
-                            finished = true;
+                            logger.log(INFO, () -> "Received %d items.".formatted(response.results.length));
+                            logger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
+                            if (response.results.length > 0) {
+                                accumulatedResponses.addAll(Arrays.asList(response.results));
+                            } else {
+                                finished = true;
+                            }
                         }
+                    } catch (MismatchedInputException e) {
+                        logger.log(SEVERE, "JSON decoded ended with error %s".formatted(e.getMessage()));
+                        logger.log(SEVERE, receivedJSON);
                     }
-                } catch (MismatchedInputException e) {
-                    logger.log(SEVERE, "JSON decoded ended with error %s".formatted(e.getMessage()));
-                    logger.log(SEVERE, receivedJSON);
+                } else if (statusCode == HTTP_GATEWAY_TIMEOUT && retryCount > 0) {
+                    logger.log(WARNING, "Received 504, retrying, retryCount=%d, retryDelay=%d s".formatted(retryCount, retryDelay / 1000));
+                    retryCount--;
+                    Thread.sleep(retryDelay);
+                    retryDelay *= 2; // Double delay
+                    page--; // Refetch the same page.
+                } else {
+                    logger.log(SEVERE, "Received error status %s".formatted(statusCode));
+                    throw new RuntimeException(String.format("Emag API error %d", statusCode));
                 }
-            } else {
-                logger.log(SEVERE, "Received error status %s".formatted(statusCode));
-                throw new RuntimeException(String.format("Emag API error %d", statusCode));
+            } catch (IOException e) {
+                logger.log(WARNING, "Received IOException %s, %n retrying, retryCount=%d, retryDelay=%d s".formatted(e.getMessage(), retryCount,retryDelay/1000));
+                retryCount--;
+                Thread.sleep(retryDelay);
+                retryDelay *= 2; // Double delay
+                page--; // Refetch the same page.
             }
         }
         return accumulatedResponses;

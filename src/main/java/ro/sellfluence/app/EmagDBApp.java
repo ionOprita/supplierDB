@@ -22,9 +22,9 @@ import java.util.random.RandomGenerator;
 import static java.time.temporal.ChronoUnit.DAYS;
 import static java.time.temporal.ChronoUnit.MILLIS;
 import static java.util.logging.Level.FINE;
-import static java.util.logging.Level.FINEST;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.support.Time.time;
 import static ro.sellfluence.support.UsefulMethods.isBlank;
 
 public class EmagDBApp {
@@ -51,9 +51,12 @@ public class EmagDBApp {
             EmagMirrorDB mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
             if (args.length > 0 && Objects.equals(args[0], "refetch_some")) {
                 fetchAndStoreToDBProbabilistic(mirrorDB);
+            } else if (args.length > 0 && Objects.equals(args[0], "nofetch")) {
+// Don't fetch anything.
             } else {
                 fetchAndStoreToDB(mirrorDB);
             }
+            mirrorDB.updateGMVTable();
         } catch (SQLException e) {
             throw new RuntimeException("error initializing database", e);
         } catch (IOException e) {
@@ -66,7 +69,7 @@ public class EmagDBApp {
     /**
      * Logic for fetching data that follows this specification:
      * <ul>
-     *     <li>Get orders with states 0-3 since the last time we fetched.</li>
+     *     <li>Get orders with states 1-4 since the last time we fetched.</li>
      *     <li>Get orders with states 5 for the last two years.</li>
      *     <li>Reread all orders having status 0-3 in the database by order id to see if their value has changed.</li>
      * </ul>
@@ -85,14 +88,6 @@ public class EmagDBApp {
                 "Fetch storno orders",
                 () -> repeatUntilDone(() -> fetchStornoOrders(mirrorDB))
         );
-    }
-
-    private static void time(String title, Runnable method) {
-        System.out.printf("%s...%n", title);
-        long t0 = System.currentTimeMillis();
-        method.run();
-        long t1 = System.currentTimeMillis();
-        System.out.printf("%s took %.2f seconds to execute.%n", title, (t1 - t0) / 1000.0);
     }
 
     private static boolean fetchStornoOrders(EmagMirrorDB mirrorDB) {
@@ -272,21 +267,27 @@ public class EmagDBApp {
      */
     private static double computeProbability(long daysPassed, long daysPassedSinceLastFetch) {
         double probability; // Probability to fetch again.
-        if (daysPassed <= 7) {
+        if (daysPassedSinceLastFetch > 60) {
+            // Data not refetched for two months are always refetched.
+            probability = 1.0;
+        } else if (daysPassedSinceLastFetch > 30 && daysPassed <= 366) {
+            // Data older than 30 days is refetched if it is not older than a year.
+            probability = 1.0;
+        } else if (daysPassed <= 7) {
             // For orders having a date within the last week.
             probability = 1.0;
         } else if (daysPassed <= 30) {
             // For orders having a date within the last month
-            probability = (daysPassedSinceLastFetch <= 2) ? 0.1 : 1.;
+            probability = (daysPassedSinceLastFetch <= 3) ? 0.1 : 1.0;
         } else if (daysPassed <= 180) {
             // For orders having a date within the last half-year.
             probability = (daysPassedSinceLastFetch <= 7) ? 0.02 : 0.3;
         } else if (daysPassed <= 366) {
             // For orders having a date within the last year.
-            probability = (daysPassedSinceLastFetch <= 7) ? 0.01 : 0.3;// 0.1;
+            probability = (daysPassedSinceLastFetch <= 14) ? 0.01 : 0.1;
         } else {
             // For orders having a date older than a year.
-            probability = (daysPassedSinceLastFetch <= 7) ? 0.0 : 0.3; //0.05;
+            probability = (daysPassedSinceLastFetch <= 30) ? 0.0 : 0.05;
         }
         return probability;
     }

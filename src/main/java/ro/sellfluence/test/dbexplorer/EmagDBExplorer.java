@@ -2,6 +2,8 @@ package ro.sellfluence.test.dbexplorer;
 
 import ch.claudio.db.DB;
 import org.jetbrains.annotations.NotNull;
+import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.db.EmagMirrorDB.POInfo;
 
 import javax.swing.Box;
 import javax.swing.JButton;
@@ -17,6 +19,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.sql.SQLException;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -27,13 +30,15 @@ public class EmagDBExplorer {
     private static final String database = "emagLocal";
 
     private static final DB emagDB;
+    private static final EmagMirrorDB emagMirrorDB;
     public static final int tableWidth = 1800;
     public static final int tableHeight = 200;
 
     static {
         try {
             emagDB = new DB(database);
-        } catch (IOException e) {
+            emagMirrorDB = EmagMirrorDB.getEmagMirrorDB(database);
+        } catch (IOException | SQLException e) {
             throw new RuntimeException(e);
         }
     }
@@ -54,6 +59,7 @@ public class EmagDBExplorer {
     private static final JTable orderTable = new JTable(orderTableModel);
     private static final CustomerTableModel customerTableModel = new CustomerTableModel();
     private static final JTable customerTable = new JTable(customerTableModel);
+    private static final POInfoTableModel poInfoTableModel = new POInfoTableModel();
 
     private static void initGUI() {
         SwingUtilities.invokeLater(() -> {
@@ -89,9 +95,17 @@ public class EmagDBExplorer {
             // Customer table
             outerBox.add(setupAndReturnCustomerTable());
 
+            var buttonBox = Box.createHorizontalBox();
+
             var histogramButton = new JButton("Show fetch histogram");
-            outerBox.add(histogramButton);
+            buttonBox.add(histogramButton);
             histogramButton.addActionListener(EmagDBExplorer::showFetchHistogram);
+
+            var gmvButton = new JButton("Show GMV table");
+            buttonBox.add(gmvButton);
+            gmvButton.addActionListener(EmagDBExplorer::showGMVTable);
+
+            outerBox.add(buttonBox);
 
             frame.pack();
             frame.setVisible(true);
@@ -138,6 +152,7 @@ public class EmagDBExplorer {
         columnModel.getColumn(6).setPreferredWidth(150);  // Created
         columnModel.getColumn(7).setPreferredWidth(150);  // Modified
 
+
         JScrollPane scrollPane = new JScrollPane(orderTable);
         scrollPane.setPreferredSize(new Dimension(tableWidth, tableHeight));  // Set preferred size for scrolling
         scrollPane.setVerticalScrollBarPolicy(VERTICAL_SCROLLBAR_ALWAYS);
@@ -181,6 +196,10 @@ public class EmagDBExplorer {
 
     static JFrame histogramWindow = null;
     static HistogramPanel histogramPanel = null;
+    static GMVTable gmvPanel = null;
+    static JFrame gmvWindow;
+    static POInfoTable poinfoPanel;
+    static JFrame poinfoWindow;
 
     private static void showFetchHistogram(ActionEvent actionEvent) {
         try {
@@ -199,6 +218,49 @@ public class EmagDBExplorer {
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private static void showGMVTable(ActionEvent actionEvent) {
+        try {
+            var data = emagDB.readTX(emagMirrorDB::getGMV);
+            if (gmvPanel == null) {
+                gmvPanel = new GMVTable();
+            }
+            gmvPanel.updateData(data);
+            gmvPanel.setCellListener((productWithID, yearMonth) -> {
+                try {
+                    var orders = emagMirrorDB.readProductInOrderByProductAndMonth(productWithID.id(), yearMonth);
+                    SwingUtilities.invokeLater(() -> showPOInfoTable(productWithID.product().name(), yearMonth, orders));
+                } catch (SQLException e) {
+                    throw new RuntimeException(e);
+                }
+                return null;
+            });
+            if (gmvWindow == null) {
+                gmvWindow = new JFrame("GMV Table");
+                gmvWindow.getContentPane().add(gmvPanel);
+            }
+            gmvWindow.setVisible(true);
+            gmvWindow.pack();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+    private static void showPOInfoTable(String productName, YearMonth month, List<POInfo> productOrders) {
+        if (poinfoPanel == null) {
+            poinfoPanel = new POInfoTable();
+        }
+        var title = "Orders with product %s in month %s".formatted(productName, month);
+        poinfoPanel.updateTable(productOrders);
+        if (poinfoWindow == null) {
+            poinfoWindow = new JFrame(title);
+            poinfoWindow.getContentPane().add(poinfoPanel);
+        }
+        poinfoWindow.setTitle(title);
+        poinfoWindow.setVisible(true);
+        poinfoWindow.invalidate();
+        poinfoWindow.repaint();
+        poinfoWindow.pack();
     }
 
 
