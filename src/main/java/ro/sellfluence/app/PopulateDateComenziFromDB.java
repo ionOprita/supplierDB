@@ -70,9 +70,6 @@ public class PopulateDateComenziFromDB {
         var month = YearMonth.from(LocalDate.now());
         updateGMVForMonth(mirrorDB, sheet, month);
         updateGMVForMonth(mirrorDB, sheet, month.minusMonths(1));
-        updateGMVForMonth(mirrorDB, sheet, month.minusMonths(2));
-        updateGMVForMonth(mirrorDB, sheet, month.minusMonths(3));
-        updateGMVForMonth(mirrorDB, sheet, month.minusMonths(4));
     }
 
     private static void updateGMVForMonth(EmagMirrorDB mirrorDB, SheetsAPI sheet, YearMonth month) throws SQLException {
@@ -113,7 +110,7 @@ public class PopulateDateComenziFromDB {
                 gmvColumn[rowNumber] = gmv;
             }
         }
-        var result = sheet.updateRange(
+        sheet.updateRange(
                 "'%s'!%s%d:%s%d".formatted(gmvSheetName, columnIdentifier, startRow, columnIdentifier, startRow + productCount - 1),
                 Arrays.stream(gmvColumn).map(it -> {
                     var o = it != null ? (Object) it : (Object) "";
@@ -194,11 +191,9 @@ public class PopulateDateComenziFromDB {
      * @return set of {@link  }
      */
     private static Set<OrderLine> simplify(List<List<Object>> sheetData) {
-        return sheetData.stream().skip(3).map(row -> {
-            //String vendorName = (String) row.get(3);
-            //Vendor vendor = Vendor.fromSheet(vendorName, isEMAGFbe((String) row.get(4)));
-            return new OrderLine(row.get(1).toString(), /*vendor, */(String) row.get(2));
-        }).collect(Collectors.toSet());
+        return sheetData.stream()
+                .skip(3)
+                .map(row -> new OrderLine(row.get(1).toString(), (String) row.get(2))).collect(Collectors.toSet());
     }
 
     // Helper function to convert a column number to its corresponding letters.
