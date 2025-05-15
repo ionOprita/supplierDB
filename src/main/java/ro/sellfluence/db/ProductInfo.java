@@ -7,6 +7,7 @@ public record ProductInfo(
         boolean continueToSell,
         boolean retracted,
         String category,
-        String messageKeyword
+        String messageKeyword,
+        String employeeSheetName
 ) {
 }

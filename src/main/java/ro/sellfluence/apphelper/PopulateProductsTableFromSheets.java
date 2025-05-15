@@ -31,7 +31,7 @@ public class PopulateProductsTableFromSheets {
         populateFrom("sellfluence1", "2025 - Date produse & angajati", "Cons. Date Prod.")
                 .forEach(productInfo -> {
             try {
-                mirrorDB.addProduct(productInfo);
+                mirrorDB.addOrUpdateProduct(productInfo);
             } catch (SQLException e) {
                 System.out.println("Could not add the product " + productInfo + e.getMessage());
             }
@@ -53,15 +53,16 @@ public class PopulateProductsTableFromSheets {
             throw new RuntimeException("Spreadsheet %s not found.".formatted(spreadSheetName));
         }
         var spreadSheet = SheetsAPI.getSpreadSheet(appName, spreadSheetId);
-        return spreadSheet.getMultipleColumns(overviewSheetName, "C", "K", "U", "V", "BH", "CN", "DW").stream().skip(3)
+        return spreadSheet.getMultipleColumns(overviewSheetName, "C", "K", "U", "V", "BH", "CN", "DW", "EI").stream().skip(3)
                 .<ProductInfo>mapMulti((row, nextConsumer) -> {
-                    var pnk = row.get(4).toString();
-                            var productCode = row.get(1).toString();
-                            var name = row.get(0).toString();
-                    var category = row.get(5).toString();
-                    var messageKeyword = row.get(6).toString();
+                    var name = row.get(0).toString();
+                    var productCode = row.get(1).toString();
                     var continueToSell = TRUE.equals(row.get(2));
                     var retracted = TRUE.equals(row.get(3));
+                    var pnk = row.get(4).toString();
+                    var category = row.get(5).toString();
+                    var messageKeyword = row.get(6).toString();
+                    var employeeSheetName = row.get(7).toString();
                     if (continueToSell && retracted) {
                         logger.log(
                                 WARNING,
@@ -71,7 +72,7 @@ public class PopulateProductsTableFromSheets {
                         retracted = false;
                     }
                             if (!(pnk.isBlank() || pnk.equals("0") || name.isBlank() || name.equals("-"))) {
-                                nextConsumer.accept(new ProductInfo(pnk, productCode, name, continueToSell, retracted, category, messageKeyword));
+                                nextConsumer.accept(new ProductInfo(pnk, productCode, name, continueToSell, retracted, category, messageKeyword, employeeSheetName));
                             }
                         }
                 ).toList();
