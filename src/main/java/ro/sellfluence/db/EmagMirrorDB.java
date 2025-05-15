@@ -80,7 +80,8 @@ public class EmagMirrorDB {
                     EmagMirrorDBVersion13::version13,
                     EmagMirrorDBVersion14::version14,
                     EmagMirrorDBVersion15::version15,
-                    EmagMirrorDBVersion16::version16);
+                    EmagMirrorDBVersion16::version16,
+                    EmagMirrorDBVersion17::version17);
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }
@@ -183,7 +184,7 @@ public class EmagMirrorDB {
         System.out.println("If you want, you can continue with the program or wait until a fix is provided.");
         System.out.println("Please type the word \"Yes\" if you want the program to continue and fix the problem some other time. Type \"No\" if you want the program to stop and wait until you receive a fixed version of the program.");
         System.out.println("If you type anything else, the program will stop now.");
-        String input = scanner.nextLine().trim().toLowerCase();
+        String input = "yes"; // scanner.nextLine().trim().toLowerCase();
         boolean isYes = input.equals("yes");
         System.out.println("You entered: " + (isYes ? "YES, and the program will continue" : "NO, thus the program will terminate now."));
         if (!isYes) System.exit(1);
@@ -506,8 +507,14 @@ public class EmagMirrorDB {
         });
     }
 
-    public void addProduct(ProductInfo productInfo) throws SQLException {
-        database.writeTX(db -> insertProduct(db, productInfo));
+    public void addOrUpdateProduct(ProductInfo productInfo) throws SQLException {
+        database.writeTX(db -> {
+            var inserted = insertProduct(db, productInfo);
+            if (inserted == 0) {
+                updateProduct(db, productInfo);
+            }
+            return 0;
+        });
     }
 
     public void addEmagLog(String account, LocalDate date, LocalDateTime fetchTime, String error) throws SQLException {
@@ -530,6 +537,19 @@ public class EmagMirrorDB {
 
     public Optional<EmagFetchLog> getFetchStatus(String account, LocalDate date) throws SQLException {
         return database.readTX(db -> Optional.ofNullable(getEmagLog(db, account, date)));
+    }
+
+    public int deleteFetchLogsOlderThan(LocalDate oldestDay) throws SQLException {
+        return database.writeTX(db -> deleteFetchLogsOlderThan(db, oldestDay));
+    }
+
+    private int deleteFetchLogsOlderThan(Connection db, LocalDate oldestDay) {
+        try (var s = db.prepareStatement("DELETE FROM emag_fetch_log WHERE date < ?")) {
+            s.setDate(1, toDate(oldestDay));
+            return s.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     record GMVOrder(String id, int status, String product, String pnk, int quantity, int initialQty, int stornoQty,
@@ -879,7 +899,7 @@ public class EmagMirrorDB {
 
     private List<ProductWithID> getProducts(Connection db) throws SQLException {
         var products = new ArrayList<ProductWithID>();
-        try (var s = db.prepareStatement("SELECT id, emag_pnk, product_code, name, continue_to_sell, retracted, category, message_keyword FROM product")) {
+        try (var s = db.prepareStatement("SELECT id, emag_pnk, product_code, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name FROM product")) {
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     products.add(
@@ -892,8 +912,9 @@ public class EmagMirrorDB {
                                     rs.getBoolean("continue_to_sell"),
                                     rs.getBoolean("retracted"),
                                     rs.getString("category"),
-                                    rs.getString("message_keyword")
-                            )
+                                    rs.getString("message_keyword"),
+                                    rs.getString("employee_sheet_name")
+                                )
                             )
                     );
                 }
@@ -1722,8 +1743,8 @@ public class EmagMirrorDB {
         }
     }
 */
-
-    private static int updateProduct(Connection db, Product product, int surrogateId) throws SQLException {
+/*
+    private static int updateProductInOrder(Connection db, Product product, int surrogateId) throws SQLException {
         String query = "UPDATE product_in_order SET product_id = ?, mkt_id = ?, name = ?, status = ?, ext_part_number = ?, part_number = ?, part_number_key = ?, currency = ?, vat = ?, retained_amount = ?, quantity = ?, initial_qty = ?, storno_qty = ?, reversible_vat_charging = ?, sale_price = ?, original_price = ?, created = ?, modified = ?, details = ?, recycle_warranties = ? WHERE id = ? AND emag_order_surrogate_id = ?";
         try (var s = db.prepareStatement(query)) {
             s.setInt(1, product.product_id());
@@ -1751,7 +1772,7 @@ public class EmagMirrorDB {
             return s.executeUpdate();
         }
     }
-
+*/
     private static int insertCustomer(Connection db, Customer c) throws SQLException {
         try (var s = db.prepareStatement("""
                 INSERT INTO customer (
@@ -2644,7 +2665,11 @@ public class EmagMirrorDB {
      * @throws SQLException if anything bad happens.
      */
     private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO product (id, emag_pnk, name, continue_to_sell, retracted, category, message_keyword, product_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(emag_pnk) DO NOTHING")) {
+        try (var s = db.prepareStatement("""
+                INSERT INTO product (id, emag_pnk, name, continue_to_sell, retracted, category, message_keyword, product_code, employee_sheet_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT DO NOTHING
+                """)) {
             s.setObject(1, UUID.randomUUID());
             s.setString(2, productInfo.pnk());
             s.setString(3, productInfo.name());
@@ -2653,6 +2678,25 @@ public class EmagMirrorDB {
             s.setString(6, productInfo.category());
             s.setString(7, productInfo.messageKeyword());
             s.setString(8, productInfo.productCode());
+            s.setString(9, productInfo.employeeSheetName());
+            return s.executeUpdate();
+        }
+    }
+
+    private static int updateProduct(Connection db, ProductInfo productInfo) throws SQLException {
+        try (var s = db.prepareStatement("""
+                UPDATE product
+                SET emag_pnk = ?, category = ?, message_keyword = ?, continue_to_sell = ?, retracted = ?, product_code = ?, employee_sheet_name = ?
+                WHERE name = ?
+                """)) {
+            s.setString(1, productInfo.pnk());
+            s.setString(2, productInfo.category());
+            s.setString(3, productInfo.messageKeyword());
+            s.setBoolean(4, productInfo.continueToSell());
+            s.setBoolean(5, productInfo.retracted());
+            s.setString(6, productInfo.productCode());
+            s.setString(7, productInfo.employeeSheetName());
+            s.setString(8, productInfo.name());
             return s.executeUpdate();
         }
     }
@@ -2669,7 +2713,8 @@ public class EmagMirrorDB {
                             rs.getBoolean("continue_to_sell"),
                             rs.getBoolean("retracted"),
                             rs.getString("category"),
-                            rs.getString("message_keyword")
+                            rs.getString("message_keyword"),
+                            rs.getString("employee_sheet_name")
                     );
                 }
                 return null;
@@ -2677,17 +2722,6 @@ public class EmagMirrorDB {
         }
     }
 
-    /*
-        private static int updateProduct(Connection db, ProductInfo productInfo, String emagPnk) throws SQLException {
-            try (var s = db.prepareStatement("UPDATE product SET name = ?, category = ?, message_keyword = ? WHERE emag_pnk = ?")) {
-                s.setString(1, productInfo.name());
-                s.setString(2, productInfo.category());
-                s.setString(3, productInfo.messageKeyword());
-                s.setString(4, emagPnk);
-                return s.executeUpdate();
-            }
-        }
-    */
     private static int insertEmagLog(Connection db, String account, LocalDate date, LocalDateTime fetchTime, String error) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO emag_fetch_log (emag_login, date, fetch_time, error) VALUES (?, ?, ?, ?) ON CONFLICT(emag_login, date) DO NOTHING")) {
             s.setString(1, account);
