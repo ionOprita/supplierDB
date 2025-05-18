@@ -83,6 +83,10 @@ public class SheetsAPI {
         return spreadSheets.computeIfAbsent(key, _ -> new SheetsAPI(appName, spreadSheetId));
     }
 
+    public String getSpreadSheetName() {
+        return spreadSheetName;
+    }
+
     public List<ProtectedRange> getProtectedRanges(String name) {
         Objects.requireNonNull(name);
         try {
