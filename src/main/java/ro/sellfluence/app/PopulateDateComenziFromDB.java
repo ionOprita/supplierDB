@@ -50,14 +50,12 @@ public class PopulateDateComenziFromDB {
     public static void main(String[] args) throws SQLException, IOException {
         System.out.println("Update product table");
         PopulateProductsTableFromSheets.updateProductTable();
-        var drive = DriveAPI.getDriveAPI(appName);
-        var spreadSheetId = drive.getFileId(spreadSheetName);
-        var sheet = SheetsAPI.getSpreadSheet(appName, spreadSheetId);
+        var sheet = SheetsAPI.getSpreadSheetByName(appName, spreadSheetName);
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
         System.out.println("--- Update GMVs --------------------------");
         updateGMVs(mirrorDB, sheet);
         System.out.println("--- Update orders ------------------------");
-        updateOrders(mirrorDB, sheet, spreadSheetId);
+        updateOrders(mirrorDB, sheet);
     }
 
     /**
@@ -144,10 +142,10 @@ public class PopulateDateComenziFromDB {
      *
      * @param mirrorDB source database.
      * @param sheet target sheet.
-     * @param spreadSheetId id of the spreadsheet.
      * @throws SQLException if something goes wrong.
      */
-    private static void updateOrders(EmagMirrorDB mirrorDB, SheetsAPI sheet, String spreadSheetId) throws SQLException {
+    private static void updateOrders(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
+        var spreadSheetId = sheet.getSpreadSheetId();
         System.out.println("Read from the database");
         var rows = mirrorDB.readForSheet(year);
         System.out.println("Read from the spreadsheet");

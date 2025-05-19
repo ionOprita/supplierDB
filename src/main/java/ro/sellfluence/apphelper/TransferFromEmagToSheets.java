@@ -1,6 +1,5 @@
 package ro.sellfluence.apphelper;
 
-import ro.sellfluence.apphelper.GetCustomerData.SheetData;
 import ro.sellfluence.googleapi.SheetsAPI;
 
 import java.time.LocalDate;
@@ -20,7 +19,6 @@ import java.util.stream.Collectors;
 import static java.util.Comparator.comparing;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
-import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheet;
 
 public class TransferFromEmagToSheets {
 
@@ -57,7 +55,7 @@ public class TransferFromEmagToSheets {
                         final var rowsToAdd = orderEntries.stream()
                                 .filter(emagEntry -> emagEntry.orderDate().isAfter(statistic.lastUpdate().plusDays(1).atStartOfDay()))
                                 // Sort by date and within the same date by order ID.
-                                .sorted(comparing(SheetData::orderDate).thenComparing(SheetData::orderId))
+                                .sorted(comparing(EmployeeSheetData::orderDate).thenComparing(EmployeeSheetData::orderId))
                                 .map(data -> mapEmagToRow(data, productName))
                                 .toList();
                         if (!rowsToAdd.isEmpty()) {
@@ -73,7 +71,7 @@ public class TransferFromEmagToSheets {
                             () -> "Following order entries aren't stored because no sheet found with PNK %s: %s.".formatted(
                                     pnk,
                                     orderEntries.stream()
-                                            .map(SheetData::orderId)
+                                            .map(EmployeeSheetData::orderId)
                                             .collect(Collectors.joining(","))
                             )
                     );
@@ -89,7 +87,7 @@ public class TransferFromEmagToSheets {
                 .sorted()
                 .collect(Collectors.joining("\n ", "PNK to Spreadsheet mapping:\n ", "\n")));
         pnkToSpreadSheet = overviewResult.stream()
-                .collect(Collectors.toMap(GetOverview.SheetData::pnk, product -> getSpreadSheet(appName, product.spreadSheetId())));
+                .collect(Collectors.toMap(GetOverview.SheetData::pnk, product -> SheetsAPI.getSpreadSheetById(appName, product.spreadSheetId())));
         var nullPNK = pnkToSpreadSheet.entrySet().stream().filter(it -> it.getValue() == null).map(Map.Entry::getKey).toList();
         if (!nullPNK.isEmpty()) {
             logger.warning("Spreadsheet lookup issue for PNKs %s".formatted(nullPNK));
@@ -113,7 +111,7 @@ public class TransferFromEmagToSheets {
 
     private static final DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
-    private static List<Object> mapEmagToRow(SheetData data, String productName) {
+    private static List<Object> mapEmagToRow(EmployeeSheetData data, String productName) {
         var row = new ArrayList<>();
         row.add(data.orderId());
         row.add(data.quantity());

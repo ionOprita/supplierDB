@@ -2,6 +2,11 @@ package ro.sellfluence.support;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.Date;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.List;
 
 public class UsefulMethods {
@@ -62,5 +67,33 @@ public class UsefulMethods {
      */
     public static boolean isEmpty(List<? extends String> list) {
         return list == null || list.isEmpty() || (list.size() == 1 && isEmpty(list.getFirst()));
+    }
+
+    public static Date toDate(LocalDate localDate) {
+        return localDate == null ? null : Date.valueOf(localDate);
+    }
+
+    public static Date toDate(YearMonth yearMonth) {
+        return yearMonth == null ? null : Date.valueOf(yearMonth.atDay(1));
+    }
+
+    public static Timestamp toTimestamp(LocalDateTime localDateTime) {
+        return localDateTime == null ? null : Timestamp.valueOf(localDateTime);
+    }
+
+    public static Timestamp toTimestamp(LocalDate localDate) {
+        return localDate == null ? null : Timestamp.valueOf(localDate.atStartOfDay());
+    }
+
+    public static LocalDateTime toLocalDateTime(Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toLocalDateTime();
+    }
+
+    public static LocalDate toLocalDate(Timestamp timestamp) {
+        return timestamp == null ? null : toLocalDateTime(timestamp).toLocalDate();
+    }
+
+    public static YearMonth toYearMonth(Date date) {
+        return date == null ? null : YearMonth.from(date.toLocalDate());
     }
 }

@@ -47,12 +47,10 @@ public class PopulateProductsTableFromSheets {
      * @return list of record needed for populating the database.
      */
     private static List<ProductInfo> populateFrom(String appName, String spreadSheetName, String overviewSheetName) {
-        var drive = DriveAPI.getDriveAPI(appName);
-        var spreadSheetId = drive.getFileId(spreadSheetName);
-        if (spreadSheetId==null||spreadSheetId.isBlank()) {
+        var spreadSheet = SheetsAPI.getSpreadSheetByName(appName, spreadSheetName);
+        if (spreadSheet==null) {
             throw new RuntimeException("Spreadsheet %s not found.".formatted(spreadSheetName));
         }
-        var spreadSheet = SheetsAPI.getSpreadSheet(appName, spreadSheetId);
         return spreadSheet.getMultipleColumns(overviewSheetName, "C", "K", "U", "V", "BH", "CN", "DW", "EI").stream().skip(3)
                 .<ProductInfo>mapMulti((row, nextConsumer) -> {
                     var name = row.get(0).toString();
@@ -63,6 +61,9 @@ public class PopulateProductsTableFromSheets {
                     var category = row.get(5).toString();
                     var messageKeyword = row.get(6).toString();
                     var employeeSheetName = row.get(7).toString();
+                    if (employeeSheetName.equals("0") || employeeSheetName.isBlank()) {
+                        employeeSheetName = null;
+                    }
                     if (continueToSell && retracted) {
                         logger.log(
                                 WARNING,
@@ -76,5 +77,9 @@ public class PopulateProductsTableFromSheets {
                             }
                         }
                 ).toList();
+    }
+
+    public static void main(String[] args) {
+        updateProductTable();
     }
 }
