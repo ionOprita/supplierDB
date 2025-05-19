@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -68,8 +69,10 @@ public class PopulateDateComenziFromDB {
      */
     private static void updateGMVs(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
         var month = YearMonth.from(LocalDate.now());
-        updateGMVForMonth(mirrorDB, sheet, month);
-        updateGMVForMonth(mirrorDB, sheet, month.minusMonths(1));
+        while (month.getYear() == year) {
+            updateGMVForMonth(mirrorDB, sheet, month);
+            month = month.minusMonths(1);
+        }
     }
 
     private static void updateGMVForMonth(EmagMirrorDB mirrorDB, SheetsAPI sheet, YearMonth month) throws SQLException {
@@ -91,28 +94,42 @@ public class PopulateDateComenziFromDB {
             }
             columnNumber++;
         }
-        var startRow = 8;
-        var rowNumber = -startRow;
-        int productCount = productsInSheet.size() - 8;
-        var gmvColumn = new BigDecimal[productCount];
+        if (columnIdentifier == null) {
+            throw new RuntimeException("Could not find the column for the month %s".formatted(month));
+        }
+        Integer startRow = null;
+        var rowNumber = 0;
+        var gmvColumn = new ArrayList<BigDecimal>();
         for (String productName : productsInSheet) {
             rowNumber++;
-            if (rowNumber < 0) continue;
-            var gmv = gmvs.remove(productName);
             var productInfo = products.get(productName);
+            // Detect the first row with a valid product.
+            if (startRow == null && productInfo != null) {
+                startRow = rowNumber;
+            }
+            var gmv = gmvs.remove(productName);
             var retracted = productInfo != null && productInfo.retracted();
             var continueToSell = productInfo != null && productInfo.continueToSell();
+            if (continueToSell && retracted) {
+                logger.log(
+                        WARNING,
+                        "Product %s (%s) has both 'continue to sell' and 'retracted' set, which doesn't make sense. Dropping retracted."
+                                .formatted(productName, productInfo.pnk())
+                );
+                retracted = false;
+            }
             if (gmv == null) {
                 if (!retracted) {
                     logger.log(continueToSell ? WARNING : INFO, "No GMV for the product %s and the month %s".formatted(productName, month));
                 }
-            } else {
-                gmvColumn[rowNumber] = gmv;
+            }
+            if (startRow != null) {
+                gmvColumn.add(gmv);
             }
         }
         sheet.updateRange(
-                "'%s'!%s%d:%s%d".formatted(gmvSheetName, columnIdentifier, startRow, columnIdentifier, startRow + productCount - 1),
-                Arrays.stream(gmvColumn).map(it -> {
+                "'%s'!%s%d:%s%d".formatted(gmvSheetName, columnIdentifier, startRow, columnIdentifier, startRow + gmvColumn.size() -1),
+                gmvColumn.stream().map(it -> {
                     var o = it != null ? (Object) it : (Object) "";
                     return List.of(o);
                 }).toList()
