@@ -242,6 +242,7 @@ public class SheetsAPI {
             try {
                 var range = "%1$s!%2$s:%3$s".formatted(sheetName, firstColumn, lastColumns);
                 result = getSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(ROWS).execute().getValues();
+                retryCount = 0; // No need to retry, we got everything.
             } catch (IOException e) {
                 retryCount--;
                 if (retryCount == 0) {
