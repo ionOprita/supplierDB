@@ -1,7 +1,8 @@
-package ro.sellfluence.apphelper;
+package ro.sellfluence.app;
 
+import ro.sellfluence.apphelper.EmployeeSheetData;
+import ro.sellfluence.apphelper.GetStatsForAllSheets;
 import ro.sellfluence.db.EmagMirrorDB;
-import ro.sellfluence.googleapi.DriveAPI;
 import ro.sellfluence.googleapi.SheetsAPI;
 
 import java.io.IOException;
@@ -34,16 +35,13 @@ public class UpdateEmployeeSheetsFromDB {
     private static final Logger logger = Logger.getLogger(UpdateEmployeeSheetsFromDB.class.getName());
 
     private final String appName;
-    private final DriveAPI drive;
     private Map<String, SheetsAPI> pnkToSpreadSheet;
     private Set<String> relevantProducts;
-    private LocalDateTime startTime;
     private LocalDateTime endTime = LocalDate.now().minusDays(13).atStartOfDay();
     private Map<String, GetStatsForAllSheets.Statistic> pnkToStatistic;
 
 
     public UpdateEmployeeSheetsFromDB(String appName) {
-        drive = DriveAPI.getDriveAPI(appName);
         this.appName = appName;
     }
 
@@ -60,10 +58,10 @@ public class UpdateEmployeeSheetsFromDB {
     public void transferFromDBToSheet(EmagMirrorDB mirrorDB) throws SQLException, IOException {
         loadOverview(mirrorDB);
         if (relevantProducts.isEmpty()) {
-            throw new RuntimeException("No valid products found in database.");
+            throw new RuntimeException("No valid product found in the database.");
         }
         loadAllStatistics();
-        // Map OrderId to sheet containing it.
+        // Map OrderId to spreadsheet containing it.
         var existingOrderAssignments = new HashMap<String, SheetsAPI>();
         // Map SheetData to OrderId
         var newAssignments = new HashMap<EmployeeSheetData, String>();
@@ -75,49 +73,65 @@ public class UpdateEmployeeSheetsFromDB {
             if (spreadSheet == null) {
                 logger.log(WARNING, "No spreadsheet found for PNK %s".formatted(pnk));
             } else {
+                logger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s".formatted(spreadSheet.getTitle(), statistic.sheetName(), pnk));
                 accumulateExistingOrders(spreadSheet, statistic.sheetName(), existingOrderAssignments);
-                var newOrdersForProduct = mirrorDB.readOrderData(pnk, startTime, endTime);
-                newOrdersForProduct.stream()
-                        .forEach(it -> newAssignments.put(it, statistic.sheetName()));
+                var startTime = statistic.lastUpdate().atStartOfDay();
+                var newOrdersForProduct = mirrorDB.readOrderData(pnk, startTime, endTime).stream().filter(it -> it.quantity() > 0).toList();
+                for (EmployeeSheetData it : newOrdersForProduct) {
+                    newAssignments.put(it, statistic.sheetName());
+                }
             }
         }
-        System.out.println("Existing orders: " + existingOrderAssignments.size());
-        System.out.println("New orders: " + newAssignments.size());
-/*
-        for (String emagAccount : emagAccounts) {
-            final var emagEntries = GetCustomerData.getByProduct(startTime, endTime, emagAccount);
-            emagEntries.forEach((pnk, orderEntries) -> {
-                if (relevantProducts.contains(pnk)) {
-                    final var statistic = pnkToStatistic.get(pnk);
-                    if (statistic != null) {
-                        final var productName = statistic.produs();
-                        final var rowsToAdd = orderEntries.stream()
-                                .filter(emagEntry -> emagEntry.orderDate().isAfter(statistic.lastUpdate().plusDays(1).atStartOfDay()))
-                                // Sort by date and within the same date by order ID.
-                                .sorted(comparing(SheetData::orderDate).thenComparing(SheetData::orderId))
-                                .map(data -> mapEmagToRow(data, productName))
-                                .toList();
-                        if (!rowsToAdd.isEmpty()) {
-                            addToSheet(pnk, rowsToAdd);
-                        }
-                    } else {
-                        logger.log(WARNING, () -> "Product with PNK %s doesn't have an entry in statistici/lune or setari in the spreadsheet %s."
-                                .formatted(pnk, pnkToSpreadSheet.get(pnk).getTitle()));
+        logger.log(INFO, () -> "Existing orders: " + existingOrderAssignments.size());
+        logger.log(INFO, () -> "New orders: " + newAssignments.size());
+        // Just in case.
+        var newOrdersWithoutOldOnes = newAssignments.entrySet().stream()
+                .filter(it -> !existingOrderAssignments.containsKey(it.getValue()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        logger.log(INFO, () -> "New orders without old ones: " + newOrdersWithoutOldOnes.size());
+        var groupedByOrderId = newAssignments.keySet().stream()
+                .collect(Collectors.groupingBy(EmployeeSheetData::orderId));
+        var onlyDuplicates = groupedByOrderId.entrySet().stream()
+                .filter(it -> it.getValue().size() > 1)
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,                                     // preserve the orderId as the key
+                        Map.Entry::getValue                                    // preserve the List<EmployeeSheetData>
+                ));
+        logger.log(INFO, () -> "Only duplicates: " + onlyDuplicates.size());
+        // Set the called flag on all entries except for the first one.
+        var withCalledSetOnDuplicates = groupedByOrderId.entrySet().stream()
+                .map(it -> {
+                    var modifiedList = new ArrayList<EmployeeSheetData>();
+                    int i = 0;
+                    for (EmployeeSheetData sheetData : it.getValue()) {
+                        EmployeeSheetData employeeSheetData = sheetData.withCalledSet(i != 0);
+                        modifiedList.add(employeeSheetData);
+                        i++;
                     }
-                } else {
-                    logger.log(
-                            WARNING,
-                            () -> "Following order entries aren't stored because no sheet found with PNK %s: %s.".formatted(
-                                    pnk,
-                                    orderEntries.stream()
-                                            .map(SheetData::orderId)
-                                            .collect(Collectors.joining(","))
-                            )
-                    );
+                    return new AbstractMap.SimpleEntry<>(it.getKey(), modifiedList) {
+                    };
+                }).collect(Collectors.toMap(Map.Entry::getKey, // preserve the orderId as the key
+                        Map.Entry::getValue));
+        var reorderedByEmployeeSheet = withCalledSetOnDuplicates.values().stream()
+                .flatMap(List::stream)
+                .collect(Collectors.groupingBy(employeeSheetData -> pnkToSpreadSheet.get(employeeSheetData.partNumberKey())
+                ));
+        for (Map.Entry<SheetsAPI, List<EmployeeSheetData>> entry : reorderedByEmployeeSheet.entrySet()) {
+            var sheet = entry.getKey();
+            var groupedBySheet = entry.getValue().stream().collect(Collectors.groupingBy(it ->pnkToStatistic.get(it.partNumberKey()).sheetName()));
+            for (var entry1 : groupedBySheet.entrySet()) {
+                var sheetName = entry1.getKey();
+                var orders = entry1.getValue();
+                if (!orders.isEmpty()) {
+                    var rowData = orders.stream()
+                            .sorted(comparing(EmployeeSheetData::orderDate))
+                            .map(UpdateEmployeeSheetsFromDB::mapEmagToRow)
+                            .toList();
+                    addToSheet(orders.getFirst().partNumberKey(), sheet, sheetName,  rowData);
                 }
-            });
+            }
         }
-*/
+        //TODO: We currently look at orders but shouldn't we rather look at customers?
     }
 
     /**
@@ -134,7 +148,7 @@ public class UpdateEmployeeSheetsFromDB {
             if (oldAssignment != null) {
                 logger.log(
                         WARNING,
-                        "Order %s assigned to %s, is also assigned to %s".formatted(
+                        "Order %s assigned to %s is also assigned to %s".formatted(
                                 orderId, oldAssignment.getSpreadSheetName(), sheet.getSpreadSheetName()
                         )
                 );
@@ -145,7 +159,7 @@ public class UpdateEmployeeSheetsFromDB {
     /**
      * Load the mapping between PNKs and employee sheets.
      */
-    private void loadOverview(EmagMirrorDB mirrorDB) throws SQLException, IOException {
+    private void loadOverview(EmagMirrorDB mirrorDB) throws SQLException {
         var products = mirrorDB.readProducts();
         pnkToSpreadSheet = products.stream()
                 .filter(it -> it.product().employeeSheetName() != null)
@@ -185,7 +199,6 @@ public class UpdateEmployeeSheetsFromDB {
                 .min(comparing(GetStatsForAllSheets.Statistic::lastUpdate))
                 .get()
                 .lastUpdate();
-        startTime = smallestUpdateDate.plusDays(1).atStartOfDay();
         endTime = LocalDate.now().minusDays(13).atStartOfDay();
         pnkToStatistic = statisticsFromAllSheets.stream()
                 .collect(Collectors.toMap(GetStatsForAllSheets.Statistic::pnk, statistic -> statistic));
@@ -193,14 +206,14 @@ public class UpdateEmployeeSheetsFromDB {
 
     private static final DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
-    private static List<Object> mapEmagToRow(EmployeeSheetData data, String productName) {
+    private static List<Object> mapEmagToRow(EmployeeSheetData data) {
         var row = new ArrayList<>();
         row.add(data.orderId());
         row.add(data.quantity());
-        row.add(String.format(Locale.US, "%.2f", data.price().doubleValue() * 1.19)); // TODO: Proper handling of VAT required
+        row.add(String.format(Locale.US, "%.2f", data.price()));
         row.add(data.isCompany() ? "Yes" : "No");
         row.add(data.orderDate().format(dateFormat));
-        row.add(productName);
+        row.add(data.productName());
         row.add(data.partNumberKey());
         row.add(data.billingName());
         row.add(data.billingPhone());
@@ -218,9 +231,7 @@ public class UpdateEmployeeSheetsFromDB {
      * @param pnk       Product identification
      * @param rowsToAdd Additional rows.
      */
-    private void addToSheet(String pnk, List<List<Object>> rowsToAdd) {
-        var sheet = pnkToSpreadSheet.get(pnk);
-        var sheetName = pnkToStatistic.get(pnk).sheetName();
+    private void addToSheet(String pnk, SheetsAPI sheet, String sheetName, List<List<Object>> rowsToAdd) {
         List<String> orderIdColumn = sheet.getColumn(sheetName, "A");
         var mapOrderToColumn = new HashMap<String, List<Integer>>();
         for (var columnNumber = 0; columnNumber < orderIdColumn.size(); columnNumber++) {

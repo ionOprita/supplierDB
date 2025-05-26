@@ -41,4 +41,24 @@ public record EmployeeSheetData(
         String deliveryMode,
         boolean contacted
 ) {
+    public EmployeeSheetData withCalledSet(boolean newContacted) {
+        return new EmployeeSheetData(
+                orderId,
+                quantity,
+                price,
+                isCompany,
+                orderDate,
+                productName,
+                partNumberKey,
+                userName,
+                billingName,
+                billingPhone,
+                billingAddress,
+                clientName,
+                clientPhone,
+                deliveryAddress,
+                deliveryMode,
+                newContacted
+        );
+    }
 }

@@ -17,6 +17,7 @@ public class EmagBot {
             throw new RuntimeException("PopulateDateComenzi endet with an exception ", e);
         }
         System.out.println("Update the sheet used for customer feedback.");
+        // UpdateEmployeeSheetsFromDB.main(new String[0]);
         UpdateAllSheetsMain.main(new String[0]);
     }
 }
