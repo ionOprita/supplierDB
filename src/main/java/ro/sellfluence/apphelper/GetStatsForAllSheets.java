@@ -61,7 +61,7 @@ public class GetStatsForAllSheets {
                             logger.log(INFO, () -> pnkToSheetName.entrySet().stream()
                                     .map(e -> "%s -> %s".formatted(e.getKey(), e.getValue()))
                                     .sorted()
-                                    .collect(Collectors.joining("\n ", "%s setari PNK mapping:\n ".formatted(spreadSheet.getTitle()), "\n")));
+                                    .collect(Collectors.joining("\n ", "%s setari PNK mapping:\n ".formatted(spreadSheet.getSpreadSheetName()), "\n")));
                             List<Statistic> statistics = spreadSheet.getRowsInColumnRange(statisticSheetName, "A", "E").stream()
                                     .skip(6)
                                     .filter(row -> row.size() > 2 && row.getFirst().matches("\\d+") && !row.get(2).isEmpty())
@@ -83,7 +83,7 @@ public class GetStatsForAllSheets {
                                     .toList();
                             logger.log(INFO, () -> statistics.stream()
                                     .map(st -> "%s %s".formatted(st.pnk, st.produs))
-                                    .collect(Collectors.joining("\n ", "%s statistics PNK found\n ".formatted(spreadSheet.getTitle()), "\n")));
+                                    .collect(Collectors.joining("\n ", "%s statistics PNK found\n ".formatted(spreadSheet.getSpreadSheetName()), "\n")));
                             return statistics.stream();
                         }
                 )
