@@ -55,7 +55,13 @@ public class UpdateEmployeeSheetsFromDB {
         }
     }
 
-    public void transferFromDBToSheet(EmagMirrorDB mirrorDB) throws SQLException, IOException {
+    /**
+     * The main method that will transfer new orders to the appropriate employee sheet depending on the products.
+     *
+     * @param mirrorDB database to read.
+     * @throws SQLException on database errors.
+     */
+    public void transferFromDBToSheet(EmagMirrorDB mirrorDB) throws SQLException {
         loadOverview(mirrorDB);
         if (relevantProducts.isEmpty()) {
             throw new RuntimeException("No valid product found in the database.");
@@ -195,17 +201,21 @@ public class UpdateEmployeeSheetsFromDB {
         var statisticsFromAllSheets = GetStatsForAllSheets.getStatistics(pnkToSpreadSheet).stream()
                 .filter(it -> relevantProducts.contains(it.pnk()))
                 .toList();
-        var smallestUpdateDate = statisticsFromAllSheets.stream()
-                .min(comparing(GetStatsForAllSheets.Statistic::lastUpdate))
-                .get()
-                .lastUpdate();
-        endTime = LocalDate.now().minusDays(13).atStartOfDay();
         pnkToStatistic = statisticsFromAllSheets.stream()
                 .collect(Collectors.toMap(GetStatsForAllSheets.Statistic::pnk, statistic -> statistic));
     }
 
+    /**
+     * Format of date as used in the spreadsheet.
+     */
     private static final DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
+    /**
+     * Create a row of data suitable to be inserted into the sheet out of the collected data.
+     *
+     * @param data collected data for the order and product.
+     * @return row that needs to be inserted in the sheet.
+     */
     private static List<Object> mapEmagToRow(EmployeeSheetData data) {
         var row = new ArrayList<>();
         row.add(data.orderId());
@@ -261,14 +271,16 @@ public class UpdateEmployeeSheetsFromDB {
         var withoutDuplicates = rowsToAdd.stream()
                 .filter(row -> !processedOrderIds.contains(((String) row.getFirst())))
                 .toList();
-        System.out.printf("Adding %d rows after row %d to tab %s of some spreadsheet.%n", withoutDuplicates.size(), lastRowNumber, sheetName);
-        var pnksInSheet = sheet.getColumn(sheetName, "G").stream().skip(3).filter(x -> !x.isBlank()).collect(Collectors.toSet());
-        if (pnksInSheet.size() > 1) {
-            logger.log(WARNING, "Sheet '%s' in Spreadsheet '%s' contains multiple PNKs in column 7: %s.".formatted(sheetName, sheet.getTitle(), pnksInSheet));
-        } else if (pnksInSheet.size() == 1 && !Objects.equals(pnksInSheet.iterator().next(), pnk)) {
-            logger.log(WARNING, "Expected PNK '%s', but Sheet '%s' in Spreadsheet '%s' contains different PNK in column 7: %s.".formatted(pnk, sheetName, sheet.getTitle(), pnksInSheet));
-        } else {
-            sheet.updateRange("%s!A%d:N%d".formatted(sheetName, lastRowNumber + 1, lastRowNumber + withoutDuplicates.size()), withoutDuplicates);
+        if (!withoutDuplicates.isEmpty()) {
+            System.out.printf("Adding %d rows after row %d to tab %s of spreadsheet %s.%n", withoutDuplicates.size(), lastRowNumber, sheetName, sheet.getSpreadSheetName());
+            var pnksInSheet = sheet.getColumn(sheetName, "G").stream().skip(3).filter(x -> !x.isBlank()).collect(Collectors.toSet());
+            if (pnksInSheet.size() > 1) {
+                logger.log(WARNING, "Sheet '%s' in Spreadsheet '%s' contains multiple PNKs in column 7: %s.".formatted(sheetName, sheet.getTitle(), pnksInSheet));
+            } else if (pnksInSheet.size() == 1 && !Objects.equals(pnksInSheet.iterator().next(), pnk)) {
+                logger.log(WARNING, "Expected PNK '%s', but Sheet '%s' in Spreadsheet '%s' contains different PNK in column 7: %s.".formatted(pnk, sheetName, sheet.getTitle(), pnksInSheet));
+            } else {
+                sheet.updateRange("%s!A%d:N%d".formatted(sheetName, lastRowNumber + 1, lastRowNumber + withoutDuplicates.size()), withoutDuplicates);
+            }
         }
     }
 }
