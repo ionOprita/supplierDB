@@ -79,7 +79,7 @@ public class UpdateEmployeeSheetsFromDB {
             if (spreadSheet == null) {
                 logger.log(WARNING, "No spreadsheet found for PNK %s".formatted(pnk));
             } else {
-                logger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s".formatted(spreadSheet.getTitle(), statistic.sheetName(), pnk));
+                logger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s".formatted(spreadSheet.getSpreadSheetName(), statistic.sheetName(), pnk));
                 accumulateExistingOrders(spreadSheet, statistic.sheetName(), existingOrderAssignments);
                 var startTime = statistic.lastUpdate().atStartOfDay();
                 var newOrdersForProduct = mirrorDB.readOrderData(pnk, startTime, endTime).stream().filter(it -> it.quantity() > 0).toList();
@@ -90,9 +90,8 @@ public class UpdateEmployeeSheetsFromDB {
         }
         logger.log(INFO, () -> "Existing orders: " + existingOrderAssignments.size());
         logger.log(INFO, () -> "New orders: " + newAssignments.size());
-        // Just in case.
         var newOrdersWithoutOldOnes = newAssignments.entrySet().stream()
-                .filter(it -> !existingOrderAssignments.containsKey(it.getValue()))
+                .filter(it -> !existingOrderAssignments.containsKey(it.getKey().orderId()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         logger.log(INFO, () -> "New orders without old ones: " + newOrdersWithoutOldOnes.size());
         var groupedByOrderId = newAssignments.keySet().stream()
@@ -244,10 +243,10 @@ public class UpdateEmployeeSheetsFromDB {
     private void addToSheet(String pnk, SheetsAPI sheet, String sheetName, List<List<Object>> rowsToAdd) {
         List<String> orderIdColumn = sheet.getColumn(sheetName, "A");
         var mapOrderToColumn = new HashMap<String, List<Integer>>();
-        for (var columnNumber = 0; columnNumber < orderIdColumn.size(); columnNumber++) {
-            var orderId = orderIdColumn.get(columnNumber);
+        for (var rowNumber = 0; rowNumber < orderIdColumn.size(); rowNumber++) {
+            var orderId = orderIdColumn.get(rowNumber);
             var columnList = mapOrderToColumn.getOrDefault(orderId, new ArrayList<>());
-            columnList.add(columnNumber);
+            columnList.add(rowNumber);
             mapOrderToColumn.put(orderId, columnList);
         }
         mapOrderToColumn.entrySet().stream()
@@ -255,7 +254,7 @@ public class UpdateEmployeeSheetsFromDB {
                 .forEach(entry ->
                         logger.log(
                                 WARNING,
-                                "Found order %s in multiple columns: %s".formatted(
+                                "Found order %s in multiple rows: %s".formatted(
                                         entry.getKey(),
                                         String.join(
                                                 ", ",
