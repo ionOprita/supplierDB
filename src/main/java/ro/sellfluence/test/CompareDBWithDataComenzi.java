@@ -36,9 +36,7 @@ public class CompareDBWithDataComenzi {
 
 
     public static void main(String[] args) {
-        final DriveAPI drive = DriveAPI.getDriveAPI(appName);
-        var spreadSheetId = drive.getFileId(spreadSheetName);
-        var spreadSheet = SheetsAPI.getSpreadSheet(appName, spreadSheetId);
+        var spreadSheet = SheetsAPI.getSpreadSheetByName(appName, spreadSheetName);
         System.out.println("Reading spreadsheet ...");
         var dataFromSheet = sheetDataToOrderList(spreadSheet.getRowsInColumnRange(sheetName, "A", "AF").stream().skip(3).toList());
         try {

@@ -46,7 +46,7 @@ public class EmagDBApp {
 
     public static void main(String[] args) {
         System.setProperty("java.util.logging.SimpleFormatter.format", "%1$tF %1$tT %4$s %5$s (%2$s)%n");
-        EmagApi.setAPILogLevel(WARNING);
+        EmagApi.setAPILogLevel(INFO);
         try {
             EmagMirrorDB mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
             if (args.length > 0 && Objects.equals(args[0], "refetch_some")) {
@@ -156,6 +156,7 @@ public class EmagDBApp {
     private static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) {
         var daysToConsider = 3 * 366;   // 3 Years
         var oldestDay = today.minusDays(daysToConsider);
+        cleanupFetchLogs(mirrorDB, oldestDay);
         repeatUntilDone(
                 () -> {
                     boolean result = false;
@@ -167,6 +168,20 @@ public class EmagDBApp {
                     return result;
                 }
         );
+    }
+
+    /**
+     * Drop from the emag_fetch_log all entries for days older than the given one.
+     * @param mirrorDB the database to use.
+     * @param oldestDay cutoff date.
+     */
+    private static void cleanupFetchLogs(EmagMirrorDB mirrorDB, LocalDate oldestDay) {
+        try {
+            var count = mirrorDB.deleteFetchLogsOlderThan(oldestDay);
+            logger.log(INFO, "Deleted %d fetch logs older than %s".formatted(count, oldestDay));
+        } catch (SQLException e) {
+            logger.log(WARNING, "Error deleting fetch logs", e);
+        }
     }
 
     private static boolean repeatUntilDone(Callable<Boolean> callable) {

@@ -40,6 +40,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
+import static java.util.Objects.requireNonNull;
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
 /**
@@ -70,21 +71,69 @@ public class SheetsAPI {
      * @param appName name of the application
      *                as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
      */
-    private SheetsAPI(String appName, String spreadSheetId) {
+    private SheetsAPI(String appName, String spreadSheetId, String spreadSheetName) {
         this.appName = appName;
         this.spreadSheetId = spreadSheetId;
-        this.spreadSheetName = DriveAPI.getDriveAPI(appName).getNameForId(spreadSheetId);
+        this.spreadSheetName = spreadSheetName;
     }
 
+    /**
+     * Cache spreadsheets by app name and ID.
+     */
     private static final Map<String, SheetsAPI> spreadSheets = new HashMap<>();
 
-    public static SheetsAPI getSpreadSheet(String appName, String spreadSheetId) {
+    /**
+     * Get a spreadsheet by its ID.
+     *
+     * @param appName name of the application
+     *                     as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
+     * @param spreadSheetId ID of the spreadsheet.
+     * @return instance of this class representing the spreadsheet, or null if not found.
+     */
+    public static SheetsAPI getSpreadSheetById(String appName, String spreadSheetId) {
+        requireNonNull(appName);
+        if (spreadSheetId == null) {
+            return null;
+        }
+        var name = DriveAPI.getDriveAPI(appName).getNameForId(spreadSheetId);
+        if (name == null) {
+            return null;
+        }
         var key = "%s\t%s".formatted(appName, spreadSheetId);
-        return spreadSheets.computeIfAbsent(key, _ -> new SheetsAPI(appName, spreadSheetId));
+        return spreadSheets.computeIfAbsent(key, _ -> new SheetsAPI(appName, spreadSheetId, name));
+    }
+
+    /**
+     * Get a spreadsheet by its name.
+     *
+     * @param appName name of the application
+     *                     as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
+     * @param spreadSheetName name of the spreadsheet.
+     * @return instance of this class representing the spreadsheet, or null if not found.
+     */
+    public static SheetsAPI getSpreadSheetByName(String appName, String spreadSheetName) {
+        requireNonNull(appName);
+        if (spreadSheetName == null) {
+            return null;
+        }
+        var id = DriveAPI.getDriveAPI(appName).getFileId(spreadSheetName);
+        if (id == null) {
+            return null;
+        }
+        var key = "%s\t%s".formatted(appName, id);
+        return spreadSheets.computeIfAbsent(key, _ -> new SheetsAPI(appName, id, spreadSheetName));
+    }
+
+    public String getSpreadSheetName() {
+        return spreadSheetName;
+    }
+
+    public String getSpreadSheetId() {
+        return spreadSheetId;
     }
 
     public List<ProtectedRange> getProtectedRanges(String name) {
-        Objects.requireNonNull(name);
+        requireNonNull(name);
         try {
             var matchingSheets = getSheetsService().spreadsheets().get(spreadSheetId).execute().getSheets().stream()
                     .filter(sheet -> name.equals(sheet.getProperties().getTitle())).toList();
@@ -123,7 +172,7 @@ public class SheetsAPI {
     }
 
     public Integer getSheetId(String name) {
-        Objects.requireNonNull(name);
+        requireNonNull(name);
         var matchingIds = getSheetProperties().stream().filter(metaData -> name.equals(metaData.title)).toList();
         if (matchingIds.isEmpty()) {
             return null;
@@ -186,16 +235,32 @@ public class SheetsAPI {
     }
 
     public List<List<String>> getRowsInColumnRange(String sheetName, String firstColumn, String lastColumns) {
-        try {
-            var range = "%1$s!%2$s:%3$s".formatted(sheetName, firstColumn, lastColumns);
-            var result = getSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(ROWS).execute().getValues();
-            if (result != null) {
-                return result.stream().map(objects -> objects.stream().map(o -> (String) o).toList()).toList();
-            } else {
-                return List.of(List.of());
+        var retryCount =  4;
+        var retryDelay = 60_000;
+        List<List<Object>> result = null;
+        while (retryCount>0) {
+            try {
+                var range = "%1$s!%2$s:%3$s".formatted(sheetName, firstColumn, lastColumns);
+                result = getSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(ROWS).execute().getValues();
+                retryCount = 0; // No need to retry, we got everything.
+            } catch (IOException e) {
+                retryCount--;
+                if (retryCount == 0) {
+                    throw new RuntimeException("Issue in getRowsInColumnRange(%s,%s,%s)".formatted(sheetName, firstColumn, lastColumns), e);
+                }
+                logger.log(Level.WARNING, "Read error. Retrying after %d s. Retry count %d".formatted(retryDelay/1000, retryCount));
+                try {
+                    Thread.sleep(retryDelay);
+                } catch (InterruptedException ex) {
+                    // Don't care about interrupts.
+                }
+               // retryDelay*=2;
             }
-        } catch (IOException e) {
-            throw new RuntimeException("Issue in getRowsInColumnRange(%s,%s,%s)".formatted(sheetName, firstColumn, lastColumns), e);
+        }
+        if (result != null) {
+            return result.stream().map(objects -> objects.stream().map(o -> (String) o).toList()).toList();
+        } else {
+            return List.of(List.of());
         }
     }
 
@@ -321,7 +386,7 @@ public class SheetsAPI {
     public List<List<Object>> getMultipleColumns(String sheetName, String... columns) {
         var ranges = Arrays.stream(columns).map(c -> "%1$s!%2$s:%2$s".formatted(sheetName, c)).toList();
         var retryCount =  4;
-        var retryDelay = 5_000;
+        var retryDelay = 60_000;
         List<List<Object>> returnValue = null;
         while (retryCount>0) {
             try {
@@ -356,7 +421,7 @@ public class SheetsAPI {
                 } catch (InterruptedException ex) {
                     // Don't care about interrupts.
                 }
-                retryDelay*=2;
+               // retryDelay*=2;
             }
         }
         return returnValue;
@@ -456,6 +521,11 @@ public class SheetsAPI {
         } else {
             return new CellData().setUserEnteredValue(new ExtendedValue().setStringValue(value.toString()));
         }
+    }
+
+    @Override
+    public String toString() {
+        return "SheetsAPI{" + "appName='" + appName + '\'' + ", spreadSheetName='" + spreadSheetName + '\'' + ", spreadSheetId='" + spreadSheetId + '\'' + '}';
     }
 
     private Sheets getSheetsService() {

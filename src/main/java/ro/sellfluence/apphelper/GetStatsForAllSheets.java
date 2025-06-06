@@ -12,7 +12,9 @@ import java.util.stream.Collectors;
 
 import static java.util.logging.Level.INFO;
 
-
+/**
+ * Retrieve the relevant information from the monthly statistic page for all employee sheets.
+ */
 public class GetStatsForAllSheets {
 
     private static final String statisticSheetName = "Statistici/luna";
@@ -32,7 +34,7 @@ public class GetStatsForAllSheets {
      * Retrieve the relevant information from the monthly statistic page for all sheets.
      *
      * @param pnkToSpreadSheet map from PNK to the spreadsheet of the worker assigned to this PNK.
-     * @return List with mappings of PNK to product name and last update date.
+     * @return List with mappings of PNK to the product name and last update date.
      */
     public static List<Statistic> getStatistics(Map<String, SheetsAPI> pnkToSpreadSheet) {
         var sheetsToPNK = pnkToSpreadSheet.entrySet().stream()
@@ -59,7 +61,7 @@ public class GetStatsForAllSheets {
                             logger.log(INFO, () -> pnkToSheetName.entrySet().stream()
                                     .map(e -> "%s -> %s".formatted(e.getKey(), e.getValue()))
                                     .sorted()
-                                    .collect(Collectors.joining("\n ", "%s setari PNK mapping:\n ".formatted(spreadSheet.getTitle()), "\n")));
+                                    .collect(Collectors.joining("\n ", "%s setari PNK mapping:\n ".formatted(spreadSheet.getSpreadSheetName()), "\n")));
                             List<Statistic> statistics = spreadSheet.getRowsInColumnRange(statisticSheetName, "A", "E").stream()
                                     .skip(6)
                                     .filter(row -> row.size() > 2 && row.getFirst().matches("\\d+") && !row.get(2).isEmpty())
@@ -81,7 +83,7 @@ public class GetStatsForAllSheets {
                                     .toList();
                             logger.log(INFO, () -> statistics.stream()
                                     .map(st -> "%s %s".formatted(st.pnk, st.produs))
-                                    .collect(Collectors.joining("\n ", "%s statistics PNK found\n ".formatted(spreadSheet.getTitle()), "\n")));
+                                    .collect(Collectors.joining("\n ", "%s statistics PNK found\n ".formatted(spreadSheet.getSpreadSheetName()), "\n")));
                             return statistics.stream();
                         }
                 )

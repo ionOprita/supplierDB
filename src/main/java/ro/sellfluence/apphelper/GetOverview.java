@@ -18,8 +18,7 @@ public class GetOverview {
 
     public GetOverview(String appName, String spreadSheetName, String sheetName) {
         drive = DriveAPI.getDriveAPI(appName);
-        var spreadSheetId = drive.getFileId(spreadSheetName);
-        spreadSheet = SheetsAPI.getSpreadSheet(appName, spreadSheetId);
+        spreadSheet = SheetsAPI.getSpreadSheetByName(appName, spreadSheetName);
         overviewSheetName = sheetName;
     }
 

@@ -31,6 +31,19 @@ emag    jdbc:postgresql://127.0.0.1:5432/emag       emag        password
 
 Make sure each field is separated by a single TAB character.
 
+### Backup and restore
+
+Create a backup of the database using the command (will contain date and hour in name)
+```
+pg_dump -Fc -f db_emag_$(date +%Y-%m-%dT%H).dump emag
+```
+Restore from a specific backup using the command (substituting date and time for your latest backup)
+```
+pg_restore -d emag -c --if-exists db_emag_2025-05-15T16.dump
+```
+
+### Drop tables for testing
+
 To quickly drop all tables for testing, execute this:
 
 ```
@@ -41,6 +54,7 @@ for the remote database use
 ```
 psql -t -h 86.124.84.214 -U emag -d emag -c "SELECT 'DROP TABLE IF EXISTS ' || tablename || ' CASCADE;' FROM pg_tables WHERE schemaname = 'public';" | psql -h 86.124.84.214 -U emag -d emag
 ```
+### Some useful SQL statements
 
 To see if there are missing dates, this SQL statement can be used:
 
@@ -143,4 +157,3 @@ spring.datasource.url=jdbc:postgresql://localhost:5432/supplierdb
 spring.datasource.username=supplierdb
 spring.datasource.password=supplierdb
 ```
-
