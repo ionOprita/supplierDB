@@ -127,13 +127,17 @@ public class PopulateDateComenziFromDB {
                 gmvColumn.add(gmv);
             }
         }
-        sheet.updateRange(
-                "'%s'!%s%d:%s%d".formatted(gmvSheetName, columnIdentifier, startRow, columnIdentifier, startRow + gmvColumn.size() -1),
-                gmvColumn.stream().map(it -> {
-                    var o = it != null ? (Object) it : (Object) "";
-                    return List.of(o);
-                }).toList()
-        );
+        if (startRow!=null) {
+            sheet.updateRange(
+                    "'%s'!%s%d:%s%d".formatted(gmvSheetName, columnIdentifier, startRow, columnIdentifier, startRow + gmvColumn.size() -1),
+                    gmvColumn.stream().map(it -> {
+                        var o = it != null ? (Object) it : (Object) "";
+                        return List.of(o);
+                    }).toList()
+            );
+        } else {
+            logger.log(WARNING, "Could not add GMV because no products are found in the sheet.");
+        }
         if (!gmvs.isEmpty()) {
             logger.log(WARNING, "Could not add products %s because lines for them are missing in the sheet.".formatted(gmvs.keySet()));
         }
