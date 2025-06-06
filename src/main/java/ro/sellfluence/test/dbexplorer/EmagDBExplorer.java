@@ -60,6 +60,7 @@ public class EmagDBExplorer {
     private static final CustomerTableModel customerTableModel = new CustomerTableModel();
     private static final JTable customerTable = new JTable(customerTableModel);
     private static final POInfoTableModel poInfoTableModel = new POInfoTableModel();
+    private static final JTable productInOrderTable = new JTable(poInfoTableModel);
 
     private static void initGUI() {
         SwingUtilities.invokeLater(() -> {
@@ -94,6 +95,8 @@ public class EmagDBExplorer {
             outerBox.add(setupAndReturnOrderTable());
             // Customer table
             outerBox.add(setupAndReturnCustomerTable());
+            // Product table
+            outerBox.add(setupAndReturnProductTable());
 
             var buttonBox = Box.createHorizontalBox();
 
@@ -131,6 +134,30 @@ public class EmagDBExplorer {
         customerTable.getColumnModel().getColumn(5).setCellRenderer(textAreaRenderer);  // Shipping Info
 
         JScrollPane scrollPane = new JScrollPane(customerTable);
+        scrollPane.setPreferredSize(new Dimension(tableWidth, tableHeight));  // Set preferred size for scrolling
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        scrollPane.setHorizontalScrollBarPolicy(HORIZONTAL_SCROLLBAR_ALWAYS);
+        return scrollPane;
+    }
+    private static @NotNull JScrollPane setupAndReturnProductTable() {
+        productInOrderTable.setFillsViewportHeight(true);  // Ensure headers are always visible
+        // Set preferred column widths
+        TableColumnModel columnModel = productInOrderTable.getColumnModel();
+        columnModel.getColumn(0).setPreferredWidth(70);  // Order ID
+        columnModel.getColumn(1).setPreferredWidth(180);  // Order Date
+        columnModel.getColumn(2).setPreferredWidth(120);  // Order Status
+        columnModel.getColumn(3).setPreferredWidth(100);  // Quantity
+        columnModel.getColumn(4).setPreferredWidth(400);  // Billing Info
+        columnModel.getColumn(5).setPreferredWidth(500);  // Shipping Info
+        columnModel.getColumn(6).setPreferredWidth(150);  // Created
+        columnModel.getColumn(7).setPreferredWidth(150);  // Modified
+
+        // Apply custom cell renderer for text wrapping
+        TextAreaRenderer textAreaRenderer = new TextAreaRenderer();
+        customerTable.getColumnModel().getColumn(4).setCellRenderer(textAreaRenderer);  // Billing Info
+        customerTable.getColumnModel().getColumn(5).setCellRenderer(textAreaRenderer);  // Shipping Info
+
+        JScrollPane scrollPane = new JScrollPane(productInOrderTable);
         scrollPane.setPreferredSize(new Dimension(tableWidth, tableHeight));  // Set preferred size for scrolling
         scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
         scrollPane.setHorizontalScrollBarPolicy(HORIZONTAL_SCROLLBAR_ALWAYS);
