@@ -50,17 +50,15 @@ public class EmagDBExplorer {
     private static final JTextField orderField = new JTextField(20);
     private static final JButton orderButton = new JButton("Get Order By Order ID");
     private static final JTextField customerField = new JTextField(20);
-    //private static final JComboBox<Integer> customerSelection = new JComboBox<>(new Integer[0]);
     private static final JButton customerButton = new JButton("Get Orders By Customer ID");
     private static final JTextField productField = new JTextField(20);
     private static final JButton productButton = new JButton("Get Product");
-
     private static final OrderTableModel orderTableModel = new OrderTableModel();
     private static final JTable orderTable = new JTable(orderTableModel);
     private static final CustomerTableModel customerTableModel = new CustomerTableModel();
     private static final JTable customerTable = new JTable(customerTableModel);
-    private static final POInfoTableModel poInfoTableModel = new POInfoTableModel();
-    private static final JTable productInOrderTable = new JTable(poInfoTableModel);
+    private static final ProductInOrderTableModel pioTableModel = new ProductInOrderTableModel();
+    private static final JTable productInOrderTable = new JTable(pioTableModel);
 
     private static void initGUI() {
         SwingUtilities.invokeLater(() -> {
@@ -128,7 +126,7 @@ public class EmagDBExplorer {
         columnModel.getColumn(6).setPreferredWidth(150);  // Created
         columnModel.getColumn(7).setPreferredWidth(150);  // Modified
 
-        // Apply custom cell renderer for text wrapping
+        // Apply a custom cell renderer for text wrapping
         TextAreaRenderer textAreaRenderer = new TextAreaRenderer();
         customerTable.getColumnModel().getColumn(4).setCellRenderer(textAreaRenderer);  // Billing Info
         customerTable.getColumnModel().getColumn(5).setCellRenderer(textAreaRenderer);  // Shipping Info
@@ -139,23 +137,24 @@ public class EmagDBExplorer {
         scrollPane.setHorizontalScrollBarPolicy(HORIZONTAL_SCROLLBAR_ALWAYS);
         return scrollPane;
     }
+
     private static @NotNull JScrollPane setupAndReturnProductTable() {
         productInOrderTable.setFillsViewportHeight(true);  // Ensure headers are always visible
         // Set preferred column widths
         TableColumnModel columnModel = productInOrderTable.getColumnModel();
-        columnModel.getColumn(0).setPreferredWidth(70);  // Order ID
-        columnModel.getColumn(1).setPreferredWidth(180);  // Order Date
-        columnModel.getColumn(2).setPreferredWidth(120);  // Order Status
-        columnModel.getColumn(3).setPreferredWidth(100);  // Quantity
-        columnModel.getColumn(4).setPreferredWidth(400);  // Billing Info
-        columnModel.getColumn(5).setPreferredWidth(500);  // Shipping Info
-        columnModel.getColumn(6).setPreferredWidth(150);  // Created
-        columnModel.getColumn(7).setPreferredWidth(150);  // Modified
+        columnModel.getColumn(0).setPreferredWidth(70);  // ID
+        columnModel.getColumn(1).setPreferredWidth(70);  // PNK
+        columnModel.getColumn(2).setPreferredWidth(400);  // Name
+        columnModel.getColumn(3).setPreferredWidth(70);  // External Id
+        columnModel.getColumn(4).setPreferredWidth(70);  // Quantity
+        columnModel.getColumn(5).setPreferredWidth(70);  // Initial Quantity
+        columnModel.getColumn(6).setPreferredWidth(70);  // Storno Quantity
+        columnModel.getColumn(7).setPreferredWidth(100);  // Sale Price
+        columnModel.getColumn(8).setPreferredWidth(100);  // Original Price
 
         // Apply custom cell renderer for text wrapping
         TextAreaRenderer textAreaRenderer = new TextAreaRenderer();
-        customerTable.getColumnModel().getColumn(4).setCellRenderer(textAreaRenderer);  // Billing Info
-        customerTable.getColumnModel().getColumn(5).setCellRenderer(textAreaRenderer);  // Shipping Info
+        customerTable.getColumnModel().getColumn(2).setCellRenderer(textAreaRenderer);  // Name
 
         JScrollPane scrollPane = new JScrollPane(productInOrderTable);
         scrollPane.setPreferredSize(new Dimension(tableWidth, tableHeight));  // Set preferred size for scrolling
@@ -166,8 +165,9 @@ public class EmagDBExplorer {
 
     private static @NotNull JScrollPane setupAndReturnOrderTable() {
         orderTable.setFillsViewportHeight(true);  // Ensure headers are always visible
-        // Add mouse listener to the table
+        // Add a mouse listener to the table
         orderTable.addMouseListener(getOrderIdMouseAdapter());
+        orderTable.addMouseListener(updateProductTable());
         // Set preferred column widths
         TableColumnModel columnModel = orderTable.getColumnModel();
         columnModel.getColumn(0).setPreferredWidth(100);  // Order ID
@@ -178,10 +178,8 @@ public class EmagDBExplorer {
         columnModel.getColumn(5).setPreferredWidth(150);  // Date
         columnModel.getColumn(6).setPreferredWidth(150);  // Created
         columnModel.getColumn(7).setPreferredWidth(150);  // Modified
-
-
         JScrollPane scrollPane = new JScrollPane(orderTable);
-        scrollPane.setPreferredSize(new Dimension(tableWidth, tableHeight));  // Set preferred size for scrolling
+        scrollPane.setPreferredSize(new Dimension(tableWidth, tableHeight));  // Set the preferred size for scrolling
         scrollPane.setVerticalScrollBarPolicy(VERTICAL_SCROLLBAR_ALWAYS);
         scrollPane.setHorizontalScrollBarPolicy(HORIZONTAL_SCROLLBAR_ALWAYS);
         return scrollPane;
@@ -197,6 +195,17 @@ public class EmagDBExplorer {
                     var orderId = (String) orderTable.getValueAt(row, column);
                     orderField.setText(orderId);
                 }
+            }
+        };
+    }
+
+    private static @NotNull MouseAdapter updateProductTable() {
+        return new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                int row = orderTable.rowAtPoint(e.getPoint());
+                var orderId = (String) orderTable.getValueAt(row, 0);
+                updateProductTable(orderId);
             }
         };
     }
@@ -307,6 +316,12 @@ public class EmagDBExplorer {
         }
     }
 
-    private static void lookupByProductId(ActionEvent actionEvent) {
+    private static void updateProductTable(String orderId) {
+        try {
+            var products = emagDB.readTX(db ->  ProductInOrderRecord.getProductInOrderByOrder(db, orderId ));
+            pioTableModel.updateTable(products);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
