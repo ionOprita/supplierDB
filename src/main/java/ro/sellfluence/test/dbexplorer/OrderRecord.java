@@ -62,16 +62,16 @@ public record OrderRecord(
         var orders = new ArrayList<OrderRecord>();
         String query = """
                 SELECT
-                    o.id AS orderId,
-                    o.vendor_id AS vendorId,
-                    v.vendor_name AS vendorName,
-                    o.customer_id AS customerId,
-                    o.status,
-                    o.date,
-                    o.created,
-                    o.modified
-                    o.surrogate_id
-               FROM emag_order o
+                     o.id AS orderId,
+                     o.vendor_id AS vendorId,
+                     v.vendor_name AS vendorName,
+                     o.customer_id AS customerId,
+                     o.status,
+                     o.date,
+                     o.created,
+                     o.modified,
+                     o.surrogate_id
+                FROM emag_order o
                 JOIN vendor v ON o.vendor_id = v.id
                 WHERE o.customer_id = ?;
                 """;

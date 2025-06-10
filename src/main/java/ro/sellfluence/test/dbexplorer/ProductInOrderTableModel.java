@@ -8,14 +8,14 @@ import java.util.List;
 
 public class ProductInOrderTableModel extends AbstractTableModel {
     private final String[] columnNames = {
-            "Product ID", "PNK", "Product Name",
-            "Quantity", "Initial Quantity", "Storno Quantity", "Price"
+            "Product ID", "PNK", "Product Name", "External ID",
+            "Quantity", "Initial Quantity", "Storno Quantity", "Sale Price", "Original Price"
     };
-    private List<ProductInOrderRecord> poInfos = new ArrayList<>();
+    private List<ProductInOrderRecord> pioList = new ArrayList<>();
 
     @Override
     public int getRowCount() {
-        return poInfos.size();
+        return pioList.size();
     }
 
     @Override
@@ -25,19 +25,20 @@ public class ProductInOrderTableModel extends AbstractTableModel {
 
     @Override
     public Object getValueAt(int rowIndex, int columnIndex) {
-        if (rowIndex < 0 || rowIndex >= poInfos.size()) {
+        if (rowIndex < 0 || rowIndex >= pioList.size()) {
             return null;
         }
-        ProductInOrderRecord poInfo = poInfos.get(rowIndex);
+        ProductInOrderRecord poInfo = pioList.get(rowIndex);
         return switch (columnIndex) {
-            case 0 -> poInfo.externalId();
-            case 1 -> poInfo.initialQuantity();
-            case 2 -> poInfo.initialQuantity();
-            case 3 -> poInfo.initialQuantity();
+            case 0 -> poInfo.id();
+            case 1 -> poInfo.pnk();
+            case 2 -> poInfo.name();
+            case 3 -> poInfo.externalId();
             case 4 -> poInfo.quantity();
             case 5 -> poInfo.initialQuantity();
             case 6 -> poInfo.stornoQuantity();
-            case 7 -> poInfo.initialQuantity();
+            case 7 -> poInfo.salePrice();
+            case 8 -> poInfo.originalPrice();
             default -> null;
         };
     }
@@ -47,8 +48,8 @@ public class ProductInOrderTableModel extends AbstractTableModel {
         return columnNames[columnIndex];
     }
 
-    public void updatePOInfos(List<POInfo> newPOInfos) {
-      //  this.poInfos = newPOInfos;
-        fireTableDataChanged();  // Notify the table that the data has changed
+    public void updateTable(List<ProductInOrderRecord> products) {
+       this.pioList = products;
+       fireTableDataChanged();
     }
 }
