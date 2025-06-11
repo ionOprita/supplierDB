@@ -35,7 +35,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -385,7 +384,7 @@ public class SheetsAPI {
 
     public List<List<Object>> getMultipleColumns(String sheetName, String... columns) {
         var ranges = Arrays.stream(columns).map(c -> "%1$s!%2$s:%2$s".formatted(sheetName, c)).toList();
-        var retryCount =  4;
+        var retryCount =  6;
         var retryDelay = 60_000;
         List<List<Object>> returnValue = null;
         while (retryCount>0) {
@@ -412,7 +411,9 @@ public class SheetsAPI {
                 }
             } catch (IOException e) {
                 retryCount--;
-                if (retryCount == 0) {
+                if (retryCount == 2) {
+                    retryDelay*=2;
+                } else if (retryCount == 0) {
                     throw new RuntimeException("Error when reading the columns %s from the sheet %s of spreadsheet %s (%s).".formatted(Arrays.toString(columns), sheetName, spreadSheetName, spreadSheetId), e);
                 }
                 logger.log(Level.WARNING, "Read error. Retrying after %d s. Retry count %d".formatted(retryDelay/1000, retryCount));
