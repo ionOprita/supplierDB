@@ -166,6 +166,8 @@ public class UpdateEmployeeSheetsFromDB {
      */
     private void loadOverview(EmagMirrorDB mirrorDB) throws SQLException {
         var products = mirrorDB.readProducts();
+        // To be commented in only to filter for a single PNK for debugging purpose
+        //products = products.stream().filter(productWithID -> productWithID.product().pnk().equals("")).toList();
         pnkToSpreadSheet = products.stream()
                 .filter(it -> it.product().employeeSheetName() != null)
                 .map(it -> {
@@ -273,11 +275,14 @@ public class UpdateEmployeeSheetsFromDB {
         if (!withoutDuplicates.isEmpty()) {
             System.out.printf("Adding %d rows after row %d to tab %s of spreadsheet %s.%n", withoutDuplicates.size(), lastRowNumber, sheetName, sheet.getSpreadSheetName());
             var pnksInSheet = sheet.getColumn(sheetName, "G").stream().skip(3).filter(x -> !x.isBlank()).collect(Collectors.toSet());
-            if (pnksInSheet.size() > 1) {
+            if (pnksInSheet.size() > 1 && !pnksInSheet.contains(pnk)) {
                 logger.log(WARNING, "Sheet '%s' in Spreadsheet '%s' contains multiple PNKs in column 7: %s.".formatted(sheetName, sheet.getTitle(), pnksInSheet));
             } else if (pnksInSheet.size() == 1 && !Objects.equals(pnksInSheet.iterator().next(), pnk)) {
                 logger.log(WARNING, "Expected PNK '%s', but Sheet '%s' in Spreadsheet '%s' contains different PNK in column 7: %s.".formatted(pnk, sheetName, sheet.getTitle(), pnksInSheet));
             } else {
+                if (pnksInSheet.size()>1) {
+                    logger.log(WARNING, "Adding even though sheet '%s' in Spreadsheet '%s' contains multiple PNKs in column 7: %s.".formatted(sheetName, sheet.getTitle(), pnksInSheet));
+                }
                 sheet.updateRange("%s!A%d:N%d".formatted(sheetName, lastRowNumber + 1, lastRowNumber + withoutDuplicates.size()), withoutDuplicates);
             }
         }
