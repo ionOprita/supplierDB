@@ -167,7 +167,7 @@ public class UpdateEmployeeSheetsFromDB {
     private void loadOverview(EmagMirrorDB mirrorDB) throws SQLException {
         var products = mirrorDB.readProducts();
         // To be commented in only to filter for a single PNK for debugging purpose
-        //products = products.stream().filter(productWithID -> productWithID.product().pnk().equals("")).toList();
+        products = products.stream().filter(productWithID -> productWithID.product().pnk().equals("D2HG3PMBM")).toList();
         pnkToSpreadSheet = products.stream()
                 .filter(it -> it.product().employeeSheetName() != null)
                 .map(it -> {
@@ -283,8 +283,32 @@ public class UpdateEmployeeSheetsFromDB {
                 if (pnksInSheet.size()>1) {
                     logger.log(WARNING, "Adding even though sheet '%s' in Spreadsheet '%s' contains multiple PNKs in column 7: %s.".formatted(sheetName, sheet.getTitle(), pnksInSheet));
                 }
-                sheet.updateRange("%s!A%d:N%d".formatted(sheetName, lastRowNumber + 1, lastRowNumber + withoutDuplicates.size()), withoutDuplicates);
+                updateRangeInChunks(sheet, sheetName, lastRowNumber + 1, withoutDuplicates);
             }
+        }
+    }
+
+    private static final int chunkSize = 50;
+
+    /**
+     * Split the rows into chunks of size chunkSize and call sheet.updateRange for each.
+     *
+     * @param sheet the SheetsAPI instance
+     * @param sheetName target sheet name
+     * @param startRow 1-based row number where the first chunk should be inserted
+     * @param rows the full list of rows to insert
+     */
+    private void updateRangeInChunks(SheetsAPI sheet,
+                                     String sheetName,
+                                     int startRow,
+                                     List<List<Object>> rows) {
+        for (int offset = 0; offset < rows.size(); offset += chunkSize) {
+            int endIndex = Math.min(rows.size(), offset + chunkSize);
+            List<List<Object>> chunk = rows.subList(offset, endIndex);
+            int chunkStart = startRow + offset;
+            int chunkEnd = startRow + endIndex - 1;
+            String range = "%s!A%d:N%d".formatted(sheetName, chunkStart, chunkEnd);
+            sheet.updateRange(range, chunk);
         }
     }
 }

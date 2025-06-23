@@ -46,6 +46,7 @@ public class GetStatsForAllSheets {
                 .flatMap(sheetToPNKList -> {
                             var spreadSheet = sheetToPNKList.getKey();
                             var pnkOnSheet = sheetToPNKList.getValue();
+                            logger.log(INFO, () -> "Read from %s %s columns C and E\n ".formatted(spreadSheet.getSpreadSheetName(), setariSheetName));
                             var pnkToSheetName = spreadSheet.getMultipleColumns(setariSheetName, "C", "E").stream()
                                     .skip(2)
                                     .map(row -> {
