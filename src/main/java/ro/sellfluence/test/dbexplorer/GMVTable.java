@@ -1,6 +1,6 @@
 package ro.sellfluence.test.dbexplorer;
 
-import ro.sellfluence.db.EmagMirrorDB.ProductWithID;
+import ro.sellfluence.db.ProductInfo;
 
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -35,8 +35,8 @@ public class GMVTable extends JPanel {
     private DefaultTableModel mainModel;
 
     private List<YearMonth> sortedMonths = new ArrayList<>();
-    private List<ProductWithID> sortedProducts = new ArrayList<>();
-    private BiFunction<ProductWithID, YearMonth, Void> cellListener;
+    private List<ProductInfo> sortedProducts = new ArrayList<>();
+    private BiFunction<ProductInfo, YearMonth, Void> cellListener;
 
     public GMVTable() {
         setLayout(new BorderLayout());
@@ -62,7 +62,7 @@ public class GMVTable extends JPanel {
                 var product = rowHeaderTable.getValueAt(row, 0);
                 var month = columnHeaderTable.getValueAt(0, column);
                 System.out.println(product + " " + month);
-                if (cellListener!=null) cellListener.apply((ProductWithID) product, (YearMonth) month);
+                if (cellListener!=null) cellListener.apply((ProductInfo) product, (YearMonth) month);
             }
         });
 
@@ -80,8 +80,8 @@ public class GMVTable extends JPanel {
         rowHeaderTable.setDefaultRenderer(Object.class, new DefaultTableCellRenderer(){
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-                if (value instanceof ProductWithID p) {
-                    value = p.product().name();
+                if (value instanceof ProductInfo p) {
+                    value = p.name();
                 }
                 return super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
             }
@@ -110,7 +110,7 @@ public class GMVTable extends JPanel {
         add(scrollPane, BorderLayout.CENTER);
     }
 
-    public void updateData(SortedMap<ProductWithID, SortedMap<YearMonth, BigDecimal>> data) {
+    public void updateData(SortedMap<ProductInfo, SortedMap<YearMonth, BigDecimal>> data) {
         // Collect months and products
         TreeSet<YearMonth> monthsSet = new TreeSet<>();
         sortedProducts = data.keySet().stream().toList();
@@ -172,7 +172,7 @@ public class GMVTable extends JPanel {
             Arrays.fill(sums, BigDecimal.ZERO);
 
             for (int r = 0; r < sortedProducts.size(); r++) {
-                String prodName = sortedProducts.get(r).product().name();
+                String prodName = sortedProducts.get(r).name();
                 if (prodName.startsWith(prefix)) {
                     // add each column's value
                     for (int c = 0; c < sortedMonths.size(); c++) {
@@ -201,7 +201,7 @@ public class GMVTable extends JPanel {
         // --- END: add totals -----------------
     }
 
-    public void setCellListener(BiFunction<ProductWithID, YearMonth, Void> listener) {
+    public void setCellListener(BiFunction<ProductInfo, YearMonth, Void> listener) {
         cellListener = listener;
     }
 
