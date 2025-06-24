@@ -3,7 +3,7 @@ package ro.sellfluence.app;
 import ro.sellfluence.apphelper.PopulateProductsTableFromSheets;
 import ro.sellfluence.apphelper.Vendor;
 import ro.sellfluence.db.EmagMirrorDB;
-import ro.sellfluence.db.EmagMirrorDB.ProductWithID;
+import ro.sellfluence.db.ProductInfo;
 import ro.sellfluence.googleapi.DriveAPI;
 import ro.sellfluence.googleapi.SheetsAPI;
 
@@ -73,14 +73,22 @@ public class PopulateDateComenziFromDB {
         }
     }
 
+    /**
+     * Read for the specific month the data from the gmv table and update the spreadsheet.
+     *
+     * @param mirrorDB database.
+     * @param sheet sheet to update.
+     * @param month month to transfer.
+     * @throws SQLException on database errors.
+     */
     private static void updateGMVForMonth(EmagMirrorDB mirrorDB, SheetsAPI sheet, YearMonth month) throws SQLException {
         System.out.printf("Read %s from the database", month);
         var gmvs = mirrorDB.readGMVByMonth(month);
         System.out.println("Read from the spreadsheet");
         var products = mirrorDB.readProducts().stream()
-                .collect(Collectors.toMap(it -> it.product().name(), ProductWithID::product));
-        var productsInSheet = sheet.getColumn(gmvSheetName, "B");
-        var monthsInSheet = sheet.getRowAsDates(gmvSheetName, 2);
+                .collect(Collectors.groupingBy(ProductInfo::name));
+        var productsInSheet = sheet.getColumn(gmvSheetName, "B").stream().skip(7).toList();
+        var monthsInSheet = sheet.getRowAsDates(gmvSheetName, 2).stream().skip(4).toList();
         String columnIdentifier = null;
         var columnNumber = 1;
         for (Object it : monthsInSheet) {
@@ -100,7 +108,15 @@ public class PopulateDateComenziFromDB {
         var gmvColumn = new ArrayList<BigDecimal>();
         for (String productName : productsInSheet) {
             rowNumber++;
-            var productInfo = products.get(productName);
+            var productInfos = products.get(productName);
+            ProductInfo productInfo;
+            if (productInfos==null || productInfos.isEmpty()) {
+                throw new RuntimeException("No entry found for product "+productName+" please update the product table.");
+            } else if (productInfos.size()>1) {
+                throw new RuntimeException("More than one product matches "+productName+" I cannot properly associate it to either of "+productInfos);
+            } else {
+                productInfo = productInfos.getFirst();
+            }
             // Detect the first row with a valid product.
             if (startRow == null && productInfo != null) {
                 startRow = rowNumber;

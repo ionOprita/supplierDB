@@ -17,6 +17,7 @@ import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
+import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
@@ -26,7 +27,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -34,11 +34,8 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.FileHandler;
-import java.util.logging.Formatter;
 import java.util.logging.Handler;
 import java.util.logging.Level;
-import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
 import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
@@ -59,7 +56,9 @@ public class EmagApi {
 
     private static final Logger logger = Logger.getLogger(EmagApi.class.getName());
 
-    private static final Logger fileLogger = Logger.getLogger(EmagApi.class.getName() + "_fileLogger");
+    private static final Logger communicationLogger = Logs.getFileLogger("emag_communication", INFO, 20, 100_000_000);
+
+    private static final Logger jsonLogger = Logs.getFileLogger("emag_decoded_json", FINE, 20, 100_000_000);
 
     private static final String emagRO = "https://marketplace-api.emag.ro/api-3";
 
@@ -74,23 +73,6 @@ public class EmagApi {
     private static final DateTimeFormatter emagDate = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     public static int statusFinalized = 4;
-
-    static {
-        try {
-            var fileHandler = new FileHandler("%t/emag-api_%g.log", 10 * 1024 * 1024, 10, true);
-            fileHandler.setFormatter(new Formatter() {
-                @Override
-                public String format(LogRecord record) {
-                    return "%s %s%n".formatted(record.getInstant().atZone(ZoneId.systemDefault()), record.getMessage());
-                }
-            });
-            fileLogger.setLevel(INFO);
-            fileLogger.setUseParentHandlers(false);
-            fileLogger.addHandler(fileHandler);
-        } catch (IOException e) {
-            logger.log(WARNING, "Failed to create a file logger", e);
-        }
-    }
 
     private final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new TypeAdapter<LocalDateTime>() {
@@ -187,7 +169,7 @@ public class EmagApi {
         var receivedJSON = countOrderRequestRaw("");
         CountResponse counterResponse = null;
         if (receivedJSON!=null) {
-            logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
+            communicationLogger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
             try {
                 var typeRef = new TypeReference<SingleResponse<CountResponse>>() {
                     @Override
@@ -203,12 +185,14 @@ public class EmagApi {
                         logger.log(INFO, "Please register your IP address in the EMAG dashboard.");
                     }
                 } else {
-                    logger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
+                    jsonLogger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
                     counterResponse = response.results;
                 }
             } catch (MismatchedInputException e) {
-                logger.log(SEVERE, "JSON decoded ended with error %s".formatted(e.getMessage()));
+                String msg = "JSON decoded ended with error %s".formatted(e.getMessage());
+                logger.log(SEVERE, msg);
                 logger.log(SEVERE, receivedJSON);
+                throw new RuntimeException(msg, e);
             }
         }
         return counterResponse;
@@ -222,7 +206,7 @@ public class EmagApi {
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody)).build();
         var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
         int statusCode = httpResponse.statusCode();
-        logger.log(FINE, "Status code = " + statusCode);
+        communicationLogger.log(FINE, "Status code = " + statusCode);
         String receivedJSON = null;
         if (statusCode == HTTP_OK) {
             receivedJSON = httpResponse.body();
@@ -252,21 +236,20 @@ public class EmagApi {
             // Filter items are on the first level together with the pagination items.
             // The data item, which is also on the first level, is used only for submitting data.
             var jsonAsString = gson.toJson(jsonInput);
-            logger.log(FINE, "JSON = " + jsonAsString);
+            jsonLogger.log(FINE, "JSON = " + jsonAsString);
             var httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Authorization", "Basic " + credentials)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonAsString)).build();
-            fileLogger.log(INFO, () -> "Sent " + jsonAsString);
+            communicationLogger.log(INFO, () -> "Sent " + jsonAsString);
             try {
                 var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
                 int statusCode = httpResponse.statusCode();
-                logger.log(FINE, "Status code = " + statusCode);
+                communicationLogger.log(FINE, "Status code = " + statusCode);
                 if (statusCode == HTTP_OK) {
                     String receivedJSON = httpResponse.body();
-                    fileLogger.log(INFO, () -> "Received " + receivedJSON);
-                    logger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
+                    communicationLogger.log(INFO, () -> "Received " + receivedJSON);
                     try {
                         //var responseItemClass = TypeToken.getParameterized(Response.class, responseClass);
                         //Response<T> response = gson.fromJson(receivedJSON, responseItemClass.getType());
@@ -286,7 +269,7 @@ public class EmagApi {
                             }
                         } else {
                             logger.log(INFO, () -> "Received %d items.".formatted(response.results.length));
-                            logger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
+                            jsonLogger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
                             if (response.results.length > 0) {
                                 accumulatedResponses.addAll(Arrays.asList(response.results));
                             } else {

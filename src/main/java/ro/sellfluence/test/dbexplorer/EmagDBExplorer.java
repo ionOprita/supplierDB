@@ -227,10 +227,10 @@ public class EmagDBExplorer {
                 gmvPanel = new GMVTable();
             }
             gmvPanel.updateData(data);
-            gmvPanel.setCellListener((productWithID, yearMonth) -> {
+            gmvPanel.setCellListener((product, yearMonth) -> {
                 try {
-                    var orders = emagMirrorDB.readProductInOrderByProductAndMonth(productWithID.id(), yearMonth);
-                    SwingUtilities.invokeLater(() -> showPOInfoTable(productWithID.product().name(), yearMonth, orders));
+                    var orders = emagMirrorDB.readProductInOrderByProductAndMonth(product.productCode(), yearMonth);
+                    SwingUtilities.invokeLater(() -> showPOInfoTable(product.name(), yearMonth, orders));
                 } catch (SQLException e) {
                     throw new RuntimeException(e);
                 }

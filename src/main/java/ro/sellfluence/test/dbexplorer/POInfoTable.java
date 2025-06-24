@@ -1,7 +1,7 @@
 package ro.sellfluence.test.dbexplorer;
 
 import ro.sellfluence.db.EmagMirrorDB;
-import ro.sellfluence.db.EmagMirrorDB.ProductWithID;
+import ro.sellfluence.db.ProductInfo;
 
 import javax.swing.BoxLayout;
 import javax.swing.JPanel;
@@ -24,8 +24,8 @@ public class POInfoTable extends JPanel {
     private POInfoTableModel mainModel;
 
     private List<YearMonth> sortedMonths = new ArrayList<>();
-    private List<ProductWithID> sortedProducts = new ArrayList<>();
-    private BiFunction<ProductWithID, YearMonth, Void> cellListener;
+    private List<ProductInfo> sortedProducts = new ArrayList<>();
+    private BiFunction<ProductInfo, YearMonth, Void> cellListener;
 
     public POInfoTable() {
         initializeComponents();

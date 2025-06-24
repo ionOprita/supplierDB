@@ -86,7 +86,8 @@ public class EmagMirrorDB {
                     EmagMirrorDBVersion15::version15,
                     EmagMirrorDBVersion16::version16,
                     EmagMirrorDBVersion17::version17,
-                    EmagMirrorDBVersion18::version18);
+                    EmagMirrorDBVersion18::version18,
+                    EmagMirrorDBVersion19::version19);
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }
@@ -558,9 +559,9 @@ public class EmagMirrorDB {
 
     public void updateGMVTable() throws SQLException {
         database.writeTX(db -> {
-                    var products = getProductUUIDs(db);
-                    for (UUID productId : products) {
-                        var ordersWithProduct = getOrderDataByProduct(db, productId);
+                    var products = getProductCodes(db);
+                    for (String productCode : products) {
+                        var ordersWithProduct = getOrderDataByProduct(db, productCode);
                         var gmvByMonth = new HashMap<YearMonth, BigDecimal>();
                         ordersWithProduct.forEach((_, poInfos) -> {
                             if (poInfos.size() == 1) {
@@ -590,49 +591,49 @@ public class EmagMirrorDB {
                                 throw new RuntimeException("Not prepared to handle order with more than two states: %s.".formatted(poInfos));
                             }
                         });
-                        insertOrUpdateGMV(db, productId, gmvByMonth);
+                        insertOrUpdateGMV(db, productCode, gmvByMonth);
                     }
                     return true;
                 }
         );
     }
 
-    private void insertOrUpdateGMV(Connection db, UUID productId, Map<YearMonth, BigDecimal> gmvByMonth) throws SQLException {
-        var currentGMVByMonth = getGMVByProductId(db, productId);
+    private void insertOrUpdateGMV(Connection db, String productCode, Map<YearMonth, BigDecimal> gmvByMonth) throws SQLException {
+        var currentGMVByMonth = getGMVByProductId(db, productCode);
         for (Map.Entry<YearMonth, BigDecimal> entry : gmvByMonth.entrySet()) {
             YearMonth month = entry.getKey();
             BigDecimal gmv = entry.getValue().setScale(2, HALF_EVEN);
             var currentGMV = currentGMVByMonth.get(month);
             if (currentGMV == null) {
-                insertGMV(db, productId, month, gmv);
+                insertGMV(db, productCode, month, gmv);
             } else if (!gmv.equals(currentGMV)) {
-                updateGMV(db, productId, month, gmv);
+                updateGMV(db, productCode, month, gmv);
             }
         }
     }
 
-    private int insertGMV(Connection db, UUID productId, YearMonth month, BigDecimal gmv) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO gmv (product_id, month, gmv) VALUES (?,?,?)")) {
-            s.setObject(1, productId);
+    private int insertGMV(Connection db, String productCode, YearMonth month, BigDecimal gmv) throws SQLException {
+        try (var s = db.prepareStatement("INSERT INTO gmv (product_code, month, gmv) VALUES (?,?,?)")) {
+            s.setObject(1, productCode);
             s.setDate(2, toDate(month));
             s.setBigDecimal(3, gmv);
             return s.executeUpdate();
         }
     }
 
-    private int updateGMV(Connection db, UUID productId, YearMonth month, BigDecimal gmv) throws SQLException {
-        try (var s = db.prepareStatement("UPDATE gmv SET gmv = ? WHERE product_id = ? AND month = ?")) {
+    private int updateGMV(Connection db, String productCode, YearMonth month, BigDecimal gmv) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE gmv SET gmv = ? WHERE product_code = ? AND month = ?")) {
             s.setBigDecimal(1, gmv);
-            s.setObject(2, productId);
+            s.setObject(2, productCode);
             s.setDate(3, toDate(month));
             return s.executeUpdate();
         }
     }
 
-    private Map<YearMonth, BigDecimal> getGMVByProductId(Connection db, UUID productId) throws SQLException {
+    private Map<YearMonth, BigDecimal> getGMVByProductId(Connection db, String productCode) throws SQLException {
         var result = new HashMap<YearMonth, BigDecimal>();
-        try (var s = db.prepareStatement("SELECT month, gmv FROM gmv WHERE product_id = ?")) {
-            s.setObject(1, productId);
+        try (var s = db.prepareStatement("SELECT month, gmv FROM gmv WHERE product_code = ?")) {
+            s.setObject(1, productCode);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     result.put(toYearMonth(rs.getDate(1)), rs.getBigDecimal(2));
@@ -648,7 +649,7 @@ public class EmagMirrorDB {
 
     private Map<String, BigDecimal> getGMVByMonth(Connection db, YearMonth month) throws SQLException {
         var result = new HashMap<String, BigDecimal>();
-        try (var s = db.prepareStatement("SELECT name, gmv FROM gmv INNER JOIN product ON gmv.product_id=product.id WHERE month = ? ORDER BY name")) {
+        try (var s = db.prepareStatement("SELECT name, gmv FROM gmv INNER JOIN product ON gmv.product_code=product.product_code WHERE month = ? ORDER BY name")) {
             s.setDate(1, toDate(month));
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
@@ -681,7 +682,7 @@ public class EmagMirrorDB {
                   BigDecimal price) {
     }
 
-    public List<POInfo> readProductInOrderByProductAndMonth(UUID productId, YearMonth yearMonth) throws SQLException {
+    public List<POInfo> readProductInOrderByProductAndMonth(String productCode, YearMonth yearMonth) throws SQLException {
         return database.readTX(db -> {
                     var result = new ArrayList<POInfo>();
                     try (var s = db.prepareStatement("""
@@ -699,10 +700,10 @@ public class EmagMirrorDB {
                             FROM product_in_order AS pio
                             INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
                             INNER JOIN emag_order AS o ON pio.emag_order_surrogate_id = o.surrogate_id
-                            WHERE p.id = ? AND (o.status = 4 OR o.status = 5) AND o.date >= ? AND o.date < ?
+                            WHERE p.product_code = ? AND (o.status = 4 OR o.status = 5) AND o.date >= ? AND o.date < ?
                             ORDER BY o.id, o.status
                             """)) {
-                        s.setObject(1, productId);
+                        s.setObject(1, productCode);
                         s.setDate(2, toDate(yearMonth));
                         s.setDate(3, toDate(yearMonth.plusMonths(1)));
                         try (var rs = s.executeQuery()) {
@@ -734,7 +735,7 @@ public class EmagMirrorDB {
         );
     }
 
-    private Map<String, List<POInfo>> getOrderDataByProduct(Connection db, UUID productId) throws SQLException {
+    private Map<String, List<POInfo>> getOrderDataByProduct(Connection db, String productCode) throws SQLException {
         var result = new HashMap<String, List<POInfo>>();
         try (var s = db.prepareStatement("""
                 SELECT p.name AS productName,
@@ -751,10 +752,10 @@ public class EmagMirrorDB {
                 FROM product_in_order AS pio
                 INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
                 INNER JOIN emag_order AS o ON pio.emag_order_surrogate_id = o.surrogate_id
-                WHERE p.id = ? AND (o.status = 4 OR o.status = 5)
+                WHERE p.product_code = ? AND (o.status = 4 OR o.status = 5)
                 ORDER BY o.id, o.status
                 """)) {
-            s.setObject(1, productId);
+            s.setObject(1, productCode);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     var orderId = rs.getString("orderId");
@@ -784,44 +785,39 @@ public class EmagMirrorDB {
         return result;
     }
 
-    private List<UUID> getProductUUIDs(Connection db) throws SQLException {
-        var products = new ArrayList<UUID>();
-        try (var s = db.prepareStatement("SELECT id FROM product")) {
+    private List<String> getProductCodes(Connection db) throws SQLException {
+        var products = new ArrayList<String>();
+        try (var s = db.prepareStatement("SELECT product_code FROM product")) {
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
-                    products.add(rs.getObject(1, UUID.class));
+                    products.add(rs.getString(1));
                 }
             }
         }
         return products;
     }
 
-    public record ProductWithID(UUID id, ProductInfo product) {
-    }
-
-    public List<ProductWithID> readProducts() throws SQLException {
+    public List<ProductInfo> readProducts() throws SQLException {
         return database.readTX(this::getProducts);
     }
 
-    public SortedMap<ProductWithID, SortedMap<YearMonth, BigDecimal>> getGMV(Connection db) throws SQLException {
-        var rows = new TreeMap<ProductWithID, SortedMap<YearMonth, BigDecimal>>(
-                Comparator.comparing(productWithID -> productWithID.product.name())
+    public SortedMap<ProductInfo, SortedMap<YearMonth, BigDecimal>> getGMV(Connection db) throws SQLException {
+        var rows = new TreeMap<ProductInfo, SortedMap<YearMonth, BigDecimal>>(
+                Comparator.comparing(product -> product.name())
         );
-        for (ProductWithID product : getProducts(db)) {
-            var gmvs = getGMVByProductId(db, product.id);
+        for (ProductInfo product : getProducts(db)) {
+            var gmvs = getGMVByProductId(db, product.productCode());
             rows.put(product, new TreeMap<>(gmvs));
         }
         return rows;
     }
 
-    private List<ProductWithID> getProducts(Connection db) throws SQLException {
-        var products = new ArrayList<ProductWithID>();
-        try (var s = db.prepareStatement("SELECT id, emag_pnk, product_code, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name FROM product")) {
+    private List<ProductInfo> getProducts(Connection db) throws SQLException {
+        var products = new ArrayList<ProductInfo>();
+        try (var s = db.prepareStatement("SELECT emag_pnk, product_code, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name FROM product")) {
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     products.add(
-                            new ProductWithID(
-                            rs.getObject("id", UUID.class),
                             new ProductInfo(
                                     rs.getString("emag_pnk"),
                                     rs.getString("product_code"),
@@ -832,7 +828,6 @@ public class EmagMirrorDB {
                                     rs.getString("message_keyword"),
                                     rs.getString("employee_sheet_name")
                                 )
-                            )
                     );
                 }
             }
@@ -2116,19 +2111,18 @@ public class EmagMirrorDB {
      */
     private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
         try (var s = db.prepareStatement("""
-                INSERT INTO product (id, emag_pnk, name, continue_to_sell, retracted, category, message_keyword, product_code, employee_sheet_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO product (product_code, emag_pnk, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT DO NOTHING
                 """)) {
-            s.setObject(1, UUID.randomUUID());
+            s.setString(1, productInfo.productCode());
             s.setString(2, productInfo.pnk());
             s.setString(3, productInfo.name());
             s.setBoolean(4, productInfo.continueToSell());
             s.setBoolean(5, productInfo.retracted());
             s.setString(6, productInfo.category());
             s.setString(7, productInfo.messageKeyword());
-            s.setString(8, productInfo.productCode());
-            s.setString(9, productInfo.employeeSheetName());
+            s.setString(8, productInfo.employeeSheetName());
             return s.executeUpdate();
         }
     }
@@ -2136,17 +2130,17 @@ public class EmagMirrorDB {
     private static int updateProduct(Connection db, ProductInfo productInfo) throws SQLException {
         try (var s = db.prepareStatement("""
                 UPDATE product
-                SET emag_pnk = ?, category = ?, message_keyword = ?, continue_to_sell = ?, retracted = ?, product_code = ?, employee_sheet_name = ?
-                WHERE name = ?
+                SET emag_pnk = ?, category = ?, message_keyword = ?, continue_to_sell = ?, retracted = ?, name = ?, employee_sheet_name = ?
+                WHERE product_code = ?
                 """)) {
             s.setString(1, productInfo.pnk());
             s.setString(2, productInfo.category());
             s.setString(3, productInfo.messageKeyword());
             s.setBoolean(4, productInfo.continueToSell());
             s.setBoolean(5, productInfo.retracted());
-            s.setString(6, productInfo.productCode());
+            s.setString(6, productInfo.name());
             s.setString(7, productInfo.employeeSheetName());
-            s.setString(8, productInfo.name());
+            s.setString(8, productInfo.productCode());
             return s.executeUpdate();
         }
     }
