@@ -36,7 +36,8 @@ public record Product(
         LocalDateTime modified,
         List<String> details,
         List<String> recycle_warranties,
-        List<Attachment> attachments
+        List<Attachment> attachments,
+        String serial_numbers
 ) {
     public Product {
         if (product_voucher_split == null) {
@@ -80,7 +81,8 @@ public record Product(
                && Objects.equals(original_price, product.original_price)
                && Objects.equals(attachments, product.attachments)
                && slEquals(recycle_warranties, product.recycle_warranties)
-               && vslEquals(product_voucher_split, product.product_voucher_split);
+               && vslEquals(product_voucher_split, product.product_voucher_split)
+               && Objects.equals(serial_numbers, product.serial_numbers);
     }
 
     public static boolean slEquals(List<String> l1, List<String> l2) {
@@ -136,6 +138,7 @@ public record Product(
         result = 31 * result + Objects.hashCode(details);
         result = 31 * result + Objects.hashCode(recycle_warranties);
         result = 31 * result + Objects.hashCode(attachments);
+        result = 31 * result + Objects.hashCode(serial_numbers);
         return result;
     }
 }

@@ -85,7 +85,8 @@ public class EmagMirrorDB {
                     EmagMirrorDBVersion14::version14,
                     EmagMirrorDBVersion15::version15,
                     EmagMirrorDBVersion16::version16,
-                    EmagMirrorDBVersion17::version17);
+                    EmagMirrorDBVersion17::version17,
+                    EmagMirrorDBVersion18::version18);
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }
@@ -511,7 +512,10 @@ public class EmagMirrorDB {
         database.writeTX(db -> {
             var inserted = insertProduct(db, productInfo);
             if (inserted == 0) {
-                updateProduct(db, productInfo);
+                var updated = updateProduct(db, productInfo);
+                if (updated == 0) {
+                    throw new RuntimeException("Product could neither be inserted nor updated: %s.".formatted(productInfo));
+                }
             }
             return 0;
         });
@@ -1452,7 +1456,7 @@ public class EmagMirrorDB {
     }
 
     private static int insertProduct(Connection db, Product product, int surrogateId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO product_in_order (id, emag_order_surrogate_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO product_in_order (id, emag_order_surrogate_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties, serial_numbers) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
             s.setInt(1, product.id());
             s.setInt(2, surrogateId);
             s.setInt(3, product.product_id());
@@ -1475,6 +1479,7 @@ public class EmagMirrorDB {
             s.setTimestamp(20, toTimestamp(product.modified()));
             s.setString(21, String.join("\n", product.details()));
             s.setString(22, String.join("\n", product.recycle_warranties()));
+            s.setString(23, product.serial_numbers());
             return s.executeUpdate();
         }
     }
@@ -1508,7 +1513,7 @@ public class EmagMirrorDB {
     private Product selectProduct(Connection db, int productId, List<VoucherSplit> product_voucher_splits, List<Attachment> attachments) throws SQLException {
         Product product = null;
         try (var s = db.prepareStatement("""
-                SELECT id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties
+                SELECT id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties, serial_numbers
                 FROM product_in_order
                 WHERE id = ?
                 """)) {
@@ -1537,7 +1542,8 @@ public class EmagMirrorDB {
                             toLocalDateTime(rs.getTimestamp("modified")),
                             Arrays.asList(rs.getString("details").split("\\n")),
                             Arrays.asList(rs.getString("recycle_warranties").split("\\n")),
-                            attachments);
+                            attachments,
+                            rs.getString("serial_numbers"));
                 }
                 if (rs.next()) {
                     throw new RuntimeException("More than one product with the same ID " + productId);
