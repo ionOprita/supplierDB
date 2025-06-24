@@ -34,13 +34,40 @@ Make sure each field is separated by a single TAB character.
 ### Backup and restore
 
 Create a backup of the database using the command (will contain date and hour in name)
-```
+
+<details>
+<summary>MacOS/Linux</summary>
+<pre>
 pg_dump -Fc -f db_emag_$(date +%Y-%m-%dT%H).dump emag
-```
+</pre>
+</details>
+
+<details>
+<summary>Windows cmd.exe</summary>
+<pre>
+set FILENAME=db_emag_%date%_%time%.dump
+:: Remove colons from time for safe filename (requires a bit more logic)
+set FILENAME=%FILENAME::=%
+pg_dump -Fc -f "%FILENAME%" emag
+</pre>
+</details>
+
+<details>
+<summary>Windows Powershell</summary>
+<pre>
+$timestamp = Get-Date -Format "yyyy-MM-ddTHH"
+pg_dump -Fc -f "db_emag_$timestamp.dump" emag
+</pre>
+</details>
+
 Restore from a specific backup using the command (substituting date and time for your latest backup)
 ```
 pg_restore -d emag -c --if-exists db_emag_2025-05-15T16.dump
 ```
+
+If you prefer to use pgAdmin to backup and restore your database read the
+[Backup/Restore](https://www.pgadmin.org/docs/pgadmin4/latest/backup_and_restore.html)
+chapter in its documentation.
 
 The restore command can also be used to get a human-readable version of the dump file using this command:
 ```
