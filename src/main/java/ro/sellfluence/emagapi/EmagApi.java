@@ -294,8 +294,10 @@ public class EmagApi {
                             }
                         }
                     } catch (MismatchedInputException e) {
-                        logger.log(SEVERE, "JSON decoded ended with error %s".formatted(e.getMessage()));
+                        String message = "JSON decoded ended with error %s".formatted(e.getMessage());
+                        logger.log(SEVERE, message);
                         logger.log(SEVERE, receivedJSON);
+                        throw new RuntimeException(message, e);
                     }
                 } else if (statusCode == HTTP_GATEWAY_TIMEOUT && retryCount > 0) {
                     logger.log(WARNING, "Received 504, retrying, retryCount=%d, retryDelay=%d s".formatted(retryCount, retryDelay / 1000));
