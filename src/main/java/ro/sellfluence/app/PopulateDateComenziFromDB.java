@@ -87,8 +87,8 @@ public class PopulateDateComenziFromDB {
         System.out.println("Read from the spreadsheet");
         var products = mirrorDB.readProducts().stream()
                 .collect(Collectors.groupingBy(ProductInfo::name));
-        var productsInSheet = sheet.getColumn(gmvSheetName, "B").stream().skip(7).toList();
-        var monthsInSheet = sheet.getRowAsDates(gmvSheetName, 2).stream().skip(4).toList();
+        var productsInSheet = sheet.getColumn(gmvSheetName, "B").stream().toList();
+        var monthsInSheet = sheet.getRowAsDates(gmvSheetName, 2).stream().toList();
         String columnIdentifier = null;
         var columnNumber = 1;
         for (Object it : monthsInSheet) {
@@ -110,35 +110,37 @@ public class PopulateDateComenziFromDB {
             rowNumber++;
             var productInfos = products.get(productName);
             ProductInfo productInfo;
-            if (productInfos==null || productInfos.isEmpty()) {
-                throw new RuntimeException("No entry found for product "+productName+" please update the product table.");
-            } else if (productInfos.size()>1) {
+            if (productInfos!=null && productInfos.size()>1) {
                 throw new RuntimeException("More than one product matches "+productName+" I cannot properly associate it to either of "+productInfos);
+            }
+            if (productInfos==null || productInfos.isEmpty()) {
+                logger.log(WARNING,"No entry found for the product "+productName+". Until you update the table, no GMV is computed for this product.");
             } else {
                 productInfo = productInfos.getFirst();
-            }
-            // Detect the first row with a valid product.
-            if (startRow == null && productInfo != null) {
-                startRow = rowNumber;
-            }
-            var gmv = gmvs.remove(productName);
-            var retracted = productInfo != null && productInfo.retracted();
-            var continueToSell = productInfo != null && productInfo.continueToSell();
-            if (continueToSell && retracted) {
-                logger.log(
-                        WARNING,
-                        "Product %s (%s) has both 'continue to sell' and 'retracted' set, which doesn't make sense. Dropping retracted."
-                                .formatted(productName, productInfo.pnk())
-                );
-                retracted = false;
-            }
-            if (gmv == null) {
-                if (!retracted) {
-                    logger.log(continueToSell ? WARNING : INFO, "No GMV for the product %s and the month %s".formatted(productName, month));
+
+                // Detect the first row with a valid product.
+                if (startRow == null && productInfo != null) {
+                    startRow = rowNumber;
                 }
-            }
-            if (startRow != null) {
-                gmvColumn.add(gmv);
+                var gmv = gmvs.remove(productName);
+                var retracted = productInfo != null && productInfo.retracted();
+                var continueToSell = productInfo != null && productInfo.continueToSell();
+                if (continueToSell && retracted) {
+                    logger.log(
+                            WARNING,
+                            "Product %s (%s) has both 'continue to sell' and 'retracted' set, which doesn't make sense. Dropping retracted."
+                                    .formatted(productName, productInfo.pnk())
+                    );
+                    retracted = false;
+                }
+                if (gmv == null) {
+                    if (!retracted) {
+                        logger.log(continueToSell ? WARNING : INFO, "No GMV for the product %s and the month %s".formatted(productName, month));
+                    }
+                }
+                if (startRow != null) {
+                    gmvColumn.add(gmv);
+                }
             }
         }
         if (startRow!=null) {
