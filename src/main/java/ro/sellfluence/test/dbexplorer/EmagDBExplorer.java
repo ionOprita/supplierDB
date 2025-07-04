@@ -33,6 +33,7 @@ public class EmagDBExplorer {
     private static final EmagMirrorDB emagMirrorDB;
     public static final int tableWidth = 1800;
     public static final int tableHeight = 200;
+    private static final TextAreaRenderer textAreaRenderer = new TextAreaRenderer();
 
     static {
         try {
@@ -114,75 +115,30 @@ public class EmagDBExplorer {
     }
 
     private static @NotNull JScrollPane setupAndReturnCustomerTable() {
-        customerTable.setFillsViewportHeight(true);  // Ensure headers are always visible
-        // Set preferred column widths
-        TableColumnModel columnModel = customerTable.getColumnModel();
-        columnModel.getColumn(0).setPreferredWidth(70);  // Customer ID
-        columnModel.getColumn(1).setPreferredWidth(180);  // Name
-        columnModel.getColumn(2).setPreferredWidth(120);  // Email
-        columnModel.getColumn(3).setPreferredWidth(100);  // Phone
-        columnModel.getColumn(4).setPreferredWidth(400);  // Billing Info
-        columnModel.getColumn(5).setPreferredWidth(500);  // Shipping Info
-        columnModel.getColumn(6).setPreferredWidth(150);  // Created
-        columnModel.getColumn(7).setPreferredWidth(150);  // Modified
-
+        // Customer ID, Name, Email, Phone, Billing Info, Shipping Info, Created, Modified
+        setColumnWidths(customerTable, 70, 180, 120, 100, 400, 500, 150, 150);
         // Apply a custom cell renderer for text wrapping
-        TextAreaRenderer textAreaRenderer = new TextAreaRenderer();
         customerTable.getColumnModel().getColumn(4).setCellRenderer(textAreaRenderer);  // Billing Info
         customerTable.getColumnModel().getColumn(5).setCellRenderer(textAreaRenderer);  // Shipping Info
 
-        JScrollPane scrollPane = new JScrollPane(customerTable);
-        scrollPane.setPreferredSize(new Dimension(tableWidth, tableHeight));  // Set preferred size for scrolling
-        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
-        scrollPane.setHorizontalScrollBarPolicy(HORIZONTAL_SCROLLBAR_ALWAYS);
-        return scrollPane;
+        return encloseInScrollPane(customerTable);
     }
 
     private static @NotNull JScrollPane setupAndReturnProductTable() {
-        productInOrderTable.setFillsViewportHeight(true);  // Ensure headers are always visible
-        // Set preferred column widths
-        TableColumnModel columnModel = productInOrderTable.getColumnModel();
-        columnModel.getColumn(0).setPreferredWidth(70);  // ID
-        columnModel.getColumn(1).setPreferredWidth(70);  // PNK
-        columnModel.getColumn(2).setPreferredWidth(400);  // Name
-        columnModel.getColumn(3).setPreferredWidth(70);  // External Id
-        columnModel.getColumn(4).setPreferredWidth(70);  // Quantity
-        columnModel.getColumn(5).setPreferredWidth(70);  // Initial Quantity
-        columnModel.getColumn(6).setPreferredWidth(70);  // Storno Quantity
-        columnModel.getColumn(7).setPreferredWidth(100);  // Sale Price
-        columnModel.getColumn(8).setPreferredWidth(100);  // Original Price
-
-        // Apply custom cell renderer for text wrapping
-        TextAreaRenderer textAreaRenderer = new TextAreaRenderer();
+        // ID, PNK, Name, External Id, Quantity, Initial Quantity, Storno Quantity, Sale Price, Original Price
+        setColumnWidths(productInOrderTable, 70, 70, 400, 70, 70, 70, 70, 100, 100);
+        // Apply the custom cell renderer for text wrapping
         customerTable.getColumnModel().getColumn(2).setCellRenderer(textAreaRenderer);  // Name
-
-        JScrollPane scrollPane = new JScrollPane(productInOrderTable);
-        scrollPane.setPreferredSize(new Dimension(tableWidth, tableHeight));  // Set preferred size for scrolling
-        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
-        scrollPane.setHorizontalScrollBarPolicy(HORIZONTAL_SCROLLBAR_ALWAYS);
-        return scrollPane;
+        return encloseInScrollPane(productInOrderTable);
     }
 
     private static @NotNull JScrollPane setupAndReturnOrderTable() {
-        orderTable.setFillsViewportHeight(true);  // Ensure headers are always visible
         // Add a mouse listener to the table
         orderTable.addMouseListener(getOrderIdMouseAdapter());
         orderTable.addMouseListener(updateProductTable());
-        // Set preferred column widths
-        TableColumnModel columnModel = orderTable.getColumnModel();
-        columnModel.getColumn(0).setPreferredWidth(100);  // Order ID
-        columnModel.getColumn(1).setPreferredWidth(200);  // Vendor ID
-        columnModel.getColumn(2).setPreferredWidth(150);  // Vendor Name
-        columnModel.getColumn(3).setPreferredWidth(100);  // Customer ID
-        columnModel.getColumn(4).setPreferredWidth(50);  // Status
-        columnModel.getColumn(5).setPreferredWidth(150);  // Date
-        columnModel.getColumn(6).setPreferredWidth(150);  // Created
-        columnModel.getColumn(7).setPreferredWidth(150);  // Modified
-        JScrollPane scrollPane = new JScrollPane(orderTable);
-        scrollPane.setPreferredSize(new Dimension(tableWidth, tableHeight));  // Set the preferred size for scrolling
-        scrollPane.setVerticalScrollBarPolicy(VERTICAL_SCROLLBAR_ALWAYS);
-        scrollPane.setHorizontalScrollBarPolicy(HORIZONTAL_SCROLLBAR_ALWAYS);
-        return scrollPane;
+        // Order ID, Vendor ID, Vendor Name, Customer ID, Status, Date, Created, Modified
+        setColumnWidths(orderTable, 100, 200, 150, 100, 50, 150, 150, 150);
+        return encloseInScrollPane(orderTable);
     }
 
     private static @NotNull MouseAdapter getOrderIdMouseAdapter() {
@@ -286,7 +242,7 @@ public class EmagDBExplorer {
         if (poinfoPanel == null) {
             poinfoPanel = new POInfoTable();
         }
-        var title = "Orders with product %s in month %s".formatted(productName, month);
+        var title = "Orders with the product %s in the month %s".formatted(productName, month);
         poinfoPanel.updateTable(productOrders);
         if (poinfoWindow == null) {
             poinfoWindow = new JFrame(title);
@@ -315,6 +271,35 @@ public class EmagDBExplorer {
             customerField.setText(customerIds.iterator().next().toString());
         }
     }
+
+    /**
+     * Helper to set preferred widths on a JTable.
+     *
+     * @param table on which to set column widths.
+     * @param widths One item for each column.
+     */
+    private static void setColumnWidths(JTable table, int... widths) {
+        TableColumnModel columnModel = table.getColumnModel();
+        for (int i = 0; i < widths.length && i < columnModel.getColumnCount(); i++) {
+            columnModel.getColumn(i).setPreferredWidth(widths[i]);
+        }
+    }
+
+    /**
+     * Helper to enclose a table in a scroll pane.
+     *
+     * @param table to be embedded in a scroll pane.
+     * @return the scroll pane.
+     */
+    private static @NotNull JScrollPane encloseInScrollPane(final JTable table) {
+        table.setFillsViewportHeight(true);  // Ensure headers are always visible
+        JScrollPane scrollPane = new JScrollPane(table);
+        scrollPane.setPreferredSize(new Dimension(tableWidth, tableHeight));  // Set the preferred size for scrolling
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        scrollPane.setHorizontalScrollBarPolicy(HORIZONTAL_SCROLLBAR_ALWAYS);
+        return scrollPane;
+    }
+
 
     private static void updateProductTable(String orderId) {
         try {
