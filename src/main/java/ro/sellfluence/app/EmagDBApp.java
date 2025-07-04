@@ -348,7 +348,7 @@ public class EmagDBApp {
         } else {
             var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
             var filter = new HashMap<String, Object>();
-            filter.put("itemsPerPage", 1000);
+            filter.put("itemsPerPage", 300);
             if (createdAfter != null) filter.put("createdAfter", createdAfter);
             if (createdBefore != null) filter.put("createdBefore", createdBefore);
             if (modifiedAfter != null) filter.put("modifiedAfter", modifiedAfter);
