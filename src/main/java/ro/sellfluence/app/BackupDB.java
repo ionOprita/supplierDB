@@ -25,7 +25,11 @@ public class BackupDB {
         if (pg_dump == null) {
             System.out.println("Could not find the pg_dump executable. No backup will be performed.");
         } else {
-            var backupDir = Paths.get(System.getProperty("user.home")).resolve("Backups");
+            var backupDir = Paths.get(System.getProperty("user.home"))
+                    .resolve("Desktop")
+                    .resolve("supplierDB")
+                    .resolve("supplierDB")
+                    .resolve("Backups");
             try {
                 Files.createDirectories(backupDir);
                 var timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmm").format(LocalDateTime.now());
