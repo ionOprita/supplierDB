@@ -1,11 +1,14 @@
 package ro.sellfluence.app;
 
+import ch.claudio.db.DBPass;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 
 import static java.lang.ProcessBuilder.Redirect.INHERIT;
 
@@ -36,10 +39,13 @@ public class BackupDB {
                 var backupPath = backupDir.resolve("db_emag_"+timestamp+".dump").toString();
                 try {
                     System.out.println("Executing pg_dump to " + backupPath);
-                    var process = new ProcessBuilder(pg_dump.toString(), "-Fc", "-f", backupPath, "emag")
+                    var dbInfo = DBPass.findDB("emagLocal");
+                    var dbName = Arrays.stream(dbInfo.connect().split("/")).toList().getLast();
+                    var pb = new ProcessBuilder(pg_dump.toString(), "-Fc", "-f", backupPath, "-U", dbInfo.user(), dbName)
                             .redirectOutput(INHERIT)
-                            .redirectErrorStream(true)
-                            .start();
+                            .redirectErrorStream(true);
+                    pb.environment().put("PGPASSWORD", dbInfo.pw());
+                    var process = pb.start();
                     System.out.println("Waiting for the pg_dump executable to finish");
                     process.waitFor();
                     System.out.println("pg_dump finished");
