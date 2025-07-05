@@ -35,7 +35,7 @@ public class PopulateDateComenziFromDB {
     /**
      * Target spreadsheet.
      */
-    private static final String spreadSheetName = "Testing Coding " + year + " - Date comenzi";
+    private static final String spreadSheetName = year + " - Date comenzi";
 
     /**
      * Target sheet for the orders.
