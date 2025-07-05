@@ -175,6 +175,15 @@ public class EmagMirrorDB {
                 if (!Objects.equals(oldOrder.delivery_payment_mode(), order.delivery_payment_mode())) {
                     updateString(db, orderInserted.surrogateId, "delivery_payment_mode", order.delivery_payment_mode());
                 }
+                if (!Objects.equals(oldOrder.payment_mode(), order.payment_mode())) {
+                    updateString(db, orderInserted.surrogateId, "payment_mode", order.payment_mode());
+                }
+                if (!Objects.equals(oldOrder.payment_mode_id(), order.payment_mode_id())) {
+                    updateInt(db, orderInserted.surrogateId, "payment_mode_id", order.payment_mode_id());
+                }
+                if (!Objects.equals(oldOrder.detailed_payment_method(), order.detailed_payment_method())) {
+                    updateString(db, orderInserted.surrogateId, "detailed_payment_method", order.detailed_payment_method());
+                }
                 updateOrderDependents(db, order, oldOrder, orderInserted.surrogateId);
             }
             return 0;

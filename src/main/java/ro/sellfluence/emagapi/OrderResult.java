@@ -145,7 +145,7 @@ public record OrderResult(
      * It will log some stuff and return a boolean, which gives a hint whether the orders are equal or not.
      *
      * @param other Another OrderResult.
-     * @return null if no differences are detected otherwise a new Order.
+     * @return false if no differences are detected otherwise true.
      */
     public boolean reportUnhandledDifferences(OrderResult other) {
         boolean hasDifference = false;
@@ -155,14 +155,6 @@ public record OrderResult(
         }
         if (!Objects.equals(type, other.type)) {
             System.out.printf("%s:%s -> %s:%s Type changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, type, other.type);
-            hasDifference = true;
-        }
-        if (!Objects.equals(payment_mode, other.payment_mode)) {
-            System.out.printf("%s:%s -> %s:%s Payment mode changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, payment_mode, other.payment_mode);
-            hasDifference = true;
-        }
-        if (payment_mode_id != other.payment_mode_id) {
-            System.out.printf("%s:%s -> %s:%s Payment mode ID changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, payment_mode_id, other.payment_mode_id);
             hasDifference = true;
         }
         if (!Objects.equals(observation, other.observation)) {
@@ -183,10 +175,6 @@ public record OrderResult(
         }
         if (!Objects.equals(parent_id, other.parent_id)) {
             System.out.printf("%s:%s -> %s:%s Parent ID changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, parent_id, other.parent_id);
-            hasDifference = true;
-        }
-        if (!Objects.equals(detailed_payment_method, other.detailed_payment_method)) {
-            System.out.printf("%s:%s -> %s:%s Detailed payment method changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, detailed_payment_method, other.detailed_payment_method);
             hasDifference = true;
         }
         if (!Objects.equals(proforms, other.proforms)) {
