@@ -42,6 +42,11 @@ Restore from a specific backup using the command (substituting date and time for
 pg_restore -d emag -c --if-exists db_emag_2025-05-15T16.dump
 ```
 
+The restore command can also be used to get a human-readable version of the dump file using this command:
+```
+pg_restore -f - db_emag_2025-05-15T16.dump | less
+```
+
 ### Drop tables for testing
 
 To quickly drop all tables for testing, execute this:
