@@ -167,11 +167,10 @@ public class UpdateEmployeeSheetsFromDB {
     private void loadOverview(EmagMirrorDB mirrorDB) throws SQLException {
         var products = mirrorDB.readProducts();
         // To be commented in only to filter for a single PNK for debugging purpose
-        products = products.stream().filter(productWithID -> productWithID.product().pnk().equals("D2HG3PMBM")).toList();
+        products = products.stream().filter(product -> product.pnk().equals("D2HG3PMBM")).toList();
         pnkToSpreadSheet = products.stream()
-                .filter(it -> it.product().employeeSheetName() != null)
-                .map(it -> {
-                    var product = it.product();
+                .filter(it -> it.employeeSheetName() != null)
+                .map(product -> {
                     var pnk = product.pnk();
                     var sheetName = product.employeeSheetName();
                     var sheet = getSpreadSheetByName(appName, sheetName);

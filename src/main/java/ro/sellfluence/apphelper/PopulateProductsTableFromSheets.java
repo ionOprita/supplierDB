@@ -72,7 +72,7 @@ public class PopulateProductsTableFromSheets {
                         );
                         retracted = false;
                     }
-                            if (!(pnk.isBlank() || pnk.equals("0") || name.isBlank() || name.equals("-"))) {
+                            if (!productCode.isBlank()) {
                                 nextConsumer.accept(new ProductInfo(pnk, productCode, name, continueToSell, retracted, category, messageKeyword, employeeSheetName));
                             }
                         }
