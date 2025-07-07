@@ -19,6 +19,18 @@ public record EmagFetchLog(
         LocalDateTime fetchTime,
         String error) {
 
+    public record EmagFetchHistogram(long days, int count) {}
+
+    /**
+     * Report if the log indicates that this day is done.
+     *
+     * @param fetchStatus for a particular account and day or null if non was found.
+     * @return true if the entry existed and had a blank error message.
+     */
+    public static boolean isDone(EmagFetchLog fetchStatus) {
+        return fetchStatus != null && isBlank(fetchStatus.error());
+    }
+
     static int insertEmagLog(Connection db, String account, LocalDate date, LocalDateTime fetchTime, String error) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO emag_fetch_log (emag_login, date, fetch_time, error) VALUES (?, ?, ?, ?) ON CONFLICT(emag_login, date) DO NOTHING")) {
             s.setString(1, account);
@@ -39,7 +51,29 @@ public record EmagFetchLog(
         }
     }
 
-    public record EmagFetchHistogram(long days, int count) {}
+    /**
+     * Get all entries from emag_fetch_log which overlap with the given range.
+     *
+     * @param db database
+     * @param account emag account
+     * @param date of day needed.
+     */
+    static EmagFetchLog getEmagLog(Connection db, String account, LocalDate date) throws SQLException {
+        try (var s = db.prepareStatement("SELECT fetch_time, error FROM emag_fetch_log WHERE emag_login = ? AND date = ?")) {
+            s.setString(1, account);
+            s.setDate(2, toDate(date));
+            try (var rs = s.executeQuery()) {
+                EmagFetchLog fetchLog = null;
+                if (rs.next()) {
+                    fetchLog = new EmagFetchLog(account, date, toLocalDateTime(rs.getTimestamp(1)), rs.getString(2));
+                }
+                if (rs.next()) {
+                    throw new RuntimeException("Unexpected second entry in the emag_fetch_log for %s on %s.".formatted(account, date));
+                }
+                return fetchLog;
+            }
+        }
+    }
 
     static ArrayList<EmagFetchHistogram> getFetchHistogram(Connection db) throws SQLException {
         var histogram = new ArrayList<EmagFetchHistogram>();
@@ -67,30 +101,6 @@ public record EmagFetchLog(
         return histogram;
     }
 
-    /**
-     * Get all entries from emag_fetch_log which overlap with the given range.
-     *
-     * @param db database
-     * @param account emag account
-     * @param date of day needed.
-     */
-    static EmagFetchLog getEmagLog(Connection db, String account, LocalDate date) throws SQLException {
-        try (var s = db.prepareStatement("SELECT fetch_time, error FROM emag_fetch_log WHERE emag_login = ? AND date = ?")) {
-            s.setString(1, account);
-            s.setDate(2, toDate(date));
-            try (var rs = s.executeQuery()) {
-                EmagFetchLog fetchLog = null;
-                if (rs.next()) {
-                    fetchLog = new EmagFetchLog(account, date, toLocalDateTime(rs.getTimestamp(1)), rs.getString(2));
-                }
-                if (rs.next()) {
-                    throw new RuntimeException("Unexpected second entry in the emag_fetch_log for %s on %s.".formatted(account, date));
-                }
-                return fetchLog;
-            }
-        }
-    }
-
     static int deleteFetchLogsBefore(Connection db, LocalDate oldestDay) {
         try (var s = db.prepareStatement("DELETE FROM emag_fetch_log WHERE date < ?")) {
             s.setDate(1, toDate(oldestDay));
@@ -98,15 +108,5 @@ public record EmagFetchLog(
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
-    }
-
-    /**
-     * Report if the log indicates that this day is done.
-     *
-     * @param fetchStatus for a particular account and day or null if non was found.
-     * @return true if the entry existed and had a blank error message.
-     */
-    public static boolean isDone(EmagFetchLog fetchStatus) {
-        return fetchStatus != null && isBlank(fetchStatus.error());
     }
 }

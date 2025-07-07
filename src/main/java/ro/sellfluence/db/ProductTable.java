@@ -19,57 +19,25 @@ public class ProductTable {
     }
 
     /**
-     * Insert a product in the table that records our information about a product and associates our name and
-     * category with the PNK used by emag.
+     * Inserts or updates a product in the product table. If an insertion attempt fails because the product already exists,
+     * the method attempts to update the product's information. If neither insertion nor update is successful,
+     * a runtime exception is thrown.
      *
-     * @param db database
-     * @param productInfo record mapping to column
-     * @return 1 or 0 depending on whether the insertion was successful or not.
-     * @throws SQLException if anything bad happens.
+     * @param db the database connection to use for the operation
+     * @param productInfo the product information to be inserted or updated
+     * @return always returns 0 upon successful completion
+     * @throws SQLException if a database access error occurs
+     * @throws RuntimeException if the product cannot be inserted or updated
      */
-    static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
-        try (var s = db.prepareStatement("""
-                INSERT INTO product (product_code, emag_pnk, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT DO NOTHING
-                """)) {
-            s.setString(1, productInfo.productCode());
-            s.setString(2, productInfo.pnk());
-            s.setString(3, productInfo.name());
-            s.setBoolean(4, productInfo.continueToSell());
-            s.setBoolean(5, productInfo.retracted());
-            s.setString(6, productInfo.category());
-            s.setString(7, productInfo.messageKeyword());
-            s.setString(8, productInfo.employeeSheetName());
-            return s.executeUpdate();
+    static int insertOrUpdateProduct(Connection db, ProductInfo productInfo) throws SQLException {
+        var inserted = insertProduct(db, productInfo);
+        if (inserted == 0) {
+            var updated = updateProduct(db, productInfo);
+            if (updated == 0) {
+                throw new RuntimeException("Product could neither be inserted nor updated: %s.".formatted(productInfo));
+            }
         }
-    }
-
-    /**
-     * Insert a product in the table that records our information about a product and associates our name and
-     * category with the PNK used by emag.
-     *
-     * @param db database
-     * @param productInfo record mapping to column
-     * @return 1 or 0 depending on whether the insertion was successful or not.
-     * @throws SQLException if anything bad happens.
-     */
-    static int updateProduct(Connection db, ProductInfo productInfo) throws SQLException {
-        try (var s = db.prepareStatement("""
-                UPDATE product
-                SET emag_pnk = ?, category = ?, message_keyword = ?, continue_to_sell = ?, retracted = ?, name = ?, employee_sheet_name = ?
-                WHERE product_code = ?
-                """)) {
-            s.setString(1, productInfo.pnk());
-            s.setString(2, productInfo.category());
-            s.setString(3, productInfo.messageKeyword());
-            s.setBoolean(4, productInfo.continueToSell());
-            s.setBoolean(5, productInfo.retracted());
-            s.setString(6, productInfo.name());
-            s.setString(7, productInfo.employeeSheetName());
-            s.setString(8, productInfo.productCode());
-            return s.executeUpdate();
-        }
+        return 0;
     }
 
     /**
@@ -119,5 +87,59 @@ public class ProductTable {
             }
         }
         return products;
+    }
+
+    /**
+     * Insert a product in the table that records our information about a product and associates our name and
+     * category with the PNK used by emag.
+     *
+     * @param db database
+     * @param productInfo record mapping to column
+     * @return 1 or 0 depending on whether the insertion was successful or not.
+     * @throws SQLException if anything bad happens.
+     */
+    private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
+        try (var s = db.prepareStatement("""
+                INSERT INTO product (product_code, emag_pnk, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT DO NOTHING
+                """)) {
+            s.setString(1, productInfo.productCode());
+            s.setString(2, productInfo.pnk());
+            s.setString(3, productInfo.name());
+            s.setBoolean(4, productInfo.continueToSell());
+            s.setBoolean(5, productInfo.retracted());
+            s.setString(6, productInfo.category());
+            s.setString(7, productInfo.messageKeyword());
+            s.setString(8, productInfo.employeeSheetName());
+            return s.executeUpdate();
+        }
+    }
+
+    /**
+     * Insert a product in the table that records our information about a product and associates our name and
+     * category with the PNK used by emag.
+     *
+     * @param db database
+     * @param productInfo record mapping to column
+     * @return 1 or 0 depending on whether the insertion was successful or not.
+     * @throws SQLException if anything bad happens.
+     */
+    private static int updateProduct(Connection db, ProductInfo productInfo) throws SQLException {
+        try (var s = db.prepareStatement("""
+                UPDATE product
+                SET emag_pnk = ?, category = ?, message_keyword = ?, continue_to_sell = ?, retracted = ?, name = ?, employee_sheet_name = ?
+                WHERE product_code = ?
+                """)) {
+            s.setString(1, productInfo.pnk());
+            s.setString(2, productInfo.category());
+            s.setString(3, productInfo.messageKeyword());
+            s.setBoolean(4, productInfo.continueToSell());
+            s.setBoolean(5, productInfo.retracted());
+            s.setString(6, productInfo.name());
+            s.setString(7, productInfo.employeeSheetName());
+            s.setString(8, productInfo.productCode());
+            return s.executeUpdate();
+        }
     }
 }

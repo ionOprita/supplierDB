@@ -9,7 +9,6 @@ import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.Product;
 import ro.sellfluence.emagapi.Voucher;
 import ro.sellfluence.emagapi.VoucherSplit;
-import ro.sellfluence.support.Logs;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -21,19 +20,16 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Scanner;
 import java.util.UUID;
-import java.util.logging.Logger;
 
 import static java.sql.Statement.RETURN_GENERATED_KEYS;
-import static java.util.logging.Level.FINE;
+import static ro.sellfluence.db.CustomerTable.insertOrUpdateCustomer;
+import static ro.sellfluence.db.LockerDetailsTable.insertOrUpdateLockerDetails;
 import static ro.sellfluence.support.UsefulMethods.toLocalDateTime;
 import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 
 public class EmagOrder {
 
-    static Logger debugLogger = Logs.getFileLogger("emag_order", FINE, 5, 10_000_000);
-
     private static final Scanner scanner = new Scanner(System.in);
-
 
     /**
      * Record for reporting the result of inserting an order.
@@ -41,7 +37,7 @@ public class EmagOrder {
      * @param inserted true if a record was created, false otherwise.
      * @param surrogateId the ID of either the freshly created
      */
-    record InsertResult(boolean inserted, int surrogateId) {
+    private record InsertResult(boolean inserted, int surrogateId) {
     }
 
     static int addOrderResult(OrderResult order, Connection db, UUID vendorId, String vendorName) throws SQLException {
@@ -577,7 +573,7 @@ public class EmagOrder {
         return result;
     }
 
-    static void reportIssue(OrderResult order) {
+    private static void reportIssue(OrderResult order) {
         System.out.println("The above message indicates that for some changes, there is no code to handle them.");
         System.out.println("A fix to the program is needed. You need to report this error to the developer.");
         System.out.printf("Please report the vendor '%s' and order ID '%s'.%n", order.vendor_name(), order.id());
@@ -600,7 +596,7 @@ public class EmagOrder {
      * @return 1 if the row was updated or 0 if no row matched the surrogateId.
      * @throws SQLException on database errors.
      */
-    static int updateNumeric(Connection db, int surrogateId, final String field, BigDecimal newValue) throws SQLException {
+    private static int updateNumeric(Connection db, int surrogateId, final String field, BigDecimal newValue) throws SQLException {
         try (var s = db.prepareStatement("UPDATE emag_order SET " + field + " =? WHERE surrogate_id= ?")) {
             s.setObject(1, newValue);
             s.setInt(2, surrogateId);
@@ -618,7 +614,7 @@ public class EmagOrder {
      * @return 1 if the row was updated or 0 if no row matched the surrogateId.
      * @throws SQLException on database errors.
      */
-    static int updateInt(Connection db, int surrogateId, final String field, int newValue) throws SQLException {
+    private static int updateInt(Connection db, int surrogateId, final String field, int newValue) throws SQLException {
         try (var s = db.prepareStatement("UPDATE emag_order SET " + field + " =? WHERE surrogate_id= ?")) {
             s.setInt(1, newValue);
             s.setInt(2, surrogateId);
@@ -636,7 +632,7 @@ public class EmagOrder {
      * @return 1 if the row was updated or 0 if no row matched the surrogateId.
      * @throws SQLException on database errors.
      */
-    static int updateString(Connection db, int surrogateId, final String field, String newValue) throws SQLException {
+    private static int updateString(Connection db, int surrogateId, final String field, String newValue) throws SQLException {
         try (var s = db.prepareStatement("UPDATE emag_order SET " + field + " =? WHERE surrogate_id= ?")) {
             s.setString(1, newValue);
             s.setInt(2, surrogateId);
@@ -654,7 +650,7 @@ public class EmagOrder {
      * @return 1 if the row was updated or 0 if no row matched the surrogateId.
      * @throws SQLException on database errors.
      */
-    static int updateTimestamp(Connection db, int surrogateId, String field, LocalDateTime newValue) throws SQLException {
+    private static int updateTimestamp(Connection db, int surrogateId, String field, LocalDateTime newValue) throws SQLException {
         try (var s = db.prepareStatement("UPDATE emag_order SET " + field + " =? WHERE surrogate_id= ?")) {
             s.setTimestamp(1, toTimestamp(newValue));
             s.setInt(2, surrogateId);
@@ -672,7 +668,7 @@ public class EmagOrder {
      * @return 1 if the row was updated or 0 if no row matched the surrogateId.
      * @throws SQLException on database errors.
      */
-    static int updateCancellationReason(Connection db, int surrogateId, CancellationReason newValue) throws SQLException {
+    private static int updateCancellationReason(Connection db, int surrogateId, CancellationReason newValue) throws SQLException {
         try (var s = db.prepareStatement("UPDATE emag_order SET cancellation_reason = ?, cancellation_reason_text = ?  WHERE surrogate_id = ?")) {
             s.setInt(1, newValue.id());
             s.setString(2, newValue.name());
@@ -690,7 +686,7 @@ public class EmagOrder {
      * @param surrogateId row id.
      * @throws SQLException on database errors.
      */
-    static void updateOrderDependents(Connection db, OrderResult order, OrderResult oldOrder, int surrogateId) throws SQLException {
+    private static void updateOrderDependents(Connection db, OrderResult order, OrderResult oldOrder, int surrogateId) throws SQLException {
         if (!Objects.equals(oldOrder.flags(), order.flags())) {
             updateFlags(db, order, surrogateId);
         }
@@ -705,7 +701,7 @@ public class EmagOrder {
         }
     }
 
-    static void insertOrderDependents(Connection db, OrderResult order, int surrogateId) throws SQLException {
+    private static void insertOrderDependents(Connection db, OrderResult order, int surrogateId) throws SQLException {
         insertProducts(db, order, surrogateId);
         if (order.shipping_tax_voucher_split() != null) {
             for (var voucherSplit : order.shipping_tax_voucher_split()) {
@@ -884,70 +880,6 @@ public class EmagOrder {
         }
     }
 
-    static void insertOrUpdateLockerDetails(Connection db, final LockerDetails details) throws SQLException {
-        var added = insertLockerDetails(db, details);
-        if (added == 0) {
-            var current = selectLockerDetails(db, details.locker_id());
-            if (!details.equals(current)) {
-                debugLogger.log(FINE, () -> "LockerDetails differs:%n old: %s%n new: %s%n".formatted(current, details));
-                updateLockerDetails(db, details);
-            }
-        }
-    }
-
-    private static int insertLockerDetails(Connection db, LockerDetails ld) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO locker_details (locker_id, locker_name, locker_delivery_eligible, courier_external_office_id) VALUES (?,?,?,?) ON CONFLICT(locker_id) DO NOTHING")) {
-            s.setString(1, ld.locker_id());
-            s.setString(2, ld.locker_name());
-            s.setInt(3, ld.locker_delivery_eligible());
-            s.setString(4, ld.courier_external_office_id());
-            return s.executeUpdate();
-        }
-    }
-
-    private static LockerDetails selectLockerDetails(Connection db, String lockerId) throws SQLException {
-        LockerDetails lockerDetails = null;
-        try (var s = db.prepareStatement("SELECT * FROM locker_details WHERE locker_id = ?")) {
-            s.setString(1, lockerId);
-            try (var rs = s.executeQuery()) {
-                if (rs.next()) {
-                    lockerDetails = new LockerDetails(rs.getString("locker_id"), rs.getString("locker_name"), rs.getInt("locker_delivery_eligible"), rs.getString("courier_external_office_id"));
-                }
-            }
-        }
-        return lockerDetails;
-    }
-
-    private static int updateLockerDetails(Connection db, LockerDetails ld) throws SQLException {
-        try (var s = db.prepareStatement("UPDATE locker_details SET locker_name = ?, locker_delivery_eligible = ?, courier_external_office_id = ? WHERE locker_id = ?")) {
-            s.setString(1, ld.locker_name());
-            s.setInt(2, ld.locker_delivery_eligible());
-            s.setString(3, ld.courier_external_office_id());
-            s.setString(4, ld.locker_id());
-            return s.executeUpdate();
-        }
-    }
-
-    /**
-     * Insert a customer into the database.
-     * If there is already a customer by the same ID, the record is updated if the data differs and the new customer has
-     * a more recent modified date.
-     *
-     * @param db database
-     * @param customer new customer record
-     * @throws SQLException in case of malfunction
-     */
-    static void insertOrUpdateCustomer(Connection db, final Customer customer) throws SQLException {
-        var added = insertCustomer(db, customer);
-        if (added == 0) {
-            var current = selectCustomer(db, customer.id());
-            if (!customer.sameExceptForDate(current) && customer.modified().isAfter(current.modified())) {
-                debugLogger.log(FINE, () -> "Updating customer:%n old: %s%n new: %s%n".formatted(current, customer));
-                updateCustomer(db, customer);
-            }
-        }
-    }
-
     private static int deleteFlags(Connection db, int surrogateId) throws SQLException {
         try (var s = db.prepareStatement("DELETE FROM flag WHERE emag_order_surrogate_id = ?")) {
             s.setInt(1, surrogateId);
@@ -982,109 +914,5 @@ public class EmagOrder {
     private static void updateVouchers(Connection db, OrderResult order, int surrogateId) throws SQLException {
         deleteVouchers(db, surrogateId);
         insertVouchers(db, order, surrogateId);
-    }
-
-
-    private static int insertCustomer(Connection db, Customer c) throws SQLException {
-        try (var s = db.prepareStatement("""
-                INSERT INTO customer (
-                id, mkt_id, name, email, company, gender, code, registration_number, bank, iban, fax, legal_entity,
-                is_vat_payer, phone_1, phone_2, phone_3, billing_name, billing_phone, billing_country, billing_suburb,
-                billing_city, billing_locality_id, billing_street, billing_postal_code, liable_person, shipping_country,
-                shipping_suburb, shipping_city, shipping_locality_id, shipping_street,
-                shipping_postal_code, shipping_contact, shipping_phone, created, modified
-                )
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING""")) {
-            s.setInt(1, c.id());
-            s.setInt(2, c.mkt_id());
-            s.setString(3, c.name());
-            s.setString(4, c.email());
-            s.setString(5, c.company());
-            s.setString(6, c.gender());
-            s.setString(7, c.code());
-            s.setString(8, c.registration_number());
-            s.setString(9, c.bank());
-            s.setString(10, c.iban());
-            s.setString(11, c.fax());
-            s.setInt(12, c.legal_entity());
-            s.setInt(13, c.is_vat_payer());
-            s.setString(14, c.phone_1());
-            s.setString(15, c.phone_2());
-            s.setString(16, c.phone_3());
-            s.setString(17, c.billing_name());
-            s.setString(18, c.billing_phone());
-            s.setString(19, c.billing_country());
-            s.setString(20, c.billing_suburb());
-            s.setString(21, c.billing_city());
-            s.setString(22, c.billing_locality_id());
-            s.setString(23, c.billing_street());
-            s.setString(24, c.billing_postal_code());
-            s.setString(25, c.liable_person());
-            s.setString(26, c.shipping_country());
-            s.setString(27, c.shipping_suburb());
-            s.setString(28, c.shipping_city());
-            s.setString(29, c.shipping_locality_id());
-            s.setString(30, c.shipping_street());
-            s.setString(31, c.shipping_postal_code());
-            s.setString(32, c.shipping_contact());
-            s.setString(33, c.shipping_phone());
-            s.setTimestamp(34, toTimestamp(c.created()));
-            s.setTimestamp(35, toTimestamp(c.modified()));
-            return s.executeUpdate();
-        }
-    }
-
-    private static Customer selectCustomer(Connection db, int customerId) throws SQLException {
-        Customer customer = null;
-        try (var s = db.prepareStatement("SELECT * FROM customer WHERE id = ?")) {
-            s.setInt(1, customerId);
-            try (var rs = s.executeQuery()) {
-                if (rs.next()) {
-                    customer = new Customer(customerId, rs.getInt("mkt_id"), rs.getString("name"), rs.getString("email"), rs.getString("company"), rs.getString("gender"), rs.getString("code"), rs.getString("registration_number"), rs.getString("bank"), rs.getString("iban"), rs.getString("fax"), rs.getInt("legal_entity"), rs.getInt("is_vat_payer"), rs.getString("phone_1"), rs.getString("phone_2"), rs.getString("phone_3"), rs.getString("billing_name"), rs.getString("billing_phone"), rs.getString("billing_country"), rs.getString("billing_suburb"), rs.getString("billing_city"), rs.getString("billing_locality_id"), rs.getString("billing_street"), rs.getString("billing_postal_code"), rs.getString("liable_person"), rs.getString("shipping_country"), rs.getString("shipping_suburb"), rs.getString("shipping_city"), rs.getString("shipping_locality_id"), rs.getString("shipping_street"), rs.getString("shipping_postal_code"), rs.getString("shipping_contact"), rs.getString("shipping_phone"), toLocalDateTime(rs.getTimestamp("created")), toLocalDateTime(rs.getTimestamp("modified")));
-                }
-            }
-        }
-        return customer;
-    }
-
-
-    private static int updateCustomer(Connection db, Customer c) throws SQLException {
-        try (var s = db.prepareStatement("UPDATE customer SET mkt_id = ?, name = ?, email = ?, company = ?, gender = ?, code = ?, registration_number = ?, bank = ?, iban = ?, fax = ?, legal_entity = ?, is_vat_payer = ?, phone_1 = ?, phone_2 = ?, phone_3 = ?, billing_name = ?, billing_phone = ?, billing_country = ?, billing_suburb = ?, billing_city = ?, billing_locality_id = ?, billing_street = ?, billing_postal_code = ?, liable_person = ?, shipping_country = ?, shipping_suburb = ?, shipping_city = ?, shipping_locality_id = ?, shipping_street = ?, shipping_postal_code = ?, shipping_contact = ?, shipping_phone = ?, modified = ? WHERE id = ?")) {
-            s.setInt(1, c.mkt_id());
-            s.setString(2, c.name());
-            s.setString(3, c.email());
-            s.setString(4, c.company());
-            s.setString(5, c.gender());
-            s.setString(6, c.code());
-            s.setString(7, c.registration_number());
-            s.setString(8, c.bank());
-            s.setString(9, c.iban());
-            s.setString(10, c.fax());
-            s.setInt(11, c.legal_entity());
-            s.setInt(12, c.is_vat_payer());
-            s.setString(13, c.phone_1());
-            s.setString(14, c.phone_2());
-            s.setString(15, c.phone_3());
-            s.setString(16, c.billing_name());
-            s.setString(17, c.billing_phone());
-            s.setString(18, c.billing_country());
-            s.setString(19, c.billing_suburb());
-            s.setString(20, c.billing_city());
-            s.setString(21, c.billing_locality_id());
-            s.setString(22, c.billing_street());
-            s.setString(23, c.billing_postal_code());
-            s.setString(24, c.liable_person());
-            s.setString(25, c.shipping_country());
-            s.setString(26, c.shipping_suburb());
-            s.setString(27, c.shipping_city());
-            s.setString(28, c.shipping_locality_id());
-            s.setString(29, c.shipping_street());
-            s.setString(30, c.shipping_postal_code());
-            s.setString(31, c.shipping_contact());
-            s.setString(32, c.shipping_phone());
-            s.setTimestamp(33, toTimestamp(c.modified()));
-            s.setInt(34, c.id());
-            return s.executeUpdate();
-        }
     }
 }

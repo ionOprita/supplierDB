@@ -49,8 +49,7 @@ import static ro.sellfluence.db.GMV.specialCase;
 import static ro.sellfluence.db.GMV.subtractFromGMV;
 import static ro.sellfluence.db.ProductTable.getProductCodes;
 import static ro.sellfluence.db.ProductTable.getProducts;
-import static ro.sellfluence.db.ProductTable.insertProduct;
-import static ro.sellfluence.db.ProductTable.updateProduct;
+import static ro.sellfluence.db.ProductTable.insertOrUpdateProduct;
 import static ro.sellfluence.db.RMA.addRMAResult;
 import static ro.sellfluence.db.Vendor.insertOrUpdateVendor;
 import static ro.sellfluence.db.Vendor.selectFetchTimeByAccount;
@@ -203,16 +202,7 @@ public class EmagMirrorDB {
 
 
     public void addOrUpdateProduct(ProductInfo productInfo) throws SQLException {
-        database.writeTX(db -> {
-            var inserted = insertProduct(db, productInfo);
-            if (inserted == 0) {
-                var updated = updateProduct(db, productInfo);
-                if (updated == 0) {
-                    throw new RuntimeException("Product could neither be inserted nor updated: %s.".formatted(productInfo));
-                }
-            }
-            return 0;
-        });
+        database.writeTX(db -> insertOrUpdateProduct(db, productInfo));
     }
 
     public void addEmagLog(String account, LocalDate date, LocalDateTime fetchTime, String error) throws SQLException {
