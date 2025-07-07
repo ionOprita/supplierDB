@@ -1,6 +1,5 @@
 package ro.sellfluence.test.dbexplorer;
 
-import ch.claudio.db.DB;
 import org.jetbrains.annotations.NotNull;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.EmagMirrorDB.POInfo;
@@ -24,12 +23,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_ALWAYS;
-import static javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS;
 
 public class EmagDBExplorer {
     private static final String database = "emagLocal";
 
-    private static final DB emagDB;
     private static final EmagMirrorDB emagMirrorDB;
     public static final int tableWidth = 1800;
     public static final int tableHeight = 200;
@@ -37,7 +34,6 @@ public class EmagDBExplorer {
 
     static {
         try {
-            emagDB = new DB(database);
             emagMirrorDB = EmagMirrorDB.getEmagMirrorDB(database);
         } catch (IOException | SQLException e) {
             throw new RuntimeException(e);
@@ -115,7 +111,7 @@ public class EmagDBExplorer {
     }
 
     private static @NotNull JScrollPane setupAndReturnCustomerTable() {
-        // Customer ID, Name, Email, Phone, Billing Info, Shipping Info, Created, Modified
+        // Customer ID, Name, Email, Phone, Billing Info, Shipping Info, Created, Modified.
         setColumnWidths(customerTable, 70, 180, 120, 100, 400, 500, 150, 150);
         // Apply a custom cell renderer for text wrapping
         customerTable.getColumnModel().getColumn(4).setCellRenderer(textAreaRenderer);  // Billing Info
@@ -125,7 +121,7 @@ public class EmagDBExplorer {
     }
 
     private static @NotNull JScrollPane setupAndReturnProductTable() {
-        // ID, PNK, Name, External Id, Quantity, Initial Quantity, Storno Quantity, Sale Price, Original Price
+        // ID, PNK, Name, External ID, Quantity, Initial Quantity, Storno Quantity, Sale Price, Original Price
         setColumnWidths(productInOrderTable, 70, 70, 400, 70, 70, 70, 70, 100, 100);
         // Apply the custom cell renderer for text wrapping
         customerTable.getColumnModel().getColumn(2).setCellRenderer(textAreaRenderer);  // Name
@@ -167,20 +163,16 @@ public class EmagDBExplorer {
     }
 
     private static void lookupByOrderId(ActionEvent actionEvent) {
-        var orderId = orderField.getText();
         try {
-            var orders = emagDB.readTX(db -> OrderRecord.getOrdersById(db, orderId));
-            updateTables(orders);
+            updateTables(emagMirrorDB.readOrdersById(orderField.getText()));
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
     }
 
     private static void lookupByCustomerId(ActionEvent actionEvent) {
-        var customerId = Integer.parseInt(customerField.getText());
         try {
-            var orders = emagDB.readTX(db -> OrderRecord.getOrdersByCustomerId(db, customerId));
-            updateTables(orders);
+            updateTables(emagMirrorDB.readOrdersByCustomerId(Integer.parseInt(customerField.getText())));
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -195,7 +187,7 @@ public class EmagDBExplorer {
 
     private static void showFetchHistogram(ActionEvent actionEvent) {
         try {
-            var data = emagDB.readTX(EmagFetchHistogram::getHistogram);
+            var data = emagMirrorDB.readFetchHistogram();
             if (histogramPanel == null) {
                 histogramPanel = new HistogramPanel(data);
             } else {
@@ -214,7 +206,7 @@ public class EmagDBExplorer {
 
     private static void showGMVTable(ActionEvent actionEvent) {
         try {
-            var data = emagDB.readTX(emagMirrorDB::getGMV);
+            var data = emagMirrorDB.getGMVTable();
             if (gmvPanel == null) {
                 gmvPanel = new GMVTable();
             }
@@ -261,7 +253,7 @@ public class EmagDBExplorer {
         var customerIds = orders.stream().map(OrderRecord::customerId).collect(Collectors.toSet());
         var customers = customerIds.stream().flatMap(customerId -> {
             try {
-                return emagDB.readTX(db -> CustomerRecord.getCustomerById(db, customerId)).stream();
+                return emagMirrorDB.readCustomerById(customerId).stream();
             } catch (SQLException e) {
                 throw new RuntimeException(e);
             }
@@ -300,11 +292,9 @@ public class EmagDBExplorer {
         return scrollPane;
     }
 
-
     private static void updateProductTable(String orderId) {
         try {
-            var products = emagDB.readTX(db ->  ProductInOrderRecord.getProductInOrderByOrder(db, orderId ));
-            pioTableModel.updateTable(products);
+            pioTableModel.updateTable(emagMirrorDB.readProductInOrderByOrderId(orderId));
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }

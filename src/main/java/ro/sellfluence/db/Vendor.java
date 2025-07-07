@@ -1,5 +1,6 @@
 package ro.sellfluence.db;
 
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.sql.Connection;
@@ -15,6 +16,32 @@ import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 
 public class Vendor {
     private static final Logger logger = Logger.getLogger(Vendor.class.getName());
+
+    /**
+     * Add or update vendor.
+     *
+     * @param db      the database connection.
+     * @param name    vendor name.
+     * @param account emag account used wehn accessing the API.
+     * @return the UUID of the vendor.
+     * @throws SQLException if a database access error occurs.
+     */
+    static @NotNull UUID insertOrUpdateVendor(Connection db, String name, String account) throws SQLException {
+        UUID id = selectVendorIdByName(db, name);
+        if (id == null) {
+            id = UUID.randomUUID();
+            try (var s = db.prepareStatement("INSERT INTO vendor (id, vendor_name, isfbe, account) VALUES (?,?,?,?)")) {
+                s.setObject(1, id);
+                s.setString(2, name);
+                // Zoopie Invest is a special case, it does not contain FBE in the name, but is FBE.
+                s.setBoolean(3, name.contains("FBE") || name.contains("Zoopie Invest"));
+                s.setString(4, account);
+                s.executeUpdate();
+            }
+        }
+        return id;
+    }
+
 
     /**
      * Retrieves the UUID of a vendor from the database based on the provided vendor name.

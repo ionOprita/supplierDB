@@ -1,9 +1,12 @@
 package ro.sellfluence.db;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 
 import static ro.sellfluence.support.UsefulMethods.isBlank;
 import static ro.sellfluence.support.UsefulMethods.toDate;
@@ -34,6 +37,34 @@ public record EmagFetchLog(
             s.setDate(4, toDate(date));
             return s.executeUpdate();
         }
+    }
+
+    public record EmagFetchHistogram(long days, int count) {}
+
+    static ArrayList<EmagFetchHistogram> getFetchHistogram(Connection db) throws SQLException {
+        var histogram = new ArrayList<EmagFetchHistogram>();
+        String query = """
+                        SELECT
+                            NOW()::DATE - fetch_time::DATE AS days_old,
+                            COUNT(*) AS count
+                        FROM
+                            emag_fetch_log
+                        GROUP BY
+                            days_old
+                        ORDER BY
+                            days_old;
+                """;
+        try (PreparedStatement stmt = db.prepareStatement(query)) {
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    histogram.add(new EmagFetchHistogram(
+                            rs.getLong(1),
+                            rs.getInt(2)
+                    ));
+                }
+            }
+        }
+        return histogram;
     }
 
     /**

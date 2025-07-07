@@ -1,5 +1,7 @@
 package ro.sellfluence.test.dbexplorer;
 
+import ro.sellfluence.db.EmagFetchLog.EmagFetchHistogram;
+
 import javax.swing.JPanel;
 import java.awt.Color;
 import java.awt.Dimension;

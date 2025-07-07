@@ -101,4 +101,23 @@ public class ProductTable {
         }
         return products;
     }
+
+    /**
+     * Retrieves all product codes from the product table.
+     *
+     * @param db the database connection to use for querying product codes.
+     * @return a list of product codes retrieved from the database.
+     * @throws SQLException if an error occurs while accessing the database.
+     */
+    static List<String> getProductCodes(Connection db) throws SQLException {
+        var products = new ArrayList<String>();
+        try (var s = db.prepareStatement("SELECT product_code FROM product")) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    products.add(rs.getString(1));
+                }
+            }
+        }
+        return products;
+    }
 }
