@@ -50,6 +50,10 @@ import static java.sql.Statement.RETURN_GENERATED_KEYS;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.db.EmagFetchLog.deleteFetchLogsBefore;
+import static ro.sellfluence.db.EmagFetchLog.getEmagLog;
+import static ro.sellfluence.db.EmagFetchLog.insertEmagLog;
+import static ro.sellfluence.db.EmagFetchLog.updateEmagLog;
 import static ro.sellfluence.db.GMV.addToGMV;
 import static ro.sellfluence.db.GMV.getGMVByMonth;
 import static ro.sellfluence.db.GMV.getGMVByProductId;
@@ -612,16 +616,7 @@ public class EmagMirrorDB {
     }
 
     public int deleteFetchLogsOlderThan(LocalDate oldestDay) throws SQLException {
-        return database.writeTX(db -> deleteFetchLogsOlderThan(db, oldestDay));
-    }
-
-    private int deleteFetchLogsOlderThan(Connection db, LocalDate oldestDay) {
-        try (var s = db.prepareStatement("DELETE FROM emag_fetch_log WHERE date < ?")) {
-            s.setDate(1, toDate(oldestDay));
-            return s.executeUpdate();
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
+        return database.writeTX(db -> deleteFetchLogsBefore(db, oldestDay));
     }
 
     public record POInfo(String orderId, LocalDate orderDate, int orderStatus, String productName, int quantity,
@@ -2085,50 +2080,6 @@ public class EmagMirrorDB {
             s.setString(42, rmaResult.address_type());
             s.setObject(43, rmaResult.request_status_reason());
             return s.executeUpdate();
-        }
-    }
-
-    private static int insertEmagLog(Connection db, String account, LocalDate date, LocalDateTime fetchTime, String error) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO emag_fetch_log (emag_login, date, fetch_time, error) VALUES (?, ?, ?, ?) ON CONFLICT(emag_login, date) DO NOTHING")) {
-            s.setString(1, account);
-            s.setDate(2, toDate(date));
-            s.setTimestamp(3, toTimestamp(fetchTime));
-            s.setString(4, error);
-            return s.executeUpdate();
-        }
-    }
-
-    private static int updateEmagLog(Connection db, String account, LocalDate date, LocalDateTime fetchTime, String error) throws SQLException {
-        try (var s = db.prepareStatement("UPDATE emag_fetch_log SET fetch_time=?, error=? WHERE emag_login=? AND date=?")) {
-            s.setTimestamp(1, toTimestamp(fetchTime));
-            s.setString(2, error);
-            s.setString(3, account);
-            s.setDate(4, toDate(date));
-            return s.executeUpdate();
-        }
-    }
-
-    /**
-     * Get all entries from emag_fetch_log which overlap with the given range.
-     *
-     * @param db database
-     * @param account emag account
-     * @param date of day needed.
-     */
-    private static EmagFetchLog getEmagLog(Connection db, String account, LocalDate date) throws SQLException {
-        try (var s = db.prepareStatement("SELECT fetch_time, error FROM emag_fetch_log WHERE emag_login = ? AND date = ?")) {
-            s.setString(1, account);
-            s.setDate(2, toDate(date));
-            try (var rs = s.executeQuery()) {
-                EmagFetchLog fetchLog = null;
-                if (rs.next()) {
-                    fetchLog = new EmagFetchLog(account, date, toLocalDateTime(rs.getTimestamp(1)), rs.getString(2));
-                }
-                if (rs.next()) {
-                    throw new RuntimeException("Unexpected second entry in the emag_fetch_log for %s on %s.".formatted(account, date));
-                }
-                return fetchLog;
-            }
         }
     }
 }

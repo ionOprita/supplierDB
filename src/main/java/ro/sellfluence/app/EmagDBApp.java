@@ -24,8 +24,8 @@ import static java.time.temporal.ChronoUnit.MILLIS;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.db.EmagFetchLog.isDone;
 import static ro.sellfluence.support.Time.time;
-import static ro.sellfluence.support.UsefulMethods.isBlank;
 
 public class EmagDBApp {
 
@@ -73,7 +73,8 @@ public class EmagDBApp {
      *     <li>Get orders with states 5 for the last two years.</li>
      *     <li>Reread all orders having status 0-3 in the database by order id to see if their value has changed.</li>
      * </ul>
-     * @param mirrorDB
+     *
+     * @param mirrorDB to which to store the orders.
      */
     private static void fetchAndStoreToDB(EmagMirrorDB mirrorDB) throws IOException, InterruptedException, SQLException {
         time(
@@ -105,7 +106,7 @@ public class EmagDBApp {
     /**
      * Look for new orders.
      *
-     * @param mirrorDB
+     * @param mirrorDB to which to store the orders.
      */
     private static boolean fetchNewOrders(EmagMirrorDB mirrorDB) {
         for (String emagAccount : emagAccounts) {
@@ -151,7 +152,8 @@ public class EmagDBApp {
     /**
      * Logic for fetching data that reads backwards from today 3 years. Newer dates are always processed,
      * older dates are processed randomly with a probability depending on age.
-     * @param mirrorDB
+     *
+     * @param mirrorDB to which to store the orders.
      */
     private static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) {
         var daysToConsider = 3 * 366;   // 3 Years
@@ -236,16 +238,6 @@ public class EmagDBApp {
             }
         }
         return dayWasFullyFetched;
-    }
-
-    /**
-     * Report if the log indicates that this day is done.
-     *
-     * @param fetchStatus for a particular account and day or null if non was found.
-     * @return true if the entry existed and had a blank error message.
-     */
-    private static boolean isDone(EmagFetchLog fetchStatus) {
-        return fetchStatus != null && isBlank(fetchStatus.error());
     }
 
     /**
