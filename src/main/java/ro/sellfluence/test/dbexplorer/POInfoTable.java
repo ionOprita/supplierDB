@@ -1,7 +1,7 @@
 package ro.sellfluence.test.dbexplorer;
 
 import ro.sellfluence.db.EmagMirrorDB;
-import ro.sellfluence.db.ProductInfo;
+import ro.sellfluence.db.ProductTable.ProductInfo;
 
 import javax.swing.BoxLayout;
 import javax.swing.JPanel;

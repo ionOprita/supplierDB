@@ -1,6 +1,6 @@
 package ro.sellfluence.test.dbexplorer;
 
-import ro.sellfluence.db.ProductInfo;
+import ro.sellfluence.db.ProductTable.ProductInfo;
 
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;

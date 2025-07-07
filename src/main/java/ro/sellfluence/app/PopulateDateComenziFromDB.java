@@ -3,8 +3,7 @@ package ro.sellfluence.app;
 import ro.sellfluence.apphelper.PopulateProductsTableFromSheets;
 import ro.sellfluence.apphelper.Vendor;
 import ro.sellfluence.db.EmagMirrorDB;
-import ro.sellfluence.db.ProductInfo;
-import ro.sellfluence.googleapi.DriveAPI;
+import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.googleapi.SheetsAPI;
 
 import java.io.IOException;
@@ -13,7 +12,6 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.logging.Logger;

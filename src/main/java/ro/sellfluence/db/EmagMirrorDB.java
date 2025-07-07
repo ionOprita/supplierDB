@@ -3,6 +3,7 @@ package ro.sellfluence.db;
 import ch.claudio.db.DB;
 import org.jetbrains.annotations.Nullable;
 import ro.sellfluence.apphelper.EmployeeSheetData;
+import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.versions.SetupDB;
 import ro.sellfluence.emagapi.AWB;
 import ro.sellfluence.emagapi.Attachment;
@@ -55,6 +56,9 @@ import static ro.sellfluence.db.GMV.getGMVByProductId;
 import static ro.sellfluence.db.GMV.insertOrUpdateGMV;
 import static ro.sellfluence.db.GMV.specialCase;
 import static ro.sellfluence.db.GMV.subtractFromGMV;
+import static ro.sellfluence.db.ProductTable.getProducts;
+import static ro.sellfluence.db.ProductTable.insertProduct;
+import static ro.sellfluence.db.ProductTable.updateProduct;
 import static ro.sellfluence.support.UsefulMethods.toDate;
 import static ro.sellfluence.support.UsefulMethods.toLocalDate;
 import static ro.sellfluence.support.UsefulMethods.toLocalDateTime;
@@ -352,7 +356,7 @@ public class EmagMirrorDB {
     private static void insertProducts(Connection db, OrderResult order, int surrogateId) throws SQLException {
         if (order.products() != null) {
             for (var product : order.products()) {
-                insertProduct(db, product, surrogateId);
+                insertProductInOrder(db, product, surrogateId);
                 insertVoucherSplits(db, surrogateId, product);
             }
         }
@@ -370,7 +374,7 @@ public class EmagMirrorDB {
         deleteProducts(db, surrogateId);
         if (order.products() != null) {
             for (var product : order.products()) {
-                insertProduct(db, product, surrogateId);
+                insertProductInOrder(db, product, surrogateId);
                 insertVoucherSplits(db, surrogateId, product);
             }
         }
@@ -741,7 +745,7 @@ public class EmagMirrorDB {
     }
 
     public List<ProductInfo> readProducts() throws SQLException {
-        return database.readTX(this::getProducts);
+        return database.readTX(ProductTable::getProducts);
     }
 
     /**
@@ -806,7 +810,7 @@ public class EmagMirrorDB {
      *
      * @param db database connection.
      * @return map from productInfo to map of month to GMV.
-     * @throws SQLException
+     * @throws SQLException on database error
      */
     public SortedMap<ProductInfo, SortedMap<YearMonth, BigDecimal>> getGMV(Connection db) throws SQLException {
         var rows = new TreeMap<ProductInfo, SortedMap<YearMonth, BigDecimal>>(
@@ -817,29 +821,6 @@ public class EmagMirrorDB {
             rows.put(product, new TreeMap<>(gmvs));
         }
         return rows;
-    }
-
-    private List<ProductInfo> getProducts(Connection db) throws SQLException {
-        var products = new ArrayList<ProductInfo>();
-        try (var s = db.prepareStatement("SELECT emag_pnk, product_code, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name FROM product")) {
-            try (var rs = s.executeQuery()) {
-                while (rs.next()) {
-                    products.add(
-                            new ProductInfo(
-                                    rs.getString("emag_pnk"),
-                                    rs.getString("product_code"),
-                                    rs.getString("name"),
-                                    rs.getBoolean("continue_to_sell"),
-                                    rs.getBoolean("retracted"),
-                                    rs.getString("category"),
-                                    rs.getString("message_keyword"),
-                                    rs.getString("employee_sheet_name")
-                                )
-                    );
-                }
-            }
-        }
-        return products;
     }
 
     /**
@@ -1457,7 +1438,7 @@ public class EmagMirrorDB {
         }
     }
 
-    private static int insertProduct(Connection db, Product product, int surrogateId) throws SQLException {
+    private static int insertProductInOrder(Connection db, Product product, int surrogateId) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO product_in_order (id, emag_order_surrogate_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties, serial_numbers) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
             s.setInt(1, product.id());
             s.setInt(2, surrogateId);
@@ -2103,51 +2084,6 @@ public class EmagMirrorDB {
             s.setString(41, rmaResult.country());
             s.setString(42, rmaResult.address_type());
             s.setObject(43, rmaResult.request_status_reason());
-            return s.executeUpdate();
-        }
-    }
-
-    /**
-     * Insert a product in the table that records our information about a product and associates our name and
-     * category with the PNK used by emag.
-     *
-     * @param db database
-     * @param productInfo record mapping to column
-     * @return 1 or 0 depending on whether the insertion was successful or not.
-     * @throws SQLException if anything bad happens.
-     */
-    private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
-        try (var s = db.prepareStatement("""
-                INSERT INTO product (product_code, emag_pnk, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT DO NOTHING
-                """)) {
-            s.setString(1, productInfo.productCode());
-            s.setString(2, productInfo.pnk());
-            s.setString(3, productInfo.name());
-            s.setBoolean(4, productInfo.continueToSell());
-            s.setBoolean(5, productInfo.retracted());
-            s.setString(6, productInfo.category());
-            s.setString(7, productInfo.messageKeyword());
-            s.setString(8, productInfo.employeeSheetName());
-            return s.executeUpdate();
-        }
-    }
-
-    private static int updateProduct(Connection db, ProductInfo productInfo) throws SQLException {
-        try (var s = db.prepareStatement("""
-                UPDATE product
-                SET emag_pnk = ?, category = ?, message_keyword = ?, continue_to_sell = ?, retracted = ?, name = ?, employee_sheet_name = ?
-                WHERE product_code = ?
-                """)) {
-            s.setString(1, productInfo.pnk());
-            s.setString(2, productInfo.category());
-            s.setString(3, productInfo.messageKeyword());
-            s.setBoolean(4, productInfo.continueToSell());
-            s.setBoolean(5, productInfo.retracted());
-            s.setString(6, productInfo.name());
-            s.setString(7, productInfo.employeeSheetName());
-            s.setString(8, productInfo.productCode());
             return s.executeUpdate();
         }
     }
