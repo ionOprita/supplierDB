@@ -49,11 +49,16 @@ import static java.sql.Statement.RETURN_GENERATED_KEYS;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.db.GMV.addToGMV;
+import static ro.sellfluence.db.GMV.getGMVByMonth;
+import static ro.sellfluence.db.GMV.getGMVByProductId;
+import static ro.sellfluence.db.GMV.insertOrUpdateGMV;
+import static ro.sellfluence.db.GMV.specialCase;
+import static ro.sellfluence.db.GMV.subtractFromGMV;
 import static ro.sellfluence.support.UsefulMethods.toDate;
 import static ro.sellfluence.support.UsefulMethods.toLocalDate;
 import static ro.sellfluence.support.UsefulMethods.toLocalDateTime;
 import static ro.sellfluence.support.UsefulMethods.toTimestamp;
-import static ro.sellfluence.support.UsefulMethods.toYearMonth;
 
 public class EmagMirrorDB {
 
@@ -66,6 +71,14 @@ public class EmagMirrorDB {
         this.database = database;
     }
 
+    /**
+     * Get a database by alias. This will also update the database to the latest version.
+     *
+     * @param alias name of the database.
+     * @return instance of this class.
+     * @throws SQLException on database errors.
+     * @throws IOException on alias lookup.
+     */
     public static EmagMirrorDB getEmagMirrorDB(String alias) throws SQLException, IOException {
         var mirrorDB = openDatabases.get(alias);
         if (mirrorDB == null) {
@@ -607,126 +620,6 @@ public class EmagMirrorDB {
         }
     }
 
-    public void updateGMVTable() throws SQLException {
-        database.writeTX(db -> {
-                    var products = getProductCodes(db);
-                    for (String productCode : products) {
-                        var ordersWithProduct = getOrderDataByProduct(db, productCode);
-                        var gmvByMonth = new HashMap<YearMonth, BigDecimal>();
-                        ordersWithProduct.forEach((_, poInfos) -> {
-                            if (poInfos.size() == 1) {
-                                POInfo order = poInfos.getFirst();
-                                var yearMonth = YearMonth.from(order.orderDate);
-                                addToGMV(gmvByMonth, yearMonth, order);
-                            } else if (poInfos.size() == 2) {
-                                POInfo finalized = poInfos.getFirst();
-                                POInfo storno = poInfos.getLast();
-                                // Two entries for the same product in the same order.
-                                if (storno.orderStatus == 4 || finalized.orderStatus == 5) {
-                                    specialCase(gmvByMonth, finalized, storno);
-                                } else {
-                                    if (storno.initialQuantity != finalized.quantity) {
-                                        logger.log(WARNING, "Mismatch in quantity between\n finalzed order: %s\n and storno order: %s.".formatted(finalized, storno));
-                                    }
-                                    var finalizedMonth = YearMonth.from(finalized.orderDate);
-                                    var stornoMonth = YearMonth.from(storno.orderDate);
-                                    if (finalizedMonth.equals(stornoMonth)) {
-                                        addToGMV(gmvByMonth, finalizedMonth, storno);
-                                    } else {
-                                        addToGMV(gmvByMonth, finalizedMonth, finalized);
-                                        subtractFromGMV(gmvByMonth, stornoMonth, storno);
-                                    }
-                                }
-                            } else {
-                                throw new RuntimeException("Not prepared to handle order with more than two states: %s.".formatted(poInfos));
-                            }
-                        });
-                        insertOrUpdateGMV(db, productCode, gmvByMonth);
-                    }
-                    return true;
-                }
-        );
-    }
-
-    private void insertOrUpdateGMV(Connection db, String productCode, Map<YearMonth, BigDecimal> gmvByMonth) throws SQLException {
-        var currentGMVByMonth = getGMVByProductId(db, productCode);
-        for (Map.Entry<YearMonth, BigDecimal> entry : gmvByMonth.entrySet()) {
-            YearMonth month = entry.getKey();
-            BigDecimal gmv = entry.getValue().setScale(2, HALF_EVEN);
-            var currentGMV = currentGMVByMonth.get(month);
-            if (currentGMV == null) {
-                insertGMV(db, productCode, month, gmv);
-            } else if (!gmv.equals(currentGMV)) {
-                updateGMV(db, productCode, month, gmv);
-            }
-        }
-    }
-
-    private static int insertGMV(Connection db, String productCode, YearMonth month, BigDecimal gmv) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO gmv (product_code, month, gmv) VALUES (?,?,?)")) {
-            s.setObject(1, productCode);
-            s.setDate(2, toDate(month));
-            s.setBigDecimal(3, gmv);
-            return s.executeUpdate();
-        }
-    }
-
-    private static int updateGMV(Connection db, String productCode, YearMonth month, BigDecimal gmv) throws SQLException {
-        try (var s = db.prepareStatement("UPDATE gmv SET gmv = ? WHERE product_code = ? AND month = ?")) {
-            s.setBigDecimal(1, gmv);
-            s.setObject(2, productCode);
-            s.setDate(3, toDate(month));
-            return s.executeUpdate();
-        }
-    }
-
-    private static Map<YearMonth, BigDecimal> getGMVByProductId(Connection db, String productCode) throws SQLException {
-        var result = new HashMap<YearMonth, BigDecimal>();
-        try (var s = db.prepareStatement("SELECT month, gmv FROM gmv WHERE product_code = ?")) {
-            s.setObject(1, productCode);
-            try (var rs = s.executeQuery()) {
-                while (rs.next()) {
-                    result.put(toYearMonth(rs.getDate(1)), rs.getBigDecimal(2));
-                }
-            }
-        }
-        return result;
-    }
-
-    public Map<String, BigDecimal> readGMVByMonth(YearMonth month) throws SQLException {
-        return database.readTX(db -> getGMVByMonth(db, month));
-    }
-
-    private static Map<String, BigDecimal> getGMVByMonth(Connection db, YearMonth month) throws SQLException {
-        var result = new HashMap<String, BigDecimal>();
-        try (var s = db.prepareStatement("SELECT name, gmv FROM gmv INNER JOIN product ON gmv.product_code=product.product_code WHERE month = ? ORDER BY name")) {
-            s.setDate(1, toDate(month));
-            try (var rs = s.executeQuery()) {
-                while (rs.next()) {
-                    result.put(rs.getString(1), rs.getBigDecimal(2));
-                }
-            }
-        }
-        return result;
-    }
-
-    private static void specialCase(HashMap<YearMonth, BigDecimal> gmvByMonth, POInfo finalized, POInfo storno) {
-        addToGMV(gmvByMonth, YearMonth.from(finalized.orderDate), finalized);
-        addToGMV(gmvByMonth, YearMonth.from(storno.orderDate), storno);
-    }
-
-    private static void subtractFromGMV(HashMap<YearMonth, BigDecimal> gmvByMonth, YearMonth yearMonthMonth, POInfo storno) {
-        var stornoGMV = gmvByMonth.getOrDefault(yearMonthMonth, BigDecimal.ZERO);
-        stornoGMV = stornoGMV.subtract(storno.price.multiply(BigDecimal.valueOf(storno.stornoQuantity)));
-        gmvByMonth.put(yearMonthMonth, stornoGMV);
-    }
-
-    private static void addToGMV(HashMap<YearMonth, BigDecimal> gmvByMonth, YearMonth yearMonth, POInfo order) {
-        var gmv = gmvByMonth.getOrDefault(yearMonth, BigDecimal.ZERO);
-        gmv = gmv.add(order.price.multiply(BigDecimal.valueOf(order.quantity)));
-        gmvByMonth.put(yearMonth, gmv);
-    }
-
     public record POInfo(String orderId, LocalDate orderDate, int orderStatus, String productName, int quantity,
                   int initialQuantity, int stornoQuantity,
                   BigDecimal price) {
@@ -851,9 +744,73 @@ public class EmagMirrorDB {
         return database.readTX(this::getProducts);
     }
 
+    /**
+     * Update the GMV table based on all orders in the database.
+     *
+     * @throws SQLException on database errors.
+     */
+    public void updateGMVTable() throws SQLException {
+        database.writeTX(db -> {
+                    var products = getProductCodes(db);
+                    for (String productCode : products) {
+                        var ordersWithProduct = getOrderDataByProduct(db, productCode);
+                        var gmvByMonth = new HashMap<YearMonth, BigDecimal>();
+                        ordersWithProduct.forEach((_, poInfos) -> {
+                            if (poInfos.size() == 1) {
+                                POInfo order = poInfos.getFirst();
+                                var yearMonth = YearMonth.from(order.orderDate);
+                                addToGMV(gmvByMonth, yearMonth, order);
+                            } else if (poInfos.size() == 2) {
+                                POInfo finalized = poInfos.getFirst();
+                                POInfo storno = poInfos.getLast();
+                                // Two entries for the same product in the same order.
+                                if (storno.orderStatus == 4 || finalized.orderStatus == 5) {
+                                    specialCase(gmvByMonth, finalized, storno);
+                                } else {
+                                    if (storno.initialQuantity != finalized.quantity) {
+                                        logger.log(WARNING, "Mismatch in quantity between\n finalzed order: %s\n and storno order: %s.".formatted(finalized, storno));
+                                    }
+                                    var finalizedMonth = YearMonth.from(finalized.orderDate);
+                                    var stornoMonth = YearMonth.from(storno.orderDate);
+                                    if (finalizedMonth.equals(stornoMonth)) {
+                                        addToGMV(gmvByMonth, finalizedMonth, storno);
+                                    } else {
+                                        addToGMV(gmvByMonth, finalizedMonth, finalized);
+                                        subtractFromGMV(gmvByMonth, stornoMonth, storno);
+                                    }
+                                }
+                            } else {
+                                throw new RuntimeException("Not prepared to handle order with more than two states: %s.".formatted(poInfos));
+                            }
+                        });
+                        insertOrUpdateGMV(db, productCode, gmvByMonth);
+                    }
+                    return true;
+                }
+        );
+    }
+
+    /**
+     * Retrieve GMVs for a particular month.
+     *
+     * @param month to retrieve.
+     * @return map with the product name as the key and the GMV as the value.
+     * @throws SQLException on database error.
+     */
+    public Map<String, BigDecimal> readGMVByMonth(YearMonth month) throws SQLException {
+        return database.readTX(db -> getGMVByMonth(db, month));
+    }
+
+    /**
+     * Retrieve the full GMV table.
+     *
+     * @param db database connection.
+     * @return map from productInfo to map of month to GMV.
+     * @throws SQLException
+     */
     public SortedMap<ProductInfo, SortedMap<YearMonth, BigDecimal>> getGMV(Connection db) throws SQLException {
         var rows = new TreeMap<ProductInfo, SortedMap<YearMonth, BigDecimal>>(
-                Comparator.comparing(product -> product.name())
+                Comparator.comparing(ProductInfo::name)
         );
         for (ProductInfo product : getProducts(db)) {
             var gmvs = getGMVByProductId(db, product.productCode());
