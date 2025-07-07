@@ -1,10 +1,9 @@
-package ro.sellfluence.db;
+package ro.sellfluence.db.versions;
 
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.Map;
 
-import static ro.sellfluence.db.EmagMirrorDBVersion1.executeStatement;
+import static ro.sellfluence.db.versions.EmagMirrorDBVersion1.executeStatement;
 
 class EmagMirrorDBVersion10 {
 
