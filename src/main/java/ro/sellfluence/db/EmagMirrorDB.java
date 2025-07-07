@@ -1,7 +1,6 @@
 package ro.sellfluence.db;
 
 import ch.claudio.db.DB;
-import org.jetbrains.annotations.Nullable;
 import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.versions.SetupDB;
@@ -26,7 +25,6 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -48,7 +46,6 @@ import java.util.stream.Stream;
 import static java.math.RoundingMode.HALF_EVEN;
 import static java.sql.Statement.RETURN_GENERATED_KEYS;
 import static java.util.logging.Level.FINE;
-import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.db.EmagFetchLog.deleteFetchLogsBefore;
 import static ro.sellfluence.db.EmagFetchLog.getEmagLog;
@@ -63,6 +60,9 @@ import static ro.sellfluence.db.GMV.subtractFromGMV;
 import static ro.sellfluence.db.ProductTable.getProducts;
 import static ro.sellfluence.db.ProductTable.insertProduct;
 import static ro.sellfluence.db.ProductTable.updateProduct;
+import static ro.sellfluence.db.Vendor.selectFetchTimeByAccount;
+import static ro.sellfluence.db.Vendor.selectVendorIdByName;
+import static ro.sellfluence.db.Vendor.updateFetchTimeByAccount;
 import static ro.sellfluence.support.UsefulMethods.toDate;
 import static ro.sellfluence.support.UsefulMethods.toLocalDate;
 import static ro.sellfluence.support.UsefulMethods.toLocalDateTime;
@@ -1005,21 +1005,7 @@ public class EmagMirrorDB {
      * @throws SQLException for any database errors
      */
     public UUID getVendorByName(String vendorName) throws SQLException {
-        return database.readTX(db -> {
-            try (var s = db.prepareStatement(
-                    """
-                            select id from vendor where vendor_name = ?
-                            """
-            )) {
-                s.setString(1, vendorName);
-                try (var rs = s.executeQuery()) {
-                    if (rs.next()) {
-                        return rs.getObject(1, UUID.class);
-                    }
-                    return null;
-                }
-            }
-        });
+        return database.readTX(db -> selectVendorIdByName(db, vendorName));
     }
 
     /**
@@ -1213,45 +1199,6 @@ public class EmagMirrorDB {
         });
     }
 
-    private static @Nullable UUID selectVendorIdByName(Connection db, String name) throws SQLException {
-        UUID id = null;
-        try (var s = db.prepareStatement("SELECT id FROM vendor WHERE vendor_name=?")) {
-            s.setString(1, name);
-            try (var rs = s.executeQuery()) {
-                if (rs.next()) {
-                    id = rs.getObject(1, UUID.class);
-                }
-                if (rs.next()) {
-                    logger.log(SEVERE, "More than one vendor with the same name ???");
-                }
-            }
-        }
-        return id;
-    }
-
-    private static @Nullable LocalDateTime selectFetchTimeByAccount(Connection db, String account) throws SQLException {
-        Timestamp timestamp = null;
-        try (var s = db.prepareStatement("SELECT last_fetch FROM vendor WHERE account=?")) {
-            s.setString(1, account);
-            try (var rs = s.executeQuery()) {
-                if (rs.next()) {
-                    timestamp = rs.getTimestamp(1);
-                }
-                if (rs.next()) {
-                    logger.log(SEVERE, "More than one vendor with the same name ???");
-                }
-            }
-        }
-        return toLocalDateTime(timestamp);
-    }
-
-    private static int updateFetchTimeByAccount(Connection db, String account, LocalDateTime fetchTime) throws SQLException {
-        try (var s = db.prepareStatement("UPDATE vendor SET last_fetch=? WHERE account=?")) {
-            s.setTimestamp(1, toTimestamp(fetchTime));
-            s.setString(2, account);
-            return s.executeUpdate();
-        }
-    }
 
     private static int insertAttachment(Connection db, Attachment attachment, int surrogateId) throws SQLException {
         try (var s = db.prepareStatement("INSERT INTO attachment (emag_order_surrogate_id, name, url, type, force_download, visibility) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(emag_order_surrogate_id, url) DO NOTHING")) {
