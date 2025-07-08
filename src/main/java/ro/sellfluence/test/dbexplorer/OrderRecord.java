@@ -17,7 +17,8 @@ public record OrderRecord(
         Integer status,
         Timestamp date,
         Timestamp created,
-        Timestamp modified
+        Timestamp modified,
+        long surrogateId
 ) {
     public static List<OrderRecord> getOrdersById(Connection db, String orderId) throws SQLException {
         var orders = new ArrayList<OrderRecord>();
@@ -30,7 +31,8 @@ public record OrderRecord(
                     o.status,
                     o.date,
                     o.created,
-                    o.modified
+                    o.modified,
+                    o.surrogate_id
                 FROM emag_order o
                 JOIN vendor v ON o.vendor_id = v.id
                 WHERE o.id = ?;
@@ -48,7 +50,8 @@ public record OrderRecord(
                             rs.getInt("status"),
                             rs.getTimestamp("date"),
                             rs.getTimestamp("created"),
-                            rs.getTimestamp("modified")
+                            rs.getTimestamp("modified"),
+                            rs.getLong("surrogate_id")
                     ));
                 }
             }
@@ -59,14 +62,15 @@ public record OrderRecord(
         var orders = new ArrayList<OrderRecord>();
         String query = """
                 SELECT
-                    o.id AS orderId,
-                    o.vendor_id AS vendorId,
-                    v.vendor_name AS vendorName,
-                    o.customer_id AS customerId,
-                    o.status,
-                    o.date,
-                    o.created,
-                    o.modified
+                     o.id AS orderId,
+                     o.vendor_id AS vendorId,
+                     v.vendor_name AS vendorName,
+                     o.customer_id AS customerId,
+                     o.status,
+                     o.date,
+                     o.created,
+                     o.modified,
+                     o.surrogate_id
                 FROM emag_order o
                 JOIN vendor v ON o.vendor_id = v.id
                 WHERE o.customer_id = ?;
@@ -84,7 +88,8 @@ public record OrderRecord(
                             rs.getInt("status"),
                             rs.getTimestamp("date"),
                             rs.getTimestamp("created"),
-                            rs.getTimestamp("modified")
+                            rs.getTimestamp("modified"),
+                            rs.getLong("surrogate_id")
                     ));
                 }
             }

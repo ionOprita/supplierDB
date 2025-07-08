@@ -1,4 +1,4 @@
-package ro.sellfluence.db;
+package ro.sellfluence.db.versions;
 
 import java.sql.Connection;
 import java.sql.SQLException;

@@ -1,8 +1,7 @@
 package ro.sellfluence.apphelper;
 
 import ro.sellfluence.db.EmagMirrorDB;
-import ro.sellfluence.db.ProductInfo;
-import ro.sellfluence.googleapi.DriveAPI;
+import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.googleapi.SheetsAPI;
 
 import java.sql.SQLException;
@@ -51,27 +50,28 @@ public class PopulateProductsTableFromSheets {
         if (spreadSheet==null) {
             throw new RuntimeException("Spreadsheet %s not found.".formatted(spreadSheetName));
         }
-        return spreadSheet.getMultipleColumns(overviewSheetName, "C", "K", "U", "V", "BH", "CN", "DW", "EI").stream().skip(3)
+        return spreadSheet.getMultipleColumns(overviewSheetName, "C", "K", "U", "V", "BH", "CN", "DW", "EI").stream()
+                .skip(3)
                 .<ProductInfo>mapMulti((row, nextConsumer) -> {
-                    var name = row.get(0).toString();
-                    var productCode = row.get(1).toString();
-                    var continueToSell = TRUE.equals(row.get(2));
-                    var retracted = TRUE.equals(row.get(3));
-                    var pnk = row.get(4).toString();
-                    var category = row.get(5).toString();
-                    var messageKeyword = row.get(6).toString();
-                    var employeeSheetName = row.get(7).toString();
-                    if (employeeSheetName.equals("0") || employeeSheetName.isBlank()) {
-                        employeeSheetName = null;
-                    }
-                    if (continueToSell && retracted) {
-                        logger.log(
-                                WARNING,
-                                "Product %s (%s) has both 'continue to sell' and 'retracted' set, which doesn't make sense. Dropping retracted."
-                                        .formatted(name, pnk)
-                        );
-                        retracted = false;
-                    }
+                            var name = row.get(0).toString();
+                            var productCode = row.get(1).toString();
+                            var continueToSell = TRUE.equals(row.get(2));
+                            var retracted = TRUE.equals(row.get(3));
+                            var pnk = row.get(4).toString();
+                            var category = row.get(5).toString();
+                            var messageKeyword = row.get(6).toString();
+                            var employeeSheetName = row.get(7).toString();
+                            if (employeeSheetName.equals("0") || employeeSheetName.isBlank()) {
+                                employeeSheetName = null;
+                            }
+                            if (continueToSell && retracted) {
+                                logger.log(
+                                        WARNING,
+                                        "Product %s (%s) has both 'continue to sell' and 'retracted' set, which doesn't make sense. Dropping retracted."
+                                                .formatted(name, pnk)
+                                );
+                                retracted = false;
+                            }
                             if (!productCode.isBlank()) {
                                 nextConsumer.accept(new ProductInfo(pnk, productCode, name, continueToSell, retracted, category, messageKeyword, employeeSheetName));
                             }

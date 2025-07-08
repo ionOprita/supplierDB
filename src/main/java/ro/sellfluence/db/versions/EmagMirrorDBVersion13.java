@@ -1,11 +1,11 @@
-package ro.sellfluence.db;
+package ro.sellfluence.db.versions;
 
 import java.sql.Connection;
 import java.sql.SQLException;
 
-import static ro.sellfluence.db.EmagMirrorDBVersion1.executeStatement;
+import static ro.sellfluence.db.versions.EmagMirrorDBVersion1.executeStatement;
 
-class EmagMirrorDBVersion14 {
+class EmagMirrorDBVersion13 {
 
     /**
      * Add and populate the account column in the vendor table.
@@ -13,10 +13,10 @@ class EmagMirrorDBVersion14 {
      * @param db database connection to use.
      * @throws SQLException all errors are passed back to caller.
      */
-    static void version14(Connection db) throws SQLException {
+    static void version13(Connection db) throws SQLException {
         executeStatement(db, """
-                ALTER TABLE flag
-                ADD PRIMARY KEY (emag_order_surrogate_id, flag);
+                ALTER TABLE attachment
+                ADD PRIMARY KEY (emag_order_surrogate_id, url);
                 """);
     }
 }
