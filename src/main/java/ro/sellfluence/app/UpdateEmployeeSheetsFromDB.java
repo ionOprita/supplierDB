@@ -4,6 +4,7 @@ import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.apphelper.GetStatsForAllSheets;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.googleapi.SheetsAPI;
+import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
 import java.sql.SQLException;
@@ -32,12 +33,13 @@ import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheetByName;
  */
 public class UpdateEmployeeSheetsFromDB {
 
-    private static final Logger logger = Logger.getLogger(UpdateEmployeeSheetsFromDB.class.getName());
+    private static final Logger logger = Logs.getConsoleAndFileLogger("UpdateEmployeeSheetsWarnings", WARNING, 10, 1_000_000);
+    private static final Logger progressLogger = Logs.getConsoleLogger("UpdateEmployeeSheetsProgress", INFO);
 
     private final String appName;
     private Map<String, SheetsAPI> pnkToSpreadSheet;
     private Set<String> relevantProducts;
-    private LocalDateTime endTime = LocalDate.now().minusDays(13).atStartOfDay();
+    private final LocalDateTime endTime = LocalDate.now().minusDays(13).atStartOfDay();
     private Map<String, GetStatsForAllSheets.Statistic> pnkToStatistic;
 
 
@@ -79,7 +81,7 @@ public class UpdateEmployeeSheetsFromDB {
             if (spreadSheet == null) {
                 logger.log(WARNING, "No spreadsheet found for PNK %s".formatted(pnk));
             } else {
-                logger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s".formatted(spreadSheet.getSpreadSheetName(), statistic.sheetName(), pnk));
+                logger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s.".formatted(spreadSheet.getSpreadSheetName(), statistic.sheetName(), pnk));
                 accumulateExistingOrders(spreadSheet, statistic.sheetName(), existingOrderAssignments);
                 var startTime = statistic.lastUpdate().atStartOfDay();
                 var newOrdersForProduct = mirrorDB.readOrderData(pnk, startTime, endTime).stream().filter(it -> it.quantity() > 0).toList();
@@ -153,7 +155,7 @@ public class UpdateEmployeeSheetsFromDB {
             if (oldAssignment != null) {
                 logger.log(
                         WARNING,
-                        "Order %s assigned to %s is also assigned to %s".formatted(
+                        "The order %s assigned to %s is also assigned to %s.".formatted(
                                 orderId, oldAssignment.getSpreadSheetName(), sheet.getSpreadSheetName()
                         )
                 );
@@ -167,7 +169,7 @@ public class UpdateEmployeeSheetsFromDB {
     private void loadOverview(EmagMirrorDB mirrorDB) throws SQLException {
         var products = mirrorDB.readProducts();
         // To be commented in only to filter for a single PNK for debugging purpose
-        products = products.stream().filter(product -> product.pnk().equals("D2HG3PMBM")).toList();
+        // products = products.stream().filter(product -> product.pnk().equals("D2HG3PMBM")).toList();
         pnkToSpreadSheet = products.stream()
                 .filter(it -> it.employeeSheetName() != null)
                 .map(product -> {
@@ -272,7 +274,10 @@ public class UpdateEmployeeSheetsFromDB {
                 .filter(row -> !processedOrderIds.contains(((String) row.getFirst())))
                 .toList();
         if (!withoutDuplicates.isEmpty()) {
-            System.out.printf("Adding %d rows after row %d to tab %s of spreadsheet %s.%n", withoutDuplicates.size(), lastRowNumber, sheetName, sheet.getSpreadSheetName());
+            progressLogger.log(INFO,
+                    "Adding %d rows after row %d to tab %s of spreadsheet %s."
+                            .formatted( withoutDuplicates.size(), lastRowNumber, sheetName, sheet.getSpreadSheetName())
+            );
             var pnksInSheet = sheet.getColumn(sheetName, "G").stream().skip(3).filter(x -> !x.isBlank()).collect(Collectors.toSet());
             if (pnksInSheet.size() > 1 && !pnksInSheet.contains(pnk)) {
                 logger.log(WARNING, "Sheet '%s' in Spreadsheet '%s' contains multiple PNKs in column 7: %s.".formatted(sheetName, sheet.getTitle(), pnksInSheet));
