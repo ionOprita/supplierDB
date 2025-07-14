@@ -76,12 +76,12 @@ public class UpdateEmployeeSheetsFromDB {
         for (var entry : pnkToStatistic.entrySet()) {
             var pnk = entry.getKey();
             var statistic = entry.getValue();
-            logger.log(INFO, () -> "Processing statistic for PNK %s: %s".formatted(pnk, statistic));
+            progressLogger.log(INFO, () -> "Processing statistic for PNK %s: %s".formatted(pnk, statistic));
             var spreadSheet = pnkToSpreadSheet.get(pnk);
             if (spreadSheet == null) {
                 logger.log(WARNING, "No spreadsheet found for PNK %s".formatted(pnk));
             } else {
-                logger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s.".formatted(spreadSheet.getSpreadSheetName(), statistic.sheetName(), pnk));
+                progressLogger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s.".formatted(spreadSheet.getSpreadSheetName(), statistic.sheetName(), pnk));
                 accumulateExistingOrders(spreadSheet, statistic.sheetName(), existingOrderAssignments);
                 var startTime = statistic.lastUpdate().atStartOfDay();
                 var newOrdersForProduct = mirrorDB.readOrderData(pnk, startTime, endTime).stream().filter(it -> it.quantity() > 0).toList();
@@ -90,12 +90,12 @@ public class UpdateEmployeeSheetsFromDB {
                 }
             }
         }
-        logger.log(INFO, () -> "Existing orders: " + existingOrderAssignments.size());
-        logger.log(INFO, () -> "New orders: " + newAssignments.size());
+        progressLogger.log(INFO, () -> "Existing orders: " + existingOrderAssignments.size());
+        progressLogger.log(INFO, () -> "New orders: " + newAssignments.size());
         var newOrdersWithoutOldOnes = newAssignments.entrySet().stream()
                 .filter(it -> !existingOrderAssignments.containsKey(it.getKey().orderId()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-        logger.log(INFO, () -> "New orders without old ones: " + newOrdersWithoutOldOnes.size());
+        progressLogger.log(INFO, () -> "New orders without old ones: " + newOrdersWithoutOldOnes.size());
         var groupedByOrderId = newAssignments.keySet().stream()
                 .collect(Collectors.groupingBy(EmployeeSheetData::orderId));
         var onlyDuplicates = groupedByOrderId.entrySet().stream()
@@ -104,7 +104,7 @@ public class UpdateEmployeeSheetsFromDB {
                         Map.Entry::getKey,                                     // preserve the orderId as the key
                         Map.Entry::getValue                                    // preserve the List<EmployeeSheetData>
                 ));
-        logger.log(INFO, () -> "Only duplicates: " + onlyDuplicates.size());
+        progressLogger.log(INFO, () -> "Only duplicates: " + onlyDuplicates.size());
         // Set the called flag on all entries except for the first one.
         var withCalledSetOnDuplicates = groupedByOrderId.entrySet().stream()
                 .map(it -> {
