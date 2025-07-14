@@ -2,6 +2,7 @@ package ro.sellfluence.apphelper;
 
 import ro.sellfluence.googleapi.DriveAPI;
 import ro.sellfluence.googleapi.SheetsAPI;
+import ro.sellfluence.support.Logs;
 
 import java.util.List;
 import java.util.logging.Logger;
@@ -14,7 +15,7 @@ public class GetOverview {
     private final SheetsAPI spreadSheet;
     private final String overviewSheetName;
 
-    private static final Logger logger = Logger.getLogger(GetOverview.class.getName());
+    private static final Logger warningLogger = Logs.getConsoleAndFileLogger("GetOverviewWarnings", WARNING, 10, 1_000_000);
 
     public GetOverview(String appName, String spreadSheetName, String sheetName) {
         drive = DriveAPI.getDriveAPI(appName);
@@ -45,7 +46,7 @@ public class GetOverview {
                     var name = row.get(3).toString();
                     var id = drive.getFileId(name);
                     if (id==null) {
-                        logger.log(WARNING, "Spreadsheet %s for the product %s with PNK %s was not found, it will be ignored.".formatted(name, productName, pnk));
+                        warningLogger.log(WARNING, "Spreadsheet %s for the product %s with PNK %s was not found, it will be ignored.".formatted(name, productName, pnk));
                     }
                     return new SheetData(productName, pnk, name, id);
                 })
