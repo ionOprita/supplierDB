@@ -20,16 +20,16 @@ public class Logs {
         public String format(LogRecord record) {
             String output;
             if (record.getThrown() == null) {
-                output = ("%s %-10s %s (%s.%s)").formatted(
-                        DateTimeFormatter.ISO_DATE_TIME.format(record.getInstant().atZone(ZoneId.systemDefault())),
+                output = ("%s %-10s %s (%s.%s)%n").formatted(
+                        DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(record.getInstant().atZone(ZoneId.systemDefault())),
                         record.getLevel(),
                         record.getMessage(),
                         record.getSourceClassName(),
                         record.getSourceMethodName()
                 );
             } else {
-                output = ("%s %-10s %s (%s.%s)\n%s").formatted(
-                        DateTimeFormatter.ISO_DATE_TIME.format(record.getInstant().atZone(ZoneId.systemDefault())),
+                output = ("%s %-10s %s (%s.%s)%n%s%n").formatted(
+                        DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(record.getInstant().atZone(ZoneId.systemDefault())),
                         record.getLevel(),
                         record.getMessage(),
                         record.getSourceClassName(),
