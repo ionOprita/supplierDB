@@ -10,9 +10,6 @@ import ro.sellfluence.emagapi.LockerDetails;
 import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.RMAResult;
 import ro.sellfluence.sheetSupport.Conversions;
-import ro.sellfluence.test.dbexplorer.CustomerRecord;
-import ro.sellfluence.test.dbexplorer.OrderRecord;
-import ro.sellfluence.test.dbexplorer.ProductInOrderRecord;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -130,48 +127,21 @@ public class EmagMirrorDB {
         });
     }
 
-    /**
-     * Reads orders from the database based on the specified order ID.
-     *
-     * @param orderId the unique identifier of the order to retrieve.
-     * @return a list of {@code OrderRecord} instances matching the given order ID.
-     * @throws SQLException if a database error occurs during the process.
-     */
-    public List<OrderRecord> readOrdersById(String orderId) throws SQLException {
-        return database.readTX(db -> OrderRecord.getOrdersById(db, orderId));
+    @FunctionalInterface
+    public interface SQLFunction<R> {
+        R apply(Connection db) throws SQLException;
     }
 
     /**
-     * Reads orders from the database based on the specified order ID.
+     * Execute a read operation on this database.
      *
-     * @param orderId the unique identifier of the order to retrieve.
-     * @return a list of {@code OrderRecord} instances matching the given order ID.
-     * @throws SQLException if a database error occurs during the process.
+     * @param readOp operation that reads the database.
+     * @return result of read operation.
+     * @param <T> type of result.
+     * @throws SQLException if a database error occurs in readOp.
      */
-    public List<ProductInOrderRecord> readProductInOrderByOrderId(String orderId) throws SQLException {
-        return database.readTX(db -> ProductInOrderRecord.getProductInOrderByOrder(db, orderId));
-    }
-
-    /**
-     * Reads orders from made by the customer specified by its customer ID.
-     *
-     * @param customerId the unique identifier of the customer.
-     * @return a list of {@code OrderRecord} instances matching the given order ID.
-     * @throws SQLException if a database error occurs during the process.
-     */
-    public List<OrderRecord> readOrdersByCustomerId(int customerId) throws SQLException {
-        return database.readTX(db -> OrderRecord.getOrdersByCustomerId(db, customerId));
-    }
-
-    /**
-     * Reads customer specified by its customer ID.
-     *
-     * @param customerId the unique identifier of the customer.
-     * @return a list of {@code OrderRecord} instances matching the given order ID.
-     * @throws SQLException if a database error occurs during the process.
-     */
-    public List<CustomerRecord> readCustomerById(int customerId) throws SQLException {
-        return database.readTX(db -> CustomerRecord.getCustomerById(db, customerId));
+    public <T> T read(SQLFunction<T> readOp) throws SQLException {
+        return database.readTX(readOp::apply);
     }
 
     public List<EmagFetchHistogram> readFetchHistogram() throws SQLException {
@@ -634,7 +604,7 @@ public class EmagMirrorDB {
                         specialCase(gmvByMonth, finalized, storno);
                     } else {
                         if (storno.initialQuantity != finalized.quantity) {
-                            logger.log(WARNING, "Mismatch in quantity between\n finalzed order: %s\n and storno order: %s.".formatted(finalized, storno));
+                            logger.log(WARNING, "Mismatch in quantity between\n finalized order: %s\n and storno order: %s.".formatted(finalized, storno));
                         }
                         var finalizedMonth = YearMonth.from(finalized.orderDate);
                         var stornoMonth = YearMonth.from(storno.orderDate);

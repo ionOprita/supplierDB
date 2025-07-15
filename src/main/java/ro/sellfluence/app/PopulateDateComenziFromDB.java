@@ -223,7 +223,7 @@ public class PopulateDateComenziFromDB {
      * and store it in a set.
      *
      * @param sheetData cells as read from the spreadsheet.
-     * @return set of {@link  }
+     * @return set of {@link OrderLine}
      */
     private static Set<OrderLine> simplify(List<List<Object>> sheetData) {
         return sheetData.stream()

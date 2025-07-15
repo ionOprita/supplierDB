@@ -1,5 +1,7 @@
 package ro.sellfluence.test.dbexplorer;
 
+import ro.sellfluence.emagapi.OrderResult;
+
 import javax.swing.table.AbstractTableModel;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,7 +31,7 @@ class OrderTableModel extends AbstractTableModel {
             case 1 -> order.vendorId();
             case 2 -> order.vendorName();
             case 3 -> order.customerId();
-            case 4 -> order.status();
+            case 4 -> OrderResult.statusToString(order.status());
             case 5 -> order.date();
             case 6 -> order.created();
             case 7 -> order.modified();

@@ -1,5 +1,7 @@
 package ro.sellfluence.emagapi;
 
+import org.jetbrains.annotations.NotNull;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -78,6 +80,23 @@ public record OrderResult(
         cashed_cod = round(cashed_cod);
         shipping_tax = round(shipping_tax);
         refunded_amount = round(refunded_amount);
+    }
+
+    public String statusAsString() {
+        return statusToString(status);
+    }
+
+    public static @NotNull String statusToString(final Integer status) {
+        if (status == null) return "Unknown";
+        return switch (status) {
+            case 0 -> "Canceled";
+            case 1 -> "New";
+            case 2 -> "In progress";
+            case 3 -> "Prepared";
+            case 4 -> "Finalized";
+            case 5 -> "Returned";
+            default -> throw new IllegalStateException("Unexpected value: " + status);
+        };
     }
 
 /*

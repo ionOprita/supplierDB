@@ -60,6 +60,10 @@ public class POInfoTable extends JPanel {
             public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
                 if (value instanceof Integer status) {
                     value = switch (status) {
+                        case 0 -> "Cancelled";
+                        case 1 -> "Storno";
+                        case 2 -> "Finalized";
+                        case 3 -> "Storno";
                         case 4 -> "Finalized";
                         case 5 -> "Storno";
                         default -> "%d".formatted(status);

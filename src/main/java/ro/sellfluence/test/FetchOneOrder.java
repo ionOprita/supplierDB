@@ -23,11 +23,24 @@ public class FetchOneOrder {
             "koppelfbe",
             "sellfusion"
     );
+/*
+    All sellfusion:
 
+    Anulat de client 430733210
+    Anulat de seller 424716128
+    Stornate 429684548
+    Finalizate locker 430991369
+    Finalizate curier 430986576
+
+    Inlocuire needs to read sheet from google because they are handled within sellfusion etc.
+    => RER Exchange Rate
+
+    427037619
+ */
     public static void main(String[] args) throws Exception {
         EmagApi.setAPILogLevel(FINE);
     //    emagAccounts.forEach(account -> fetchOrder(account,"407649385"));
-        fetchOrder("sellfusion","414251813");
+        fetchOrder("sellfusion","427037619");
     }
 
     private static void fetchOrder(String vendor, String orderId) {

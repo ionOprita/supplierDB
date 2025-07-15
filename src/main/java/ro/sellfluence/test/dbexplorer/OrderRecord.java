@@ -20,7 +20,7 @@ public record OrderRecord(
         Timestamp modified,
         long surrogateId
 ) {
-    public static List<OrderRecord> getOrdersById(Connection db, String orderId) throws SQLException {
+    static List<OrderRecord> getOrdersById(Connection db, String orderId) throws SQLException {
         var orders = new ArrayList<OrderRecord>();
         String query = """
                 SELECT

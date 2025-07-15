@@ -164,7 +164,7 @@ public class EmagDBExplorer {
 
     private static void lookupByOrderId(ActionEvent actionEvent) {
         try {
-            updateTables(emagMirrorDB.readOrdersById(orderField.getText()));
+            updateTables(emagMirrorDB.read(db -> OrderRecord.getOrdersById(db, orderField.getText())));
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -172,7 +172,7 @@ public class EmagDBExplorer {
 
     private static void lookupByCustomerId(ActionEvent actionEvent) {
         try {
-            updateTables(emagMirrorDB.readOrdersByCustomerId(Integer.parseInt(customerField.getText())));
+            updateTables(emagMirrorDB.read(db -> OrderRecord.getOrdersByCustomerId(db, Integer.parseInt(customerField.getText()))));
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -253,7 +253,7 @@ public class EmagDBExplorer {
         var customerIds = orders.stream().map(OrderRecord::customerId).collect(Collectors.toSet());
         var customers = customerIds.stream().flatMap(customerId -> {
             try {
-                return emagMirrorDB.readCustomerById(customerId).stream();
+                return emagMirrorDB.read(db -> CustomerRecord.getCustomerById(db, customerId)).stream();
             } catch (SQLException e) {
                 throw new RuntimeException(e);
             }
@@ -294,7 +294,7 @@ public class EmagDBExplorer {
 
     private static void updateProductTable(String orderId) {
         try {
-            pioTableModel.updateTable(emagMirrorDB.readProductInOrderByOrderId(orderId));
+            pioTableModel.updateTable(emagMirrorDB.read(db -> ProductInOrderRecord.getProductInOrderByOrder(db, orderId)));
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
