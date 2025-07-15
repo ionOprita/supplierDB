@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 class OrderTableModel extends AbstractTableModel {
-    private final String[] columnNames = {"Order ID", "Vendor ID", "Vendor Name", "Customer ID", "Status", "Date", "Created", "Modified"};
+    private final String[] columnNames = {"Order ID", "Vendor ID", "Vendor Name", "Customer ID", "Status", "Date", "Created", "Modified", "Surrogate ID"};
     private List<OrderRecord> orders = new ArrayList<>();
 
     @Override
@@ -35,6 +35,7 @@ class OrderTableModel extends AbstractTableModel {
             case 5 -> order.date();
             case 6 -> order.created();
             case 7 -> order.modified();
+            case 8 -> order.surrogateId();
             default -> null;
         };
     }

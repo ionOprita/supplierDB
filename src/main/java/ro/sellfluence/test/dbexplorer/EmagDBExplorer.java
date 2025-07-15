@@ -132,8 +132,8 @@ public class EmagDBExplorer {
         // Add a mouse listener to the table
         orderTable.addMouseListener(getOrderIdMouseAdapter());
         orderTable.addMouseListener(updateProductTable());
-        // Order ID, Vendor ID, Vendor Name, Customer ID, Status, Date, Created, Modified
-        setColumnWidths(orderTable, 100, 200, 150, 100, 50, 150, 150, 150);
+        // Order ID, Vendor ID, Vendor Name, Customer ID, Status, Date, Created, Modified, Surrogate ID
+        setColumnWidths(orderTable, 100, 200, 150, 100, 50, 150, 150, 150, 50);
         return encloseInScrollPane(orderTable);
     }
 
@@ -156,8 +156,8 @@ public class EmagDBExplorer {
             @Override
             public void mouseClicked(MouseEvent e) {
                 int row = orderTable.rowAtPoint(e.getPoint());
-                var orderId = (String) orderTable.getValueAt(row, 0);
-                updateProductTable(orderId);
+                var surrogateId =  (long) orderTable.getValueAt(row, 8);
+                updateProductTable(surrogateId);
             }
         };
     }
@@ -292,9 +292,9 @@ public class EmagDBExplorer {
         return scrollPane;
     }
 
-    private static void updateProductTable(String orderId) {
+    private static void updateProductTable(long surrogateId) {
         try {
-            pioTableModel.updateTable(emagMirrorDB.read(db -> ProductInOrderRecord.getProductInOrderByOrder(db, orderId)));
+            pioTableModel.updateTable(emagMirrorDB.read(db -> ProductInOrderRecord.getProductInOrderByOrder(db, surrogateId)));
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }

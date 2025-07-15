@@ -19,7 +19,7 @@ public record ProductInOrderRecord(
         BigDecimal salePrice,
         BigDecimal originalPrice
 ) {
-    public static List<ProductInOrderRecord> getProductInOrderByOrder(Connection db, String orderId) throws SQLException {
+    public static List<ProductInOrderRecord> getProductInOrderByOrder(Connection db, long surrogateId) throws SQLException {
         var products = new ArrayList<ProductInOrderRecord>();
         String query = """
                 SELECT
@@ -33,11 +33,10 @@ public record ProductInOrderRecord(
                     p.sale_price,
                     p.original_price
                 FROM product_in_order p
-                INNER JOIN emag_order o ON p.emag_order_surrogate_id = o.surrogate_id
-                WHERE o.id = ?;
+                WHERE p.emag_order_surrogate_id = ?;
                 """;
         try (PreparedStatement stmt = db.prepareStatement(query)) {
-            stmt.setString(1, orderId);
+            stmt.setLong(1, surrogateId);
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     products.add(new ProductInOrderRecord(
