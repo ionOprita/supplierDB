@@ -1,13 +1,19 @@
 package ro.sellfluence.db;
 
+import ro.sellfluence.support.Logs;
+
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.YearMonth;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 import static java.math.RoundingMode.HALF_EVEN;
+import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.support.UsefulMethods.toDate;
 import static ro.sellfluence.support.UsefulMethods.toYearMonth;
 
@@ -15,27 +21,21 @@ import static ro.sellfluence.support.UsefulMethods.toYearMonth;
  * Collect all database methods tied to the GMV table.
  */
 public class GMV {
+
+    private static final Logger logger = Logs.getConsoleLogger("GMV", WARNING);
+
     /**
-     * Update the GMV table with GV values.
-     * This method will take care of inserting or updating values.
+     * Compute the GMV for a specific product.
      *
-     * @param db database connection.
-     * @param productCode code of the product.
-     * @param gmvByMonth GMV table having the GMV value for several months.
+     * @param db database for writing to the GMV table.
+     * @param productCode ID of the product.
+     * @param ordersWithProduct Flattened orders with the product information belonging to the selected product.
      * @throws SQLException on database error.
      */
-    static void insertOrUpdateGMV(Connection db, String productCode, Map<YearMonth, BigDecimal> gmvByMonth) throws SQLException {
-        var currentGMVByMonth = getGMVByProductId(db, productCode);
-        for (Map.Entry<YearMonth, BigDecimal> entry : gmvByMonth.entrySet()) {
-            YearMonth month = entry.getKey();
-            BigDecimal gmv = entry.getValue().setScale(2, HALF_EVEN);
-            var currentGMV = currentGMVByMonth.get(month);
-            if (currentGMV == null) {
-                insertGMV(db, productCode, month, gmv);
-            } else if (!gmv.equals(currentGMV)) {
-                updateGMV(db, productCode, month, gmv);
-            }
-        }
+    static void computeAndStoreGMVForProduct(Connection db, String productCode, Map<String, List<POInfo>> ordersWithProduct) throws SQLException {
+        var gmvByMonth = new HashMap<YearMonth, BigDecimal>();
+        ordersWithProduct.forEach((_, poInfos) -> computeGMVForOrder(poInfos, gmvByMonth));
+        insertOrUpdateGMV(db, productCode, gmvByMonth);
     }
 
     /**
@@ -80,21 +80,88 @@ public class GMV {
         return result;
     }
 
-    static void addToGMV(HashMap<YearMonth, BigDecimal> gmvByMonth, YearMonth yearMonth, EmagMirrorDB.POInfo order) {
+    private static void addToGMV(HashMap<YearMonth, BigDecimal> gmvByMonth, YearMonth yearMonth, POInfo order) {
         var gmv = gmvByMonth.getOrDefault(yearMonth, BigDecimal.ZERO);
         gmv = gmv.add(order.price().multiply(BigDecimal.valueOf(order.quantity())));
         gmvByMonth.put(yearMonth, gmv);
     }
 
-    static void subtractFromGMV(HashMap<YearMonth, BigDecimal> gmvByMonth, YearMonth yearMonthMonth, EmagMirrorDB.POInfo storno) {
+    private static void subtractFromGMV(HashMap<YearMonth, BigDecimal> gmvByMonth, YearMonth yearMonthMonth, POInfo storno) {
         var stornoGMV = gmvByMonth.getOrDefault(yearMonthMonth, BigDecimal.ZERO);
         stornoGMV = stornoGMV.subtract(storno.price().multiply(BigDecimal.valueOf(storno.stornoQuantity())));
         gmvByMonth.put(yearMonthMonth, stornoGMV);
     }
 
-    static void specialCase(HashMap<YearMonth, BigDecimal> gmvByMonth, EmagMirrorDB.POInfo finalized, EmagMirrorDB.POInfo storno) {
+    private static void singleOrderWithSameProductTwice(HashMap<YearMonth, BigDecimal> gmvByMonth, POInfo finalized, POInfo storno) {
         addToGMV(gmvByMonth, YearMonth.from(finalized.orderDate()),finalized);
         addToGMV(gmvByMonth, YearMonth.from(storno.orderDate()), storno);
+    }
+
+    private static void singleProductWithFinalizedAndStorno(HashMap<YearMonth, BigDecimal> gmvByMonth, POInfo finalized, POInfo storno) {
+        if (storno.initialQuantity() != finalized.quantity()) {
+            logger.log(WARNING, "Mismatch in quantity between\n finalized order: %s\n and storno order: %s.".formatted(finalized, storno));
+        }
+        if (finalized.orderStatus() != 4) {
+            throw new RuntimeException("Finalised order status wrong: %s.".formatted(finalized));
+        }
+        if (storno.orderStatus() != 5) {
+            throw new RuntimeException("Storno order status wrong: %s.".formatted(storno));
+        }
+        var finalizedMonth = YearMonth.from(finalized.orderDate());
+        var stornoMonth = YearMonth.from(storno.orderDate());
+        if (finalizedMonth.equals(stornoMonth)) {
+            addToGMV(gmvByMonth, finalizedMonth, storno);
+        } else {
+            addToGMV(gmvByMonth, finalizedMonth, finalized);
+            subtractFromGMV(gmvByMonth, stornoMonth, storno);
+        }
+    }
+
+    private static void computeGMVForOrder(List<POInfo> poInfos, HashMap<YearMonth, BigDecimal> gmvByMonth) {
+        var poInfoByOrderProductId = poInfos.stream()
+                .collect(Collectors.groupingBy(POInfo::productInOrderId));
+        poInfoByOrderProductId.forEach((productInOrderId, orderInfos) -> {
+            if (orderInfos.size() == 1) {
+                POInfo order = orderInfos.getFirst();
+                var yearMonth = YearMonth.from(order.orderDate());
+                addToGMV(gmvByMonth, yearMonth, order);
+            } else if (orderInfos.size() == 2) {
+                POInfo finalized = orderInfos.getFirst();
+                POInfo storno = orderInfos.getLast();
+                singleProductWithFinalizedAndStorno(gmvByMonth, finalized, storno);
+            } else {
+                throw new RuntimeException("Not prepared to handle order with more than two states: %s / %d.".formatted(orderInfos, productInOrderId));
+            }
+        });
+    }
+
+    /**
+     * Update the GMV table with GV values.
+     * This method will take care of inserting or updating values.
+     *
+     * @param db database connection.
+     * @param productCode code of the product.
+     * @param gmvByMonth GMV table having the GMV value for several months.
+     * @throws SQLException on database error.
+     */
+    private static void insertOrUpdateGMV(Connection db, String productCode, Map<YearMonth, BigDecimal> gmvByMonth) throws SQLException {
+        var currentGMVByMonth = getGMVByProductId(db, productCode);
+        for (Map.Entry<YearMonth, BigDecimal> entry : gmvByMonth.entrySet()) {
+            YearMonth month = entry.getKey();
+            BigDecimal gmv = entry.getValue().setScale(2, HALF_EVEN);
+            var currentGMV = currentGMVByMonth.get(month);
+            if (currentGMV == null) {
+                var linesAdded = insertGMV(db, productCode, month, gmv);
+                if (linesAdded != 1) {
+                    throw new RuntimeException("Unexpected number of lines added: %d for the product %s and month %s.".formatted(linesAdded, productCode, month));
+                }
+            } else if (!gmv.equals(currentGMV)) {
+                var linesUpdated = updateGMV(db, productCode, month, gmv);
+                if (linesUpdated != 1) {
+                    throw new RuntimeException("Unexpected number of lines updated: %d for the product %s and month %s.".formatted(linesUpdated, productCode, month));
+                }
+            }
+        }
     }
 
     /**

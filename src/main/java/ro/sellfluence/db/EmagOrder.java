@@ -235,7 +235,7 @@ public class EmagOrder {
             try {
                 voucherSplits = selectVoucherSplitsByProductId(db, productId);
                 try {
-                    return selectProduct(db, productId, voucherSplits, new ArrayList<>());
+                    return selectProduct(db, productId, surrogateId, voucherSplits, new ArrayList<>());
                 } catch (SQLException e) {
                     throw new RuntimeException("Error retrieving product with productId " + productId, e);
                 }
@@ -454,14 +454,15 @@ public class EmagOrder {
 
     }
 
-    private static Product selectProduct(Connection db, int productId, List<VoucherSplit> product_voucher_splits, List<Attachment> attachments) throws SQLException {
+    private static Product selectProduct(Connection db, int productId, int surrogateId, List<VoucherSplit> product_voucher_splits, List<Attachment> attachments) throws SQLException {
         Product product = null;
         try (var s = db.prepareStatement("""
                 SELECT id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties, serial_numbers
                 FROM product_in_order
-                WHERE id = ?
+                WHERE id = ? and emag_order_surrogate_id = ?
                 """)) {
             s.setInt(1, productId);
+            s.setInt(2, surrogateId);
             try (var rs = s.executeQuery()) {
                 if (rs.next()) {
                     product = new Product(rs.getInt("id"),
@@ -727,7 +728,7 @@ public class EmagOrder {
     }
 
     private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, int surrogateId, int productId) throws SQLException {
-        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, emag_order_surrogate_id, product_id, value, vat_value, vat, offered_by) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, emag_order_surrogate_id, product_id, value, vat_value, vat, offered_by) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id, emag_order_surrogate_id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id());
             s.setInt(2, surrogateId);
             s.setInt(3, productId);
@@ -740,7 +741,7 @@ public class EmagOrder {
     }
 
     private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, int surrogateId) throws SQLException {
-        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, emag_order_surrogate_id, value, vat_value) VALUES (?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, emag_order_surrogate_id, value, vat_value) VALUES (?, ?, ?, ?) ON CONFLICT(voucher_id, emag_order_surrogate_id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id());
             s.setInt(2, surrogateId);
             s.setBigDecimal(3, voucherSplit.value());
@@ -750,7 +751,7 @@ public class EmagOrder {
     }
 
     private static int insertProductInOrder(Connection db, Product product, int surrogateId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO product_in_order (id, emag_order_surrogate_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties, serial_numbers) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO product_in_order (id, emag_order_surrogate_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties, serial_numbers) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id, emag_order_surrogate_id) DO NOTHING")) {
             s.setInt(1, product.id());
             s.setInt(2, surrogateId);
             s.setInt(3, product.product_id());
@@ -787,7 +788,7 @@ public class EmagOrder {
     }
 
     private static int insertVoucher(Connection db, Voucher voucher, int surrogateId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO voucher (voucher_id, emag_order_surrogate_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO voucher (voucher_id, emag_order_surrogate_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id, emag_order_surrogate_id) DO NOTHING")) {
             s.setInt(1, voucher.voucher_id());
             s.setInt(2, surrogateId);
             s.setString(3, voucher.modified());
