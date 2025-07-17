@@ -2,8 +2,8 @@ package ro.sellfluence.test.dbexplorer;
 
 import org.jetbrains.annotations.NotNull;
 import ro.sellfluence.db.EmagMirrorDB;
-import ro.sellfluence.db.EmagMirrorDB.POInfo;
 import ro.sellfluence.support.Arguments;
+import ro.sellfluence.db.POInfo;
 
 import javax.swing.Box;
 import javax.swing.JButton;
