@@ -128,7 +128,7 @@ public class EmagDBExplorer {
         // Add a mouse listener to the table
         orderTable.addMouseListener(getOrderIdMouseAdapter());
         orderTable.addMouseListener(updateProductTable());
-        // Order ID, Vendor ID, Vendor Name, Customer ID, Status, Date, Created, Modified, Surrogate ID
+        // Order ID, Vendor ID, Vendor Name, Customer ID, Status, Date, Created, Modified, Surrogate ID.
         setColumnWidths(orderTable, 100, 200, 150, 100, 50, 150, 150, 150, 50);
         return encloseInScrollPane(orderTable);
     }
@@ -152,8 +152,8 @@ public class EmagDBExplorer {
             @Override
             public void mouseClicked(MouseEvent e) {
                 int row = orderTable.rowAtPoint(e.getPoint());
-                var surrogateId =  (long) orderTable.getValueAt(row, 8);
-                updateProductTable(surrogateId);
+                var surrogateId =   orderTable.getValueAt(row, 8);
+                if (surrogateId instanceof Long) updateProductTable((long)surrogateId);
             }
         };
     }
@@ -266,7 +266,7 @@ public class EmagDBExplorer {
      * @param table on which to set column widths.
      * @param widths One item for each column.
      */
-    private static void setColumnWidths(JTable table, int... widths) {
+    public static void setColumnWidths(JTable table, int... widths) {
         TableColumnModel columnModel = table.getColumnModel();
         for (int i = 0; i < widths.length && i < columnModel.getColumnCount(); i++) {
             columnModel.getColumn(i).setPreferredWidth(widths[i]);
