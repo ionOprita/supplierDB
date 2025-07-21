@@ -226,7 +226,6 @@ public class EmagOrder {
         }
     }
 
-
     private static OrderResult selectWholeOrderResult(Connection db, int surrogateId, String vendorName) throws SQLException {
         var customer = selectCustomerByOrderId(db, surrogateId);
         var productIds = selectProductIdByOrderId(db, surrogateId);
@@ -259,7 +258,6 @@ public class EmagOrder {
                 enforcedVendorCourierAccounts,
                 flags);
     }
-
 
     private static Customer selectCustomerByOrderId(Connection db, int surrogateId) throws SQLException {
         Customer customer = null;
@@ -312,7 +310,6 @@ public class EmagOrder {
         }
         return customer;
     }
-
 
     private static List<Attachment> selectAttachmentsByOrderId(Connection db, int surrogateId) throws SQLException {
         String query = "SELECT name, url, type, force_download, visibility FROM attachment WHERE emag_order_surrogate_id = ?";
@@ -388,7 +385,6 @@ public class EmagOrder {
         return list;
     }
 
-
     private static List<VoucherSplit> selectVoucherSplitsByProductId(Connection db, int productId) throws SQLException {
         var list = new ArrayList<VoucherSplit>();
         try (var s = db.prepareStatement("""
@@ -428,7 +424,6 @@ public class EmagOrder {
         }
         return list;
     }
-
 
     /**
      * Read all product ID belonging to an order.
@@ -499,7 +494,6 @@ public class EmagOrder {
         }
         return product;
     }
-
 
     private static OrderResult selectOrder(Connection db,
                                            int surrogateId,
