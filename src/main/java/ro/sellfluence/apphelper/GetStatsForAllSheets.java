@@ -1,6 +1,7 @@
 package ro.sellfluence.apphelper;
 
 import ro.sellfluence.googleapi.SheetsAPI;
+import ro.sellfluence.support.Logs;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -20,7 +21,7 @@ public class GetStatsForAllSheets {
     private static final String statisticSheetName = "Statistici/luna";
     private static final String setariSheetName = "Setari";
 
-    private static final Logger logger = Logger.getLogger(GetStatsForAllSheets.class.getName());
+    private static final Logger logger = Logs.getFileLogger("GetStatsForAllSheets", INFO, 10, 1_000_000);
 
     public record Statistic(int index, String produs, String pnk, LocalDate lastUpdate, String sheetName) {
     }
