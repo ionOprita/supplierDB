@@ -14,10 +14,10 @@ Emag Mirror to DB
 
 Database setup
 -
-These instructions work for the development environment of claudio. Maybe the need to be modified for other environments.
+These instructions work for the development environment of claudio. Maybe they need to be modified for other environments.
 
 ```
-psql template1 -X -c "CREATE DATABASE emag WITH OWNER = $(id -nu)"
+psql -X -c "CREATE DATABASE emag WITH OWNER = $(id -nu) TEMPLATE template0"
 psql -1 -X -c "CREATE ROLE emag WITH LOGIN PASSWORD 'password'; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO emag"
 ```
 
@@ -62,8 +62,33 @@ pg_dump -Fc -f "db_emag_$timestamp.dump" emag
 
 Restore from a specific backup using the command (substituting date and time for your latest backup)
 ```
-pg_restore -d emag -c --if-exists db_emag_2025-05-15T16.dump
+pg_restore -d emag -1 -C -c --if-exists db_emag_2025-05-15T16.dump
 ```
+
+The `-1` aka `--single-transaction` option is used to restore the database in single transaction mode.
+
+The `-C` aka `--create` option is used to create the database if it does not exist.
+
+The `-c` aka `--clean` option is used to drop all the objects before restoring them.
+
+The `--if-exists` option avoids errors when an object to be DROPed does not exist.
+
+Combining -C and -c has the effect of dropping and recreating the database.
+
+To restore into a new database, e.g. for testing purpose, create it first and then restore into it:
+
+```
+pw=$(grep emag_test $HOME/Secrets/dbpass.txt | cut -f 4)
+psql -c "CREATE DATABASE emag_test WITH OWNER = $(id -nu) TEMPLATE template0"
+psql -1 -X -c "CREATE ROLE emag_test WITH LOGIN PASSWORD '$pw'; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO emag_test"
+pg_restore -d emag_test -1 -c -O --if-exists db_emag_2025-05-15T16.dump
+```
+
+Once the test database is not needed anymore, drop it:
+```
+psql -c "DROP DATABASE emag_test"
+```
+
 
 If you prefer to use pgAdmin to backup and restore your database read the
 [Backup/Restore](https://www.pgadmin.org/docs/pgadmin4/latest/backup_and_restore.html)
