@@ -25,22 +25,18 @@ import java.util.stream.Collectors;
 import static javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_ALWAYS;
 
 public class EmagDBExplorer {
-    private static final String database = "emagLocal";
+    private static String database = "emagLocal";
 
-    private static final EmagMirrorDB emagMirrorDB;
+    private static EmagMirrorDB emagMirrorDB;
     public static final int tableWidth = 1800;
     public static final int tableHeight = 200;
     private static final TextAreaRenderer textAreaRenderer = new TextAreaRenderer();
 
-    static {
-        try {
-            emagMirrorDB = EmagMirrorDB.getEmagMirrorDB(database);
-        } catch (IOException | SQLException e) {
-            throw new RuntimeException(e);
+    public static void main(String[] args) throws SQLException, IOException {
+        if (args.length > 0) {
+            database = args[0];
         }
-    }
-
-    public static void main(String[] args) {
+        emagMirrorDB = EmagMirrorDB.getEmagMirrorDB(database);
         initGUI();
     }
 
@@ -59,7 +55,7 @@ public class EmagDBExplorer {
 
     private static void initGUI() {
         SwingUtilities.invokeLater(() -> {
-            JFrame frame = new JFrame("Emag DB Browser");
+            JFrame frame = new JFrame("Emag DB Browser ("+database+")");
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
             var outerBox = Box.createVerticalBox();
