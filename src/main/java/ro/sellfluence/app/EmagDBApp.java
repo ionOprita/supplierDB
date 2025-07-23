@@ -5,16 +5,17 @@ import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.emagapi.EmagApi;
 import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.RMAResult;
+import ro.sellfluence.support.Logs;
 import ro.sellfluence.support.UserPassword;
 
 import java.io.IOException;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Period;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.logging.Logger;
 import java.util.random.RandomGenerator;
@@ -23,6 +24,7 @@ import static java.time.temporal.ChronoUnit.DAYS;
 import static java.time.temporal.ChronoUnit.MILLIS;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.db.EmagFetchLog.isDone;
 import static ro.sellfluence.support.Time.time;
@@ -30,6 +32,7 @@ import static ro.sellfluence.support.Time.time;
 public class EmagDBApp {
 
     private static final Logger logger = Logger.getLogger(EmagDBApp.class.getName());
+    private static final Logger consoleLogger = Logs.getConsoleLogger("EmagDBApp", INFO);
     private static final List<String> emagAccounts = List.of(
             "sellfluence",
             "zoopieconcept",
@@ -49,14 +52,24 @@ public class EmagDBApp {
         EmagApi.setAPILogLevel(INFO);
         try {
             EmagMirrorDB mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
-            if (args.length > 0 && Objects.equals(args[0], "refetch_some")) {
-                fetchAndStoreToDBProbabilistic(mirrorDB);
-            } else if (args.length > 0 && Objects.equals(args[0], "nofetch")) {
-// Don't fetch anything.
-            } else {
-                fetchAndStoreToDB(mirrorDB);
+            var dbModified = true;
+            switch (args.length) {
+                case 0 -> fetchAndStoreToDB(mirrorDB);
+                case 1 -> {
+                    switch (args[0]) {
+                        case "refetch_some" -> fetchAndStoreToDBProbabilistic(mirrorDB);
+                        case "nofetch" -> dbModified = false;
+                        case "refetch_all" -> refetchAndStoreToDB(mirrorDB, Period.ofYears(3));
+                        default -> {
+                            System.err.println("Unknown argument: " + args[0]);
+                            System.exit(1);
+                        }
+                    }
+                }
             }
-            mirrorDB.updateGMVTable();
+            if (dbModified) {
+                mirrorDB.updateGMVTable();
+            }
         } catch (SQLException e) {
             throw new RuntimeException("error initializing database", e);
         } catch (IOException e) {
@@ -156,8 +169,7 @@ public class EmagDBApp {
      * @param mirrorDB to which to store the orders.
      */
     private static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) {
-        var daysToConsider = 3 * 366;   // 3 Years
-        var oldestDay = today.minusDays(daysToConsider);
+        var oldestDay = today.minusYears(3);
         cleanupFetchLogs(mirrorDB, oldestDay);
         repeatUntilDone(
                 () -> {
@@ -170,6 +182,54 @@ public class EmagDBApp {
                     return result;
                 }
         );
+    }
+
+    /**
+     * Unconditionally fetch all data for the given period.
+     *
+     * @param mirrorDB
+     * @param period
+     */
+    private static void refetchAndStoreToDB(EmagMirrorDB mirrorDB, Period period) {
+        final var maxRetries = 4;
+        var chunkSize = Period.ofWeeks(1);
+        var endTime = LocalDateTime.now();
+        var startTime = endTime.minus(chunkSize);
+        var limit = endTime.minus(period);
+        var retryCount = maxRetries;
+        while (endTime.isAfter(limit)) {
+            if (startTime.isBefore(limit)) {
+                startTime = limit;
+            }
+            for (String account : emagAccounts) {
+                consoleLogger.log(INFO, "Refetch from %s for %s - %s".formatted(account, startTime, endTime));
+                Exception exception = null;
+                var ordersTransferred = 0;
+                var rmasTransferred = 0;
+                try {
+                    ordersTransferred = transferOrdersToDatabase(account, mirrorDB, startTime, endTime, null, null, null, null);
+                    rmasTransferred = transferRMAsToDatabase(account, mirrorDB, startTime, endTime);
+                } catch (Exception e) {
+                    logger.log(WARNING, "Some error occurred", e);
+                    exception = e;
+                } finally {
+                    if (exception != null) {
+                        if (retryCount == 0) {
+                            consoleLogger.log(SEVERE, "No more retriesd possible for fetch for %s from %s to %s".formatted(account, startTime, endTime), exception);
+                        } else {
+                            retryCount--;
+                            consoleLogger.log(WARNING, "Retrying fetch for %s from %s to %s, retry count %d".formatted(account, startTime, endTime, retryCount), exception);
+                        }
+                    } else {
+                        retryCount = maxRetries;
+                        logger.log(FINE, "Transferred %d orders and %d RMAs".formatted(ordersTransferred, rmasTransferred));
+                    }
+                }
+            }
+            endTime = startTime;
+            startTime = endTime.minus(chunkSize);
+        }
+
     }
 
     /**
