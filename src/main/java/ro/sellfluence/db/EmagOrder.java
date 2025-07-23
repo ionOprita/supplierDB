@@ -411,7 +411,7 @@ public class EmagOrder {
     private static List<VoucherSplit> selectVoucherSplitsByOrderId(Connection db, int surrogateId) throws SQLException {
         var list = new ArrayList<VoucherSplit>();
         try (var s = db.prepareStatement("""
-                SELECT voucher_id, value, vat_value, vat, offered_by FROM voucher_split WHERE emag_order_surrogate_id = ?
+                SELECT voucher_id, value, vat_value, vat, offered_by FROM order_voucher_split WHERE emag_order_surrogate_id = ?
                 """)) {
             s.setInt(1, surrogateId);
             try (var rs = s.executeQuery()) {
@@ -705,7 +705,7 @@ public class EmagOrder {
         insertProducts(db, order, surrogateId);
         if (order.shipping_tax_voucher_split() != null) {
             for (var voucherSplit : order.shipping_tax_voucher_split()) {
-                insertVoucherSplit(db, voucherSplit, surrogateId);
+                insertOrderVoucherSplit(db, voucherSplit, surrogateId);
             }
         }
         insertAttachments(db, order, surrogateId);
@@ -727,7 +727,7 @@ public class EmagOrder {
     }
 
     private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, int surrogateId, int productId) throws SQLException {
-        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, emag_order_surrogate_id, product_id, value, vat_value, vat, offered_by) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, emag_order_surrogate_id, product_id, value, vat_value, vat, offered_by) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id, product_id, emag_order_surrogate_id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id());
             s.setInt(2, surrogateId);
             s.setInt(3, productId);
@@ -739,12 +739,14 @@ public class EmagOrder {
         }
     }
 
-    private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, int surrogateId) throws SQLException {
-        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, emag_order_surrogate_id, value, vat_value) VALUES (?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+    private static int insertOrderVoucherSplit(Connection conn, VoucherSplit voucherSplit, int surrogateId) throws SQLException {
+        try (var s = conn.prepareStatement("INSERT INTO order_voucher_split (voucher_id, emag_order_surrogate_id, value, vat_value, vat, offered_by) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id, emag_order_surrogate_id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id());
             s.setInt(2, surrogateId);
             s.setBigDecimal(3, voucherSplit.value());
             s.setBigDecimal(4, voucherSplit.vat_value());
+            s.setString(5, voucherSplit.vat());
+            s.setString(6, voucherSplit.offered_by());
             return s.executeUpdate();
         }
     }

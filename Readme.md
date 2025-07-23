@@ -33,6 +33,8 @@ Make sure each field is separated by a single TAB character.
 
 ### Backup and restore
 
+#### Backup
+
 Create a backup of the database using the command (will contain date and hour in name)
 
 <details>
@@ -60,6 +62,8 @@ pg_dump -Fc -f "db_emag_$timestamp.dump" emag
 </pre>
 </details>
 
+#### Restore into existing database
+
 Restore from a specific backup using the command (substituting date and time for your latest backup)
 ```
 pg_restore -d emag -1 -C -c --if-exists db_emag_2025-05-15T16.dump
@@ -75,6 +79,8 @@ The `--if-exists` option avoids errors when an object to be DROPed does not exis
 
 Combining -C and -c has the effect of dropping and recreating the database.
 
+#### Restore into a new database
+
 To restore into a new database, e.g. for testing purpose, create it first and then restore into it:
 
 ```
@@ -89,15 +95,18 @@ Once the test database is not needed anymore, drop it:
 psql -c "DROP DATABASE emag_test"
 ```
 
-
 If you prefer to use pgAdmin to backup and restore your database read the
 [Backup/Restore](https://www.pgadmin.org/docs/pgadmin4/latest/backup_and_restore.html)
 chapter in its documentation.
+
+#### Inspect the dump file
 
 The restore command can also be used to get a human-readable version of the dump file using this command:
 ```
 pg_restore -f - db_emag_2025-05-15T16.dump | less
 ```
+
+To see only the DDL commands add the options `-s` aka `--schema-only`.
 
 ### Drop tables for testing
 
