@@ -15,6 +15,7 @@ class EmagMirrorDBVersion22 {
     static void version22(Connection db) throws SQLException {
         fixProductInOrderPK(db);
         fixVoucherPK(db);
+        fixSomeKeys(db);
     }
 
     private static void fixProductInOrderPK(Connection db) throws SQLException {
@@ -39,6 +40,21 @@ class EmagMirrorDBVersion22 {
                 """);
         executeStatement(db, """
                 ALTER TABLE voucher ADD PRIMARY KEY (voucher_id, emag_order_surrogate_id);
+                """);
+    }
+
+    /**
+     * Add missing foreign key constraints and primary keys.
+     *
+     * @param db database connection to use.
+     * @throws SQLException all errors are passed back to the caller.
+     */
+    private static void fixSomeKeys(Connection db) throws SQLException {
+        executeStatement(db, """
+                ALTER TABLE emag_order ADD FOREIGN KEY (vendor_id) REFERENCES vendor(id);
+                """);
+        executeStatement(db, """
+                ALTER TABLE gmv ADD PRIMARY KEY (month, product_code);
                 """);
     }
 }
