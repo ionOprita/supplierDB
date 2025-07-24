@@ -83,4 +83,24 @@ public record DBPass(String alias, String connect, String user, String pw) {
     public String dbName() {
         return URI.create(connect.substring(5)).getPath().substring(1);
     }
+
+    /**
+     * Returns the database host from the connect-string.
+     *
+     * <p><b>Note:</b> This is known to work only for MySQL and PostgreSQL JDBC connect strings.
+     * It might work for others that have a similar syntax.</p>
+     */
+    public String dbHost() {
+        return URI.create(connect.substring(5)).getHost();
+    }
+
+    /**
+     * Returns the database port from the connect-string.
+     *
+     * <p><b>Note:</b> This is known to work only for MySQL and PostgreSQL JDBC connect strings.
+     * It might work for others that have a similar syntax.</p>
+     */
+    public int dbPort() {
+        return URI.create(connect.substring(5)).getPort();
+    }
 }
