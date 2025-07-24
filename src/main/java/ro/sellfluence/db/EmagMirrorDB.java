@@ -10,6 +10,7 @@ import ro.sellfluence.emagapi.LockerDetails;
 import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.RMAResult;
 import ro.sellfluence.sheetSupport.Conversions;
+import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -32,6 +33,8 @@ import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import static java.math.RoundingMode.HALF_EVEN;
+import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.db.EmagFetchLog.deleteFetchLogsBefore;
 import static ro.sellfluence.db.EmagFetchLog.getEmagLog;
@@ -60,7 +63,8 @@ import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 public class EmagMirrorDB {
 
     private static final Map<String, EmagMirrorDB> openDatabases = new HashMap<>();
-    private static final Logger logger = Logger.getLogger(EmagMirrorDB.class.getName());
+
+    private static final Logger logger = Logs.getConsoleLogger("EmagMirrorDB", INFO);
 
     private final DB database;
 
@@ -80,7 +84,11 @@ public class EmagMirrorDB {
         var mirrorDB = openDatabases.get(alias);
         if (mirrorDB == null) {
             var db = new DB(alias);
-            SetupDB.setupAndUpdateDB(db);
+            var result = SetupDB.setupAndUpdateDB(db);
+            if (!result) {
+                logger.log(SEVERE, "Unable to setup database {0}", alias);
+                throw new IOException("Unable to setup database %s.".formatted(alias));
+            }
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }

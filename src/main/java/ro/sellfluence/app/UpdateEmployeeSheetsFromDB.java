@@ -4,6 +4,7 @@ import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.apphelper.GetStatsForAllSheets;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.googleapi.SheetsAPI;
+import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
@@ -26,6 +27,9 @@ import java.util.stream.Collectors;
 import static java.util.Comparator.comparing;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
+import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheetByName;
 
 /**
@@ -47,12 +51,17 @@ public class UpdateEmployeeSheetsFromDB {
         this.appName = appName;
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws SQLException, IOException {
+        var arguments = new Arguments(args);
+        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
+        updateSheets(mirrorDB);
+    }
+
+    public static void updateSheets(EmagMirrorDB mirrorDB) {
         try {
-            var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
-            var updateSheets = new UpdateEmployeeSheetsFromDB("sellfluence1");
+            var updateSheets = new UpdateEmployeeSheetsFromDB(defaultGoogleApp);
             updateSheets.transferFromDBToSheet(mirrorDB);
-        } catch (IOException | SQLException e) {
+        } catch (SQLException e) {
             throw new RuntimeException(e);
         }
     }

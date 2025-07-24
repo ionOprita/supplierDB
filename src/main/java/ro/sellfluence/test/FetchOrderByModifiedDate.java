@@ -4,6 +4,7 @@ import org.hibernate.type.descriptor.jdbc.NVarcharJdbcType;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.emagapi.EmagApi;
 import ro.sellfluence.emagapi.OrderResult;
+import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.UserPassword;
 
 import java.io.IOException;
@@ -17,6 +18,8 @@ import java.util.stream.Collectors;
 
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 
 public class FetchOrderByModifiedDate {
 
@@ -31,9 +34,13 @@ public class FetchOrderByModifiedDate {
             "sellfusion"
     );
 
+    private static EmagMirrorDB mirrorDB;
+
     public static void main(String[] args) throws Exception {
         EmagApi.setAPILogLevel(WARNING);
     //    emagAccounts.forEach(account -> fetchOrder(account,"407649385"));
+        var arguments = new Arguments(args);
+        mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
         fetchOrder("sellfusion");
     }
 
@@ -65,10 +72,8 @@ public class FetchOrderByModifiedDate {
         }
 //        var responseRet = emag.readRequest("rma", Map.of("order_id", orderId), null, RMAResult.class);
     }
-    private static final String databaseName = "emagLocal";
 
     private static List<OrderResult> getFromDB(LocalDateTime startTime, LocalDateTime endTime, List<Integer> statusList, String vendorName) throws SQLException, IOException {
-        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(databaseName);
         var vendorId = mirrorDB.getVendorByName(vendorName);
         return mirrorDB.readOrderByDateAndHardCodedStatus(startTime, endTime, vendorId);
     }

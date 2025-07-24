@@ -3,13 +3,18 @@ package ro.sellfluence.apphelper;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.googleapi.SheetsAPI;
+import ro.sellfluence.support.Arguments;
 
+import java.io.IOException;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.logging.Logger;
 
 import static java.lang.Boolean.TRUE;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
+import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 
 /**
  * Provides the method for updating our product information.
@@ -20,14 +25,8 @@ public class PopulateProductsTableFromSheets {
     /**
      * Find all products that are on the Date produse & angajati sheet and add any missing product to our database.
      */
-    public static void updateProductTable() {
-        EmagMirrorDB mirrorDB;
-        try {
-            mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
-        } catch (Exception e) {
-            throw new RuntimeException("Could not open the database", e);
-        }
-        populateFrom("sellfluence1", "2025 - Date produse & angajati", "Cons. Date Prod.")
+    public static void updateProductTable(EmagMirrorDB mirrorDB) {
+        populateFrom(defaultGoogleApp, "2025 - Date produse & angajati", "Cons. Date Prod.")
                 .forEach(productInfo -> {
             try {
                 mirrorDB.addOrUpdateProduct(productInfo);
@@ -79,7 +78,7 @@ public class PopulateProductsTableFromSheets {
                 ).toList();
     }
 
-    public static void main(String[] args) {
-        updateProductTable();
+    public static void main(String[] args) throws SQLException, IOException {
+        updateProductTable(EmagMirrorDB.getEmagMirrorDB(new Arguments(args).getOption(databaseOptionName, defaultDatabase)));
     }
 }

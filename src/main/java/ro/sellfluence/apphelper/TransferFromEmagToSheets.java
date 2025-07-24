@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -42,7 +43,7 @@ public class TransferFromEmagToSheets {
     public void transferFromEmagToSheet(String... emagAccounts) {
         loadOverview();
         if (relevantProducts.isEmpty()) {
-            throw new RuntimeException("No valid products found for accounts %s.".formatted(emagAccounts));
+            throw new RuntimeException("No valid products found for accounts %s.".formatted(Arrays.toString(emagAccounts)));
         }
         loadAllStatistics();
         for (String emagAccount : emagAccounts) {

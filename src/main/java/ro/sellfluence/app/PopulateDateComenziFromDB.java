@@ -5,6 +5,7 @@ import ro.sellfluence.apphelper.Vendor;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.googleapi.SheetsAPI;
+import ro.sellfluence.support.Arguments;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -19,6 +20,9 @@ import java.util.stream.Collectors;
 
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
+import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.sheetSupport.Conversions.isEMAGFbe;
 
 /**
@@ -27,7 +31,6 @@ import static ro.sellfluence.sheetSupport.Conversions.isEMAGFbe;
 public class PopulateDateComenziFromDB {
 
     private static final Logger logger = java.util.logging.Logger.getLogger(PopulateDateComenziFromDB.class.getName());
-    private static final String appName = "sellfluence1";
     private static final int year = 2025;
 
     /**
@@ -46,10 +49,15 @@ public class PopulateDateComenziFromDB {
     private static final String gmvSheetName = "T. GMW/M.";
 
     public static void main(String[] args) throws SQLException, IOException {
+        var arguments = new Arguments(args);
+        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
+        updateSpreadsheets(mirrorDB);
+    }
+
+    public static void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
         System.out.println("Update product table");
-        PopulateProductsTableFromSheets.updateProductTable();
-        var sheet = SheetsAPI.getSpreadSheetByName(appName, spreadSheetName);
-        var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
+        PopulateProductsTableFromSheets.updateProductTable(mirrorDB);
+        var sheet = SheetsAPI.getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
         System.out.println("--- Update GMVs --------------------------");
         updateGMVs(mirrorDB, sheet);
         System.out.println("--- Update orders ------------------------");

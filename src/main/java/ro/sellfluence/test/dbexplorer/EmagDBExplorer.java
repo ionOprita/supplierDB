@@ -3,6 +3,7 @@ package ro.sellfluence.test.dbexplorer;
 import org.jetbrains.annotations.NotNull;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.EmagMirrorDB.POInfo;
+import ro.sellfluence.support.Arguments;
 
 import javax.swing.Box;
 import javax.swing.JButton;
@@ -23,21 +24,20 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_ALWAYS;
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 
 public class EmagDBExplorer {
-    private static String database = "emagLocal";
-
     private static EmagMirrorDB emagMirrorDB;
     public static final int tableWidth = 1800;
     public static final int tableHeight = 200;
     private static final TextAreaRenderer textAreaRenderer = new TextAreaRenderer();
 
     public static void main(String[] args) throws SQLException, IOException {
-        if (args.length > 0) {
-            database = args[0];
-        }
-        emagMirrorDB = EmagMirrorDB.getEmagMirrorDB(database);
-        initGUI();
+        var arguments = new Arguments(args);
+        String databaseAlias = arguments.getOption(databaseOptionName, defaultDatabase);
+        emagMirrorDB = EmagMirrorDB.getEmagMirrorDB(databaseAlias);
+        initGUI(databaseAlias);
     }
 
     private static final JTextField orderField = new JTextField(20);
@@ -53,9 +53,9 @@ public class EmagDBExplorer {
     private static final ProductInOrderTableModel pioTableModel = new ProductInOrderTableModel();
     private static final JTable productInOrderTable = new JTable(pioTableModel);
 
-    private static void initGUI() {
+    private static void initGUI(String databaseAlias) {
         SwingUtilities.invokeLater(() -> {
-            JFrame frame = new JFrame("Emag DB Browser ("+database+")");
+            JFrame frame = new JFrame("Emag DB Browser (%s)".formatted(databaseAlias));
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
             var outerBox = Box.createVerticalBox();
