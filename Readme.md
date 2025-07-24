@@ -90,13 +90,17 @@ Combining -C and -c has the effect of dropping and recreating the database.
 
 #### Restore into a new database
 
-To restore into a new database, e.g. for testing purpose, create it first and then restore into it:
-
+Before the very first time you need to create the user, that will own the new database.
 ```
 pw=$(grep emag_test $HOME/Secrets/dbpass.txt | cut -f 4)
-psql -c "CREATE DATABASE emag_test WITH OWNER = $(id -nu) TEMPLATE template0"
-psql -1 -X -c "CREATE ROLE emag_test WITH LOGIN PASSWORD '$pw'; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO emag_test"
-pg_restore -d emag_test -1 -c -O --if-exists db_emag_2025-05-15T16.dump
+psql -d emag_test -1 -X -c "CREATE ROLE emag_test WITH LOGIN PASSWORD '$pw';"
+```
+
+This needs to be done only once. Then you can create the database and restore the backup into it.
+
+```
+psql -c "CREATE DATABASE emag_test WITH OWNER = emag_test TEMPLATE template0"
+pg_restore -d emag_test -1 -c -O --if-exists --role=emag_test db_emag_2025-05-15T16.dump
 ```
 
 Once the test database is not needed anymore, drop it:

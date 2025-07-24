@@ -12,7 +12,8 @@ public record VoucherSplit(
         BigDecimal value,
         BigDecimal vat_value,
         String vat,
-        String offered_by
+        String offered_by,
+        String voucher_name
 ) {
     public VoucherSplit {
         value = UsefulMethods.round(value);
@@ -26,7 +27,8 @@ public record VoucherSplit(
                && Objects.equals(value, that.value)
                && Objects.equals(offered_by, that.offered_by)
                && voucher_id.equals(that.voucher_id)
-               && Objects.equals(vat_value, that.vat_value);
+               && Objects.equals(vat_value, that.vat_value)
+               && voucher_name.equals(that.voucher_name);
     }
 
     public static boolean vslEquals(List<VoucherSplit> l1, List<VoucherSplit> l2) {
@@ -50,6 +52,7 @@ public record VoucherSplit(
         result = 31 * result + Objects.hashCode(vat_value);
         result = 31 * result + Objects.hashCode(vat);
         result = 31 * result + Objects.hashCode(offered_by);
+        result = 31 * result + Objects.hashCode(voucher_name);
         return result;
     }
 }

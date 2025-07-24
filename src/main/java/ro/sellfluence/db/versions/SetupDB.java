@@ -5,8 +5,8 @@ import ch.claudio.db.DB;
 import java.sql.SQLException;
 
 public class SetupDB {
-    public static void setupAndUpdateDB(DB db) throws SQLException {
-        db.prepareDB(EmagMirrorDBVersion1::version1,
+    public static boolean setupAndUpdateDB(DB db) throws SQLException {
+        return db.prepareDB(EmagMirrorDBVersion1::version1,
                 EmagMirrorDBVersion2::version2,
                 EmagMirrorDBVersion3::version3,
                 EmagMirrorDBVersion4::version4,
@@ -25,6 +25,7 @@ public class SetupDB {
                 EmagMirrorDBVersion17::version17,
                 EmagMirrorDBVersion18::version18,
                 EmagMirrorDBVersion19::version19,
-                EmagMirrorDBVersion20::version20);
+                EmagMirrorDBVersion20::version20,
+                EmagMirrorDBVersion21::version21);
     }
 }
