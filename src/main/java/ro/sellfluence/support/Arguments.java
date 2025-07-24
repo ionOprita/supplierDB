@@ -12,17 +12,55 @@ import java.util.regex.Pattern;
  * It supports options in the format `--option=value` and positional arguments.
  */
 public class Arguments {
+    /**
+     * List of positional arguments.
+     */
     private final List<String> remainingArguments = new ArrayList<>();
 
+    /**
+     * List of flags.
+     * This includes single-letter flags and long flags.
+     */
     private final List<String> flags = new ArrayList<>();
 
+    /**
+     * Stores options and their corresponding values.
+     */
     private final Map<String, String> options = new HashMap<>();
 
-    private static final Pattern optionWithArgumentPattern = Pattern.compile("--([a-z-]+)=(.*)");
+    /**
+     * A regular expression pattern used to validate and match words structured with alphanumeric
+     * characters, dashes, and underscores.
+     *
+     * The word must:
+     * - Start and end with an alphanumeric character (a-z, 0-9).
+     * - Contain alphanumeric characters, or dashes and underscores, with dashes or underscores
+     *   only being valid when followed by an alphanumeric character.
+     *
+     * Examples of valid words include:
+     * - "word"
+     * - "word-word"
+     * - "word_word"
+     * - "word1-word2"
+     * - "word_1"
+     */
+    private static final String wordPattern = "[a-z0-9](?:[a-z0-9]|[-_](?=[a-z0-9]))*[a-z0-9]";
 
+    /**
+     * A regular expression pattern used to match single-letter flags.
+     * More than one flag can be specified in a single string.
+     */
     private static final Pattern singleLetterFlagPattern = Pattern.compile("-([a-z0-9]+)");
 
-    private static final Pattern longFlagPattern = Pattern.compile("--([a-z0-9-]+)");
+    /**
+     * A regular expression pattern used to match long flags.
+     */
+    private static final Pattern longFlagPattern = Pattern.compile("--(" + wordPattern + ")");
+
+    /**
+     * A regular expression pattern used to match options with an argument.
+     */
+    private static final Pattern optionWithArgumentPattern = Pattern.compile("--(" + wordPattern + ")=(.*)");
 
     /**
      * Constructs an Arguments object to parse command-line arguments.
