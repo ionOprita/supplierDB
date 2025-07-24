@@ -1,19 +1,20 @@
-Emag -> Google Drive
-=
+# Emag -> Google Drive
 
-Start Update Feedback Clients Sheets Application
--
+## Run the bot
 
 To start the application, run the class from this path:
 ```
-src/main/java/ro/sellfluence/app/UpdateAllSheetsMain.java
+src/main/java/ro/sellfluence/app/EmagBot.java
 ```
 
-Emag Mirror to DB
-=
+# Emag Mirror to DB
 
-Database setup
--
+[PostgreSQL](https://www.postgresql.org/) is used as the database system the emag mirror DB.
+The most important commands for setup, backup etc. are listed below.
+For further information see the [PostgreSQL documentation](https://www.postgresql.org/docs/current/index.html).
+
+## Database setup
+
 These instructions work for the development environment of claudio. Maybe they need to be modified for other environments.
 
 ```
@@ -22,6 +23,14 @@ psql -1 -X -c "CREATE ROLE emag WITH LOGIN PASSWORD 'password'; GRANT SELECT,INS
 ```
 
 Substitute *password* with the real password.
+
+The `-X` aka `--no-psqlrc` option tells psql to not read any start-up files like `~/.psqlrc`.
+It makes sense to add this option if you do not know what is in your start-up file and prefer to run the command in a reproducible way.
+You better omit this option if you know that your startup-file contain special configurations that you need.
+
+The `-c` aka `--command=` option is used to execute a single command.
+
+The `-1` aka `--single-transaction` option is used to execute all the commands in single transaction mode.
 
 Then add the following line to $HOME/Secrets/dbpass.txt again putting the password instead of the word *password*.
 
@@ -156,11 +165,10 @@ Here's a breakdown of the part "LEAD(order_start) OVER (PARTITION BY emag_login 
 
 Putting it all together, the LEAD(order_start) OVER (PARTITION BY emag_login ORDER BY order_start) AS next_order_start part of the query calculates the order_start value for the next row in the same emag_login group. This calculated value is then used to detect if there are any gaps in the order_start and order_end times for each emag_login.
 
-Stuff related to scraping app
-=
+# Stuff related to scraping app
 
-API-Key
--
+
+## API-Key
 
 The scrpingant api-key needs to be configured in the application.properties by
 adding a line like this:
@@ -170,8 +178,8 @@ ro.koppel.apiKey=ff7320bfe38e2b076fd0a7aa42a4abbc
 ```
 The value behind the = sign needs to be the api-key from the scraping agent website.
 
-Command line arguments
--
+## Command line arguments
+
 Exactly two arguments are required.
 
 The first argument is an absolute or relative
@@ -181,8 +189,7 @@ and can contain one or several words separated by a blank.
 The second argument is an absolute or relative path for the Excel file to be created
 or modified (TODO).
 
-Database creation instructions
--
+## Database creation instructions
 
 As user 'claudio' is already defined as superuser instead of postgres
 and cannot be used with a password, a different user needed to be created.
