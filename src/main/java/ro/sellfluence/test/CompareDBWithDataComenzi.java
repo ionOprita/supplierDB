@@ -8,6 +8,7 @@ import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.googleapi.DriveAPI;
 import ro.sellfluence.googleapi.SheetsAPI;
 import ro.sellfluence.sheetSupport.Conversions;
+import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.UserPassword;
 
 import java.io.IOException;
@@ -22,6 +23,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
+import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
+
 /**
  * Read data from the comenzi sheet and compare it to the database data.
  * Find orders that are only in one place.
@@ -29,23 +34,22 @@ import java.util.stream.Collectors;
  */
 public class CompareDBWithDataComenzi {
 
-    private static final String appName = "sellfluence1";
     private static final String spreadSheetName = "Testing Coding 2024 - Date comenzi";
     private static final String sheetName = "Date";
-    private static final String databaseName = "emagLocal";
 
 
-    public static void main(String[] args) {
-        var spreadSheet = SheetsAPI.getSpreadSheetByName(appName, spreadSheetName);
+    public static void main(String[] args) throws SQLException, IOException {
+        var spreadSheet = SheetsAPI.getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
         System.out.println("Reading spreadsheet ...");
         var dataFromSheet = sheetDataToOrderList(spreadSheet.getRowsInColumnRange(sheetName, "A", "AF").stream().skip(3).toList());
+        var arguments = new Arguments(args);
+        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
         try {
             System.out.println("Reading database ...");
-            var mirrorDB = EmagMirrorDB.getEmagMirrorDB(databaseName);
             var dataFromDB = dbDataToOrderList(mirrorDB.readForComparisonApp());
             System.out.println("Compare data ...");
             compare(dataFromDB, dataFromSheet);
-        } catch (SQLException | IOException e) {
+        } catch (SQLException e) {
             throw new RuntimeException(e);
         }
     }

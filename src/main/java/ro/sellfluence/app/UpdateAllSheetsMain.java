@@ -5,6 +5,7 @@ import ro.sellfluence.apphelper.TransferFromEmagToSheets;
 import ro.sellfluence.emagapi.EmagApi;
 
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.googleapi.Credentials.tokenStorePath;
 
 public class UpdateAllSheetsMain {
@@ -12,7 +13,7 @@ public class UpdateAllSheetsMain {
         EmagApi.setAPILogLevel(WARNING);
         try {
             new TransferFromEmagToSheets(
-                    "sellfluence1",
+                    defaultGoogleApp,
                     "2025 - Date produse & angajati",
                     "Cons. Date Prod."
             )
