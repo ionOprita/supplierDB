@@ -28,7 +28,7 @@ public record VoucherSplit(
                && Objects.equals(offered_by, that.offered_by)
                && voucher_id.equals(that.voucher_id)
                && Objects.equals(vat_value, that.vat_value)
-               && voucher_name.equals(that.voucher_name);
+               && Objects.equals(voucher_name, that.voucher_name);
     }
 
     public static boolean vslEquals(List<VoucherSplit> l1, List<VoucherSplit> l2) {
