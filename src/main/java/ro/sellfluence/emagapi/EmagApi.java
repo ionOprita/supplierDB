@@ -44,7 +44,7 @@ import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
-import static ro.sellfluence.sheetSupport.Conversions.isoLikeLocalDateTime;
+import static ro.sellfluence.sheetSupport.Conversions.isoLikeLocalDateTimeWithoutFractionalSeconds;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 
 /**
@@ -81,7 +81,7 @@ public class EmagApi {
                     if (time == null) {
                         writer.nullValue();
                     } else {
-                        writer.value(isoLikeLocalDateTime.format(time));
+                        writer.value(isoLikeLocalDateTimeWithoutFractionalSeconds.format(time));
                     }
                 }
 

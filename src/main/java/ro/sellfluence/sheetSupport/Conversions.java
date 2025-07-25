@@ -41,6 +41,7 @@ public class Conversions {
      * but does separate date and time with a blank character instead of 'T'.
      */
     public static final DateTimeFormatter isoLikeLocalDateTime;
+    public static final DateTimeFormatter isoLikeLocalDateTimeWithoutFractionalSeconds;
     private static final String emagFBEString = "eMAG FBE";
     private static final String emagNonFBEString = "eMAG NON-FBE";
     private static final String statusString = "Status:";
@@ -48,6 +49,16 @@ public class Conversions {
 
     static {
         isoLikeLocalDateTime = new DateTimeFormatterBuilder().parseCaseInsensitive().append(ISO_LOCAL_DATE).appendLiteral(' ').append(ISO_LOCAL_TIME).toFormatter(Locale.ENGLISH);
+        isoLikeLocalDateTimeWithoutFractionalSeconds = new DateTimeFormatterBuilder().parseCaseInsensitive()
+                .append(ISO_LOCAL_DATE)
+                .appendLiteral(' ')
+                .appendValue(HOUR_OF_DAY, 2)
+                .appendLiteral(':')
+                .appendValue(MINUTE_OF_HOUR, 2)
+                .optionalStart()
+                .appendLiteral(':')
+                .appendValue(SECOND_OF_MINUTE, 2)
+                .toFormatter(Locale.ENGLISH);
         Map<Long, String> dayOfWeekEN = new HashMap<>();
         dayOfWeekEN.put(1L, "Mon");
         dayOfWeekEN.put(2L, "Tue");
