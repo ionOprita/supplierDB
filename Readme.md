@@ -1,4 +1,4 @@
-# Emag -> Google Drive
+# eMAG -> Google Drive
 
 ## Run the bot
 
@@ -7,9 +7,18 @@ To start the application, run the class from this path:
 src/main/java/ro/sellfluence/app/EmagBot.java
 ```
 
-# Emag Mirror to DB
+It accepts an optional argument `--db=dbAlias` which specifies the database to use.
+If no database is specified, the default database is used.
 
-[PostgreSQL](https://www.postgresql.org/) is used as the database system the emag mirror DB.
+The following arguments are known to EmagDBApp and passed from EmagBot to it:
+
+- `--refetch-some` Use the probabilistic refetching algorithm.
+- `--refetch-all` Refetch everything from the past 3 years. This takes about 10-12 hours to run.
+- `--nofetch` Do not fetch anything from eMAG.
+
+# eMAG Mirror to DB
+
+[PostgreSQL](https://www.postgresql.org/) is used as the database system the eMAG mirror DB.
 The most important commands for setup, backup etc. are listed below.
 For further information see the [PostgreSQL documentation](https://www.postgresql.org/docs/current/index.html).
 
