@@ -1,6 +1,7 @@
 package ro.sellfluence.db;
 
 import ch.claudio.db.DB;
+import org.jetbrains.annotations.NotNull;
 import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.db.EmagFetchLog.EmagFetchHistogram;
 import ro.sellfluence.db.ProductTable.ProductInfo;
@@ -8,6 +9,7 @@ import ro.sellfluence.db.versions.SetupDB;
 import ro.sellfluence.emagapi.CancellationReason;
 import ro.sellfluence.emagapi.LockerDetails;
 import ro.sellfluence.emagapi.OrderResult;
+import ro.sellfluence.emagapi.Product;
 import ro.sellfluence.emagapi.RMAResult;
 import ro.sellfluence.sheetSupport.Conversions;
 import ro.sellfluence.support.Logs;
@@ -107,7 +109,7 @@ public class EmagMirrorDB {
     /**
      * Return all orders that are open, grouped by the vendor.
      *
-     * @return Map from the emag account to new orders associated with that account.
+     * @return Map from the eMAG account to new orders associated with that account.
      * @throws SQLException on database issues.
      */
     public Map<String, List<String>> readOrderIdForOpenOrdersByVendor() throws SQLException {
@@ -150,6 +152,7 @@ public class EmagMirrorDB {
     public List<EmagFetchHistogram> readFetchHistogram() throws SQLException {
         return database.readTX(EmagFetchLog::getFetchHistogram);
     }
+
     /**
      * Read orders in a format that is useful to update the employee sheets.
      *
@@ -180,9 +183,9 @@ public class EmagMirrorDB {
 
     public void addEmagLog(String account, LocalDate date, LocalDateTime fetchTime, String error) throws SQLException {
         database.writeTX(db -> {
-            var insertedRows = insertEmagLog(db, account, date,fetchTime, error);
+            var insertedRows = insertEmagLog(db, account, date, fetchTime, error);
             if (insertedRows == 0) {
-                updateEmagLog(db, account, date,fetchTime, error);
+                updateEmagLog(db, account, date, fetchTime, error);
             }
             return "";
         });
@@ -535,6 +538,19 @@ public class EmagMirrorDB {
         });
     }
 
+    public Map<String, List<Product>> readAllProducts() throws SQLException {
+        return database.readTX(EmagOrder::selectAllProduct);
+    }
+
+    public HashMap<String, List<OrderResult>> readAllOrders(Map<String, List<Product>> allProducts, Map<UUID, String> allVendors) throws SQLException {
+        return database.readTX(db -> EmagOrder.selectAllOrders(db, allProducts, allVendors));
+    }
+
+    public @NotNull Map<UUID, String> readVendors() throws SQLException {
+        return database.readTX(Vendor::selectAllVendors);
+    }
+
+
     private static boolean computeGMV(Connection db) throws SQLException {
         var products = getProductCodes(db);
         for (String productCode : products) {
@@ -594,7 +610,7 @@ public class EmagMirrorDB {
                             rs.getString("id"),
                             rs.getInt("quantity"),
                             priceWithVAT,
-                            rs.getInt("legal_entity")>0,
+                            rs.getInt("legal_entity") > 0,
                             toLocalDateTime(rs.getTimestamp("date")),
                             rs.getString("product_name"),
                             rs.getString("part_number_key"),

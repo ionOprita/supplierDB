@@ -167,7 +167,7 @@ public class DB {
      */
     private void createVersionTable(Connection db) throws SQLException {
         try (var s = db.prepareStatement(
-                "CREATE TABLE %s (%s integer, %s timestamp with time zone)".formatted(versionTable, versionColumn, dateColumn)
+                "CREATE TABLE %s (%s integer PRIMARY KEY, %s timestamp with time zone)".formatted(versionTable, versionColumn, dateColumn)
         )) {
             s.execute();
         }

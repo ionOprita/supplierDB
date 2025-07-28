@@ -7,6 +7,8 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
 
@@ -91,6 +93,28 @@ public class Vendor {
             }
         }
         return toLocalDateTime(timestamp);
+    }
+
+    /**
+     * Generate a map from vendor UUID to vendor name.
+     *
+     * @param db database connection.
+     * @return map.
+     * @throws SQLException if a database access error occurs.
+     */
+    static @NotNull Map<UUID, String> selectAllVendors(Connection db) throws SQLException {
+        var vendors = new HashMap<UUID, String>();
+        try (var s = db.prepareStatement("SELECT id, vendor_name FROM vendor")) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    vendors.put(
+                            rs.getObject("id", UUID.class),
+                            rs.getString("vendor_name")
+                    );
+                }
+            }
+        }
+        return vendors;
     }
 
     /**

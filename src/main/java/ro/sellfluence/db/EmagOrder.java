@@ -16,7 +16,9 @@ import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Scanner;
 import java.util.UUID;
@@ -30,6 +32,7 @@ import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 public class EmagOrder {
 
     private static final Scanner scanner = new Scanner(System.in);
+
 
     /**
      * Record for reporting the result of inserting an order.
@@ -493,6 +496,110 @@ public class EmagOrder {
             }
         }
         return product;
+    }
+
+    public static Map<String, List<Product>> selectAllProduct(Connection db) throws SQLException {
+        Map<String, List<Product>> productsBySurrogate = new HashMap<>();
+        try (var s = db.prepareStatement("""
+                SELECT id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties, serial_numbers, emag_order_surrogate_id
+                FROM product_in_order
+                """)) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                   var product = new Product(rs.getInt("id"),
+                            rs.getInt("product_id"),
+                            rs.getInt("mkt_id"),
+                            rs.getString("name"),
+                            null,
+                            rs.getInt("status"),
+                            rs.getString("ext_part_number"),
+                            rs.getString("part_number"),
+                            rs.getString("part_number_key"),
+                            rs.getString("currency"),
+                            rs.getString("vat"),
+                            rs.getInt("retained_amount"),
+                            rs.getInt("quantity"),
+                            rs.getInt("initial_qty"),
+                            rs.getInt("storno_qty"),
+                            rs.getInt("reversible_vat_charging"),
+                            rs.getBigDecimal("sale_price"),
+                            rs.getBigDecimal("original_price"),
+                            toLocalDateTime(rs.getTimestamp("created")),
+                            toLocalDateTime(rs.getTimestamp("modified")),
+                            Arrays.asList(rs.getString("details").split("\\n")),
+                            Arrays.asList(rs.getString("recycle_warranties").split("\\n")),
+                            null,
+                            rs.getString("serial_numbers"));
+                    productsBySurrogate
+                            .computeIfAbsent(
+                                    rs.getString("emag_order_surrogate_id"),
+                                    k -> new ArrayList<>()
+                            )
+                            .add(product);
+
+                }
+            }
+        }
+        return productsBySurrogate;
+    }
+
+    public static HashMap<String, List<OrderResult>> selectAllOrders(Connection db, Map<String, List<Product>> allProducts, Map<UUID, String> allVendors) throws SQLException {
+        var orders = new HashMap<String, List<OrderResult>>();
+        try (var s = db.prepareStatement("SELECT * FROM emag_order")) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    var surrogateId = rs.getInt("surrogate_id");
+                    var vendorName = allVendors.get(rs.getObject("vendor_id", UUID.class));
+                    var products = allProducts.get(surrogateId);
+                    List<VoucherSplit>
+                            shipping_tax_voucher_split = null;
+                    Customer
+                            customer = null;
+                    List<Attachment>
+                            attachments = null;
+                    List<Voucher>
+                            vouchers = null;
+                    List<Flag>
+                            flags = null;
+                    List<String>
+                            enforcedVendorCourierAccounts = null;
+                    var order = new OrderResult(
+                            vendorName, rs.getString("id"), rs.getInt("status"), rs.getInt("is_complete"), rs.getInt("type"), rs.getString("payment_mode"),
+                            rs.getInt("payment_mode_id"), rs.getString("delivery_payment_mode"), rs.getString("delivery_mode"), rs.getString("observation"),
+                            new LockerDetails(rs.getString("details_id"), null, 0, null), // Assuming LockerDetails has a constructor that takes locker_id
+                            toLocalDateTime(rs.getTimestamp("date")), rs.getInt("payment_status"), rs.getBigDecimal("cashed_co"), rs.getBigDecimal("cashed_cod"),
+                            rs.getBigDecimal("shipping_tax"),
+                            shipping_tax_voucher_split, customer, products, attachments, vouchers,
+                            rs.getBoolean("is_storno"),
+                            rs.getBigDecimal("refunded_amount"),
+                            rs.getString("refund_status"),
+                            toLocalDateTime(rs.getTimestamp("maximum_date_for_shipment")),
+                            toLocalDateTime(rs.getTimestamp("finalization_date")),
+                            rs.getString("parent_id"),
+                            rs.getString("detailed_payment_method"),
+                            Arrays.asList(rs.getString("proforms").split("\n")), // Split the string back into a list
+                            rs.getString("cancellation_request"),
+                            rs.getInt("has_editable_products"),
+                            new CancellationReason(rs.getObject("cancellation_reason", Integer.class),
+                                    rs.getString("cancellation_reason_text")),
+                            rs.getObject("late_shipment", Integer.class), // Assuming late_shipment is a Timestamp
+                            flags, rs.getInt("emag_club"),
+                            rs.getInt("weekend_delivery"),
+                            toLocalDateTime(rs.getTimestamp("created")),
+                            toLocalDateTime(rs.getTimestamp("modified")),
+                            enforcedVendorCourierAccounts
+                    );
+                    orders
+                            .computeIfAbsent(
+                                    order.id(),
+                                    k -> new ArrayList<>()
+                            )
+                            .add(order);
+
+                }
+            }
+        }
+        return orders;
     }
 
     private static OrderResult selectOrder(Connection db,
