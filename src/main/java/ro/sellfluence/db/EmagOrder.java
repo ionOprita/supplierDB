@@ -498,8 +498,8 @@ public class EmagOrder {
         return product;
     }
 
-    public static Map<String, List<Product>> selectAllProduct(Connection db) throws SQLException {
-        Map<String, List<Product>> productsBySurrogate = new HashMap<>();
+    public static Map<Integer, List<Product>> selectAllProduct(Connection db) throws SQLException {
+        Map<Integer, List<Product>> productsBySurrogate = new HashMap<>();
         try (var s = db.prepareStatement("""
                 SELECT id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties, serial_numbers, emag_order_surrogate_id
                 FROM product_in_order
@@ -532,7 +532,7 @@ public class EmagOrder {
                             rs.getString("serial_numbers"));
                     productsBySurrogate
                             .computeIfAbsent(
-                                    rs.getString("emag_order_surrogate_id"),
+                                    rs.getInt("emag_order_surrogate_id"),
                                     k -> new ArrayList<>()
                             )
                             .add(product);
@@ -543,13 +543,18 @@ public class EmagOrder {
         return productsBySurrogate;
     }
 
-    public static HashMap<String, List<OrderResult>> selectAllOrders(Connection db, Map<String, List<Product>> allProducts, Map<UUID, String> allVendors) throws SQLException {
-        var orders = new HashMap<String, List<OrderResult>>();
+    public record ExtendedOrder(OrderResult order, UUID vendorId, int surrogateId) {
+
+    }
+
+    public static HashMap<String, List<ExtendedOrder>> selectAllOrders(Connection db, Map<Integer, List<Product>> allProducts, Map<UUID, String> allVendors) throws SQLException {
+        var orders = new HashMap<String, List<ExtendedOrder>>();
         try (var s = db.prepareStatement("SELECT * FROM emag_order")) {
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     var surrogateId = rs.getInt("surrogate_id");
-                    var vendorName = allVendors.get(rs.getObject("vendor_id", UUID.class));
+                    var vendorId = rs.getObject("vendor_id", UUID.class);
+                    var vendorName = allVendors.get(vendorId);
                     var products = allProducts.get(surrogateId);
                     List<VoucherSplit>
                             shipping_tax_voucher_split = null;
@@ -594,8 +599,7 @@ public class EmagOrder {
                                     order.id(),
                                     k -> new ArrayList<>()
                             )
-                            .add(order);
-
+                            .add(new ExtendedOrder(order, vendorId, surrogateId));
                 }
             }
         }

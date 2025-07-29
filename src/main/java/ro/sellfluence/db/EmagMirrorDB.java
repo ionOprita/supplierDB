@@ -4,6 +4,7 @@ import ch.claudio.db.DB;
 import org.jetbrains.annotations.NotNull;
 import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.db.EmagFetchLog.EmagFetchHistogram;
+import ro.sellfluence.db.EmagOrder.ExtendedOrder;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.versions.SetupDB;
 import ro.sellfluence.emagapi.CancellationReason;
@@ -538,11 +539,11 @@ public class EmagMirrorDB {
         });
     }
 
-    public Map<String, List<Product>> readAllProducts() throws SQLException {
+    public Map<Integer, List<Product>> readAllProducts() throws SQLException {
         return database.readTX(EmagOrder::selectAllProduct);
     }
 
-    public HashMap<String, List<OrderResult>> readAllOrders(Map<String, List<Product>> allProducts, Map<UUID, String> allVendors) throws SQLException {
+    public HashMap<String, List<ExtendedOrder>> readAllOrders(Map<Integer, List<Product>> allProducts, Map<UUID, String> allVendors) throws SQLException {
         return database.readTX(db -> EmagOrder.selectAllOrders(db, allProducts, allVendors));
     }
 

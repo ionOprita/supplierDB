@@ -56,6 +56,48 @@ public record Product(
         original_price = UsefulMethods.round(original_price);
     }
 
+    /**
+     * Copy constructor.
+     *
+     * @param other product to duplicate.
+     */
+    public Product(Product other) {
+        this(
+                other.id(),
+                other.product_id(),
+                other.mkt_id(),
+                other.name(),
+                other.product_voucher_split() == null
+                        ? new ArrayList<>()
+                        : new ArrayList<>(other.product_voucher_split()),
+                other.status(),
+                other.ext_part_number(),
+                other.part_number(),
+                other.part_number_key(),
+                other.currency(),
+                other.vat(),
+                other.retained_amount(),
+                other.quantity(),
+                other.initial_qty(),
+                other.storno_qty(),
+                other.reversible_vat_charging(),
+                other.sale_price(),
+                other.original_price(),
+                other.created(),
+                other.modified(),
+                other.details() == null
+                        ? new ArrayList<>()
+                        : new ArrayList<>(other.details()),
+                other.recycle_warranties() == null
+                        ? new ArrayList<>()
+                        : new ArrayList<>(other.recycle_warranties()),
+                other.attachments() == null
+                        ? new ArrayList<>()
+                        : new ArrayList<>(other.attachments()),
+                other.serial_numbers()
+        );
+    }
+
     @Override
     public boolean equals(Object o) {
         if (!(o instanceof Product product)) return false;

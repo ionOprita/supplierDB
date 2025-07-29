@@ -49,7 +49,7 @@ public class FetchOneOrder {
         var emagCredentials = UserPassword.findAlias(vendor/*"koppelfbe"*/ /*"zoopiesolutions"*/);
         var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
         try {
-            //var response = emag.readRequest("order", Map.of("id", orderId), null, OrderResult.class);
+            var response = emag.readRequest("order", Map.of("id", orderId), null, OrderResult.class);
             var responseRet = emag.readRequest("rma", Map.of("order_id", orderId), null, RMAResult.class);
         } catch (Exception e) {
             throw new RuntimeException(e);
