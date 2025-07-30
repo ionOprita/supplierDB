@@ -51,6 +51,12 @@ Make sure each field is separated by a single TAB character.
 
 ### Backup and restore
 
+The following instructions use the command line tools.
+
+If you prefer to use pgAdmin to backup and restore your database, read the
+[Backup/Restore](https://www.pgadmin.org/docs/pgadmin4/latest/backup_and_restore.html)
+chapter in its documentation.
+
 #### Backup
 
 Create a backup of the database using the command (will contain date and hour in name)
@@ -116,10 +122,15 @@ Once the test database is not needed anymore, drop it:
 ```
 psql -c "DROP DATABASE emag_test"
 ```
+#### Transfer from a remote database to a local (test) database
 
-If you prefer to use pgAdmin to backup and restore your database read the
-[Backup/Restore](https://www.pgadmin.org/docs/pgadmin4/latest/backup_and_restore.html)
-chapter in its documentation.
+```
+pwremote=$(grep emagOprita $HOME/Secrets/dbpass.txt | cut -f 4)
+pwlocal=$(grep emag_test $HOME/Secrets/dbpass.txt | cut -f 4)
+dumpfile=/tmp/db_remote_$(date +%Y-%m-%dT%H).dump
+PGPASSWORD=$pwremote pgdump -v -Fc -h 86.124.84.214 -U emag -d emag -f "$dumpfile"
+PGPASSWORD=$pwlocale pg_restore -v -d emag_test -1 -c -O --if-exists --role=emag_test "$dumpfile"
+```
 
 #### Inspect the dump file
 
@@ -130,7 +141,7 @@ pg_restore -f - db_emag_2025-05-15T16.dump | less
 
 To see only the DDL commands add the options `-s` aka `--schema-only`.
 
-### Drop tables for testing
+### Drop all tables for testing
 
 To quickly drop all tables for testing, execute this:
 
