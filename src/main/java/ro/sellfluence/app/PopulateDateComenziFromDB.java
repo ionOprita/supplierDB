@@ -24,6 +24,7 @@ import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.sheetSupport.Conversions.isEMAGFbe;
+import static ro.sellfluence.support.UsefulMethods.sheetToLocalDate;
 
 /**
  * Read orders from our database mirror and put them in a sheet.
@@ -99,7 +100,7 @@ public class PopulateDateComenziFromDB {
         var columnNumber = 1;
         for (Object it : monthsInSheet) {
             if (it instanceof BigDecimal dateSerial) {
-                LocalDate localDate = fromExcelSerialBigDecimal(dateSerial);
+                LocalDate localDate = sheetToLocalDate(dateSerial);
                 if (YearMonth.from(localDate).equals(month)) {
                     columnIdentifier = toColumnName(columnNumber);
                 }
@@ -251,24 +252,4 @@ public class PopulateDateComenziFromDB {
 
         return columnName.toString();
     }
-
-    /**
-     * Reference date of Google Sheets serial numbers.
-     */
-    private static final LocalDate EXCEL_EPOCH = LocalDate.of(1899, 12, 30);
-
-    /**
-     * Convert a Google Sheets serial number to a LocalDate.
-     *
-     * @param serial serial number as read from the spreadsheet.
-     * @return LocalDate.
-     */
-    public static LocalDate fromExcelSerialBigDecimal(BigDecimal serial) {
-        if (serial == null) {
-            return null;
-        }
-        long serialDays = serial.longValue();
-        return EXCEL_EPOCH.plusDays(serialDays);
-    }
-
 }

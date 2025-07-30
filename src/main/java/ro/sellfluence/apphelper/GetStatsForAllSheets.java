@@ -3,6 +3,7 @@ package ro.sellfluence.apphelper;
 import ro.sellfluence.googleapi.SheetsAPI;
 import ro.sellfluence.support.Logs;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static java.util.logging.Level.INFO;
+import static ro.sellfluence.support.UsefulMethods.sheetToLocalDate;
 
 /**
  * Retrieve the relevant information from the monthly statistic page for all employee sheets.
@@ -67,13 +69,12 @@ public class GetStatsForAllSheets {
                                     .collect(Collectors.joining("\n ", "%s setari PNK mapping:\n ".formatted(spreadSheet.getSpreadSheetName()), "\n")));
                             // This reads from the statistici/luna sheet so that we can get the date of the last entry.
                             List<Statistic> statistics = spreadSheet.getMultipleColumns(statisticSheetName, "C", "E").stream()
-                                    .skip(6)
-                                    .filter(row -> row.getFirst() instanceof String s &&  !s.isEmpty())
+                                    .skip(7)
+                                    .filter(row -> row.getFirst() instanceof String s && !s.isEmpty() && row.get(1) instanceof BigDecimal)
                                     .map(
                                             row -> {
-                                                String pnk = (String) row.getFirst();
-                                                String dateAsString = (row.size() > 1) ? row.get(1).toString() : "";
-                                                LocalDate date = (dateAsString.isBlank()) ? LocalDate.now().minusMonths(1) : LocalDate.parse(dateAsString, sheetDateFormat);
+                                                var pnk = (String) row.getFirst();
+                                                var date = sheetToLocalDate((BigDecimal)row.get(1));
                                                 return new Statistic(
                                                         pnk,
                                                         date,

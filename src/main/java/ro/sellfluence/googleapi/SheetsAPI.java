@@ -26,6 +26,7 @@ import com.google.api.services.sheets.v4.model.RowData;
 import com.google.api.services.sheets.v4.model.UpdateProtectedRangeRequest;
 import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
+import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
@@ -40,6 +41,7 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static java.util.Objects.requireNonNull;
+import static java.util.logging.Level.INFO;
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
 /**
@@ -47,7 +49,7 @@ import static ro.sellfluence.googleapi.Credentials.getCredentials;
  */
 public class SheetsAPI {
 
-    private static final Logger logger = Logger.getLogger(SheetsAPI.class.getName());
+    private static final Logger logger = Logs.getConsoleAndFileLogger("SheetsAPI", INFO, 10, 10_000_000);
 
     public static final String COLUMNS = "COLUMNS";
     public static final String ROWS = "ROWS";
@@ -204,6 +206,47 @@ public class SheetsAPI {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public List<String> getColumnInChunks(String sheetName, String columnName, int chunkSize) {
+        List<String> allValues = new ArrayList<>();
+        int startRow = 1;
+        try {
+            while (true) {
+                int endRow = startRow + chunkSize - 1;
+                String range = "%s!%s%d:%s%d".formatted(sheetName, columnName, startRow, columnName, endRow);
+
+                List<List<Object>> values = getSheetsService()
+                        .spreadsheets()
+                        .values()
+                        .get(spreadSheetId, range)
+                        .setMajorDimension("COLUMNS")
+                        .execute()
+                        .getValues();
+
+                // If no data is returned, break
+                if (values.isEmpty() || values.get(0).isEmpty()) {
+                    break;
+                }
+
+                List<String> chunk = values.get(0).stream()
+                        .map(o -> (String) o)
+                        .collect(Collectors.toList());
+
+                allValues.addAll(chunk);
+
+                // If we got fewer than chunkSize rows, we're done
+                if (chunk.size() < chunkSize) {
+                    break;
+                }
+
+                startRow += chunkSize;
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+
+        return allValues;
     }
 
     public List<String> getRow(String sheetName, int rowNumber) {
@@ -553,8 +596,8 @@ public class SheetsAPI {
     private static HttpRequestInitializer setHttpTimeout(final HttpRequestInitializer requestInitializer) {
         return httpRequest -> {
             requestInitializer.initialize(httpRequest);
-            httpRequest.setConnectTimeout(60_000);  // 1 minute connect timeout
-            httpRequest.setReadTimeout(120_000);  // 2 minutes read timeout
+            httpRequest.setConnectTimeout(10_000);  // 10 seconds connect timeout
+            httpRequest.setReadTimeout(20_000);  // 20 seconds read timeout
         };
     }
 
