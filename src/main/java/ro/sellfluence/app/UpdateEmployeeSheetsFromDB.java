@@ -253,7 +253,7 @@ public class UpdateEmployeeSheetsFromDB {
      * @param rowsToAdd Additional rows.
      */
     private void addToSheet(String pnk, SheetsAPI sheet, String sheetName, List<List<Object>> rowsToAdd) {
-        List<String> orderIdColumn = sheet.getColumn(sheetName, "A");
+        List<String> orderIdColumn = sheet.getColumnInChunks(sheetName, "A", 1000);
         var mapOrderToColumn = new HashMap<String, List<Integer>>();
         for (var rowNumber = 0; rowNumber < orderIdColumn.size(); rowNumber++) {
             var orderId = orderIdColumn.get(rowNumber);

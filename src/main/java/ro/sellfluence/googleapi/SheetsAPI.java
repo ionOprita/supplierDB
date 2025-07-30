@@ -42,6 +42,7 @@ import java.util.stream.Collectors;
 
 import static java.util.Objects.requireNonNull;
 import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
 /**
@@ -214,8 +215,7 @@ public class SheetsAPI {
         try {
             while (true) {
                 int endRow = startRow + chunkSize - 1;
-                String range = "%s!%s%d:%s%d".formatted(sheetName, columnName, startRow, columnName, endRow);
-
+                String range = "%1$s!%2$s%3$d:%2$s%4$d".formatted(sheetName, columnName, startRow, endRow);
                 List<List<Object>> values = getSheetsService()
                         .spreadsheets()
                         .values()
@@ -225,13 +225,13 @@ public class SheetsAPI {
                         .getValues();
 
                 // If no data is returned, break
-                if (values.isEmpty() || values.get(0).isEmpty()) {
+                if (values.isEmpty() || values.getFirst().isEmpty()) {
                     break;
                 }
 
-                List<String> chunk = values.get(0).stream()
+                List<String> chunk = values.getFirst().stream()
                         .map(o -> (String) o)
-                        .collect(Collectors.toList());
+                        .toList();
 
                 allValues.addAll(chunk);
 
@@ -241,11 +241,16 @@ public class SheetsAPI {
                 }
 
                 startRow += chunkSize;
+                try {
+                    Thread.sleep(3_000);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
             }
         } catch (IOException e) {
+            logger.log(WARNING, "Error reading column %s in the sheet %s of %s (%s).".formatted(columnName, sheetName, spreadSheetName, spreadSheetId), e);
             throw new RuntimeException(e);
         }
-
         return allValues;
     }
 
@@ -290,7 +295,7 @@ public class SheetsAPI {
                 if (retryCount == 0) {
                     throw new RuntimeException("Issue in getRowsInColumnRange(%s,%s,%s)".formatted(sheetName, firstColumn, lastColumns), e);
                 }
-                logger.log(Level.WARNING, "Read error. Retrying after %d s. Retry count %d".formatted(retryDelay/1000, retryCount));
+                logger.log(WARNING, "Read error. Retrying after %d s. Retry count %d".formatted(retryDelay / 1000, retryCount));
                 try {
                     Thread.sleep(retryDelay);
                 } catch (InterruptedException ex) {
@@ -459,7 +464,7 @@ public class SheetsAPI {
                 } else if (retryCount == 0) {
                     throw new RuntimeException("Error when reading the columns %s from the sheet %s of spreadsheet %s (%s).".formatted(Arrays.toString(columns), sheetName, spreadSheetName, spreadSheetId), e);
                 }
-                logger.log(Level.WARNING, "Read error. Retrying after %d s. Retry count %d".formatted(retryDelay/1000, retryCount));
+                logger.log(WARNING, "Read error. Retrying after %d s. Retry count %d".formatted(retryDelay / 1000, retryCount));
                 try {
                     Thread.sleep(retryDelay);
                 } catch (InterruptedException ex) {

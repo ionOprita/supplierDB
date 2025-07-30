@@ -11,8 +11,11 @@ import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.logging.Level;
@@ -29,6 +32,10 @@ public class DriveAPI {
     private final String appName;
 
     private final Map<String, String> nameForId = new HashMap<>();
+
+    private record CachedDirectory(LocalDateTime lastUpdated, List<File> files) {}
+
+    CachedDirectory driveCache = null;
 
     /**
      * Initialise the drive API.
@@ -61,15 +68,19 @@ public class DriveAPI {
         try {
             var matchingFiles = new HashSet<File>();
             String pageToken = null;
-            do {
-                FileList fileList = setupDriveService().files().list().setQ("name='%s'".formatted(name)).setFields("*").setPageToken(pageToken).execute();
-                pageToken = fileList.getNextPageToken();
-                var files = fileList.getFiles();
-                files.stream()
-                        .filter(f -> name.equals(f.getName()))
-                        .forEach(matchingFiles::add);
+            if (driveCache == null || !LocalDateTime.now().minusMinutes(30).isBefore(driveCache.lastUpdated)) {
+                var allFiles = new ArrayList<File>();
+                do {
+                    FileList fileList = setupDriveService().files().list().setQ("name='%s'".formatted(name)).setFields("*").setPageToken(pageToken).execute();
+                    allFiles.addAll(fileList.getFiles());
+                    pageToken = fileList.getNextPageToken();
 
-            } while (pageToken != null);
+                } while (pageToken != null);
+                driveCache = new CachedDirectory(LocalDateTime.now(),allFiles);
+            }
+            driveCache.files.stream()
+                    .filter(f -> name.equals(f.getName()))
+                    .forEach(matchingFiles::add);
             if (matchingFiles.isEmpty()) {
                 return null;
             } else if (matchingFiles.size() == 1) {
