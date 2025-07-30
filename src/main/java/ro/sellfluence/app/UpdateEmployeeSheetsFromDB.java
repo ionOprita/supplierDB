@@ -301,7 +301,7 @@ public class UpdateEmployeeSheetsFromDB {
         }
     }
 
-    private static final int chunkSize = 100;
+    private static final int chunkSize = 50;
 
     /**
      * Split the rows into chunks of size chunkSize and call sheet.updateRange for each.
