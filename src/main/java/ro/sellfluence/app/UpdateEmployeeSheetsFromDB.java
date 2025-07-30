@@ -67,7 +67,7 @@ public class UpdateEmployeeSheetsFromDB {
     }
 
     /**
-     * The main method that will transfer new orders to the appropriate employee sheet depending on the products.
+     * This method will transfer new orders to the appropriate employee sheet depending on the products.
      *
      * @param mirrorDB database to read.
      * @throws SQLException on database errors.
@@ -173,7 +173,7 @@ public class UpdateEmployeeSheetsFromDB {
     }
 
     /**
-     * Load the mapping between PNKs and employee sheets.
+     * Load from the database the mapping between PNKs and employee sheets.
      */
     private void loadOverview(EmagMirrorDB mirrorDB) throws SQLException {
         var products = mirrorDB.readProducts();

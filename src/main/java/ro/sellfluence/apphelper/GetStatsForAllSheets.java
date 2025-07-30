@@ -23,7 +23,7 @@ public class GetStatsForAllSheets {
 
     private static final Logger logger = Logs.getFileLogger("GetStatsForAllSheets", INFO, 10, 1_000_000);
 
-    public record Statistic(int index, String produs, String pnk, LocalDate lastUpdate, String sheetName) {
+    public record Statistic(String pnk, LocalDate lastUpdate, String sheetName) {
     }
 
     private static final DateTimeFormatter sheetDateFormat = DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -47,6 +47,7 @@ public class GetStatsForAllSheets {
                 .flatMap(sheetToPNKList -> {
                             var spreadSheet = sheetToPNKList.getKey();
                             var pnkOnSheet = sheetToPNKList.getValue();
+                            // This reads the setari sheet so that we can map from PNK to the tab within the spreadsheet.
                             logger.log(INFO, () -> "Read from %s %s columns C and E\n ".formatted(spreadSheet.getSpreadSheetName(), setariSheetName));
                             var pnkToSheetName = spreadSheet.getMultipleColumns(setariSheetName, "C", "E").stream()
                                     .skip(2)
@@ -64,17 +65,16 @@ public class GetStatsForAllSheets {
                                     .map(e -> "%s -> %s".formatted(e.getKey(), e.getValue()))
                                     .sorted()
                                     .collect(Collectors.joining("\n ", "%s setari PNK mapping:\n ".formatted(spreadSheet.getSpreadSheetName()), "\n")));
-                            List<Statistic> statistics = spreadSheet.getRowsInColumnRange(statisticSheetName, "A", "E").stream()
+                            // This reads from the statistici/luna sheet so that we can get the date of the last entry.
+                            List<Statistic> statistics = spreadSheet.getMultipleColumns(statisticSheetName, "C", "E").stream()
                                     .skip(6)
-                                    .filter(row -> row.size() > 2 && row.getFirst().matches("\\d+") && !row.get(2).isEmpty())
+                                    .filter(row -> row.getFirst() instanceof String s &&  !s.isEmpty())
                                     .map(
                                             row -> {
-                                                String pnk = row.get(2);
-                                                String dateAsString = (row.size() > 4) ? row.get(4) : "";
+                                                String pnk = (String) row.getFirst();
+                                                String dateAsString = (row.size() > 1) ? row.get(1).toString() : "";
                                                 LocalDate date = (dateAsString.isBlank()) ? LocalDate.now().minusMonths(1) : LocalDate.parse(dateAsString, sheetDateFormat);
                                                 return new Statistic(
-                                                        Integer.parseInt(row.getFirst()),
-                                                        row.get(1),
                                                         pnk,
                                                         date,
                                                         pnkToSheetName.get(pnk)
@@ -84,7 +84,7 @@ public class GetStatsForAllSheets {
                                     .filter(it -> pnkOnSheet.contains(it.pnk))
                                     .toList();
                             logger.log(INFO, () -> statistics.stream()
-                                    .map(st -> "%s %s".formatted(st.pnk, st.produs))
+                                    .map(st -> "%s".formatted(st.pnk))
                                     .collect(Collectors.joining("\n ", "%s statistics PNK found\n ".formatted(spreadSheet.getSpreadSheetName()), "\n")));
                             return statistics.stream();
                         }
