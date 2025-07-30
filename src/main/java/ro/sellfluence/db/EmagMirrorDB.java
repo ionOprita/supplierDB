@@ -314,7 +314,9 @@ public class EmagMirrorDB {
                 try (var rs = s.executeQuery()) {
                     while (rs.next()) {
                         var priceWithoutVAT = rs.getBigDecimal(6);
-                        var priceWithVAT = priceWithoutVAT.multiply(BigDecimal.valueOf(1.19)); // TODO: Proper handling of VAT required
+                        var vatRate = new BigDecimal(rs.getString("vat"));
+                        var vat = priceWithoutVAT.multiply(vatRate);
+                        var priceWithVAT = priceWithoutVAT.add(vat);
                         String customerName = rs.getString(8);
                         boolean isFBE = rs.getBoolean(15);
                         String modPlata = rs.getString(21);
@@ -462,7 +464,8 @@ public class EmagMirrorDB {
                               c.billing_phone,
                               c.code,
                               o.observation,
-                              pi.message_keyword
+                              pi.message_keyword,
+                              p.vat
                             FROM emag_order as o
                             LEFT JOIN customer as c
                             ON o.customer_id = c.id
@@ -476,7 +479,9 @@ public class EmagMirrorDB {
                 try (var rs = s.executeQuery()) {
                     while (rs.next()) {
                         var priceWithoutVAT = rs.getBigDecimal(6);
-                        var priceWithVAT = priceWithoutVAT.multiply(BigDecimal.valueOf(1.19)); // TODO: Proper handling of VAT required
+                        var vatRate = new BigDecimal(rs.getString("vat"));
+                        var vat = priceWithoutVAT.multiply(vatRate);
+                        var priceWithVAT = priceWithoutVAT.add(vat);
                         String customerName = rs.getString(8);
                         var row = Arrays.<Object>asList(rs.getString(1), // id
                                 rs.getString(2), // company name
