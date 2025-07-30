@@ -35,7 +35,7 @@ public class DriveAPI {
 
     private record CachedDirectory(LocalDateTime lastUpdated, List<File> files) {}
 
-    CachedDirectory driveCache = null;
+    private CachedDirectory driveCache = null;
 
     /**
      * Initialise the drive API.
@@ -71,12 +71,12 @@ public class DriveAPI {
             if (driveCache == null || !LocalDateTime.now().minusMinutes(30).isBefore(driveCache.lastUpdated)) {
                 var allFiles = new ArrayList<File>();
                 do {
-                    FileList fileList = setupDriveService().files().list().setQ("name='%s'".formatted(name)).setFields("*").setPageToken(pageToken).execute();
+                    FileList fileList = setupDriveService().files().list()/*.setQ("name='%s'".formatted(name))*/.setFields("*").setPageToken(pageToken).execute();
                     allFiles.addAll(fileList.getFiles());
                     pageToken = fileList.getNextPageToken();
 
                 } while (pageToken != null);
-                driveCache = new CachedDirectory(LocalDateTime.now(),allFiles);
+                driveCache = new CachedDirectory(LocalDateTime.now(), allFiles);
             }
             driveCache.files.stream()
                     .filter(f -> name.equals(f.getName()))
