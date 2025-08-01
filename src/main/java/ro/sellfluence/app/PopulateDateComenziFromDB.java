@@ -59,6 +59,11 @@ public class PopulateDateComenziFromDB {
         System.out.println("Update product table");
         PopulateProductsTableFromSheets.updateProductTable(mirrorDB);
         var sheet = SheetsAPI.getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
+        if (sheet == null) {
+            throw new RuntimeException("Could not find the spreadsheet %s".formatted(spreadSheetName));
+        }
+        System.out.println("--- Update date sheet ----------------------");
+        sheet.updateRange(dateSheetName, List.of(List.of("Order ID", "Vendor", "Product", "Quantity", "Price", "Date")));
         System.out.println("--- Update GMVs --------------------------");
         updateGMVs(mirrorDB, sheet);
         System.out.println("--- Update orders ------------------------");
@@ -117,11 +122,11 @@ public class PopulateDateComenziFromDB {
             rowNumber++;
             var productInfos = products.get(productName);
             ProductInfo productInfo;
-            if (productInfos!=null && productInfos.size()>1) {
-                throw new RuntimeException("More than one product matches "+productName+" I cannot properly associate it to either of "+productInfos);
+            if (productInfos != null && productInfos.size() > 1) {
+                throw new RuntimeException("More than one product matches " + productName + ". I cannot properly associate it with either of " + productInfos);
             }
-            if (productInfos==null || productInfos.isEmpty()) {
-                logger.log(WARNING,"No entry found for the product "+productName+". Until you update the table, no GMV is computed for this product.");
+            if (productInfos == null || productInfos.isEmpty()) {
+                logger.log(WARNING, "No entry found for the product " + productName + ". Until you update the table, no GMV is computed for this product.");
             } else {
                 productInfo = productInfos.getFirst();
 
@@ -150,9 +155,9 @@ public class PopulateDateComenziFromDB {
                 }
             }
         }
-        if (startRow!=null) {
+        if (startRow != null) {
             sheet.updateRange(
-                    "'%s'!%s%d:%s%d".formatted(gmvSheetName, columnIdentifier, startRow, columnIdentifier, startRow + gmvColumn.size() -1),
+                    "'%s'!%s%d:%s%d".formatted(gmvSheetName, columnIdentifier, startRow, columnIdentifier, startRow + gmvColumn.size() - 1),
                     gmvColumn.stream().map(it -> {
                         var o = it != null ? (Object) it : (Object) "";
                         return List.of(o);
@@ -203,18 +208,18 @@ public class PopulateDateComenziFromDB {
      */
     private static List<List<List<Object>>> filterOutExisting(List<List<List<Object>>> groupedRowsFromDB, List<List<Object>> sheetData) {
         var sheetOrders = simplify(sheetData);
-     //   var lastDateTime = toLocalDateTime((String) sheetData.getLast().getFirst());
+        //   var lastDateTime = toLocalDateTime((String) sheetData.getLast().getFirst());
         return groupedRowsFromDB.stream()
                 .filter(groupedRow -> {
-            var order_id = (String) groupedRow.get(0).get(1);
-            var vendor = Vendor.fromSheet((String) groupedRow.get(1).get(0), isEMAGFbe((String) groupedRow.get(1).get(1)));
-            var productName = (String) groupedRow.get(0).get(5);
-            if (productName == null || productName.isBlank()) {
-                throw new RuntimeException("Could not find the product name for order %s (%s)".formatted(order_id, vendor.name()));
-            }
-            var orderLine = new OrderLine(order_id, /*vendor,*/ productName);
-            return  !sheetOrders.contains(orderLine);
-        }).toList();
+                    var order_id = (String) groupedRow.get(0).get(1);
+                    var vendor = Vendor.fromSheet((String) groupedRow.get(1).get(0), isEMAGFbe((String) groupedRow.get(1).get(1)));
+                    var productName = (String) groupedRow.get(0).get(5);
+                    if (productName == null || productName.isBlank()) {
+                        throw new RuntimeException("Could not find the product name for order %s (%s)".formatted(order_id, vendor.name()));
+                    }
+                    var orderLine = new OrderLine(order_id, /*vendor,*/ productName);
+                    return !sheetOrders.contains(orderLine);
+                }).toList();
     }
 
     /**
