@@ -95,7 +95,7 @@ public class PopulateDateComenziFromDB {
      */
     private static void updateGMVForMonth(EmagMirrorDB mirrorDB, SheetsAPI sheet, YearMonth month) throws SQLException {
         System.out.printf("Read %s from the database", month);
-        var gmvs = mirrorDB.readGMVByMonth(month);
+        var gmvsByProduct = mirrorDB.readGMVByMonth(month);
         System.out.println("Read from the spreadsheet");
         var products = mirrorDB.readProducts().stream()
                 .collect(Collectors.groupingBy(ProductInfo::name));
@@ -127,6 +127,7 @@ public class PopulateDateComenziFromDB {
             }
             if (productInfos == null || productInfos.isEmpty()) {
                 logger.log(WARNING, "No entry found for the product " + productName + ". Until you update the table, no GMV is computed for this product.");
+                gmvColumn.add(null);
             } else {
                 productInfo = productInfos.getFirst();
 
@@ -134,7 +135,7 @@ public class PopulateDateComenziFromDB {
                 if (startRow == null && productInfo != null) {
                     startRow = rowNumber;
                 }
-                var gmv = gmvs.remove(productName);
+                var gmv = gmvsByProduct.remove(productName);
                 var retracted = productInfo != null && productInfo.retracted();
                 var continueToSell = productInfo != null && productInfo.continueToSell();
                 if (continueToSell && retracted) {
@@ -156,18 +157,19 @@ public class PopulateDateComenziFromDB {
             }
         }
         if (startRow != null) {
+            var values = gmvColumn.stream().map(it -> {
+                var o = it != null ? (Object) it : (Object) "";
+                return List.of(o);
+            }).toList();
             sheet.updateRange(
                     "'%s'!%s%d:%s%d".formatted(gmvSheetName, columnIdentifier, startRow, columnIdentifier, startRow + gmvColumn.size() - 1),
-                    gmvColumn.stream().map(it -> {
-                        var o = it != null ? (Object) it : (Object) "";
-                        return List.of(o);
-                    }).toList()
+                    values
             );
         } else {
             logger.log(WARNING, "Could not add GMV because no products are found in the sheet.");
         }
-        if (!gmvs.isEmpty()) {
-            logger.log(WARNING, "Could not add products %s because lines for them are missing in the sheet.".formatted(gmvs.keySet()));
+        if (!gmvsByProduct.isEmpty()) {
+            logger.log(WARNING, "Could not add products %s because lines for them are missing in the sheet.".formatted(gmvsByProduct.keySet()));
         }
     }
 

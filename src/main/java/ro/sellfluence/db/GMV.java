@@ -43,7 +43,7 @@ public class GMV {
      *
      * @param db database connection.
      * @param month for which to retrieve the GMV values.
-     * @return map, which associates each product with its GMV value.
+     * @return map, which associates each product name with its GMV value.
      * @throws SQLException on database error.
      */
     static Map<String, BigDecimal> getGMVByMonth(Connection db, YearMonth month) throws SQLException {
@@ -90,11 +90,6 @@ public class GMV {
         var stornoGMV = gmvByMonth.getOrDefault(yearMonthMonth, BigDecimal.ZERO);
         stornoGMV = stornoGMV.subtract(storno.price().multiply(BigDecimal.valueOf(storno.stornoQuantity())));
         gmvByMonth.put(yearMonthMonth, stornoGMV);
-    }
-
-    private static void singleOrderWithSameProductTwice(HashMap<YearMonth, BigDecimal> gmvByMonth, POInfo finalized, POInfo storno) {
-        addToGMV(gmvByMonth, YearMonth.from(finalized.orderDate()),finalized);
-        addToGMV(gmvByMonth, YearMonth.from(storno.orderDate()), storno);
     }
 
     private static void singleProductWithFinalizedAndStorno(HashMap<YearMonth, BigDecimal> gmvByMonth, POInfo finalized, POInfo storno) {
