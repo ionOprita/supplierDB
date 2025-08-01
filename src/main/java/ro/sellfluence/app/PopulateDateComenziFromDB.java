@@ -157,7 +157,7 @@ public class PopulateDateComenziFromDB {
             }
         }
         if (startRow != null) {
-            var values = gmvColumn.stream().map(it -> {
+            var values = gmvColumn.stream().skip(startRow-1).map(it -> {
                 var o = it != null ? (Object) it : (Object) "";
                 return List.of(o);
             }).toList();
