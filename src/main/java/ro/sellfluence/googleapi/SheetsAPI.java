@@ -36,7 +36,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -202,7 +201,9 @@ public class SheetsAPI {
     public List<String> getColumn(String sheetName, String columnName) {
         try {
             var range = "%1$s!%2$s:%2$s".formatted(sheetName, columnName);
-            var result = getSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(COLUMNS).execute().getValues().getFirst();
+            var command = getSheetsService().spreadsheets().values().get(spreadSheetId, range).setMajorDimension(COLUMNS);
+            var response = repeatCellRequest(4,"getColumn(%s,%s)".formatted(sheetName, columnName), () -> command.execute());
+            var result = response.getValues().getFirst();
             return result.stream().map(o -> (String) o).toList();
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -411,10 +412,53 @@ public class SheetsAPI {
         updateList.add(request);
         var body = new BatchUpdateSpreadsheetRequest().setRequests(updateList);
         try {
-            return getSheetsService().spreadsheets().batchUpdate(spreadSheetId, body).execute();
+            var batchUpdate = getSheetsService().spreadsheets().batchUpdate(spreadSheetId, body);
+            return repeatCellRequest(
+                    4,
+                    "formatAsCheckboxes(%s,%d,%d,%d,%d)".formatted(spreadSheetId,startColumn,endColumn,startRow,endRow),
+                    batchUpdate::execute
+            );
         } catch (IOException cause) {
             throw new RuntimeException("Issue in updateRanges for sheet %s".formatted(spreadSheetName), cause);
         }
+    }
+
+    @FunctionalInterface
+    public interface Caller<T> {
+
+        /**
+         * Performs the call.
+         *
+         * @return a result
+         * @throws IOException if an I/O error occurs.
+         */
+        T execute() throws IOException;
+    }
+
+    private <T> T repeatCellRequest(int maxRepetition, String callerDescription, Caller<T> caller) {
+        var retryCount = maxRepetition;
+        var retryDelay = 5_000;
+        T result = null;
+        while (retryCount > 0) {
+            try {
+                result = caller.execute();
+                retryCount = 0;
+            } catch (IOException e) {
+                retryCount--;
+                if (retryCount == 0) {
+                    throw new RuntimeException("Issue in %s".formatted(callerDescription), e);
+                }
+                logger.log(WARNING, "IOException. Retrying after %d s. Retry count %d".formatted(retryDelay / 1000, retryCount));
+                try {
+                    Thread.sleep(retryDelay);
+                } catch (InterruptedException ex) {
+                    // Don't care about interrupts.
+                }
+                retryDelay*=2;
+            }
+
+        }
+        return result;
     }
 
     public static List<List<List<Object>>> transformList(List<List<List<Object>>> inputList) {

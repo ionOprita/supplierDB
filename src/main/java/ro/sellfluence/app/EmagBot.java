@@ -23,7 +23,7 @@ public class EmagBot {
         System.out.printf("Syncing the %s database.%n", dbAlias);
         EmagDBApp.fetchFromEmag(mirrorDB, arguments);
         try {
-            System.out.printf("Transfer orders from the%s database to the date comenzi sheet.%n", dbAlias);
+            System.out.printf("Transfer orders from the %s database to the date comenzi sheet.%n", dbAlias);
             PopulateDateComenziFromDB.updateSpreadsheets(mirrorDB);
         } catch (SQLException e) {
             throw new RuntimeException("PopulateDateComenzi endet with an exception ", e);

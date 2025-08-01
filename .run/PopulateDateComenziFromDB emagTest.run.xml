@@ -1,0 +1,16 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="PopulateDateComenziFromDB emagTest" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="ro.sellfluence.app.PopulateDateComenziFromDB" />
+    <module name="supplierDB" />
+    <option name="PROGRAM_PARAMETERS" value="--db=emagTest" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="ro.sellfluence.app.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
