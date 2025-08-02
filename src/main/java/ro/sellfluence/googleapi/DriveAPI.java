@@ -12,10 +12,8 @@ import ro.sellfluence.support.Logs;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.logging.Level;
@@ -33,9 +31,10 @@ public class DriveAPI {
 
     private final Map<String, String> nameForId = new HashMap<>();
 
-    private record CachedDirectory(LocalDateTime lastUpdated, List<File> files) {}
+    private record CachedFile(LocalDateTime lastUpdated, String fileId) {
+    }
 
-    private CachedDirectory driveCache = null;
+    private final Map<String, CachedFile> driveCache = new HashMap<>();
 
     /**
      * Initialise the drive API.
@@ -49,7 +48,7 @@ public class DriveAPI {
 
     public static DriveAPI getDriveAPI(String appName) {
         var api = nameToAPI.get(appName);
-        if (api==null) {
+        if (api == null) {
             api = new DriveAPI(appName);
             nameToAPI.put(appName, api);
         }
@@ -65,34 +64,33 @@ public class DriveAPI {
      */
     public String getFileId(String name) {
         Objects.requireNonNull(name);
+        var cached = driveCache.get(name);
+        if (cached != null && cached.lastUpdated.plusMinutes(10).isAfter(LocalDateTime.now())) {
+            return cached.fileId;
+        }
         try {
             var matchingFiles = new HashSet<File>();
             String pageToken = null;
-            if (driveCache == null || !LocalDateTime.now().minusMinutes(30).isBefore(driveCache.lastUpdated)) {
-                var allFiles = new ArrayList<File>();
-                do {
-                    FileList fileList = setupDriveService().files().list()/*.setQ("name='%s'".formatted(name))*/.setFields("*").setPageToken(pageToken).execute();
-                    allFiles.addAll(fileList.getFiles());
-                    pageToken = fileList.getNextPageToken();
-
-                } while (pageToken != null);
-                driveCache = new CachedDirectory(LocalDateTime.now(), allFiles);
-            }
-            driveCache.files.stream()
-                    .filter(f -> name.equals(f.getName()))
-                    .forEach(matchingFiles::add);
+            do {
+                FileList fileList = setupDriveService().files().list().setQ("name='%s'".formatted(name)).setFields("*").setPageToken(pageToken).execute();
+                pageToken = fileList.getNextPageToken();
+                var files = fileList.getFiles();
+                files.stream()
+                        .filter(f -> name.equals(f.getName()))
+                        .forEach(matchingFiles::add);
+            } while (pageToken != null);
             if (matchingFiles.isEmpty()) {
                 return null;
             } else if (matchingFiles.size() == 1) {
                 String fileId = matchingFiles.iterator().next().getId();
-                nameForId.put(fileId, name);
+                updateCaches(name, fileId);
                 return fileId;
             } else {
                 var myFiles = matchingFiles.stream().filter(File::getOwnedByMe).toList();
                 if (myFiles.size() == 1) {
                     var fileId = myFiles.getFirst().getId();
                     warnLogger.log(Level.WARNING, "Found more than one file with the name %s, using the single one owned by me with the ID %s.".formatted(name, fileId));
-                    nameForId.put(fileId, name);
+                    updateCaches(name, fileId);
                     return fileId;
                 } else {
                     throw new RuntimeException(
@@ -104,6 +102,11 @@ public class DriveAPI {
         } catch (IOException e) {
             throw new RuntimeException("Couldn't retrieve the list of files.", e);
         }
+    }
+
+    private void updateCaches(String name, String fileId) {
+        nameForId.put(fileId, name);
+        driveCache.put(name, new CachedFile(LocalDateTime.now(), fileId));
     }
 
     /**
