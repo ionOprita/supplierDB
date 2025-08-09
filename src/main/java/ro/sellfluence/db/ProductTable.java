@@ -14,7 +14,8 @@ public class ProductTable {
             boolean retracted,
             String category,
             String messageKeyword,
-            String employeeSheetName
+            String employeeSheetName,
+            String emloyeSheetTab
     ) {
     }
 
@@ -61,7 +62,8 @@ public class ProductTable {
                                     rs.getBoolean("retracted"),
                                     rs.getString("category"),
                                     rs.getString("message_keyword"),
-                                    rs.getString("employee_sheet_name")
+                                    rs.getString("employee_sheet_name"),
+                                    rs.getString("employee_sheet_tab")
                             )
                     );
                 }
@@ -87,6 +89,23 @@ public class ProductTable {
             }
         }
         return products;
+    }
+
+    /**
+     * Updates the employee_sheet_tab column of the product table for the product identified by the given PNK.
+     *
+     * @param db the database connection to use for the update operation
+     * @param pnk the PNK of the product to be updated
+     * @param tabName the new value to set for the employee_sheet_tab column
+     * @return the number of rows affected by the update operation
+     * @throws SQLException if a database access error occurs
+     */
+    static int updateProductTabByPNK(Connection db, String pnk, String tabName) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE product SET employee_sheet_tab = ? WHERE emag_pnk = ?")) {
+            s.setString(1, tabName);
+            s.setString(2, pnk);
+            return s.executeUpdate();
+        }
     }
 
     /**

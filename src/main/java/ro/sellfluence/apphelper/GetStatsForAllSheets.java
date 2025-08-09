@@ -1,5 +1,7 @@
 package ro.sellfluence.apphelper;
 
+import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.db.ProductTable;
 import ro.sellfluence.googleapi.SheetsAPI;
 import ro.sellfluence.support.Logs;
 
@@ -39,7 +41,7 @@ public class GetStatsForAllSheets {
      * @param pnkToSpreadSheet map from PNK to the spreadsheet of the worker assigned to this PNK.
      * @return List with mappings of PNK to the product name and last update date.
      */
-    public static List<Statistic> getStatistics(Map<String, SheetsAPI> pnkToSpreadSheet) {
+    public static List<Statistic> getStatistics(Map<String, SheetsAPI> pnkToSpreadSheet, Map<String, ProductTable.ProductInfo> productsByPNK) {
         var sheetsToPNK = pnkToSpreadSheet.entrySet().stream()
                 .collect(Collectors.groupingBy(
                         Map.Entry::getValue,
@@ -51,6 +53,7 @@ public class GetStatsForAllSheets {
                             var pnkOnSheet = sheetToPNKList.getValue();
                             // This reads the setari sheet so that we can map from PNK to the tab within the spreadsheet.
                             logger.log(INFO, () -> "Read from %s %s columns C and E\n ".formatted(spreadSheet.getSpreadSheetName(), setariSheetName));
+                            // TODO: Avoid reading columns with a formula.
                             var pnkToSheetName = spreadSheet.getMultipleColumns(setariSheetName, "C", "E").stream()
                                     .skip(2)
                                     .map(row -> {

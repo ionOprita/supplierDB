@@ -3,6 +3,8 @@ package ro.sellfluence.app;
 import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.apphelper.GetStatsForAllSheets;
 import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.db.ProductTable;
+import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.googleapi.SheetsAPI;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
@@ -46,6 +48,7 @@ public class UpdateEmployeeSheetsFromDB {
     private final LocalDateTime endTime = LocalDate.now().minusDays(13).atStartOfDay();
     private Map<String, GetStatsForAllSheets.Statistic> pnkToStatistic;
 
+    private static Map<String, ProductInfo> productsByPNK;
 
     public UpdateEmployeeSheetsFromDB(String appName) {
         this.appName = appName;
@@ -59,6 +62,9 @@ public class UpdateEmployeeSheetsFromDB {
 
     public static void updateSheets(EmagMirrorDB mirrorDB) {
         try {
+            productsByPNK = mirrorDB.readProducts().stream()
+                    .filter(it -> it.productCode() != null && !(it.productCode().isBlank()||it.pnk().equals("KOPPELNOPNK")))
+                    .collect(Collectors.toMap(ProductTable.ProductInfo::pnk, it -> it));
             var updateSheets = new UpdateEmployeeSheetsFromDB(defaultGoogleApp);
             updateSheets.transferFromDBToSheet(mirrorDB);
         } catch (SQLException e) {
@@ -134,7 +140,7 @@ public class UpdateEmployeeSheetsFromDB {
                 ));
         for (Map.Entry<SheetsAPI, List<EmployeeSheetData>> entry : reorderedByEmployeeSheet.entrySet()) {
             var sheet = entry.getKey();
-            var groupedBySheet = entry.getValue().stream().collect(Collectors.groupingBy(it ->pnkToStatistic.get(it.partNumberKey()).sheetName()));
+            var groupedBySheet = entry.getValue().stream().collect(Collectors.groupingBy(it -> pnkToStatistic.get(it.partNumberKey()).sheetName()));
             for (var entry1 : groupedBySheet.entrySet()) {
                 var sheetName = entry1.getKey();
                 var orders = entry1.getValue();
@@ -143,7 +149,7 @@ public class UpdateEmployeeSheetsFromDB {
                             .sorted(comparing(EmployeeSheetData::orderDate))
                             .map(UpdateEmployeeSheetsFromDB::mapEmagToRow)
                             .toList();
-                    addToSheet(orders.getFirst().partNumberKey(), sheet, sheetName,  rowData);
+                    addToSheet(orders.getFirst().partNumberKey(), sheet, sheetName, rowData);
                 }
             }
         }
@@ -209,7 +215,7 @@ public class UpdateEmployeeSheetsFromDB {
      * Load the statistics for all relevant products.
      */
     private void loadAllStatistics() {
-        var statisticsFromAllSheets = GetStatsForAllSheets.getStatistics(pnkToSpreadSheet).stream()
+        var statisticsFromAllSheets = GetStatsForAllSheets.getStatistics(pnkToSpreadSheet, productsByPNK).stream()
                 .filter(it -> relevantProducts.contains(it.pnk()))
                 .toList();
         pnkToStatistic = statisticsFromAllSheets.stream()
@@ -285,7 +291,7 @@ public class UpdateEmployeeSheetsFromDB {
         if (!withoutDuplicates.isEmpty()) {
             progressLogger.log(INFO,
                     "Adding %d rows after row %d to tab %s of spreadsheet %s."
-                            .formatted( withoutDuplicates.size(), lastRowNumber, sheetName, sheet.getSpreadSheetName())
+                            .formatted(withoutDuplicates.size(), lastRowNumber, sheetName, sheet.getSpreadSheetName())
             );
             var pnksInSheet = sheet.getColumn(sheetName, "G").stream().skip(3).filter(x -> !x.isBlank()).collect(Collectors.toSet());
             if (pnksInSheet.size() > 1 && !pnksInSheet.contains(pnk)) {
@@ -293,7 +299,7 @@ public class UpdateEmployeeSheetsFromDB {
             } else if (pnksInSheet.size() == 1 && !Objects.equals(pnksInSheet.iterator().next(), pnk)) {
                 logger.log(WARNING, "Expected PNK '%s', but Sheet '%s' in Spreadsheet '%s' contains different PNK in column 7: %s.".formatted(pnk, sheetName, sheet.getTitle(), pnksInSheet));
             } else {
-                if (pnksInSheet.size()>1) {
+                if (pnksInSheet.size() > 1) {
                     logger.log(WARNING, "Adding even though sheet '%s' in Spreadsheet '%s' contains multiple PNKs in column 7: %s.".formatted(sheetName, sheet.getTitle(), pnksInSheet));
                 }
                 updateRangeInChunks(sheet, sheetName, lastRowNumber + 1, withoutDuplicates);
