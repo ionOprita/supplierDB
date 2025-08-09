@@ -235,7 +235,7 @@ public class SheetsAPI {
             var values = response.getValues();
 
             // If no data is returned, break
-            if (values.isEmpty() || values.getFirst().isEmpty()) {
+            if (values == null || values.isEmpty() || values.getFirst().isEmpty()) {
                 break;
             }
 
