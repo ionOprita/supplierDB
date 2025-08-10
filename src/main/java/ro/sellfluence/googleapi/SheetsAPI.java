@@ -23,6 +23,7 @@ import com.google.api.services.sheets.v4.model.RepeatCellRequest;
 import com.google.api.services.sheets.v4.model.Request;
 import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
+import org.jetbrains.annotations.Nullable;
 import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
@@ -33,6 +34,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -106,7 +108,7 @@ public class SheetsAPI {
      * @param spreadSheetName name of the spreadsheet.
      * @return instance of this class representing the spreadsheet, or null if not found.
      */
-    public static SheetsAPI getSpreadSheetByName(String appName, String spreadSheetName) {
+    public static @Nullable SheetsAPI getSpreadSheetByName(String appName, String spreadSheetName) {
         requireNonNull(appName);
         if (spreadSheetName == null) {
             return null;
@@ -505,9 +507,15 @@ public class SheetsAPI {
         return outputList;
     }
 
+    /**
+     * Read multiple columns from a sheet.
+     *
+     * @param sheetName name of the sheet.
+     * @param columns columns to read.
+     * @return list of rows.
+     */
     public List<List<Object>> getMultipleColumns(String sheetName, String... columns) {
         var ranges = Arrays.stream(columns).map(c -> "%1$s!%2$s:%2$s".formatted(sheetName, c)).toList();
-        List<List<Object>> returnValue = null;
         var inputValues = getSheetsService().spreadsheets().values();
         var batchGet = repeatCellRequest(
                 4,
@@ -521,9 +529,9 @@ public class SheetsAPI {
                 command::execute
         );
         var result = response.getValueRanges();
+        var rows = new ArrayList<List<Object>>();
         if (result != null && result.size() == columns.length) {
             var maxColumn = columns.length;
-            var rows = new ArrayList<List<Object>>();
             int[] columnSizes = result.stream().mapToInt(valueRange -> valueRange.getValues().getFirst().size()).toArray();
             var maxRow = Arrays.stream(columnSizes).max().getAsInt();
             for (int rowNumber = 0; rowNumber < maxRow; rowNumber++) {
@@ -537,9 +545,8 @@ public class SheetsAPI {
                 }
                 rows.add(row);
             }
-            returnValue = rows;
         }
-        return returnValue;
+        return rows;
     }
 
     /**
@@ -561,6 +568,20 @@ public class SheetsAPI {
     @Override
     public String toString() {
         return "SheetsAPI{" + "appName='" + appName + '\'' + ", spreadSheetName='" + spreadSheetName + '\'' + ", spreadSheetId='" + spreadSheetId + '\'' + '}';
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+        if (!(o instanceof SheetsAPI sheetsAPI)) return false;
+        return appName.equals(sheetsAPI.appName) && Objects.equals(spreadSheetId, sheetsAPI.spreadSheetId) && spreadSheetName.equals(sheetsAPI.spreadSheetName);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = appName.hashCode();
+        result = 31 * result + Objects.hashCode(spreadSheetId);
+        result = 31 * result + spreadSheetName.hashCode();
+        return result;
     }
 
     private Sheets getSheetsService() {

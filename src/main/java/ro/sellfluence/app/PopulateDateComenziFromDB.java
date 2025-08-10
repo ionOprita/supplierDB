@@ -1,6 +1,5 @@
 package ro.sellfluence.app;
 
-import ro.sellfluence.apphelper.PopulateProductsTableFromSheets;
 import ro.sellfluence.apphelper.Vendor;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductTable.ProductInfo;
@@ -56,8 +55,6 @@ public class PopulateDateComenziFromDB {
     }
 
     public static void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
-        System.out.println("Update product table");
-        PopulateProductsTableFromSheets.updateProductTable(mirrorDB);
         var sheet = SheetsAPI.getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
         if (sheet == null) {
             throw new RuntimeException("Could not find the spreadsheet %s".formatted(spreadSheetName));
