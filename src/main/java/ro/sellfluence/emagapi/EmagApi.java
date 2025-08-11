@@ -168,7 +168,7 @@ public class EmagApi {
     public CountResponse countOrderRequest() throws IOException, InterruptedException {
         var receivedJSON = countOrderRequestRaw("");
         CountResponse counterResponse = null;
-        if (receivedJSON!=null) {
+        if (receivedJSON != null) {
             communicationLogger.log(FINE, () -> "Full response body: %s".formatted(receivedJSON));
             try {
                 var typeRef = new TypeReference<SingleResponse<CountResponse>>() {
@@ -293,7 +293,11 @@ public class EmagApi {
                     throw new RuntimeException(String.format("Emag API error %d", statusCode));
                 }
             } catch (IOException e) {
-                logger.log(WARNING, "Received IOException %s, %n retrying, retryCount=%d, retryDelay=%d s".formatted(e.getMessage(), retryCount,retryDelay/1000));
+                if (retryCount > 0) {
+                    logger.log(WARNING, "Received IOException %s, retrying, retryCount=%d, retryDelay=%d s".formatted(e, retryCount, retryDelay / 1000));
+                } else {
+                    throw new RuntimeException("Received IOException", e);
+                }
                 retryCount--;
                 Thread.sleep(retryDelay);
                 retryDelay *= 2; // Double delay
