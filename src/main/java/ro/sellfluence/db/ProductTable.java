@@ -50,7 +50,7 @@ public class ProductTable {
      */
     static List<ProductInfo> getProducts(Connection db) throws SQLException {
         var products = new ArrayList<ProductInfo>();
-        try (var s = db.prepareStatement("SELECT emag_pnk, product_code, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name FROM product")) {
+        try (var s = db.prepareStatement("SELECT emag_pnk, product_code, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name, employee_sheet_tab FROM product")) {
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     products.add(
