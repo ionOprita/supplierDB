@@ -24,24 +24,24 @@ public class EmagBot {
         var arguments = new Arguments(args);
         var dbAlias = arguments.getOption(databaseOptionName, defaultDatabase);
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB(dbAlias);
-        logger.log(INFO, "Back up the %s database.%n", dbAlias);
+        logger.log(INFO, "Back up the %s database.%n".formatted(dbAlias));
         backupDB(dbAlias);
-        logger.log(INFO, "Syncing the %s database.%n", dbAlias);
+        logger.log(INFO, "Syncing the %s database.%n".formatted(dbAlias));
         EmagDBApp.fetchFromEmag(mirrorDB, arguments);
-        logger.log(INFO, "Update product table");
+        logger.log(INFO, "Update the product table of database %s.".formatted(dbAlias));
         try {
             PopulateProductsTableFromSheets.updateProductTable(mirrorDB);
         } catch (Exception e) {
             logger.log(WARNING, "Updating the product table ended with an exception. The Bot will continue, but additional problems might occur later.", e);
         }
-        logger.log(INFO, "Transfer orders from the %s database to the date comenzi sheet.", dbAlias);
+        logger.log(INFO, "Transfer orders from the %s database to the date comenzi sheet.".formatted(dbAlias));
         try {
             PopulateDateComenziFromDB.updateSpreadsheets(mirrorDB);
         } catch (SQLException e) {
             logger.log(WARNING, "Updating the date comenzi sheet ended with an exception. The Bot will continue anyway with the next step.", e);
-            throw new RuntimeException("PopulateDateComenzi endet with an exception ", e);
+            throw new RuntimeException("PopulateDateComenzi ended with an exception ", e);
         }
-        logger.log(INFO, "Update the sheet used for customer feedback using %s.%n", dbAlias);
+        logger.log(INFO, "Update the sheet used for customer feedback using %s.".formatted(dbAlias));
         UpdateEmployeeSheetsFromDB.updateSheets(mirrorDB);
     }
 }
