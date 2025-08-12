@@ -5,6 +5,7 @@ import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.googleapi.SheetsAPI;
 import ro.sellfluence.support.Arguments;
+import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -30,7 +31,7 @@ import static ro.sellfluence.support.UsefulMethods.sheetToLocalDate;
  */
 public class PopulateDateComenziFromDB {
 
-    private static final Logger logger = java.util.logging.Logger.getLogger(PopulateDateComenziFromDB.class.getName());
+    private static final Logger logger = Logs.getConsoleLogger("PopulateDateComenziFromDB", INFO);
     private static final int year = 2025;
 
     /**
@@ -57,13 +58,13 @@ public class PopulateDateComenziFromDB {
     public static void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
         var sheet = SheetsAPI.getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
         if (sheet == null) {
-            throw new RuntimeException("Could not find the spreadsheet %s".formatted(spreadSheetName));
+            throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
         }
-        System.out.println("--- Update date sheet ----------------------");
+        logger.log(INFO, "--- Update date sheet ----------------------");
         sheet.updateRange(dateSheetName, List.of(List.of("Order ID", "Vendor", "Product", "Quantity", "Price", "Date")));
-        System.out.println("--- Update GMVs --------------------------");
+        logger.log(INFO, "--- Update GMVs --------------------------");
         updateGMVs(mirrorDB, sheet);
-        System.out.println("--- Update orders ------------------------");
+        logger.log(INFO, "--- Update orders ------------------------");
         updateOrders(mirrorDB, sheet);
     }
 
@@ -91,9 +92,8 @@ public class PopulateDateComenziFromDB {
      * @throws SQLException on database errors.
      */
     private static void updateGMVForMonth(EmagMirrorDB mirrorDB, SheetsAPI sheet, YearMonth month) throws SQLException {
-        System.out.printf("Read %s from the database", month);
+        logger.log(INFO, "Transfer %s from the database to the sheet.".formatted( month));
         var gmvsByProduct = mirrorDB.readGMVByMonth(month);
-        System.out.println("Read from the spreadsheet");
         var products = mirrorDB.readProducts().stream()
                 .collect(Collectors.groupingBy(ProductInfo::name));
         var productsInSheet = sheet.getColumn(gmvSheetName, "B").stream().toList();
@@ -110,7 +110,7 @@ public class PopulateDateComenziFromDB {
             columnNumber++;
         }
         if (columnIdentifier == null) {
-            throw new RuntimeException("Could not find the column for the month %s".formatted(month));
+            throw new RuntimeException("Could not find the column for the month %s.".formatted(month));
         }
         Integer startRow = null;
         var rowNumber = 0;
@@ -145,7 +145,7 @@ public class PopulateDateComenziFromDB {
                 }
                 if (gmv == null) {
                     if (!retracted) {
-                        logger.log(continueToSell ? WARNING : INFO, "No GMV for the product %s and the month %s".formatted(productName, month));
+                        logger.log(continueToSell ? WARNING : INFO, "No GMV for the product %s and the month %s.".formatted(productName, month));
                     }
                 }
                 if (startRow != null) {
@@ -154,7 +154,7 @@ public class PopulateDateComenziFromDB {
             }
         }
         if (startRow != null) {
-            var values = gmvColumn.stream().skip(startRow-1).map(it -> {
+            var values = gmvColumn.stream().skip(startRow - 1).map(it -> {
                 var o = it != null ? (Object) it : (Object) "";
                 return List.of(o);
             }).toList();
@@ -179,20 +179,24 @@ public class PopulateDateComenziFromDB {
      */
     private static void updateOrders(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
         var spreadSheetId = sheet.getSpreadSheetId();
-        System.out.println("Read from the database");
+        logger.log(INFO, "Read from the database.");
         var rows = mirrorDB.readForSheet(year);
-        System.out.println("Read from the spreadsheet");
+        logger.log(INFO, "Read from the spreadsheet.");
         List<List<Object>> sheetData = sheet.getMultipleColumns(dateSheetName, "A", "B", "F", "X", "Y");
         //TODO: The filter does not notice changed orders.
+        logger.log(INFO, "Filter out the orders that are already in the spreadsheet.");
         rows = filterOutExisting(rows, sheetData);
-        if (!rows.isEmpty()) {
+        if (rows.isEmpty()) {
+            logger.log(INFO, "No new orders were found.");
+        } else {
+            logger.log(INFO, "Adding %d new orders to the sheet.".formatted(rows.size()));
             var lastRowNumber = sheetData.size();
             var nextRow = lastRowNumber + 1;
             var lastRow = lastRowNumber + rows.size();
-            System.out.println("Now fixing cell format");
+            logger.log(INFO, "Now fixing cell format");
             sheet.formatDate(spreadSheetId, 0, 1, lastRowNumber, lastRow);
             sheet.formatAsCheckboxes(spreadSheetId, 27, 31, lastRowNumber, lastRow);
-            System.out.println("Now adding the rows");
+            logger.log(INFO, "Now adding the rows");
             sheet.updateRanges(rows, "%s!A%d".formatted(dateSheetName, nextRow), "%s!Y%d".formatted(dateSheetName, nextRow), "%s!AB%d".formatted(dateSheetName, nextRow), "%s!AG%d".formatted(dateSheetName, nextRow));
         }
     }
@@ -214,7 +218,7 @@ public class PopulateDateComenziFromDB {
                     var vendor = Vendor.fromSheet((String) groupedRow.get(1).get(0), isEMAGFbe((String) groupedRow.get(1).get(1)));
                     var productName = (String) groupedRow.get(0).get(5);
                     if (productName == null || productName.isBlank()) {
-                        throw new RuntimeException("Could not find the product name for order %s (%s)".formatted(order_id, vendor.name()));
+                        throw new RuntimeException("Could not find the product name for order %s (%s).".formatted(order_id, vendor.name()));
                     }
                     var orderLine = new OrderLine(order_id, /*vendor,*/ productName);
                     return !sheetOrders.contains(orderLine);
