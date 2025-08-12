@@ -82,10 +82,12 @@ public class EmagMirrorDB {
         var mirrorDB = openDatabases.get(alias);
         if (mirrorDB == null) {
             var db = new DB(alias);
-            var result = SetupDB.setupAndUpdateDB(db);
-            if (!result) {
-                logger.log(SEVERE, "Unable to setup database {0}", alias);
-                throw new IOException("Unable to setup database %s.".formatted(alias));
+            try {
+                SetupDB.setupAndUpdateDB(db);
+            } catch (SQLException e) {
+                String message = "Unable to setup database %s.".formatted(alias);
+                logger.log(SEVERE, message, e);
+                throw new IOException(message);
             }
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);

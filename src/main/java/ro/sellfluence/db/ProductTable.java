@@ -147,7 +147,7 @@ public class ProductTable {
     private static int updateProduct(Connection db, ProductInfo productInfo) throws SQLException {
         try (var s = db.prepareStatement("""
                 UPDATE product
-                SET emag_pnk = ?, category = ?, message_keyword = ?, continue_to_sell = ?, retracted = ?, name = ?, employee_sheet_name = ?
+                SET emag_pnk = ?, category = ?, message_keyword = ?, continue_to_sell = ?, retracted = ?, name = ?, employee_sheet_name = ?, employee_sheet_tab = ?
                 WHERE product_code = ?
                 """)) {
             s.setString(1, productInfo.pnk());
@@ -157,7 +157,8 @@ public class ProductTable {
             s.setBoolean(5, productInfo.retracted());
             s.setString(6, productInfo.name());
             s.setString(7, productInfo.employeeSheetName());
-            s.setString(8, productInfo.productCode());
+            s.setString(8, productInfo.emloyeSheetTab());
+            s.setString(9, productInfo.productCode());
             return s.executeUpdate();
         }
     }

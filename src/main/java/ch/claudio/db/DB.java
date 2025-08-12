@@ -77,7 +77,7 @@ public class DB {
      * This method reads the stored database version from the version table and
      * performs any steps missing to reach the latest version.
      */
-    public boolean prepareDB(Instructions... instructions) throws SQLException {
+    public void prepareDB(Instructions... instructions) throws SQLException {
         int dbVersion;
         try {
             dbVersion = singleReadTX(db -> {
@@ -99,16 +99,12 @@ public class DB {
             });
         }
         final var lastVersionFound = dbVersion;
-        return writeTX(db -> {
+        writeTX(db -> {
             var version = lastVersionFound;
             while (version < instructions.length) {
                 instructions[version].execute(db);
                 version++;
-                try {
-                    addVersion(db, version);
-                } catch (SQLException e) {
-                    return false;
-                }
+                addVersion(db, version);
             }
             return true;
         });

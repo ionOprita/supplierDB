@@ -66,6 +66,9 @@ public class UpdateEmployeeSheetsFromDB {
         }
     }
 
+    record FeedbackTab(SheetsAPI sheet, String tabName) {
+    }
+
     /**
      * This method will transfer new orders to the appropriate employee sheet depending on the products.
      *
@@ -75,24 +78,31 @@ public class UpdateEmployeeSheetsFromDB {
     public void transferFromDBToSheet(EmagMirrorDB mirrorDB) throws SQLException {
         var products = mirrorDB.readProducts();
         var productsByEmployee = new HashMap<SheetsAPI, List<ProductInfo>>();
-        var sheetsByPNK = new HashMap<String, SheetsAPI>();
+        var sheetsByPNK = new HashMap<String, FeedbackTab>();
         for (ProductInfo productInfo : products) {
             String spreadSheetName = productInfo.employeeSheetName();
             var spreadSheet = getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
             if (spreadSheet == null) {
                 logger.log(WARNING, "No spreadsheet found for the product %s".formatted(productInfo));
             } else {
+                String tabName = productInfo.emloyeSheetTab();
+                var feedbackTab = new FeedbackTab(spreadSheet, tabName);
                 productsByEmployee.computeIfAbsent(spreadSheet, _ -> new ArrayList<>())
                         .add(productInfo);
                 var pnk = productInfo.pnk();
-                var oldSheet = sheetsByPNK.put(pnk, spreadSheet);
-                if (oldSheet != null && !oldSheet.getSpreadSheetName().equals(spreadSheetName)) {
-                    logger.log(WARNING, "PNK %s associated with two sheets: %s and %s".formatted(pnk, oldSheet.getSpreadSheetName(), spreadSheetName));
+                var oldSheet = sheetsByPNK.put(pnk, feedbackTab);
+                if (oldSheet != null && !(oldSheet.sheet().getSpreadSheetName().equals(spreadSheetName) && oldSheet.tabName().equals(tabName))) {
+                    logger.log(
+                            WARNING,
+                            "PNK %s associated with two sheets: %s/%s and %s/%s".formatted(
+                                    pnk, oldSheet.sheet.getSpreadSheetName(), oldSheet.tabName, spreadSheetName, tabName
+                            )
+                    );
                 }
             }
         }
         // Map OrderId to spreadsheet containing it.
-        var existingOrderAssignments = new HashMap<String, SheetsAPI>();
+        var existingOrderAssignments = new HashMap<String, FeedbackTab>();
         // Map SheetData to OrderId
         var newAssignments = new HashMap<EmployeeSheetData, String>();
         for (var entry : productsByEmployee.entrySet()) {
@@ -115,11 +125,16 @@ public class UpdateEmployeeSheetsFromDB {
                 }
                 progressLogger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s.".formatted(spreadSheet, product.emloyeSheetTab(), pnk));
                 accumulateExistingOrders(spreadSheet, product.emloyeSheetTab(), existingOrderAssignments);
-                var startTime = dates.get(pnk).atStartOfDay();
+                LocalDate startDate = dates.get(pnk);
+                if (startDate == null) {
+                    startDate = LocalDate.now().minusMonths(1);
+                }
+                var startTime = startDate.atStartOfDay();
                 var newOrdersForProduct = mirrorDB.readOrderData(pnk, startTime, endTime).stream().filter(it -> it.quantity() > 0).toList();
                 for (EmployeeSheetData it : newOrdersForProduct) {
                     newAssignments.put(it, product.emloyeSheetTab());
                 }
+
             }
         }
         progressLogger.log(INFO, () -> "Existing orders: " + existingOrderAssignments.size());
@@ -201,18 +216,18 @@ public class UpdateEmployeeSheetsFromDB {
      * Read the ID of the orders already recorded in this sheet.
      *
      * @param sheet                    spreadsheet.
-     * @param sheetName                name of the sheet within the spreadsheet.
+     * @param tabName                name of the sheet within the spreadsheet.
      * @param existingOrderAssignments map of existing order IDs to sheets.
      */
-    private static void accumulateExistingOrders(SheetsAPI sheet, final String sheetName, HashMap<String, SheetsAPI> existingOrderAssignments) {
-        var orderIdColumn = sheet.getColumn(sheetName, "A").stream().skip(4).toList();
+    private static void accumulateExistingOrders(SheetsAPI sheet, final String tabName, HashMap<String, FeedbackTab> existingOrderAssignments) {
+        var orderIdColumn = sheet.getColumn(tabName, "A").stream().skip(4).toList();
         for (var orderId : orderIdColumn) {
-            var oldAssignment = existingOrderAssignments.put(orderId, sheet);
+            var oldAssignment = existingOrderAssignments.put(orderId, new FeedbackTab(sheet, tabName));
             if (oldAssignment != null) {
                 logger.log(
                         WARNING,
-                        "The order %s assigned to %s is also assigned to %s.".formatted(
-                                orderId, oldAssignment.getSpreadSheetName(), sheet.getSpreadSheetName()
+                        "The order %s assigned to %s/%s is also assigned to %s/%s.".formatted(
+                                orderId, oldAssignment.sheet.getSpreadSheetName(), oldAssignment.tabName, sheet.getSpreadSheetName(), tabName
                         )
                 );
             }
@@ -231,6 +246,7 @@ public class UpdateEmployeeSheetsFromDB {
                         row -> new DateForProduct((String) row.getFirst(), UsefulMethods.sheetToLocalDate((BigDecimal) row.get(1)))
                 ).toList();
         for (DateForProduct row : rows) {
+            Objects.requireNonNull(row.date);
             map.put(row.pnk, row.date);
         }
         return map;
