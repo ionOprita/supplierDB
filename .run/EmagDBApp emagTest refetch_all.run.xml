@@ -1,8 +1,8 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="EmagDBApp refetch_some emagTest" type="Application" factoryName="Application">
+  <configuration default="false" name="EmagDBApp emagTest refetch_all" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="ro.sellfluence.app.EmagDBApp" />
     <module name="supplierDB" />
-    <option name="PROGRAM_PARAMETERS" value="--refetch_some --db=emagTest" />
+    <option name="PROGRAM_PARAMETERS" value="--refetch_all --db=emagTest" />
     <option name="WORKING_DIRECTORY" value="$ContentRoot$" />
     <extension name="coverage">
       <pattern>
