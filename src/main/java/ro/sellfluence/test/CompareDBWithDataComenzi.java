@@ -1,6 +1,6 @@
 package ro.sellfluence.test;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 import ro.sellfluence.apphelper.Vendor;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.emagapi.EmagApi;
@@ -323,7 +323,7 @@ public class CompareDBWithDataComenzi {
         }
     }
 
-    private static void doNotDoNow(Map<Vendor, @NotNull List<OrderLine>> onlyInSheetGroupedByVendor) {
+    private static void doNotDoNow(Map<Vendor, @NonNull List<OrderLine>> onlyInSheetGroupedByVendor) {
         var notFound = new ArrayList<OrderLine>();
         var found = new ArrayList<OrderLine>();
         onlyInSheetGroupedByVendor.entrySet().stream()
@@ -379,7 +379,7 @@ public class CompareDBWithDataComenzi {
      * @param sourceOfFirst text used in output to indicate the origin of the orders in firstList.
      * @return the orders from firstList not found in secondList.
      */
-    private static @NotNull List<OrderLine> getDifference(List<OrderLine> firstList, Map<String, List<OrderLine>> secondList, final String sourceOfFirst) {
+    private static @NonNull List<OrderLine> getDifference(List<OrderLine> firstList, Map<String, List<OrderLine>> secondList, final String sourceOfFirst) {
         System.out.println("Find ones only in " + sourceOfFirst + " ...");
         var onlyInFirst = firstList.stream().filter(it -> {
             var potentialOrder = secondList.get(it.orderId);
@@ -411,7 +411,7 @@ public class CompareDBWithDataComenzi {
      * @param ordersByOrderId map from orderId to OrderLine.
      * @return map containing only those entries, which map to a list with more than one element.
      */
-    private static @NotNull Map<String, List<OrderLine>> filterOrdersWithMultipleEntries(Map<String, List<OrderLine>> ordersByOrderId) {
+    private static @NonNull Map<String, List<OrderLine>> filterOrdersWithMultipleEntries(Map<String, List<OrderLine>> ordersByOrderId) {
         var orderIdsWithMultipleEntries = ordersByOrderId.entrySet().stream()
                 .filter(entry -> entry.getValue().size() > 1) // Filter for entries with more than one OrderLine
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
@@ -426,7 +426,7 @@ public class CompareDBWithDataComenzi {
      * @param source text included in output to distinguish, which data is treated.
      * @return map from orderId to list of associated OrderLine.
      */
-    private static @NotNull Map<String, List<OrderLine>> groupByOrderId(List<OrderLine> orders, final String source) {
+    private static @NonNull Map<String, List<OrderLine>> groupByOrderId(List<OrderLine> orders, final String source) {
         var groupedByOrderId = orders.stream().collect(Collectors.groupingBy(OrderLine::orderId));
         System.out.println("Number of elements from " + source + " with unique order ID " + groupedByOrderId.size());
         return groupedByOrderId;
@@ -449,7 +449,7 @@ public class CompareDBWithDataComenzi {
      * @param title Text printed to identify the step.
      * @return sorted order list.
      */
-    private static @NotNull List<OrderLine> sortOrders(List<OrderLine> orders, String title) {
+    private static @NonNull List<OrderLine> sortOrders(List<OrderLine> orders, String title) {
         System.out.println(title);
         return orders.stream()
                 .sorted(Comparator.comparing(OrderLine::vendor).thenComparing(OrderLine::orderId))
@@ -462,7 +462,7 @@ public class CompareDBWithDataComenzi {
      *
      * @param ordersByVendors map having the vendor as key and the list of orders as value.
      */
-    private static void dumpOrderLines(Map<String, @NotNull List<OrderLine>> ordersByVendors) {
+    private static void dumpOrderLines(Map<String, @NonNull List<OrderLine>> ordersByVendors) {
         ordersByVendors.forEach((_, orders) -> {
             orders.forEach(OrderLine::println);
             System.out.println();

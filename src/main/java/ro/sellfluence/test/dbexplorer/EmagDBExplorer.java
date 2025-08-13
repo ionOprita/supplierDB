@@ -1,6 +1,6 @@
 package ro.sellfluence.test.dbexplorer;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.db.POInfo;
@@ -106,7 +106,7 @@ public class EmagDBExplorer {
         });
     }
 
-    private static @NotNull JScrollPane setupAndReturnCustomerTable() {
+    private static @NonNull JScrollPane setupAndReturnCustomerTable() {
         // Customer ID, Name, Email, Phone, Billing Info, Shipping Info, Created, Modified.
         setColumnWidths(customerTable, 70, 180, 120, 100, 400, 500, 150, 150);
         // Apply a custom cell renderer for text wrapping
@@ -116,7 +116,7 @@ public class EmagDBExplorer {
         return encloseInScrollPane(customerTable);
     }
 
-    private static @NotNull JScrollPane setupAndReturnProductTable() {
+    private static @NonNull JScrollPane setupAndReturnProductTable() {
         // ID, PNK, Name, External ID, Quantity, Initial Quantity, Storno Quantity, Sale Price, Original Price
         setColumnWidths(productInOrderTable, 70, 70, 400, 70, 70, 70, 70, 100, 100);
         // Apply the custom cell renderer for text wrapping
@@ -124,7 +124,7 @@ public class EmagDBExplorer {
         return encloseInScrollPane(productInOrderTable);
     }
 
-    private static @NotNull JScrollPane setupAndReturnOrderTable() {
+    private static @NonNull JScrollPane setupAndReturnOrderTable() {
         // Add a mouse listener to the table
         orderTable.addMouseListener(getOrderIdMouseAdapter());
         orderTable.addMouseListener(updateProductTable());
@@ -133,7 +133,7 @@ public class EmagDBExplorer {
         return encloseInScrollPane(orderTable);
     }
 
-    private static @NotNull MouseAdapter getOrderIdMouseAdapter() {
+    private static @NonNull MouseAdapter getOrderIdMouseAdapter() {
         return new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -147,7 +147,7 @@ public class EmagDBExplorer {
         };
     }
 
-    private static @NotNull MouseAdapter updateProductTable() {
+    private static @NonNull MouseAdapter updateProductTable() {
         return new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -279,7 +279,7 @@ public class EmagDBExplorer {
      * @param table to be embedded in a scroll pane.
      * @return the scroll pane.
      */
-    private static @NotNull JScrollPane encloseInScrollPane(final JTable table) {
+    private static @NonNull JScrollPane encloseInScrollPane(final JTable table) {
         table.setFillsViewportHeight(true);  // Ensure headers are always visible
         JScrollPane scrollPane = new JScrollPane(table);
         scrollPane.setPreferredSize(new Dimension(tableWidth, tableHeight));  // Set the preferred size for scrolling

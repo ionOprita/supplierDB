@@ -122,11 +122,11 @@
             </exclusions>
         </dependency>
 
-        <!-- https://mvnrepository.com/artifact/org.jetbrains/annotations -->
+        <!-- https://mvnrepository.com/artifact/org.jspecify/jspecify -->
         <dependency>
-            <groupId>org.jetbrains</groupId>
-            <artifactId>annotations</artifactId>
-            <version>26.0.1</version>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+            <version>1.0.0</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-core -->

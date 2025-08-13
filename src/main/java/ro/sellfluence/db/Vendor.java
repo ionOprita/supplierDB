@@ -1,7 +1,7 @@
 package ro.sellfluence.db;
 
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -28,7 +28,7 @@ public class Vendor {
      * @return the UUID of the vendor.
      * @throws SQLException if a database access error occurs.
      */
-    static @NotNull UUID insertOrUpdateVendor(Connection db, String name, String account) throws SQLException {
+    static @NonNull UUID insertOrUpdateVendor(Connection db, String name, String account) throws SQLException {
         UUID id = selectVendorIdByName(db, name);
         if (id == null) {
             id = UUID.randomUUID();
@@ -102,7 +102,7 @@ public class Vendor {
      * @return map.
      * @throws SQLException if a database access error occurs.
      */
-    static @NotNull Map<UUID, String> selectAllVendors(Connection db) throws SQLException {
+    static @NonNull Map<UUID, String> selectAllVendors(Connection db) throws SQLException {
         var vendors = new HashMap<UUID, String>();
         try (var s = db.prepareStatement("SELECT id, vendor_name FROM vendor")) {
             try (var rs = s.executeQuery()) {

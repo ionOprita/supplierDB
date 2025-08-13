@@ -1,6 +1,6 @@
 package ro.sellfluence.emagapi;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -83,7 +83,7 @@ public record OrderResult(
         refunded_amount = round(refunded_amount);
     }
 
-    public static @NotNull String statusToString(final Integer status) {
+    public static @NonNull String statusToString(final Integer status) {
         if (status == null) return "Unknown";
         return switch (status) {
             case 0 -> "Canceled";

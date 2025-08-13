@@ -1,7 +1,7 @@
 package ro.sellfluence.db;
 
 import ch.claudio.db.DB;
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.db.EmagFetchLog.EmagFetchHistogram;
 import ro.sellfluence.db.EmagOrder.ExtendedOrder;
@@ -554,7 +554,7 @@ public class EmagMirrorDB {
         return database.readTX(db -> EmagOrder.selectAllOrders(db, allProducts, allVendors));
     }
 
-    public @NotNull Map<UUID, String> readVendors() throws SQLException {
+    public @NonNull Map<UUID, String> readVendors() throws SQLException {
         return database.readTX(Vendor::selectAllVendors);
     }
 

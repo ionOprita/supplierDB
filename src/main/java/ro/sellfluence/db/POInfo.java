@@ -1,6 +1,6 @@
 package ro.sellfluence.db;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -43,7 +43,7 @@ public record POInfo(String orderId, int surrogateId, LocalDate orderDate, int o
      * @return a list of POInfo objects containing information about the product orders for the specified product and month.
      * @throws SQLException if a database access error occurs or the SQL query execution fails.
      */
-    static @NotNull ArrayList<POInfo> getByProductAndMonth(Connection db, String productCode, YearMonth yearMonth) throws SQLException {
+    static @NonNull ArrayList<POInfo> getByProductAndMonth(Connection db, String productCode, YearMonth yearMonth) throws SQLException {
         var result = new ArrayList<POInfo>();
         try (var s = db.prepareStatement("""
                 SELECT p.name AS productName,

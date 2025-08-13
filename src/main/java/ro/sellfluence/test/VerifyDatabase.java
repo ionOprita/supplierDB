@@ -1,6 +1,6 @@
 package ro.sellfluence.test;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.EmagOrder.ExtendedOrder;
 import ro.sellfluence.emagapi.Product;
@@ -49,7 +49,7 @@ public class VerifyDatabase {
     /**
      * The typical set of status inconsistency.
      */
-    private static final Map<@NotNull Integer, @NotNull Integer> set145 = Map.of(1, 1, 4, 0, 5, 1);
+    private static final Map<@NonNull Integer, @NonNull Integer> set145 = Map.of(1, 1, 4, 0, 5, 1);
 
     /**
      * Collect orders with missing products in the finalized order, grouped by vendors.
@@ -172,7 +172,7 @@ public class VerifyDatabase {
         return orderId;
     }
 
-    private static @NotNull HashMap<String, List<ExtendedOrder>> readAllOrdersFromDB(String[] args) throws SQLException, IOException {
+    private static @NonNull HashMap<String, List<ExtendedOrder>> readAllOrdersFromDB(String[] args) throws SQLException, IOException {
         var arguments = new Arguments(args);
         String databaseAlias = arguments.getOption(databaseOptionName, defaultDatabase);
         System.out.printf("Verifying database %s...%n", databaseAlias);
@@ -188,7 +188,7 @@ public class VerifyDatabase {
         return allOrders;
     }
 
-    private static @NotNull HashMap<Integer, List<Product>> getProductsByStatus(Map<Integer, @NotNull List<ExtendedOrder>> orderLinesByStatus, String orderId) {
+    private static @NonNull HashMap<Integer, List<Product>> getProductsByStatus(Map<Integer, @NonNull List<ExtendedOrder>> orderLinesByStatus, String orderId) {
         var productsByStatus = new HashMap<Integer, List<Product>>();
         for (var entry : orderLinesByStatus.entrySet()) {
             if (entry.getValue().size() > 1) {

@@ -1,6 +1,6 @@
 package ro.sellfluence.support;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 
 import java.io.IOException;
 import java.time.ZoneId;
@@ -69,7 +69,7 @@ public class Logs {
         return logger;
     }
 
-    private static @NotNull String makePattern(String name) {
+    private static @NonNull String makePattern(String name) {
         return "%t/" + name + "_%g.log";
     }
 
@@ -84,7 +84,7 @@ public class Logs {
         logger.setUseParentHandlers(false);
     }
 
-    private static @NotNull Logger getLogger(String name, Level level) {
+    private static @NonNull Logger getLogger(String name, Level level) {
         Logger logger = Logger.getLogger(name);
         logger.setLevel(level);
         return logger;

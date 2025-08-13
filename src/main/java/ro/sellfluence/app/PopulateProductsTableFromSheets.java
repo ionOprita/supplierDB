@@ -1,6 +1,5 @@
 package ro.sellfluence.app;
 
-import org.intellij.lang.annotations.Language;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.googleapi.SheetsAPI;
@@ -31,7 +30,6 @@ public class PopulateProductsTableFromSheets {
     private static final Logger logger = Logs.getConsoleLogger("populateProductsTableWarnings", WARNING);
     private static final Logger infos = Logs.getConsoleAndFileLogger("populateProductsTableInfos", INFO, 10, 1_000_000);
 
-    @Language("TerminalOutput")
     private static final String productSpreadsheetName = "2025 - Date produse & angajati";
 
     /**

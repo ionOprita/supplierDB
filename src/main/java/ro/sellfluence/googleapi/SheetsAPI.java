@@ -23,7 +23,7 @@ import com.google.api.services.sheets.v4.model.RepeatCellRequest;
 import com.google.api.services.sheets.v4.model.Request;
 import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.Nullable;
 import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
