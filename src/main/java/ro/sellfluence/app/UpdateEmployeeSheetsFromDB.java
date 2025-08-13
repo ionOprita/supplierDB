@@ -2,7 +2,6 @@ package ro.sellfluence.app;
 
 import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.db.EmagMirrorDB;
-import ro.sellfluence.db.ProductTable;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.googleapi.SheetsAPI;
 import ro.sellfluence.support.Arguments;
@@ -13,7 +12,6 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -44,10 +42,6 @@ public class UpdateEmployeeSheetsFromDB {
 
     private static final String statisticSheetName = "Statistici/luna";
 
-    private final LocalDateTime endTime = LocalDate.now().minusDays(13).atStartOfDay();
-
-    private static Map<String, ProductInfo> productsByPNK;
-
     public static void main(String[] args) throws SQLException, IOException {
         var arguments = new Arguments(args);
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
@@ -56,9 +50,6 @@ public class UpdateEmployeeSheetsFromDB {
 
     public static void updateSheets(EmagMirrorDB mirrorDB) {
         try {
-            productsByPNK = mirrorDB.readProducts().stream()
-                    .filter(it -> it.productCode() != null && !(it.productCode().isBlank() || it.pnk().equals("KOPPELNOPNK")))
-                    .collect(Collectors.toMap(ProductTable.ProductInfo::pnk, it -> it));
             var updateSheets = new UpdateEmployeeSheetsFromDB();
             updateSheets.transferFromDBToSheet(mirrorDB);
         } catch (SQLException e) {
@@ -77,28 +68,39 @@ public class UpdateEmployeeSheetsFromDB {
      */
     public void transferFromDBToSheet(EmagMirrorDB mirrorDB) throws SQLException {
         var products = mirrorDB.readProducts();
+        var productsByPNK = new HashMap<String, ProductInfo>();
         var productsByEmployee = new HashMap<SheetsAPI, List<ProductInfo>>();
         var sheetsByPNK = new HashMap<String, FeedbackTab>();
         for (ProductInfo productInfo : products) {
+            if (productInfo.productCode() != null && !(productInfo.productCode().isBlank())) {
+                var old = productsByPNK.put(productInfo.pnk(), productInfo);
+                if (old != null) {
+                    logger.log(WARNING, "Duplicate PNK %s: %s and %s".formatted(productInfo.pnk(), old, productInfo));
+                }
+            }
             String spreadSheetName = productInfo.employeeSheetName();
             var spreadSheet = getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
             if (spreadSheet == null) {
                 logger.log(WARNING, "No spreadsheet found for the product %s".formatted(productInfo));
-            } else {
-                String tabName = productInfo.emloyeSheetTab();
-                var feedbackTab = new FeedbackTab(spreadSheet, tabName);
-                productsByEmployee.computeIfAbsent(spreadSheet, _ -> new ArrayList<>())
-                        .add(productInfo);
-                var pnk = productInfo.pnk();
-                var oldSheet = sheetsByPNK.put(pnk, feedbackTab);
-                if (oldSheet != null && !(oldSheet.sheet().getSpreadSheetName().equals(spreadSheetName) && oldSheet.tabName().equals(tabName))) {
-                    logger.log(
-                            WARNING,
-                            "PNK %s associated with two sheets: %s/%s and %s/%s".formatted(
-                                    pnk, oldSheet.sheet.getSpreadSheetName(), oldSheet.tabName, spreadSheetName, tabName
-                            )
-                    );
-                }
+                continue;
+            }
+            String tabName = productInfo.emloyeSheetTab();
+            if (tabName == null) {
+                logger.log(WARNING, "No tab found for the product %s".formatted(productInfo));
+                continue;
+            }
+            var feedbackTab = new FeedbackTab(spreadSheet, tabName);
+            productsByEmployee.computeIfAbsent(spreadSheet, _ -> new ArrayList<>())
+                    .add(productInfo);
+            var pnk = productInfo.pnk();
+            var oldSheet = sheetsByPNK.put(pnk, feedbackTab);
+            if (oldSheet != null && !(oldSheet.sheet().getSpreadSheetName().equals(spreadSheetName) && oldSheet.tabName().equals(tabName))) {
+                logger.log(
+                        WARNING,
+                        "PNK %s associated with two sheets: %s/%s and %s/%s".formatted(
+                                pnk, oldSheet.sheet.getSpreadSheetName(), oldSheet.tabName, spreadSheetName, tabName
+                        )
+                );
             }
         }
         // Map OrderId to spreadsheet containing it.
@@ -130,11 +132,11 @@ public class UpdateEmployeeSheetsFromDB {
                     startDate = LocalDate.now().minusMonths(1);
                 }
                 var startTime = startDate.atStartOfDay();
+                var endTime = LocalDate.now().minusDays(13).atStartOfDay();
                 var newOrdersForProduct = mirrorDB.readOrderData(pnk, startTime, endTime).stream().filter(it -> it.quantity() > 0).toList();
                 for (EmployeeSheetData it : newOrdersForProduct) {
                     newAssignments.put(it, product.emloyeSheetTab());
                 }
-
             }
         }
         progressLogger.log(INFO, () -> "Existing orders: " + existingOrderAssignments.size());
