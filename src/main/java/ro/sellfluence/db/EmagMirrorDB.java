@@ -591,7 +591,9 @@ public class EmagMirrorDB {
                           o.delivery_mode,
                           p.currency,
                           p.vat,
-                          o.status
+                          o.status,
+                          v.vendor_name,
+                          c.shipping_suburb
                         FROM emag_order as o
                         LEFT JOIN customer as c
                         ON o.customer_id = c.id
@@ -616,6 +618,7 @@ public class EmagMirrorDB {
                     int status = rs.getInt("status");
                     var data = new EmployeeSheetData(
                             rs.getString("id"),
+                            rs.getString("vendor_name"),
                             rs.getInt("quantity"),
                             priceWithVAT,
                             rs.getInt("legal_entity") > 0,
@@ -626,6 +629,7 @@ public class EmagMirrorDB {
                             rs.getString("billing_name"),
                             rs.getString("billing_phone"),
                             rs.getString("billing_address"),
+                            rs.getString("shipping_suburb"),
                             rs.getString("customer_name"),
                             rs.getString("shipping_phone"),
                             rs.getString("shipping_address"),

@@ -32,7 +32,7 @@ public class GetCustomerData {
     public static Map<String, List<EmployeeSheetData>> getByProduct(LocalDateTime startTime, LocalDateTime endTime, String... emagAccounts) {
         Map<String, List<EmployeeSheetData>> orderedProductsByPNK = new HashMap<>();
         for (var alias : emagAccounts) {
-            System.out.println("Now fetching for account: " + alias);
+            System.out.println("Now fetching the account: " + alias);
             var emagCredentials = UserPassword.findAlias(alias);
             if (emagCredentials == null) {
                 logger.log(WARNING, "Missing credentials for alias " + alias);
@@ -69,6 +69,7 @@ public class GetCustomerData {
                         List<EmployeeSheetData> list = orderedProductsByPNK.getOrDefault(product.part_number_key(), new ArrayList<>());
                         list.add(new EmployeeSheetData(
                                         order.id(),
+                                order.vendor_name(),
                                         product.quantity(),
                                         product.sale_price(),
                                         order.isCompany(),
@@ -79,6 +80,7 @@ public class GetCustomerData {
                                         order.customer().billing_name(),
                                         order.customer().billing_phone(),
                                         order.customer().getBillingAddress(),
+                                        order.customer().shipping_suburb(),
                                         order.customer().name(),
                                         order.customer().phone_1(),
                                         order.customer().getShippingAddress(),

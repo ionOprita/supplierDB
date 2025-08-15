@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -41,6 +42,22 @@ public class UpdateEmployeeSheetsFromDB {
     private static final Logger progressLogger = Logs.getConsoleLogger("UpdateEmployeeSheetsProgress", INFO);
 
     private static final String statisticSheetName = "Statistici/luna";
+
+
+    private static final Set<String> citiesToExclude = Set.of("Alba Iulia", "Alexandria", "Arad", "Bacau", "Bacău", "Baia Mare",
+            "Bistrita", "Bistrița", "Botosani", "Botoșani", "Braila", "Brasov", "Brașov", "Brăila", "Bucuresti", "București",
+            "Buzau", "Buzău", "Calarasi", "Cluj-Napoca", "Constanta", "Constanța", "Craiova", "Călărași", "Deva",
+            "Drobeta-Turnu Severin", "Focsani", "Focșani", "Galati", "Galați", "Giurgiu", "Iasi", "Iași", "Miercurea Ciuc",
+            "Oradea", "Piatra Neamt", "Piatra Neamț", "Pitesti", "Pitești", "Ploiesti", "Ploiești", "Ramnicu Valcea",
+            "Resita", "Reșița", "Râmnicu Vâlcea", "Satu Mare", "Sfantu Gheorghe", "Sfântu Gheorghe", "Sibiu", "Slatina",
+            "Slobozia", "Suceava", "Targoviste", "Targu Jiu", "Targu Mures", "Timisoara", "Timișoara", "Tulcea",
+            "Târgoviște", "Târgu Jiu", "Târgu Mureș", "Vaslui", "Zalau", "Zalău");
+
+    private static final Set<String> vendorsWithExclusions = Set.of("Zoopie Concept FBE",
+            "Zoopie Invest",
+            "Zoopie Solutions FBE",
+            "Koppel",
+            "Koppel FBE");
 
     public static void main(String[] args) throws SQLException, IOException {
         var arguments = new Arguments(args);
@@ -201,13 +218,22 @@ public class UpdateEmployeeSheetsFromDB {
             var groupedBySheet = entry.getValue().stream().collect(Collectors.groupingBy(it -> productsByPNK.get(it.partNumberKey()).emloyeSheetTab()));
             for (var entry1 : groupedBySheet.entrySet()) {
                 var sheetName = entry1.getKey();
-                var orders = entry1.getValue();
-                if (!orders.isEmpty()) {
-                    var rowData = orders.stream()
+                List<EmployeeSheetData> orders = entry1.getValue();
+                var filteredOrders = orders.stream()
+                        .filter(it ->
+                                !(vendorsWithExclusions.contains(it.vendorName()) && citiesToExclude.contains(it.shippingSuburb()))
+                        )
+                        .toList();
+                var droppedOrders = new HashSet<>(orders);
+                droppedOrders.removeAll(filteredOrders);
+                progressLogger.log(INFO, () -> "Filtered %d orders on sheet %s.".formatted(droppedOrders.size(), sheetName));
+                droppedOrders.forEach(it -> progressLogger.log(INFO, " Dropped order %s.".formatted(it)));
+                if (!filteredOrders.isEmpty()) {
+                    var rowData = filteredOrders.stream()
                             .sorted(comparing(EmployeeSheetData::orderDate))
                             .map(UpdateEmployeeSheetsFromDB::mapEmagToRow)
                             .toList();
-                    addToSheet(orders.getFirst().partNumberKey(), sheet, sheetName, rowData);
+                    addToSheet(filteredOrders.getFirst().partNumberKey(), sheet, sheetName, rowData);
                 }
             }
         }

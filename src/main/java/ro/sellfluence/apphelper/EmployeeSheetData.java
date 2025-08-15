@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
  * The information needed for the employee sheet.
  *
  * @param orderId
+ * @param vendorName
  * @param quantity
  * @param price
  * @param isCompany
@@ -17,6 +18,7 @@ import java.time.LocalDateTime;
  * @param billingName
  * @param billingPhone
  * @param billingAddress
+ * @param shippingSuburb
  * @param clientName
  * @param clientPhone
  * @param deliveryAddress
@@ -25,6 +27,7 @@ import java.time.LocalDateTime;
  */
 public record EmployeeSheetData(
         String orderId,
+        String vendorName,
         int quantity,
         BigDecimal price,
         boolean isCompany,
@@ -35,6 +38,7 @@ public record EmployeeSheetData(
         String billingName,
         String billingPhone,
         String billingAddress,
+        String shippingSuburb,
         String clientName,
         String clientPhone,
         String deliveryAddress,
@@ -44,6 +48,7 @@ public record EmployeeSheetData(
     public EmployeeSheetData withCalledSet(boolean newContacted) {
         return new EmployeeSheetData(
                 orderId,
+                vendorName,
                 quantity,
                 price,
                 isCompany,
@@ -54,6 +59,7 @@ public record EmployeeSheetData(
                 billingName,
                 billingPhone,
                 billingAddress,
+                shippingSuburb,
                 clientName,
                 clientPhone,
                 deliveryAddress,
