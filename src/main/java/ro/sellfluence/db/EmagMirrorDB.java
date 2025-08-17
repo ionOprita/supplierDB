@@ -593,7 +593,8 @@ public class EmagMirrorDB {
                           p.vat,
                           o.status,
                           v.vendor_name,
-                          c.shipping_suburb
+                          c.shipping_suburb,
+                          c.shipping_city
                         FROM emag_order as o
                         LEFT JOIN customer as c
                         ON o.customer_id = c.id
@@ -630,6 +631,7 @@ public class EmagMirrorDB {
                             rs.getString("billing_phone"),
                             rs.getString("billing_address"),
                             rs.getString("shipping_suburb"),
+                            rs.getString("shipping_city"),
                             rs.getString("customer_name"),
                             rs.getString("shipping_phone"),
                             rs.getString("shipping_address"),

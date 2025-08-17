@@ -69,7 +69,7 @@ public class GetCustomerData {
                         List<EmployeeSheetData> list = orderedProductsByPNK.getOrDefault(product.part_number_key(), new ArrayList<>());
                         list.add(new EmployeeSheetData(
                                         order.id(),
-                                order.vendor_name(),
+                                        order.vendor_name(),
                                         product.quantity(),
                                         product.sale_price(),
                                         order.isCompany(),
@@ -81,6 +81,7 @@ public class GetCustomerData {
                                         order.customer().billing_phone(),
                                         order.customer().getBillingAddress(),
                                         order.customer().shipping_suburb(),
+                                        order.customer().shipping_city(),
                                         order.customer().name(),
                                         order.customer().phone_1(),
                                         order.customer().getShippingAddress(),

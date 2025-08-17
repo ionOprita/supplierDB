@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
  * @param billingPhone
  * @param billingAddress
  * @param shippingSuburb
+ * @param shippingCity
  * @param clientName
  * @param clientPhone
  * @param deliveryAddress
@@ -39,6 +40,7 @@ public record EmployeeSheetData(
         String billingPhone,
         String billingAddress,
         String shippingSuburb,
+        String shippingCity,
         String clientName,
         String clientPhone,
         String deliveryAddress,
@@ -60,6 +62,7 @@ public record EmployeeSheetData(
                 billingPhone,
                 billingAddress,
                 shippingSuburb,
+                shippingCity,
                 clientName,
                 clientPhone,
                 deliveryAddress,
