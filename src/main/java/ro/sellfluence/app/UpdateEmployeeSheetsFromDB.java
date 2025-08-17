@@ -45,14 +45,13 @@ public class UpdateEmployeeSheetsFromDB {
 
     private static final Set<String> suburbsToExclude = Set.of();
 
-    private static final Set<String> citiesToExclude = Set.of("Alba Iulia", "Alexandria", "Arad", "Bacau", "Bacău", "Baia Mare",
-            "Bistrita", "Bistrița", "Botosani", "Botoșani", "Braila", "Brasov", "Brașov", "Brăila", "Bucuresti", "București",
-            "Buzau", "Buzău", "Calarasi", "Cluj-Napoca", "Constanta", "Constanța", "Craiova", "Călărași", "Deva",
-            "Drobeta-Turnu Severin", "Focsani", "Focșani", "Galati", "Galați", "Giurgiu", "Iasi", "Iași", "Miercurea Ciuc",
-            "Oradea", "Piatra Neamt", "Piatra Neamț", "Pitesti", "Pitești", "Ploiesti", "Ploiești", "Ramnicu Valcea",
-            "Resita", "Reșița", "Râmnicu Vâlcea", "Satu Mare", "Sfantu Gheorghe", "Sfântu Gheorghe", "Sibiu", "Slatina",
-            "Slobozia", "Suceava", "Targoviste", "Targu Jiu", "Targu Mures", "Timisoara", "Timișoara", "Tulcea",
-            "Târgoviște", "Târgu Jiu", "Târgu Mureș", "Vaslui", "Zalau", "Zalău");
+    private static final Set<String> citiesToExclude = Set.of("Alba Iulia", "Alexandria", "Arad", "Bacau", "Baia Mare",
+            "Bistrita", "Botosani", "Braila", "Brasov", "Sectorul 1","Sectorul 2","Sectorul 3","Sectorul 4","Sectorul 5", "Sectorul 6",
+            "Buzau", "Calarasi", "Cluj-Napoca", "Constanta", "Craiova", "Deva",
+            "Drobeta-Turnu Severin", "Focsani", "Galati", "Giurgiu", "Iasi", "Miercurea Ciuc",
+            "Oradea", "Piatra Neamt", "Pitesti", "Ploiesti", "Ramnicu Valcea",
+            "Resita", "Satu Mare", "Sfantu Gheorghe", "Sibiu", "Slatina",
+            "Slobozia", "Suceava", "Targoviste", "Targu Jiu", "Targu Mures", "Timisoara", "Tulcea", "Vaslui", "Zalau");
 
     private static final Set<String> vendorsWithExclusions = Set.of("Zoopie Concept FBE",
             "Zoopie Invest",
