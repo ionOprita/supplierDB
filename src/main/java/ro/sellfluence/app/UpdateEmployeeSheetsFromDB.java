@@ -43,17 +43,16 @@ public class UpdateEmployeeSheetsFromDB {
 
     private static final String statisticSheetName = "Statistici/luna";
 
+    private static final Set<String> suburbsToExclude = Set.of();
 
-    private static final Set<String> suburbsToExclude = Set.of("Alba Iulia", "Alexandria", "Arad", "Bacau", "Bacău", "Baia Mare",
+    private static final Set<String> citiesToExclude = Set.of("Alba Iulia", "Alexandria", "Arad", "Bacau", "Bacău", "Baia Mare",
             "Bistrita", "Bistrița", "Botosani", "Botoșani", "Braila", "Brasov", "Brașov", "Brăila", "Bucuresti", "București",
-            "Buzau", "Buzău", "Calarasi", "Constanta", "Constanța", "Craiova", "Călărași", "Deva",
+            "Buzau", "Buzău", "Calarasi", "Cluj-Napoca", "Constanta", "Constanța", "Craiova", "Călărași", "Deva",
             "Drobeta-Turnu Severin", "Focsani", "Focșani", "Galati", "Galați", "Giurgiu", "Iasi", "Iași", "Miercurea Ciuc",
             "Oradea", "Piatra Neamt", "Piatra Neamț", "Pitesti", "Pitești", "Ploiesti", "Ploiești", "Ramnicu Valcea",
             "Resita", "Reșița", "Râmnicu Vâlcea", "Satu Mare", "Sfantu Gheorghe", "Sfântu Gheorghe", "Sibiu", "Slatina",
             "Slobozia", "Suceava", "Targoviste", "Targu Jiu", "Targu Mures", "Timisoara", "Timișoara", "Tulcea",
             "Târgoviște", "Târgu Jiu", "Târgu Mureș", "Vaslui", "Zalau", "Zalău");
-
-    private static final Set<String> citiesToExclude = Set.of("Cluj-Napoca");
 
     private static final Set<String> vendorsWithExclusions = Set.of("Zoopie Concept FBE",
             "Zoopie Invest",
