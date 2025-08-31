@@ -77,7 +77,7 @@ public class PopulateProductsTableFromSheets {
                 .forEach(it -> {
                     var oldMapping = pnkMapping.get(it.pnk);
                     if (oldMapping != null && !oldMapping.equals(it)) {
-                        logger.log(WARNING, "Multiple mappings for PNK %s: %s and %s".formatted(it.pnk, oldMapping, it));
+                        logger.log(INFO, "Replaced mapping for PNK %s: from %s to %s".formatted(it.pnk, oldMapping, it));
                     }
                     pnkMapping.put(it.pnk, it);
                 });
@@ -88,7 +88,7 @@ public class PopulateProductsTableFromSheets {
             return null;
         }
         var mapping = pnkMapping.get(pnk);
-        if (mapping == null) {
+        if (mapping == null || !mapping.sheetName.equals(employeeSheetName)) {
             addMappingsFrom(employeeSheetName);
             mapping = pnkMapping.get(pnk);
         }
