@@ -60,8 +60,6 @@ public class PopulateDateComenziFromDB {
         if (sheet == null) {
             throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
         }
-        logger.log(INFO, "--- Update date sheet ----------------------");
-        sheet.updateRange(dateSheetName, List.of(List.of("Order ID", "Vendor", "Product", "Quantity", "Price", "Date")));
         logger.log(INFO, "--- Update GMVs --------------------------");
         updateGMVs(mirrorDB, sheet);
         logger.log(INFO, "--- Update orders ------------------------");
