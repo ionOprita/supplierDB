@@ -1,9 +1,10 @@
 package ro.sellfluence.emagapi;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -82,11 +83,7 @@ public record OrderResult(
         refunded_amount = round(refunded_amount);
     }
 
-    public String statusAsString() {
-        return statusToString(status);
-    }
-
-    public static @NotNull String statusToString(final Integer status) {
+    public static @NonNull String statusToString(final Integer status) {
         if (status == null) return "Unknown";
         return switch (status) {
             case 0 -> "Canceled";
@@ -181,8 +178,20 @@ public record OrderResult(
             hasDifference = true;
         }
         if (!Objects.equals(date, other.date)) {
-            System.out.printf("%s:%s -> %s:%s Modification date changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, date, other.date);
-            hasDifference = true;
+            ZoneId defaultZoneId = ZoneId.systemDefault();
+            var dateChanged = false;
+            if (date instanceof LocalDateTime a && other.date instanceof LocalDateTime b) {
+                if (!a.atZone(defaultZoneId).toInstant().equals(b.atZone(defaultZoneId).toInstant())) {
+                    dateChanged = true;
+                }
+            } else {
+                dateChanged = true;
+            }
+            if (dateChanged) {
+                System.out.printf("%s:%s -> %s:%s Date changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, date, other.date);
+                hasDifference = true;
+
+            }
         }
         if (!Objects.equals(created, other.created)) {
             System.out.printf("%s:%s -> %s:%s Created date changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, created, other.created);

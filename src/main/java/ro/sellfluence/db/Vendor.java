@@ -1,12 +1,14 @@
 package ro.sellfluence.db;
 
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
 
@@ -26,7 +28,7 @@ public class Vendor {
      * @return the UUID of the vendor.
      * @throws SQLException if a database access error occurs.
      */
-    static @NotNull UUID insertOrUpdateVendor(Connection db, String name, String account) throws SQLException {
+    static @NonNull UUID insertOrUpdateVendor(Connection db, String name, String account) throws SQLException {
         UUID id = selectVendorIdByName(db, name);
         if (id == null) {
             id = UUID.randomUUID();
@@ -91,6 +93,28 @@ public class Vendor {
             }
         }
         return toLocalDateTime(timestamp);
+    }
+
+    /**
+     * Generate a map from vendor UUID to vendor name.
+     *
+     * @param db database connection.
+     * @return map.
+     * @throws SQLException if a database access error occurs.
+     */
+    static @NonNull Map<UUID, String> selectAllVendors(Connection db) throws SQLException {
+        var vendors = new HashMap<UUID, String>();
+        try (var s = db.prepareStatement("SELECT id, vendor_name FROM vendor")) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    vendors.put(
+                            rs.getObject("id", UUID.class),
+                            rs.getString("vendor_name")
+                    );
+                }
+            }
+        }
+        return vendors;
     }
 
     /**

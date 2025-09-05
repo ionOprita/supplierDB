@@ -1,6 +1,7 @@
 package ro.sellfluence.app;
 
 import ch.claudio.db.DBPass;
+import ro.sellfluence.support.Arguments;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -8,22 +9,24 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
 
 import static java.lang.ProcessBuilder.Redirect.INHERIT;
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 
 public class BackupDB {
 
     public static void main(String[] args) {
-        System.out.println("Backup the emag database.");
-        backupDB();
+        var dbAlias = new Arguments(args).getOption(databaseOptionName, defaultDatabase);
+        System.out.printf("Back up the %s database.%n", dbAlias);
+        backupDB(dbAlias);
         System.out.println("Backup finished.");
     }
 
     /**
      * Create a backup of the emag database.
      */
-    public static void backupDB() {
+    public static void backupDB(String dbAlias) {
         var pg_dump = findPGDump();
         if (pg_dump == null) {
             System.out.println("Could not find the pg_dump executable. No backup will be performed.");
@@ -34,32 +37,34 @@ public class BackupDB {
                     .resolve("supplierDB")
                     .resolve("Backups");
             try {
+                var dbInfo = DBPass.findDB(dbAlias);
+                var dbName = dbInfo.dbName();
                 Files.createDirectories(backupDir);
                 var timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmm").format(LocalDateTime.now());
-                var backupPath = backupDir.resolve("db_emag_"+timestamp+".dump").toString();
+                var backupPath = backupDir.resolve("db_%s_%s.dump".formatted(dbName, timestamp)).toString();
                 try {
-                    System.out.println("Executing pg_dump to " + backupPath);
-                    var dbInfo = DBPass.findDB("emagLocal");
-                    var dbName = Arrays.stream(dbInfo.connect().split("/")).toList().getLast();
+                    System.out.printf("Executing pg_dump of %s to %s%n", dbName, backupPath);
                     var pb = new ProcessBuilder(pg_dump.toString(), "-Fc", "-f", backupPath, "-U", dbInfo.user(), dbName)
                             .redirectOutput(INHERIT)
                             .redirectErrorStream(true);
                     pb.environment().put("PGPASSWORD", dbInfo.pw());
                     var process = pb.start();
-                    System.out.println("Waiting for the pg_dump executable to finish");
+                    System.out.println("Waiting for the pg_dump command to finish");
                     process.waitFor();
                     System.out.println("pg_dump finished");
                 } catch (IOException | InterruptedException e) {
                     throw new RuntimeException("Could not execute pg_dump", e);
                 }
             } catch (IOException e) {
-                System.out.println("Could not create the backup directory " + backupDir);
+                System.out.printf("Could not create the backup directory %s.%n", backupDir);
             }
         }
     }
 
     /**
      * Search for the pg_dump executable.
+     *
+     * <p><b>Note:</b> This version works only on Windows.</p>
      *
      * @return the path to the pg_dump executable or null if not found.
      */

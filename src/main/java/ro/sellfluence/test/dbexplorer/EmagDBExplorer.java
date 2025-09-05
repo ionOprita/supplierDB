@@ -1,8 +1,9 @@
 package ro.sellfluence.test.dbexplorer;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 import ro.sellfluence.db.EmagMirrorDB;
-import ro.sellfluence.db.EmagMirrorDB.POInfo;
+import ro.sellfluence.support.Arguments;
+import ro.sellfluence.db.POInfo;
 
 import javax.swing.Box;
 import javax.swing.JButton;
@@ -23,21 +24,20 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import static javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_ALWAYS;
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 
 public class EmagDBExplorer {
-    private static String database = "emagLocal";
-
     private static EmagMirrorDB emagMirrorDB;
     public static final int tableWidth = 1800;
     public static final int tableHeight = 200;
     private static final TextAreaRenderer textAreaRenderer = new TextAreaRenderer();
 
     public static void main(String[] args) throws SQLException, IOException {
-        if (args.length > 0) {
-            database = args[0];
-        }
-        emagMirrorDB = EmagMirrorDB.getEmagMirrorDB(database);
-        initGUI();
+        var arguments = new Arguments(args);
+        String databaseAlias = arguments.getOption(databaseOptionName, defaultDatabase);
+        emagMirrorDB = EmagMirrorDB.getEmagMirrorDB(databaseAlias);
+        initGUI(databaseAlias);
     }
 
     private static final JTextField orderField = new JTextField(20);
@@ -53,9 +53,9 @@ public class EmagDBExplorer {
     private static final ProductInOrderTableModel pioTableModel = new ProductInOrderTableModel();
     private static final JTable productInOrderTable = new JTable(pioTableModel);
 
-    private static void initGUI() {
+    private static void initGUI(String databaseAlias) {
         SwingUtilities.invokeLater(() -> {
-            JFrame frame = new JFrame("Emag DB Browser ("+database+")");
+            JFrame frame = new JFrame("Emag DB Browser (%s)".formatted(databaseAlias));
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
             var outerBox = Box.createVerticalBox();
@@ -106,7 +106,7 @@ public class EmagDBExplorer {
         });
     }
 
-    private static @NotNull JScrollPane setupAndReturnCustomerTable() {
+    private static @NonNull JScrollPane setupAndReturnCustomerTable() {
         // Customer ID, Name, Email, Phone, Billing Info, Shipping Info, Created, Modified.
         setColumnWidths(customerTable, 70, 180, 120, 100, 400, 500, 150, 150);
         // Apply a custom cell renderer for text wrapping
@@ -116,7 +116,7 @@ public class EmagDBExplorer {
         return encloseInScrollPane(customerTable);
     }
 
-    private static @NotNull JScrollPane setupAndReturnProductTable() {
+    private static @NonNull JScrollPane setupAndReturnProductTable() {
         // ID, PNK, Name, External ID, Quantity, Initial Quantity, Storno Quantity, Sale Price, Original Price
         setColumnWidths(productInOrderTable, 70, 70, 400, 70, 70, 70, 70, 100, 100);
         // Apply the custom cell renderer for text wrapping
@@ -124,16 +124,16 @@ public class EmagDBExplorer {
         return encloseInScrollPane(productInOrderTable);
     }
 
-    private static @NotNull JScrollPane setupAndReturnOrderTable() {
+    private static @NonNull JScrollPane setupAndReturnOrderTable() {
         // Add a mouse listener to the table
         orderTable.addMouseListener(getOrderIdMouseAdapter());
         orderTable.addMouseListener(updateProductTable());
-        // Order ID, Vendor ID, Vendor Name, Customer ID, Status, Date, Created, Modified, Surrogate ID
+        // Order ID, Vendor ID, Vendor Name, Customer ID, Status, Date, Created, Modified, Surrogate ID.
         setColumnWidths(orderTable, 100, 200, 150, 100, 50, 150, 150, 150, 50);
         return encloseInScrollPane(orderTable);
     }
 
-    private static @NotNull MouseAdapter getOrderIdMouseAdapter() {
+    private static @NonNull MouseAdapter getOrderIdMouseAdapter() {
         return new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -147,13 +147,13 @@ public class EmagDBExplorer {
         };
     }
 
-    private static @NotNull MouseAdapter updateProductTable() {
+    private static @NonNull MouseAdapter updateProductTable() {
         return new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 int row = orderTable.rowAtPoint(e.getPoint());
-                var surrogateId =  (long) orderTable.getValueAt(row, 8);
-                updateProductTable(surrogateId);
+                var surrogateId =   orderTable.getValueAt(row, 8);
+                if (surrogateId instanceof Long) updateProductTable((long)surrogateId);
             }
         };
     }
@@ -266,7 +266,7 @@ public class EmagDBExplorer {
      * @param table on which to set column widths.
      * @param widths One item for each column.
      */
-    private static void setColumnWidths(JTable table, int... widths) {
+    public static void setColumnWidths(JTable table, int... widths) {
         TableColumnModel columnModel = table.getColumnModel();
         for (int i = 0; i < widths.length && i < columnModel.getColumnCount(); i++) {
             columnModel.getColumn(i).setPreferredWidth(widths[i]);
@@ -279,7 +279,7 @@ public class EmagDBExplorer {
      * @param table to be embedded in a scroll pane.
      * @return the scroll pane.
      */
-    private static @NotNull JScrollPane encloseInScrollPane(final JTable table) {
+    private static @NonNull JScrollPane encloseInScrollPane(final JTable table) {
         table.setFillsViewportHeight(true);  // Ensure headers are always visible
         JScrollPane scrollPane = new JScrollPane(table);
         scrollPane.setPreferredSize(new Dimension(tableWidth, tableHeight));  // Set the preferred size for scrolling

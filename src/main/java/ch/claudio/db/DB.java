@@ -24,7 +24,7 @@ import static java.sql.Connection.TRANSACTION_SERIALIZABLE;
  *
  * @author [Claudio Nieder](mailto:private@claudio.ch)
  * <p>
- * Copyright (C) 2013-2024 Claudio Nieder &lt;private@claudio.ch&gt;
+ * Copyright © 2013–2025 Claudio Nieder &lt;private@claudio.ch&gt;
  * CH-8045 Zürich
  * <p>
  * This program is free software: you can redistribute it and/or modify
@@ -48,11 +48,10 @@ public class DB {
     private static final String versionTable = "version_info";
     private static final String versionColumn = "version";
     private static final String dateColumn = "date";
-    private final DBPass dbSpec;
     private final HikariDataSource dataSource;
 
     public DB(String alias) throws IOException {
-        dbSpec = findDB(alias);
+        var dbSpec = findDB(alias);
         // Configure the connection pool
         HikariConfig config = new HikariConfig();
         config.setJdbcUrl(dbSpec.connect());
@@ -78,7 +77,7 @@ public class DB {
      * This method reads the stored database version from the version table and
      * performs any steps missing to reach the latest version.
      */
-    public boolean prepareDB(Instructions... instructions) throws SQLException {
+    public void prepareDB(Instructions... instructions) throws SQLException {
         int dbVersion;
         try {
             dbVersion = singleReadTX(db -> {
@@ -100,16 +99,12 @@ public class DB {
             });
         }
         final var lastVersionFound = dbVersion;
-        return writeTX(db -> {
+        writeTX(db -> {
             var version = lastVersionFound;
             while (version < instructions.length) {
                 instructions[version].execute(db);
                 version++;
-                try {
-                    addVersion(db, version);
-                } catch (SQLException e) {
-                    return false;
-                }
+                addVersion(db, version);
             }
             return true;
         });
@@ -124,7 +119,7 @@ public class DB {
      * Protects only against dirty-reads.
      *
      * @param <OUT> return value of transaction execution.
-     * @param tx    pass a method that executes SQL statements and either returns a value to signal all went well,
+     * @param tx    pass a method that executes SQL statements and either returns a value to signal all went well
      *              or throws an exception to signal an error.
      * @return value defined by caller.
      */
@@ -137,7 +132,7 @@ public class DB {
      * Protects only against dirty-reads and non-repeatability.
      *
      * @param <OUT> return value of transaction execution.
-     * @param tx    pass a method that executes SQL statements and either returns a value to signal all went well,
+     * @param tx    pass a method that executes SQL statements and either returns a value to signal all went well
      *              or throws an exception to signal an error.
      * @return value defined by caller.
      */
@@ -163,12 +158,12 @@ public class DB {
     }
 
     /**
-     * Create a version table in the database [db] and add an entry with number 0
+     * Create a version table in the database [db] and add an entry with the number zero
      * representing the version of the empty database.
      */
     private void createVersionTable(Connection db) throws SQLException {
         try (var s = db.prepareStatement(
-                "CREATE TABLE " + versionTable + " (" + versionColumn + " integer, " + dateColumn + " timestamp with time zone)"
+                "CREATE TABLE %s (%s integer PRIMARY KEY, %s timestamp with time zone)".formatted(versionTable, versionColumn, dateColumn)
         )) {
             s.execute();
         }
@@ -179,7 +174,7 @@ public class DB {
      * Add to the database [db] the next version entry with [version] number and time stamp.
      */
     private void addVersion(Connection db, int version) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO " + versionTable + " (" + versionColumn + "," + dateColumn + ") VALUES (?,current_timestamp)")) {
+        try (var s = db.prepareStatement("INSERT INTO %s (%s,%s) VALUES (?,current_timestamp)".formatted(versionTable, versionColumn, dateColumn))) {
             s.setInt(1, version);
             s.execute();
         }

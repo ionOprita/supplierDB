@@ -14,7 +14,8 @@ public class ProductTable {
             boolean retracted,
             String category,
             String messageKeyword,
-            String employeeSheetName
+            String employeeSheetName,
+            String emloyeSheetTab
     ) {
     }
 
@@ -49,7 +50,7 @@ public class ProductTable {
      */
     static List<ProductInfo> getProducts(Connection db) throws SQLException {
         var products = new ArrayList<ProductInfo>();
-        try (var s = db.prepareStatement("SELECT emag_pnk, product_code, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name FROM product")) {
+        try (var s = db.prepareStatement("SELECT emag_pnk, product_code, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name, employee_sheet_tab FROM product")) {
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     products.add(
@@ -61,7 +62,8 @@ public class ProductTable {
                                     rs.getBoolean("retracted"),
                                     rs.getString("category"),
                                     rs.getString("message_keyword"),
-                                    rs.getString("employee_sheet_name")
+                                    rs.getString("employee_sheet_name"),
+                                    rs.getString("employee_sheet_tab")
                             )
                     );
                 }
@@ -87,6 +89,23 @@ public class ProductTable {
             }
         }
         return products;
+    }
+
+    /**
+     * Updates the employee_sheet_tab column of the product table for the product identified by the given PNK.
+     *
+     * @param db the database connection to use for the update operation
+     * @param pnk the PNK of the product to be updated
+     * @param tabName the new value to set for the employee_sheet_tab column
+     * @return the number of rows affected by the update operation
+     * @throws SQLException if a database access error occurs
+     */
+    static int updateProductTabByPNK(Connection db, String pnk, String tabName) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE product SET employee_sheet_tab = ? WHERE emag_pnk = ?")) {
+            s.setString(1, tabName);
+            s.setString(2, pnk);
+            return s.executeUpdate();
+        }
     }
 
     /**
@@ -128,7 +147,7 @@ public class ProductTable {
     private static int updateProduct(Connection db, ProductInfo productInfo) throws SQLException {
         try (var s = db.prepareStatement("""
                 UPDATE product
-                SET emag_pnk = ?, category = ?, message_keyword = ?, continue_to_sell = ?, retracted = ?, name = ?, employee_sheet_name = ?
+                SET emag_pnk = ?, category = ?, message_keyword = ?, continue_to_sell = ?, retracted = ?, name = ?, employee_sheet_name = ?, employee_sheet_tab = ?
                 WHERE product_code = ?
                 """)) {
             s.setString(1, productInfo.pnk());
@@ -138,7 +157,8 @@ public class ProductTable {
             s.setBoolean(5, productInfo.retracted());
             s.setString(6, productInfo.name());
             s.setString(7, productInfo.employeeSheetName());
-            s.setString(8, productInfo.productCode());
+            s.setString(8, productInfo.emloyeSheetTab());
+            s.setString(9, productInfo.productCode());
             return s.executeUpdate();
         }
     }

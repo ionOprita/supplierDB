@@ -1,7 +1,5 @@
 package ro.sellfluence.test.dbexplorer;
 
-import ro.sellfluence.db.EmagMirrorDB.POInfo;
-
 import javax.swing.table.AbstractTableModel;
 import java.util.ArrayList;
 import java.util.List;

@@ -1,15 +1,19 @@
 package ro.sellfluence.db;
 
 import ch.claudio.db.DB;
+import org.jspecify.annotations.NonNull;
 import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.db.EmagFetchLog.EmagFetchHistogram;
+import ro.sellfluence.db.EmagOrder.ExtendedOrder;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.versions.SetupDB;
 import ro.sellfluence.emagapi.CancellationReason;
 import ro.sellfluence.emagapi.LockerDetails;
 import ro.sellfluence.emagapi.OrderResult;
+import ro.sellfluence.emagapi.Product;
 import ro.sellfluence.emagapi.RMAResult;
 import ro.sellfluence.sheetSupport.Conversions;
+import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -32,18 +36,16 @@ import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import static java.math.RoundingMode.HALF_EVEN;
-import static java.util.logging.Level.WARNING;
+import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.SEVERE;
 import static ro.sellfluence.db.EmagFetchLog.deleteFetchLogsBefore;
 import static ro.sellfluence.db.EmagFetchLog.getEmagLog;
 import static ro.sellfluence.db.EmagFetchLog.insertEmagLog;
 import static ro.sellfluence.db.EmagFetchLog.updateEmagLog;
 import static ro.sellfluence.db.EmagOrder.addOrderResult;
-import static ro.sellfluence.db.GMV.addToGMV;
+import static ro.sellfluence.db.GMV.computeAndStoreGMVForProduct;
 import static ro.sellfluence.db.GMV.getGMVByMonth;
 import static ro.sellfluence.db.GMV.getGMVByProductId;
-import static ro.sellfluence.db.GMV.insertOrUpdateGMV;
-import static ro.sellfluence.db.GMV.specialCase;
-import static ro.sellfluence.db.GMV.subtractFromGMV;
 import static ro.sellfluence.db.ProductTable.getProductCodes;
 import static ro.sellfluence.db.ProductTable.getProducts;
 import static ro.sellfluence.db.ProductTable.insertOrUpdateProduct;
@@ -52,7 +54,6 @@ import static ro.sellfluence.db.Vendor.insertOrUpdateVendor;
 import static ro.sellfluence.db.Vendor.selectFetchTimeByAccount;
 import static ro.sellfluence.db.Vendor.selectVendorIdByName;
 import static ro.sellfluence.db.Vendor.updateFetchTimeByAccount;
-import static ro.sellfluence.support.UsefulMethods.toDate;
 import static ro.sellfluence.support.UsefulMethods.toLocalDate;
 import static ro.sellfluence.support.UsefulMethods.toLocalDateTime;
 import static ro.sellfluence.support.UsefulMethods.toTimestamp;
@@ -60,7 +61,8 @@ import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 public class EmagMirrorDB {
 
     private static final Map<String, EmagMirrorDB> openDatabases = new HashMap<>();
-    private static final Logger logger = Logger.getLogger(EmagMirrorDB.class.getName());
+
+    private static final Logger logger = Logs.getConsoleLogger("EmagMirrorDB", INFO);
 
     private final DB database;
 
@@ -80,7 +82,13 @@ public class EmagMirrorDB {
         var mirrorDB = openDatabases.get(alias);
         if (mirrorDB == null) {
             var db = new DB(alias);
-            SetupDB.setupAndUpdateDB(db);
+            try {
+                SetupDB.setupAndUpdateDB(db);
+            } catch (SQLException e) {
+                String message = "Unable to setup database %s.".formatted(alias);
+                logger.log(SEVERE, message, e);
+                throw new IOException(message);
+            }
             mirrorDB = new EmagMirrorDB(db);
             openDatabases.put(alias, mirrorDB);
         }
@@ -104,7 +112,7 @@ public class EmagMirrorDB {
     /**
      * Return all orders that are open, grouped by the vendor.
      *
-     * @return Map from the emag account to new orders associated with that account.
+     * @return Map from the eMAG account to new orders associated with that account.
      * @throws SQLException on database issues.
      */
     public Map<String, List<String>> readOrderIdForOpenOrdersByVendor() throws SQLException {
@@ -147,6 +155,7 @@ public class EmagMirrorDB {
     public List<EmagFetchHistogram> readFetchHistogram() throws SQLException {
         return database.readTX(EmagFetchLog::getFetchHistogram);
     }
+
     /**
      * Read orders in a format that is useful to update the employee sheets.
      *
@@ -177,9 +186,9 @@ public class EmagMirrorDB {
 
     public void addEmagLog(String account, LocalDate date, LocalDateTime fetchTime, String error) throws SQLException {
         database.writeTX(db -> {
-            var insertedRows = insertEmagLog(db, account, date,fetchTime, error);
+            var insertedRows = insertEmagLog(db, account, date, fetchTime, error);
             if (insertedRows == 0) {
-                updateEmagLog(db, account, date,fetchTime, error);
+                updateEmagLog(db, account, date, fetchTime, error);
             }
             return "";
         });
@@ -201,62 +210,8 @@ public class EmagMirrorDB {
         return database.writeTX(db -> deleteFetchLogsBefore(db, oldestDay));
     }
 
-    public record POInfo(String orderId, LocalDate orderDate, int orderStatus, String productName, int quantity,
-                  int initialQuantity, int stornoQuantity,
-                  BigDecimal price) {
-    }
-
     public List<POInfo> readProductInOrderByProductAndMonth(String productCode, YearMonth yearMonth) throws SQLException {
-        return database.readTX(db -> {
-                    var result = new ArrayList<POInfo>();
-                    try (var s = db.prepareStatement("""
-                            SELECT p.name AS productName,
-                            pio.quantity AS quantity,
-                            pio.initial_qty AS initialQuantity,
-                            pio.storno_qty AS stornoQuantity,
-                            pio.sale_price AS salePrice,
-                            pio.vat AS vat,
-                            pio.created, pio.modified,
-                            o.status AS orderStatus,
-                            o.date AS orderDate,
-                            o.modified,
-                            o.id AS orderId
-                            FROM product_in_order AS pio
-                            INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
-                            INNER JOIN emag_order AS o ON pio.emag_order_surrogate_id = o.surrogate_id
-                            WHERE p.product_code = ? AND (o.status = 4 OR o.status = 5) AND o.date >= ? AND o.date < ?
-                            ORDER BY o.id, o.status
-                            """)) {
-                        s.setObject(1, productCode);
-                        s.setDate(2, toDate(yearMonth));
-                        s.setDate(3, toDate(yearMonth.plusMonths(1)));
-                        try (var rs = s.executeQuery()) {
-                            while (rs.next()) {
-                                var orderId = rs.getString("orderId");
-                                var quantity = rs.getInt("quantity");
-                                var initialQuantity = rs.getInt("initialQuantity");
-                                var stornoQuantity = rs.getInt("stornoQuantity");
-                                var salePrice = rs.getBigDecimal("salePrice");
-                                var vat = new BigDecimal(rs.getString("vat"));
-                                var price = vat.add(BigDecimal.ONE).multiply(salePrice).setScale(2, HALF_EVEN);
-                                var poInfo = new POInfo(
-                                        orderId,
-                                        toLocalDate(rs.getTimestamp("orderDate")),
-                                        rs.getInt("orderStatus"),
-                                        rs.getString("productName"),
-                                        quantity,
-                                        initialQuantity,
-                                        stornoQuantity,
-                                        price
-                                );
-                                result.add(poInfo);
-                            }
-
-                        }
-                    }
-                    return result;
-                }
-        );
+        return database.readTX(db -> POInfo.getByProductAndMonth(db, productCode, yearMonth));
     }
 
     public List<ProductInfo> readProducts() throws SQLException {
@@ -361,7 +316,9 @@ public class EmagMirrorDB {
                 try (var rs = s.executeQuery()) {
                     while (rs.next()) {
                         var priceWithoutVAT = rs.getBigDecimal(6);
-                        var priceWithVAT = priceWithoutVAT.multiply(BigDecimal.valueOf(1.19)); // TODO: Proper handling of VAT required
+                        var vatRate = new BigDecimal(rs.getString("vat"));
+                        var vat = priceWithoutVAT.multiply(vatRate);
+                        var priceWithVAT = priceWithoutVAT.add(vat);
                         String customerName = rs.getString(8);
                         boolean isFBE = rs.getBoolean(15);
                         String modPlata = rs.getString(21);
@@ -509,7 +466,8 @@ public class EmagMirrorDB {
                               c.billing_phone,
                               c.code,
                               o.observation,
-                              pi.message_keyword
+                              pi.message_keyword,
+                              p.vat
                             FROM emag_order as o
                             LEFT JOIN customer as c
                             ON o.customer_id = c.id
@@ -523,7 +481,9 @@ public class EmagMirrorDB {
                 try (var rs = s.executeQuery()) {
                     while (rs.next()) {
                         var priceWithoutVAT = rs.getBigDecimal(6);
-                        var priceWithVAT = priceWithoutVAT.multiply(BigDecimal.valueOf(1.19)); // TODO: Proper handling of VAT required
+                        var vatRate = new BigDecimal(rs.getString("vat"));
+                        var vat = priceWithoutVAT.multiply(vatRate);
+                        var priceWithVAT = priceWithoutVAT.add(vat);
                         String customerName = rs.getString(8);
                         var row = Arrays.<Object>asList(rs.getString(1), // id
                                 rs.getString(2), // company name
@@ -586,40 +546,24 @@ public class EmagMirrorDB {
         });
     }
 
+    public Map<Integer, List<Product>> readAllProducts() throws SQLException {
+        return database.readTX(EmagOrder::selectAllProduct);
+    }
+
+    public HashMap<String, List<ExtendedOrder>> readAllOrders(Map<Integer, List<Product>> allProducts, Map<UUID, String> allVendors) throws SQLException {
+        return database.readTX(db -> EmagOrder.selectAllOrders(db, allProducts, allVendors));
+    }
+
+    public @NonNull Map<UUID, String> readVendors() throws SQLException {
+        return database.readTX(Vendor::selectAllVendors);
+    }
+
+
     private static boolean computeGMV(Connection db) throws SQLException {
         var products = getProductCodes(db);
         for (String productCode : products) {
             var ordersWithProduct = getOrderDataByProduct(db, productCode);
-            var gmvByMonth = new HashMap<YearMonth, BigDecimal>();
-            ordersWithProduct.forEach((_, poInfos) -> {
-                if (poInfos.size() == 1) {
-                    POInfo order = poInfos.getFirst();
-                    var yearMonth = YearMonth.from(order.orderDate);
-                    addToGMV(gmvByMonth, yearMonth, order);
-                } else if (poInfos.size() == 2) {
-                    POInfo finalized = poInfos.getFirst();
-                    POInfo storno = poInfos.getLast();
-                    // Two entries for the same product in the same order.
-                    if (storno.orderStatus == 4 || finalized.orderStatus == 5) {
-                        specialCase(gmvByMonth, finalized, storno);
-                    } else {
-                        if (storno.initialQuantity != finalized.quantity) {
-                            logger.log(WARNING, "Mismatch in quantity between\n finalized order: %s\n and storno order: %s.".formatted(finalized, storno));
-                        }
-                        var finalizedMonth = YearMonth.from(finalized.orderDate);
-                        var stornoMonth = YearMonth.from(storno.orderDate);
-                        if (finalizedMonth.equals(stornoMonth)) {
-                            addToGMV(gmvByMonth, finalizedMonth, storno);
-                        } else {
-                            addToGMV(gmvByMonth, finalizedMonth, finalized);
-                            subtractFromGMV(gmvByMonth, stornoMonth, storno);
-                        }
-                    }
-                } else {
-                    throw new RuntimeException("Not prepared to handle order with more than two states: %s.".formatted(poInfos));
-                }
-            });
-            insertOrUpdateGMV(db, productCode, gmvByMonth);
+            computeAndStoreGMVForProduct(db, productCode, ordersWithProduct);
         }
         return true;
     }
@@ -647,7 +591,10 @@ public class EmagMirrorDB {
                           o.delivery_mode,
                           p.currency,
                           p.vat,
-                          o.status
+                          o.status,
+                          v.vendor_name,
+                          c.shipping_suburb,
+                          c.shipping_city
                         FROM emag_order as o
                         LEFT JOIN customer as c
                         ON o.customer_id = c.id
@@ -672,9 +619,10 @@ public class EmagMirrorDB {
                     int status = rs.getInt("status");
                     var data = new EmployeeSheetData(
                             rs.getString("id"),
+                            rs.getString("vendor_name"),
                             rs.getInt("quantity"),
                             priceWithVAT,
-                            rs.getInt("legal_entity")>0,
+                            rs.getInt("legal_entity") > 0,
                             toLocalDateTime(rs.getTimestamp("date")),
                             rs.getString("product_name"),
                             rs.getString("part_number_key"),
@@ -682,6 +630,8 @@ public class EmagMirrorDB {
                             rs.getString("billing_name"),
                             rs.getString("billing_phone"),
                             rs.getString("billing_address"),
+                            rs.getString("shipping_suburb"),
+                            rs.getString("shipping_city"),
                             rs.getString("customer_name"),
                             rs.getString("shipping_phone"),
                             rs.getString("shipping_address"),
@@ -709,7 +659,9 @@ public class EmagMirrorDB {
                 o.status AS orderStatus,
                 o.date AS orderDate,
                 o.modified,
-                o.id AS orderId
+                o.id AS orderId,
+                o.surrogate_id AS orderSurrogateId,
+                pio.id AS pioId
                 FROM product_in_order AS pio
                 INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
                 INNER JOIN emag_order AS o ON pio.emag_order_surrogate_id = o.surrogate_id
@@ -729,8 +681,10 @@ public class EmagMirrorDB {
                     var price = vat.add(BigDecimal.ONE).multiply(salePrice).setScale(2, HALF_EVEN);
                     var poInfo = new POInfo(
                             orderId,
+                            rs.getInt("orderSurrogateId"),
                             toLocalDate(rs.getTimestamp("orderDate")),
                             rs.getInt("orderStatus"),
+                            rs.getInt("pioId"),
                             rs.getString("productName"),
                             quantity,
                             initialQuantity,

@@ -1,6 +1,7 @@
 package ch.claudio.db;
 
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -20,7 +21,7 @@ import java.util.stream.Collectors;
  * <p>
  * @author [Claudio Nieder](mailto:private@claudio.ch)
  * <p>
- * Copyright (C) 2010-2024 Claudio Nieder &lt;private@claudio.ch&gt;,
+ * Copyright (C) 2010-2025 Claudio Nieder &lt;private@claudio.ch&gt;,
  * CH-8045 Zürich
  * <p>
  * This program is free software: you can redistribute it and/or modify
@@ -52,7 +53,7 @@ public record DBPass(String alias, String connect, String user, String pw) {
     /**
      * Uses getAll and then filters the line for the database with the given alias.
      * <p>
-     * It throws an exception if the alias is not present in the file, or if the file
+     * It throws an exception if the alias is not present in the file or if the file
      * has more than one line with the same alias.
      */
     public static DBPass findDB(String alias) throws IOException {
@@ -71,5 +72,35 @@ public record DBPass(String alias, String connect, String user, String pw) {
                 .filter(line -> !line.isBlank())
                 .map(DBPass::fromString)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Returns the database name from the connect-string.
+     *
+     * <p><b>Note:</b> This is known to work only for MySQL and PostgreSQL JDBC connect strings.
+     * It might work for others that have a similar syntax.</p>
+     */
+    public String dbName() {
+        return URI.create(connect.substring(5)).getPath().substring(1);
+    }
+
+    /**
+     * Returns the database host from the connect-string.
+     *
+     * <p><b>Note:</b> This is known to work only for MySQL and PostgreSQL JDBC connect strings.
+     * It might work for others that have a similar syntax.</p>
+     */
+    public String dbHost() {
+        return URI.create(connect.substring(5)).getHost();
+    }
+
+    /**
+     * Returns the database port from the connect-string.
+     *
+     * <p><b>Note:</b> This is known to work only for MySQL and PostgreSQL JDBC connect strings.
+     * It might work for others that have a similar syntax.</p>
+     */
+    public int dbPort() {
+        return URI.create(connect.substring(5)).getPort();
     }
 }

@@ -1,0 +1,17 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="EmagDBApp refetch_all" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="ro.sellfluence.app.EmagDBApp" />
+    <module name="supplierDB" />
+    <option name="PROGRAM_PARAMETERS" value="--refetch_all" />
+    <option name="WORKING_DIRECTORY" value="$ContentRoot$" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="ro.sellfluence.app.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

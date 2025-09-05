@@ -1,6 +1,7 @@
 package ro.sellfluence.test.dbexplorer;
 
-import ro.sellfluence.db.EmagMirrorDB.POInfo;
+import ro.sellfluence.db.POInfo;
+import ro.sellfluence.emagapi.OrderResult;
 
 import javax.swing.table.AbstractTableModel;
 import java.util.ArrayList;
@@ -8,7 +9,7 @@ import java.util.List;
 
 public class POInfoTableModel extends AbstractTableModel {
     private final String[] columnNames = {
-            "Order ID", "Order Date", "Order Status", "Product Name",
+            "Order ID", "Surrogate ID", "Order Date", "Order Status", "Product Name", "Product In Order ID",
             "Quantity", "Initial Quantity", "Storno Quantity", "Price"
     };
     private List<POInfo> poInfos = new ArrayList<>();
@@ -31,13 +32,15 @@ public class POInfoTableModel extends AbstractTableModel {
         POInfo poInfo = poInfos.get(rowIndex);
         return switch (columnIndex) {
             case 0 -> poInfo.orderId();
-            case 1 -> poInfo.orderDate();
-            case 2 -> poInfo.orderStatus();
-            case 3 -> poInfo.productName();
-            case 4 -> poInfo.quantity();
-            case 5 -> poInfo.initialQuantity();
-            case 6 -> poInfo.stornoQuantity();
-            case 7 -> poInfo.price();
+            case 1 -> poInfo.surrogateId();
+            case 2 -> poInfo.orderDate();
+            case 3 -> OrderResult.statusToString(poInfo.orderStatus());
+            case 4 -> poInfo.productName();
+            case 5 -> poInfo.productInOrderId();
+            case 6 -> poInfo.quantity();
+            case 7 -> poInfo.initialQuantity();
+            case 8 -> poInfo.stornoQuantity();
+            case 9 -> poInfo.price();
             default -> null;
         };
     }

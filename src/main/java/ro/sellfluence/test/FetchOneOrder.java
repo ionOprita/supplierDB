@@ -40,7 +40,8 @@ public class FetchOneOrder {
     public static void main(String[] args) throws Exception {
         EmagApi.setAPILogLevel(FINE);
     //    emagAccounts.forEach(account -> fetchOrder(account,"407649385"));
-        fetchOrder("sellfusion","427037619");
+        //fetchOrder("sellfusion","427037619");
+        fetchOrder("zoopieconcept", "345672982");
     }
 
     private static void fetchOrder(String vendor, String orderId) {
@@ -49,9 +50,9 @@ public class FetchOneOrder {
         var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
         try {
             var response = emag.readRequest("order", Map.of("id", orderId), null, OrderResult.class);
+            var responseRet = emag.readRequest("rma", Map.of("order_id", orderId), null, RMAResult.class);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-//        var responseRet = emag.readRequest("rma", Map.of("order_id", orderId), null, RMAResult.class);
     }
 }

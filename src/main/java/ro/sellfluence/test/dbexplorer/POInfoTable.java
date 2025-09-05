@@ -1,20 +1,22 @@
 package ro.sellfluence.test.dbexplorer;
 
-import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.db.POInfo;
 import ro.sellfluence.db.ProductTable.ProductInfo;
+import ro.sellfluence.emagapi.OrderResult;
 
 import javax.swing.BoxLayout;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.TableColumnModel;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiFunction;
+
+import static ro.sellfluence.test.dbexplorer.EmagDBExplorer.setColumnWidths;
 
 public class POInfoTable extends JPanel {
 
@@ -32,7 +34,7 @@ public class POInfoTable extends JPanel {
         setLayout(new BoxLayout(this, BoxLayout.LINE_AXIS));
     }
 
-    public void updateTable(List<EmagMirrorDB.POInfo> data) {
+    public void updateTable(List<POInfo> data) {
         mainModel.updatePOInfos(data);
         mainTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         mainTable.invalidate();
@@ -45,29 +47,13 @@ public class POInfoTable extends JPanel {
                 return false;
             }
         };
-        // Set preferred column widths
-        TableColumnModel columnModel = mainTable.getColumnModel();
-        columnModel.getColumn(0).setPreferredWidth(100);  // Order ID
-        columnModel.getColumn(1).setPreferredWidth(100);  // Order date
-        columnModel.getColumn(2).setPreferredWidth(100);  // Order status
-        columnModel.getColumn(3).setPreferredWidth(200);  // Product name
-        columnModel.getColumn(4).setPreferredWidth(100);  // Quantity
-        columnModel.getColumn(5).setPreferredWidth(100);  // Initial quantity
-        columnModel.getColumn(6).setPreferredWidth(100);  // Storno quantity
-        columnModel.getColumn(7).setPreferredWidth(100);  // Price
-        columnModel.getColumn(2).setCellRenderer(new DefaultTableCellRenderer() {
+        // Order ID, Surrogate ID, Order date, Status, Product name, Product In Order ID, Quantity, Initial quantity, Storno quantity, Price
+        setColumnWidths(mainTable, 100, 70, 100, 70, 200, 70, 70, 70, 70, 100);
+        mainTable.getColumnModel().getColumn(3).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
                 if (value instanceof Integer status) {
-                    value = switch (status) {
-                        case 0 -> "Cancelled";
-                        case 1 -> "Storno";
-                        case 2 -> "Finalized";
-                        case 3 -> "Storno";
-                        case 4 -> "Finalized";
-                        case 5 -> "Storno";
-                        default -> "%d".formatted(status);
-                    };
+                    value = OrderResult.statusToString(status);
                 }
                 return super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
             }

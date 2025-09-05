@@ -1,26 +1,47 @@
 package ro.sellfluence.app;
 
+import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.support.Arguments;
+import ro.sellfluence.support.Logs;
+
 import java.io.IOException;
 import java.sql.SQLException;
+import java.util.logging.Logger;
 
+import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.app.BackupDB.backupDB;
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 
 /**
  * Class, which executes all the single applications.
  */
 public class EmagBot {
-    public static void main(String[] args) {
-        System.out.println("Backup the eMag mirror database.");
-        backupDB();
-        System.out.println("Syncing the eMag mirror database.");
-        EmagDBApp.main(new String[0]);
+    private static final Logger logger = Logs.getConsoleLogger("EmagBot", INFO);
+
+    public static void main(String[] args) throws SQLException, IOException {
+        var arguments = new Arguments(args);
+        var dbAlias = arguments.getOption(databaseOptionName, defaultDatabase);
+        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(dbAlias);
+        logger.log(INFO, "Back up the %s database.%n".formatted(dbAlias));
+        backupDB(dbAlias);
+        logger.log(INFO, "Syncing the %s database.%n".formatted(dbAlias));
+        EmagDBApp.fetchFromEmag(mirrorDB, arguments);
+        logger.log(INFO, "Update the product table of database %s.".formatted(dbAlias));
         try {
-            System.out.println("Transfer orders from the database to the date comenzi sheet.");
-            PopulateDateComenziFromDB.main(new String[0]);
-        } catch (IOException | SQLException e) {
-            throw new RuntimeException("PopulateDateComenzi endet with an exception ", e);
+            PopulateProductsTableFromSheets.updateProductTable(mirrorDB);
+        } catch (Exception e) {
+            logger.log(WARNING, "Updating the product table ended with an exception. The Bot will continue, but additional problems might occur later.", e);
         }
-        System.out.println("Update the sheet used for customer feedback.");
-        UpdateEmployeeSheetsFromDB.main(new String[0]);
+        logger.log(INFO, "Transfer orders from the %s database to the date comenzi sheet.".formatted(dbAlias));
+        try {
+            PopulateDateComenziFromDB.updateSpreadsheets(mirrorDB);
+        } catch (SQLException e) {
+            logger.log(WARNING, "Updating the date comenzi sheet ended with an exception. The Bot will continue anyway with the next step.", e);
+            throw new RuntimeException("PopulateDateComenzi ended with an exception ", e);
+        }
+        logger.log(INFO, "Update the sheet used for customer feedback using %s.".formatted(dbAlias));
+        UpdateEmployeeSheetsFromDB.updateSheets(mirrorDB);
     }
 }

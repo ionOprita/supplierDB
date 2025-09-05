@@ -1,10 +1,11 @@
 package ro.sellfluence.app;
 
-import ro.sellfluence.apphelper.PopulateProductsTableFromSheets;
 import ro.sellfluence.apphelper.Vendor;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.googleapi.SheetsAPI;
+import ro.sellfluence.support.Arguments;
+import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -19,15 +20,18 @@ import java.util.stream.Collectors;
 
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
+import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.sheetSupport.Conversions.isEMAGFbe;
+import static ro.sellfluence.support.UsefulMethods.sheetToLocalDate;
 
 /**
  * Read orders from our database mirror and put them in a sheet.
  */
 public class PopulateDateComenziFromDB {
 
-    private static final Logger logger = java.util.logging.Logger.getLogger(PopulateDateComenziFromDB.class.getName());
-    private static final String appName = "sellfluence1";
+    private static final Logger logger = Logs.getConsoleLogger("PopulateDateComenziFromDB", INFO);
     private static final int year = 2025;
 
     /**
@@ -46,13 +50,19 @@ public class PopulateDateComenziFromDB {
     private static final String gmvSheetName = "T. GMW/M.";
 
     public static void main(String[] args) throws SQLException, IOException {
-        System.out.println("Update product table");
-        PopulateProductsTableFromSheets.updateProductTable();
-        var sheet = SheetsAPI.getSpreadSheetByName(appName, spreadSheetName);
-        var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
-        System.out.println("--- Update GMVs --------------------------");
+        var arguments = new Arguments(args);
+        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
+        updateSpreadsheets(mirrorDB);
+    }
+
+    public static void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
+        var sheet = SheetsAPI.getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
+        if (sheet == null) {
+            throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
+        }
+        logger.log(INFO, "--- Update GMVs --------------------------");
         updateGMVs(mirrorDB, sheet);
-        System.out.println("--- Update orders ------------------------");
+        logger.log(INFO, "--- Update orders ------------------------");
         updateOrders(mirrorDB, sheet);
     }
 
@@ -80,9 +90,8 @@ public class PopulateDateComenziFromDB {
      * @throws SQLException on database errors.
      */
     private static void updateGMVForMonth(EmagMirrorDB mirrorDB, SheetsAPI sheet, YearMonth month) throws SQLException {
-        System.out.printf("Read %s from the database", month);
-        var gmvs = mirrorDB.readGMVByMonth(month);
-        System.out.println("Read from the spreadsheet");
+        logger.log(INFO, "Transfer %s from the database to the sheet.".formatted( month));
+        var gmvsByProduct = mirrorDB.readGMVByMonth(month);
         var products = mirrorDB.readProducts().stream()
                 .collect(Collectors.groupingBy(ProductInfo::name));
         var productsInSheet = sheet.getColumn(gmvSheetName, "B").stream().toList();
@@ -91,7 +100,7 @@ public class PopulateDateComenziFromDB {
         var columnNumber = 1;
         for (Object it : monthsInSheet) {
             if (it instanceof BigDecimal dateSerial) {
-                LocalDate localDate = fromExcelSerialBigDecimal(dateSerial);
+                LocalDate localDate = sheetToLocalDate(dateSerial);
                 if (YearMonth.from(localDate).equals(month)) {
                     columnIdentifier = toColumnName(columnNumber);
                 }
@@ -99,7 +108,7 @@ public class PopulateDateComenziFromDB {
             columnNumber++;
         }
         if (columnIdentifier == null) {
-            throw new RuntimeException("Could not find the column for the month %s".formatted(month));
+            throw new RuntimeException("Could not find the column for the month %s.".formatted(month));
         }
         Integer startRow = null;
         var rowNumber = 0;
@@ -108,11 +117,12 @@ public class PopulateDateComenziFromDB {
             rowNumber++;
             var productInfos = products.get(productName);
             ProductInfo productInfo;
-            if (productInfos!=null && productInfos.size()>1) {
-                throw new RuntimeException("More than one product matches "+productName+" I cannot properly associate it to either of "+productInfos);
+            if (productInfos != null && productInfos.size() > 1) {
+                throw new RuntimeException("More than one product matches " + productName + ". I cannot properly associate it with either of " + productInfos);
             }
-            if (productInfos==null || productInfos.isEmpty()) {
-                logger.log(WARNING,"No entry found for the product "+productName+". Until you update the table, no GMV is computed for this product.");
+            if (productInfos == null || productInfos.isEmpty()) {
+                logger.log(WARNING, "No entry found for the product " + productName + ". Until you update the table, no GMV is computed for this product.");
+                gmvColumn.add(null);
             } else {
                 productInfo = productInfos.getFirst();
 
@@ -120,7 +130,7 @@ public class PopulateDateComenziFromDB {
                 if (startRow == null && productInfo != null) {
                     startRow = rowNumber;
                 }
-                var gmv = gmvs.remove(productName);
+                var gmv = gmvsByProduct.remove(productName);
                 var retracted = productInfo != null && productInfo.retracted();
                 var continueToSell = productInfo != null && productInfo.continueToSell();
                 if (continueToSell && retracted) {
@@ -133,7 +143,7 @@ public class PopulateDateComenziFromDB {
                 }
                 if (gmv == null) {
                     if (!retracted) {
-                        logger.log(continueToSell ? WARNING : INFO, "No GMV for the product %s and the month %s".formatted(productName, month));
+                        logger.log(continueToSell ? WARNING : INFO, "No GMV for the product %s and the month %s.".formatted(productName, month));
                     }
                 }
                 if (startRow != null) {
@@ -141,19 +151,20 @@ public class PopulateDateComenziFromDB {
                 }
             }
         }
-        if (startRow!=null) {
+        if (startRow != null) {
+            var values = gmvColumn.stream().skip(startRow - 1).map(it -> {
+                var o = it != null ? (Object) it : (Object) "";
+                return List.of(o);
+            }).toList();
             sheet.updateRange(
-                    "'%s'!%s%d:%s%d".formatted(gmvSheetName, columnIdentifier, startRow, columnIdentifier, startRow + gmvColumn.size() -1),
-                    gmvColumn.stream().map(it -> {
-                        var o = it != null ? (Object) it : (Object) "";
-                        return List.of(o);
-                    }).toList()
+                    "'%s'!%s%d:%s%d".formatted(gmvSheetName, columnIdentifier, startRow, columnIdentifier, startRow + gmvColumn.size() - 1),
+                    values
             );
         } else {
             logger.log(WARNING, "Could not add GMV because no products are found in the sheet.");
         }
-        if (!gmvs.isEmpty()) {
-            logger.log(WARNING, "Could not add products %s because lines for them are missing in the sheet.".formatted(gmvs.keySet()));
+        if (!gmvsByProduct.isEmpty()) {
+            logger.log(WARNING, "Could not add products %s because lines for them are missing in the sheet.".formatted(gmvsByProduct.keySet()));
         }
     }
 
@@ -166,20 +177,24 @@ public class PopulateDateComenziFromDB {
      */
     private static void updateOrders(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
         var spreadSheetId = sheet.getSpreadSheetId();
-        System.out.println("Read from the database");
+        logger.log(INFO, "Read from the database.");
         var rows = mirrorDB.readForSheet(year);
-        System.out.println("Read from the spreadsheet");
+        logger.log(INFO, "Read from the spreadsheet.");
         List<List<Object>> sheetData = sheet.getMultipleColumns(dateSheetName, "A", "B", "F", "X", "Y");
         //TODO: The filter does not notice changed orders.
+        logger.log(INFO, "Filter out the orders that are already in the spreadsheet.");
         rows = filterOutExisting(rows, sheetData);
-        if (!rows.isEmpty()) {
+        if (rows.isEmpty()) {
+            logger.log(INFO, "No new orders were found.");
+        } else {
+            logger.log(INFO, "Adding %d new orders to the sheet.".formatted(rows.size()));
             var lastRowNumber = sheetData.size();
             var nextRow = lastRowNumber + 1;
             var lastRow = lastRowNumber + rows.size();
-            System.out.println("Now fixing cell format");
+            logger.log(INFO, "Now fixing cell format");
             sheet.formatDate(spreadSheetId, 0, 1, lastRowNumber, lastRow);
             sheet.formatAsCheckboxes(spreadSheetId, 27, 31, lastRowNumber, lastRow);
-            System.out.println("Now adding the rows");
+            logger.log(INFO, "Now adding the rows");
             sheet.updateRanges(rows, "%s!A%d".formatted(dateSheetName, nextRow), "%s!Y%d".formatted(dateSheetName, nextRow), "%s!AB%d".formatted(dateSheetName, nextRow), "%s!AG%d".formatted(dateSheetName, nextRow));
         }
     }
@@ -194,18 +209,18 @@ public class PopulateDateComenziFromDB {
      */
     private static List<List<List<Object>>> filterOutExisting(List<List<List<Object>>> groupedRowsFromDB, List<List<Object>> sheetData) {
         var sheetOrders = simplify(sheetData);
-     //   var lastDateTime = toLocalDateTime((String) sheetData.getLast().getFirst());
+        //   var lastDateTime = toLocalDateTime((String) sheetData.getLast().getFirst());
         return groupedRowsFromDB.stream()
                 .filter(groupedRow -> {
-            var order_id = (String) groupedRow.get(0).get(1);
-            var vendor = Vendor.fromSheet((String) groupedRow.get(1).get(0), isEMAGFbe((String) groupedRow.get(1).get(1)));
-            var productName = (String) groupedRow.get(0).get(5);
-            if (productName == null || productName.isBlank()) {
-                throw new RuntimeException("Could not find the product name for order %s (%s)".formatted(order_id, vendor.name()));
-            }
-            var orderLine = new OrderLine(order_id, /*vendor,*/ productName);
-            return  !sheetOrders.contains(orderLine);
-        }).toList();
+                    var order_id = (String) groupedRow.get(0).get(1);
+                    var vendor = Vendor.fromSheet((String) groupedRow.get(1).get(0), isEMAGFbe((String) groupedRow.get(1).get(1)));
+                    var productName = (String) groupedRow.get(0).get(5);
+                    if (productName == null || productName.isBlank()) {
+                        throw new RuntimeException("Could not find the product name for order %s (%s).".formatted(order_id, vendor.name()));
+                    }
+                    var orderLine = new OrderLine(order_id, /*vendor,*/ productName);
+                    return !sheetOrders.contains(orderLine);
+                }).toList();
     }
 
     /**
@@ -243,24 +258,4 @@ public class PopulateDateComenziFromDB {
 
         return columnName.toString();
     }
-
-    /**
-     * Reference date of Google Sheets serial numbers.
-     */
-    private static final LocalDate EXCEL_EPOCH = LocalDate.of(1899, 12, 30);
-
-    /**
-     * Convert a Google Sheets serial number to a LocalDate.
-     *
-     * @param serial serial number as read from the spreadsheet.
-     * @return LocalDate.
-     */
-    public static LocalDate fromExcelSerialBigDecimal(BigDecimal serial) {
-        if (serial == null) {
-            return null;
-        }
-        long serialDays = serial.longValue();
-        return EXCEL_EPOCH.plusDays(serialDays);
-    }
-
 }

@@ -1,15 +1,17 @@
 package ro.sellfluence.app;
 
 import ro.sellfluence.apphelper.EmployeeSheetData;
-import ro.sellfluence.apphelper.GetStatsForAllSheets;
 import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.googleapi.SheetsAPI;
+import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
+import ro.sellfluence.support.UsefulMethods;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -26,6 +28,9 @@ import java.util.stream.Collectors;
 import static java.util.Comparator.comparing;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
+import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheetByName;
 
 /**
@@ -36,57 +41,118 @@ public class UpdateEmployeeSheetsFromDB {
     private static final Logger logger = Logs.getConsoleAndFileLogger("UpdateEmployeeSheetsWarnings", WARNING, 10, 1_000_000);
     private static final Logger progressLogger = Logs.getConsoleLogger("UpdateEmployeeSheetsProgress", INFO);
 
-    private final String appName;
-    private Map<String, SheetsAPI> pnkToSpreadSheet;
-    private Set<String> relevantProducts;
-    private final LocalDateTime endTime = LocalDate.now().minusDays(13).atStartOfDay();
-    private Map<String, GetStatsForAllSheets.Statistic> pnkToStatistic;
+    private static final String statisticSheetName = "Statistici/luna";
 
+    private static final Set<String> suburbsToExclude = Set.of();
 
-    public UpdateEmployeeSheetsFromDB(String appName) {
-        this.appName = appName;
+    private static final Set<String> citiesToExclude = Set.of("Alba Iulia", "Alexandria", "Arad", "Bacau", "Baia Mare",
+            "Bistrita", "Botosani", "Braila", "Brasov", "Sectorul 1","Sectorul 2","Sectorul 3","Sectorul 4","Sectorul 5", "Sectorul 6",
+            "Buzau", "Calarasi", "Cluj-Napoca", "Constanta", "Craiova", "Deva",
+            "Drobeta-Turnu Severin", "Focsani", "Galati", "Giurgiu", "Iasi", "Miercurea Ciuc",
+            "Oradea", "Piatra Neamt", "Pitesti", "Ploiesti", "Ramnicu Valcea",
+            "Resita", "Satu Mare", "Sfantu Gheorghe", "Sibiu", "Slatina",
+            "Slobozia", "Suceava", "Targoviste", "Targu Jiu", "Targu Mures", "Timisoara", "Tulcea", "Vaslui", "Zalau");
+
+    private static final Set<String> vendorsWithExclusions = Set.of("Zoopie Concept FBE",
+            "Zoopie Invest",
+            "Zoopie Solutions FBE",
+            "Koppel",
+            "Koppel FBE");
+
+    public static void main(String[] args) throws SQLException, IOException {
+        var arguments = new Arguments(args);
+        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
+        updateSheets(mirrorDB);
     }
 
-    public static void main(String[] args) {
+    public static void updateSheets(EmagMirrorDB mirrorDB) {
         try {
-            var mirrorDB = EmagMirrorDB.getEmagMirrorDB("emagLocal");
-            var updateSheets = new UpdateEmployeeSheetsFromDB("sellfluence1");
+            var updateSheets = new UpdateEmployeeSheetsFromDB();
             updateSheets.transferFromDBToSheet(mirrorDB);
-        } catch (IOException | SQLException e) {
+        } catch (SQLException e) {
             throw new RuntimeException(e);
         }
     }
 
+    record FeedbackTab(SheetsAPI sheet, String tabName) {
+    }
+
     /**
-     * The main method that will transfer new orders to the appropriate employee sheet depending on the products.
+     * This method will transfer new orders to the appropriate employee sheet depending on the products.
      *
      * @param mirrorDB database to read.
      * @throws SQLException on database errors.
      */
     public void transferFromDBToSheet(EmagMirrorDB mirrorDB) throws SQLException {
-        loadOverview(mirrorDB);
-        if (relevantProducts.isEmpty()) {
-            throw new RuntimeException("No valid product found in the database.");
+        var products = mirrorDB.readProducts();
+        var productsByPNK = new HashMap<String, ProductInfo>();
+        var productsByEmployee = new HashMap<SheetsAPI, List<ProductInfo>>();
+        var sheetsByPNK = new HashMap<String, FeedbackTab>();
+        for (ProductInfo productInfo : products) {
+            if (productInfo.productCode() != null && !(productInfo.productCode().isBlank())) {
+                var old = productsByPNK.put(productInfo.pnk(), productInfo);
+                if (old != null) {
+                    logger.log(WARNING, "Duplicate PNK %s: %s and %s".formatted(productInfo.pnk(), old, productInfo));
+                }
+            }
+            String spreadSheetName = productInfo.employeeSheetName();
+            var spreadSheet = getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
+            if (spreadSheet == null) {
+                logger.log(WARNING, "No spreadsheet found for the product %s".formatted(productInfo));
+                continue;
+            }
+            String tabName = productInfo.emloyeSheetTab();
+            if (tabName == null) {
+                logger.log(WARNING, "No tab found for the product %s".formatted(productInfo));
+                continue;
+            }
+            var feedbackTab = new FeedbackTab(spreadSheet, tabName);
+            productsByEmployee.computeIfAbsent(spreadSheet, _ -> new ArrayList<>())
+                    .add(productInfo);
+            var pnk = productInfo.pnk();
+            var oldSheet = sheetsByPNK.put(pnk, feedbackTab);
+            if (oldSheet != null && !(oldSheet.sheet().getSpreadSheetName().equals(spreadSheetName) && oldSheet.tabName().equals(tabName))) {
+                logger.log(
+                        WARNING,
+                        "PNK %s associated with two sheets: %s/%s and %s/%s".formatted(
+                                pnk, oldSheet.sheet.getSpreadSheetName(), oldSheet.tabName, spreadSheetName, tabName
+                        )
+                );
+            }
         }
-        loadAllStatistics();
         // Map OrderId to spreadsheet containing it.
-        var existingOrderAssignments = new HashMap<String, SheetsAPI>();
+        var existingOrderAssignments = new HashMap<String, FeedbackTab>();
         // Map SheetData to OrderId
         var newAssignments = new HashMap<EmployeeSheetData, String>();
-        for (var entry : pnkToStatistic.entrySet()) {
-            var pnk = entry.getKey();
-            var statistic = entry.getValue();
-            progressLogger.log(INFO, () -> "Processing statistic for PNK %s: %s".formatted(pnk, statistic));
-            var spreadSheet = pnkToSpreadSheet.get(pnk);
+        for (var entry : productsByEmployee.entrySet()) {
+            var spreadSheet = entry.getKey();
+            var productsForEmployee = entry.getValue();
             if (spreadSheet == null) {
-                logger.log(WARNING, "No spreadsheet found for PNK %s".formatted(pnk));
-            } else {
-                progressLogger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s.".formatted(spreadSheet.getSpreadSheetName(), statistic.sheetName(), pnk));
-                accumulateExistingOrders(spreadSheet, statistic.sheetName(), existingOrderAssignments);
-                var startTime = statistic.lastUpdate().atStartOfDay();
+                logger.log(WARNING, "No spreadsheet found for products %s".formatted(productsByEmployee));
+                continue;
+            }
+            var dates = datesByProductForSheet(spreadSheet);
+            for (ProductInfo product : productsForEmployee) {
+                var pnk = product.pnk();
+                if (product.employeeSheetName() == null) {
+                    logger.log(WARNING, "No employee sheet found for PNK %s".formatted(pnk));
+                    continue;
+                }
+                if (product.emloyeSheetTab() == null) {
+                    logger.log(WARNING, "No product tab found for PNK %s on the sheet %s.".formatted(pnk, product.employeeSheetName()));
+                    continue;
+                }
+                progressLogger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s.".formatted(spreadSheet, product.emloyeSheetTab(), pnk));
+                accumulateExistingOrders(spreadSheet, product.emloyeSheetTab(), existingOrderAssignments);
+                LocalDate startDate = dates.get(pnk);
+                if (startDate == null) {
+                    startDate = LocalDate.now().minusMonths(1);
+                }
+                var startTime = startDate.atStartOfDay();
+                var endTime = LocalDate.now().minusDays(13).atStartOfDay();
                 var newOrdersForProduct = mirrorDB.readOrderData(pnk, startTime, endTime).stream().filter(it -> it.quantity() > 0).toList();
                 for (EmployeeSheetData it : newOrdersForProduct) {
-                    newAssignments.put(it, statistic.sheetName());
+                    newAssignments.put(it, product.emloyeSheetTab());
                 }
             }
         }
@@ -119,22 +185,61 @@ public class UpdateEmployeeSheetsFromDB {
                     };
                 }).collect(Collectors.toMap(Map.Entry::getKey, // preserve the orderId as the key
                         Map.Entry::getValue));
-        var reorderedByEmployeeSheet = withCalledSetOnDuplicates.values().stream()
-                .flatMap(List::stream)
-                .collect(Collectors.groupingBy(employeeSheetData -> pnkToSpreadSheet.get(employeeSheetData.partNumberKey())
-                ));
+
+        Map<SheetsAPI, List<EmployeeSheetData>> reorderedByEmployeeSheet = new HashMap<>();
+
+        for (List<EmployeeSheetData> dataList : withCalledSetOnDuplicates.values()) {
+            for (EmployeeSheetData data : dataList) {
+                String pnk = data.partNumberKey();
+                // Look up the target sheet for this PNK
+                ProductInfo productInfo = productsByPNK.get(pnk);
+                if (productInfo == null) {
+                    logger.log(WARNING, "No product found for PNK %s".formatted(pnk));
+                    continue;
+                }
+                String sheetName = productInfo.employeeSheetName();
+                if (sheetName == null) {
+                    logger.log(WARNING, "No employee sheet found for PNK %s".formatted(pnk));
+                    continue;
+                }
+                SheetsAPI sheet = getSpreadSheetByName(defaultGoogleApp, sheetName);
+                if (sheet == null) {
+                    logger.log(WARNING, "No sheet named %s found in Google Drive. PNK was %s.".formatted(sheetName, pnk));
+                    continue;
+                }
+                // add to the map, creating a new list if needed
+                reorderedByEmployeeSheet
+                        .computeIfAbsent(sheet, _ -> new ArrayList<>())
+                        .add(data);
+            }
+        }
         for (Map.Entry<SheetsAPI, List<EmployeeSheetData>> entry : reorderedByEmployeeSheet.entrySet()) {
             var sheet = entry.getKey();
-            var groupedBySheet = entry.getValue().stream().collect(Collectors.groupingBy(it ->pnkToStatistic.get(it.partNumberKey()).sheetName()));
+            var groupedBySheet = entry.getValue().stream().collect(Collectors.groupingBy(it -> productsByPNK.get(it.partNumberKey()).emloyeSheetTab()));
             for (var entry1 : groupedBySheet.entrySet()) {
                 var sheetName = entry1.getKey();
-                var orders = entry1.getValue();
-                if (!orders.isEmpty()) {
-                    var rowData = orders.stream()
+                List<EmployeeSheetData> orders = entry1.getValue();
+                var filteredOrders = orders.stream()
+                        .filter(it ->
+                                !(
+                                        vendorsWithExclusions.contains(it.vendorName()) &&
+                                        (
+                                                suburbsToExclude.contains(it.shippingSuburb())
+                                                || citiesToExclude.contains(it.shippingCity())
+                                        )
+                                )
+                        )
+                        .toList();
+                var droppedOrders = new HashSet<>(orders);
+                droppedOrders.removeAll(filteredOrders);
+                progressLogger.log(INFO, () -> "Filtered %d orders on sheet %s.".formatted(droppedOrders.size(), sheetName));
+                droppedOrders.forEach(it -> progressLogger.log(INFO, " Dropped order %s.".formatted(it)));
+                if (!filteredOrders.isEmpty()) {
+                    var rowData = filteredOrders.stream()
                             .sorted(comparing(EmployeeSheetData::orderDate))
                             .map(UpdateEmployeeSheetsFromDB::mapEmagToRow)
                             .toList();
-                    addToSheet(orders.getFirst().partNumberKey(), sheet, sheetName,  rowData);
+                    addToSheet(filteredOrders.getFirst().partNumberKey(), sheet, sheetName, rowData);
                 }
             }
         }
@@ -145,67 +250,42 @@ public class UpdateEmployeeSheetsFromDB {
      * Read the ID of the orders already recorded in this sheet.
      *
      * @param sheet                    spreadsheet.
-     * @param sheetName                name of the sheet within the spreadsheet.
+     * @param tabName                name of the sheet within the spreadsheet.
      * @param existingOrderAssignments map of existing order IDs to sheets.
      */
-    private static void accumulateExistingOrders(SheetsAPI sheet, final String sheetName, HashMap<String, SheetsAPI> existingOrderAssignments) {
-        var orderIdColumn = sheet.getColumn(sheetName, "A").stream().skip(4).toList();
+    private static void accumulateExistingOrders(SheetsAPI sheet, final String tabName, HashMap<String, FeedbackTab> existingOrderAssignments) {
+        var orderIdColumn = sheet.getColumn(tabName, "A").stream().skip(4).toList();
         for (var orderId : orderIdColumn) {
-            var oldAssignment = existingOrderAssignments.put(orderId, sheet);
+            var oldAssignment = existingOrderAssignments.put(orderId, new FeedbackTab(sheet, tabName));
             if (oldAssignment != null) {
                 logger.log(
                         WARNING,
-                        "The order %s assigned to %s is also assigned to %s.".formatted(
-                                orderId, oldAssignment.getSpreadSheetName(), sheet.getSpreadSheetName()
+                        "The order %s assigned to %s/%s is also assigned to %s/%s.".formatted(
+                                orderId, oldAssignment.sheet.getSpreadSheetName(), oldAssignment.tabName, sheet.getSpreadSheetName(), tabName
                         )
                 );
             }
         }
     }
 
-    /**
-     * Load the mapping between PNKs and employee sheets.
-     */
-    private void loadOverview(EmagMirrorDB mirrorDB) throws SQLException {
-        var products = mirrorDB.readProducts();
-        // To be commented in only to filter for a single PNK for debugging purpose
-        // products = products.stream().filter(product -> product.pnk().equals("D2HG3PMBM")).toList();
-        pnkToSpreadSheet = products.stream()
-                .filter(it -> it.employeeSheetName() != null)
-                .map(product -> {
-                    var pnk = product.pnk();
-                    var sheetName = product.employeeSheetName();
-                    var sheet = getSpreadSheetByName(appName, sheetName);
-                    if (sheet == null) {
-                        logger.log(WARNING,
-                                "Spreadsheet %s for the product %s with PNK %s was not found, it will be ignored."
-                                        .formatted(sheetName, product.name(), pnk)
-                        );
-                        // return a null‐marker entry
-                        return null;
-                    }
-                    return new AbstractMap.SimpleEntry<>(pnk, sheet);
-                })
-                // drop the null markers
-                .filter(Objects::nonNull)
-                // build your Map
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        Map.Entry::getValue
-                ));
-        relevantProducts = pnkToSpreadSheet.keySet();
+    record DateForProduct(String pnk, LocalDate date) {
     }
 
-    /**
-     * Load the statistics for all relevant products.
-     */
-    private void loadAllStatistics() {
-        var statisticsFromAllSheets = GetStatsForAllSheets.getStatistics(pnkToSpreadSheet).stream()
-                .filter(it -> relevantProducts.contains(it.pnk()))
-                .toList();
-        pnkToStatistic = statisticsFromAllSheets.stream()
-                .collect(Collectors.toMap(GetStatsForAllSheets.Statistic::pnk, statistic -> statistic));
+    private Map<String, LocalDate> datesByProductForSheet(SheetsAPI spreadSheet) {
+        var map = new HashMap<String, LocalDate>();
+        var rows = spreadSheet.getMultipleColumns(statisticSheetName, "C", "E").stream()
+                .skip(7)
+                .filter(row -> row.getFirst() instanceof String s && !s.isEmpty() && row.get(1) instanceof BigDecimal)
+                .map(
+                        row -> new DateForProduct((String) row.getFirst(), UsefulMethods.sheetToLocalDate((BigDecimal) row.get(1)))
+                ).toList();
+        for (DateForProduct row : rows) {
+            Objects.requireNonNull(row.date);
+            map.put(row.pnk, row.date);
+        }
+        return map;
     }
+
 
     /**
      * Format of date as used in the spreadsheet.
@@ -244,7 +324,7 @@ public class UpdateEmployeeSheetsFromDB {
      * @param rowsToAdd Additional rows.
      */
     private void addToSheet(String pnk, SheetsAPI sheet, String sheetName, List<List<Object>> rowsToAdd) {
-        List<String> orderIdColumn = sheet.getColumn(sheetName, "A");
+        List<String> orderIdColumn = sheet.getColumnInChunks(sheetName, "A", 1000);
         var mapOrderToColumn = new HashMap<String, List<Integer>>();
         for (var rowNumber = 0; rowNumber < orderIdColumn.size(); rowNumber++) {
             var orderId = orderIdColumn.get(rowNumber);
@@ -276,7 +356,7 @@ public class UpdateEmployeeSheetsFromDB {
         if (!withoutDuplicates.isEmpty()) {
             progressLogger.log(INFO,
                     "Adding %d rows after row %d to tab %s of spreadsheet %s."
-                            .formatted( withoutDuplicates.size(), lastRowNumber, sheetName, sheet.getSpreadSheetName())
+                            .formatted(withoutDuplicates.size(), lastRowNumber, sheetName, sheet.getSpreadSheetName())
             );
             var pnksInSheet = sheet.getColumn(sheetName, "G").stream().skip(3).filter(x -> !x.isBlank()).collect(Collectors.toSet());
             if (pnksInSheet.size() > 1 && !pnksInSheet.contains(pnk)) {
@@ -284,7 +364,7 @@ public class UpdateEmployeeSheetsFromDB {
             } else if (pnksInSheet.size() == 1 && !Objects.equals(pnksInSheet.iterator().next(), pnk)) {
                 logger.log(WARNING, "Expected PNK '%s', but Sheet '%s' in Spreadsheet '%s' contains different PNK in column 7: %s.".formatted(pnk, sheetName, sheet.getTitle(), pnksInSheet));
             } else {
-                if (pnksInSheet.size()>1) {
+                if (pnksInSheet.size() > 1) {
                     logger.log(WARNING, "Adding even though sheet '%s' in Spreadsheet '%s' contains multiple PNKs in column 7: %s.".formatted(sheetName, sheet.getTitle(), pnksInSheet));
                 }
                 updateRangeInChunks(sheet, sheetName, lastRowNumber + 1, withoutDuplicates);
@@ -292,7 +372,7 @@ public class UpdateEmployeeSheetsFromDB {
         }
     }
 
-    private static final int chunkSize = 100;
+    private static final int chunkSize = 50;
 
     /**
      * Split the rows into chunks of size chunkSize and call sheet.updateRange for each.

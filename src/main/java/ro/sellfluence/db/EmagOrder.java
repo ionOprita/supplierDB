@@ -16,7 +16,9 @@ import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Scanner;
 import java.util.UUID;
@@ -30,6 +32,7 @@ import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 public class EmagOrder {
 
     private static final Scanner scanner = new Scanner(System.in);
+
 
     /**
      * Record for reporting the result of inserting an order.
@@ -226,7 +229,6 @@ public class EmagOrder {
         }
     }
 
-
     private static OrderResult selectWholeOrderResult(Connection db, int surrogateId, String vendorName) throws SQLException {
         var customer = selectCustomerByOrderId(db, surrogateId);
         var productIds = selectProductIdByOrderId(db, surrogateId);
@@ -235,7 +237,7 @@ public class EmagOrder {
             try {
                 voucherSplits = selectVoucherSplitsByProductId(db, productId);
                 try {
-                    return selectProduct(db, productId, voucherSplits, new ArrayList<>());
+                    return selectProduct(db, productId, surrogateId, voucherSplits, new ArrayList<>());
                 } catch (SQLException e) {
                     throw new RuntimeException("Error retrieving product with productId " + productId, e);
                 }
@@ -259,7 +261,6 @@ public class EmagOrder {
                 enforcedVendorCourierAccounts,
                 flags);
     }
-
 
     private static Customer selectCustomerByOrderId(Connection db, int surrogateId) throws SQLException {
         Customer customer = null;
@@ -312,7 +313,6 @@ public class EmagOrder {
         }
         return customer;
     }
-
 
     private static List<Attachment> selectAttachmentsByOrderId(Connection db, int surrogateId) throws SQLException {
         String query = "SELECT name, url, type, force_download, visibility FROM attachment WHERE emag_order_surrogate_id = ?";
@@ -388,11 +388,10 @@ public class EmagOrder {
         return list;
     }
 
-
     private static List<VoucherSplit> selectVoucherSplitsByProductId(Connection db, int productId) throws SQLException {
         var list = new ArrayList<VoucherSplit>();
         try (var s = db.prepareStatement("""
-                SELECT voucher_id, value, vat_value, vat, offered_by FROM voucher_split WHERE product_id = ?
+                SELECT voucher_id, value, vat_value, vat, offered_by, voucher_name FROM voucher_split WHERE product_id = ?
                 """)) {
             s.setInt(1, productId);
             try (var rs = s.executeQuery()) {
@@ -401,7 +400,8 @@ public class EmagOrder {
                             rs.getBigDecimal("value"),
                             rs.getBigDecimal("vat_value"),
                             rs.getString("vat"),
-                            rs.getString("offered_by")));
+                            rs.getString("offered_by"),
+                            rs.getString("voucher_name")));
                 }
             }
         }
@@ -411,7 +411,7 @@ public class EmagOrder {
     private static List<VoucherSplit> selectVoucherSplitsByOrderId(Connection db, int surrogateId) throws SQLException {
         var list = new ArrayList<VoucherSplit>();
         try (var s = db.prepareStatement("""
-                SELECT voucher_id, value, vat_value, vat, offered_by FROM voucher_split WHERE emag_order_surrogate_id = ?
+                SELECT voucher_id, value, vat_value, vat, offered_by, voucher_name FROM order_voucher_split WHERE emag_order_surrogate_id = ?
                 """)) {
             s.setInt(1, surrogateId);
             try (var rs = s.executeQuery()) {
@@ -420,13 +420,13 @@ public class EmagOrder {
                             rs.getBigDecimal("value"),
                             rs.getBigDecimal("vat_value"),
                             rs.getString("vat"),
-                            rs.getString("offered_by")));
+                            rs.getString("offered_by"),
+                            rs.getString("voucher_name")));
                 }
             }
         }
         return list;
     }
-
 
     /**
      * Read all product ID belonging to an order.
@@ -454,14 +454,15 @@ public class EmagOrder {
 
     }
 
-    private static Product selectProduct(Connection db, int productId, List<VoucherSplit> product_voucher_splits, List<Attachment> attachments) throws SQLException {
+    private static Product selectProduct(Connection db, int productId, int surrogateId, List<VoucherSplit> product_voucher_splits, List<Attachment> attachments) throws SQLException {
         Product product = null;
         try (var s = db.prepareStatement("""
                 SELECT id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties, serial_numbers
                 FROM product_in_order
-                WHERE id = ?
+                WHERE id = ? and emag_order_surrogate_id = ?
                 """)) {
             s.setInt(1, productId);
+            s.setInt(2, surrogateId);
             try (var rs = s.executeQuery()) {
                 if (rs.next()) {
                     product = new Product(rs.getInt("id"),
@@ -497,6 +498,113 @@ public class EmagOrder {
         return product;
     }
 
+    public static Map<Integer, List<Product>> selectAllProduct(Connection db) throws SQLException {
+        Map<Integer, List<Product>> productsBySurrogate = new HashMap<>();
+        try (var s = db.prepareStatement("""
+                SELECT id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties, serial_numbers, emag_order_surrogate_id
+                FROM product_in_order
+                """)) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                   var product = new Product(rs.getInt("id"),
+                            rs.getInt("product_id"),
+                            rs.getInt("mkt_id"),
+                            rs.getString("name"),
+                            null,
+                            rs.getInt("status"),
+                            rs.getString("ext_part_number"),
+                            rs.getString("part_number"),
+                            rs.getString("part_number_key"),
+                            rs.getString("currency"),
+                            rs.getString("vat"),
+                            rs.getInt("retained_amount"),
+                            rs.getInt("quantity"),
+                            rs.getInt("initial_qty"),
+                            rs.getInt("storno_qty"),
+                            rs.getInt("reversible_vat_charging"),
+                            rs.getBigDecimal("sale_price"),
+                            rs.getBigDecimal("original_price"),
+                            toLocalDateTime(rs.getTimestamp("created")),
+                            toLocalDateTime(rs.getTimestamp("modified")),
+                            Arrays.asList(rs.getString("details").split("\\n")),
+                            Arrays.asList(rs.getString("recycle_warranties").split("\\n")),
+                            null,
+                            rs.getString("serial_numbers"));
+                    productsBySurrogate
+                            .computeIfAbsent(
+                                    rs.getInt("emag_order_surrogate_id"),
+                                    k -> new ArrayList<>()
+                            )
+                            .add(product);
+
+                }
+            }
+        }
+        return productsBySurrogate;
+    }
+
+    public record ExtendedOrder(OrderResult order, UUID vendorId, int surrogateId) {
+
+    }
+
+    public static HashMap<String, List<ExtendedOrder>> selectAllOrders(Connection db, Map<Integer, List<Product>> allProducts, Map<UUID, String> allVendors) throws SQLException {
+        var orders = new HashMap<String, List<ExtendedOrder>>();
+        try (var s = db.prepareStatement("SELECT * FROM emag_order")) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    var surrogateId = rs.getInt("surrogate_id");
+                    var vendorId = rs.getObject("vendor_id", UUID.class);
+                    var vendorName = allVendors.get(vendorId);
+                    var products = allProducts.get(surrogateId);
+                    List<VoucherSplit>
+                            shipping_tax_voucher_split = null;
+                    Customer
+                            customer = null;
+                    List<Attachment>
+                            attachments = null;
+                    List<Voucher>
+                            vouchers = null;
+                    List<Flag>
+                            flags = null;
+                    List<String>
+                            enforcedVendorCourierAccounts = null;
+                    var order = new OrderResult(
+                            vendorName, rs.getString("id"), rs.getInt("status"), rs.getInt("is_complete"), rs.getInt("type"), rs.getString("payment_mode"),
+                            rs.getInt("payment_mode_id"), rs.getString("delivery_payment_mode"), rs.getString("delivery_mode"), rs.getString("observation"),
+                            new LockerDetails(rs.getString("details_id"), null, 0, null), // Assuming LockerDetails has a constructor that takes locker_id
+                            toLocalDateTime(rs.getTimestamp("date")), rs.getInt("payment_status"), rs.getBigDecimal("cashed_co"), rs.getBigDecimal("cashed_cod"),
+                            rs.getBigDecimal("shipping_tax"),
+                            shipping_tax_voucher_split, customer, products, attachments, vouchers,
+                            rs.getBoolean("is_storno"),
+                            rs.getBigDecimal("refunded_amount"),
+                            rs.getString("refund_status"),
+                            toLocalDateTime(rs.getTimestamp("maximum_date_for_shipment")),
+                            toLocalDateTime(rs.getTimestamp("finalization_date")),
+                            rs.getString("parent_id"),
+                            rs.getString("detailed_payment_method"),
+                            Arrays.asList(rs.getString("proforms").split("\n")), // Split the string back into a list
+                            rs.getString("cancellation_request"),
+                            rs.getInt("has_editable_products"),
+                            new CancellationReason(rs.getObject("cancellation_reason", Integer.class),
+                                    rs.getString("cancellation_reason_text")),
+                            rs.getObject("late_shipment", Integer.class), // Assuming late_shipment is a Timestamp
+                            flags, rs.getInt("emag_club"),
+                            rs.getInt("weekend_delivery"),
+                            toLocalDateTime(rs.getTimestamp("created")),
+                            toLocalDateTime(rs.getTimestamp("modified")),
+                            enforcedVendorCourierAccounts
+                    );
+                    orders
+                            .computeIfAbsent(
+                                    order.id(),
+                                    k -> new ArrayList<>()
+                            )
+                            .add(new ExtendedOrder(order, vendorId, surrogateId));
+                }
+            }
+        }
+        return orders;
+    }
 
     private static OrderResult selectOrder(Connection db,
                                            int surrogateId,
@@ -699,13 +807,16 @@ public class EmagOrder {
         if (!Objects.equals(oldOrder.vouchers(), order.vouchers())) {
             updateVouchers(db, order, surrogateId);
         }
+        if (!Objects.equals(oldOrder.shipping_tax_voucher_split(), order.shipping_tax_voucher_split())) {
+            updateOrderVoucherSplits(db, order, surrogateId);
+        }
     }
 
     private static void insertOrderDependents(Connection db, OrderResult order, int surrogateId) throws SQLException {
         insertProducts(db, order, surrogateId);
         if (order.shipping_tax_voucher_split() != null) {
             for (var voucherSplit : order.shipping_tax_voucher_split()) {
-                insertVoucherSplit(db, voucherSplit, surrogateId);
+                insertOrderVoucherSplit(db, voucherSplit, surrogateId);
             }
         }
         insertAttachments(db, order, surrogateId);
@@ -727,7 +838,7 @@ public class EmagOrder {
     }
 
     private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, int surrogateId, int productId) throws SQLException {
-        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, emag_order_surrogate_id, product_id, value, vat_value, vat, offered_by) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, emag_order_surrogate_id, product_id, value, vat_value, vat, offered_by, voucher_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id, product_id, emag_order_surrogate_id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id());
             s.setInt(2, surrogateId);
             s.setInt(3, productId);
@@ -735,22 +846,26 @@ public class EmagOrder {
             s.setBigDecimal(5, voucherSplit.vat_value());
             s.setString(6, voucherSplit.vat());
             s.setString(7, voucherSplit.offered_by());
+            s.setString(8, voucherSplit.voucher_name());
             return s.executeUpdate();
         }
     }
 
-    private static int insertVoucherSplit(Connection conn, VoucherSplit voucherSplit, int surrogateId) throws SQLException {
-        try (var s = conn.prepareStatement("INSERT INTO voucher_split (voucher_id, emag_order_surrogate_id, value, vat_value) VALUES (?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+    private static int insertOrderVoucherSplit(Connection conn, VoucherSplit voucherSplit, int surrogateId) throws SQLException {
+        try (var s = conn.prepareStatement("INSERT INTO order_voucher_split (voucher_id, emag_order_surrogate_id, value, vat_value, vat, offered_by, voucher_name) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id, emag_order_surrogate_id) DO NOTHING")) {
             s.setInt(1, voucherSplit.voucher_id());
             s.setInt(2, surrogateId);
             s.setBigDecimal(3, voucherSplit.value());
             s.setBigDecimal(4, voucherSplit.vat_value());
+            s.setString(5, voucherSplit.vat());
+            s.setString(6, voucherSplit.offered_by());
+            s.setString(7, voucherSplit.voucher_name());
             return s.executeUpdate();
         }
     }
 
     private static int insertProductInOrder(Connection db, Product product, int surrogateId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO product_in_order (id, emag_order_surrogate_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties, serial_numbers) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO product_in_order (id, emag_order_surrogate_id, product_id, mkt_id, name, status, ext_part_number, part_number, part_number_key, currency, vat, retained_amount, quantity, initial_qty, storno_qty, reversible_vat_charging, sale_price, original_price, created, modified, details, recycle_warranties, serial_numbers) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id, emag_order_surrogate_id) DO NOTHING")) {
             s.setInt(1, product.id());
             s.setInt(2, surrogateId);
             s.setInt(3, product.product_id());
@@ -787,7 +902,7 @@ public class EmagOrder {
     }
 
     private static int insertVoucher(Connection db, Voucher voucher, int surrogateId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO voucher (voucher_id, emag_order_surrogate_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id) DO NOTHING")) {
+        try (var s = db.prepareStatement("INSERT INTO voucher (voucher_id, emag_order_surrogate_id, modified, created, status, sale_price_vat, sale_price, voucher_name, vat, issue_date, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(voucher_id, emag_order_surrogate_id) DO NOTHING")) {
             s.setInt(1, voucher.voucher_id());
             s.setInt(2, surrogateId);
             s.setString(3, voucher.modified());
@@ -863,6 +978,13 @@ public class EmagOrder {
         }
     }
 
+    private static int deleteOrderVoucherSplits(Connection db, int surrogateId) throws SQLException {
+        try (var s = db.prepareStatement("DELETE FROM order_voucher_split WHERE emag_order_surrogate_id = ?")) {
+            s.setInt(1, surrogateId);
+            return s.executeUpdate();
+        }
+    }
+
     private static void insertFlags(Connection db, OrderResult order, int surrogateId) throws SQLException {
         if (order.flags() != null) {
             for (Flag flag : order.flags()) {
@@ -914,5 +1036,12 @@ public class EmagOrder {
     private static void updateVouchers(Connection db, OrderResult order, int surrogateId) throws SQLException {
         deleteVouchers(db, surrogateId);
         insertVouchers(db, order, surrogateId);
+    }
+
+    private static void updateOrderVoucherSplits(Connection db, OrderResult order, int surrogateId) throws SQLException {
+        deleteOrderVoucherSplits(db, surrogateId);
+        for (VoucherSplit voucherSplit : order.shipping_tax_voucher_split()) {
+            insertOrderVoucherSplit(db, voucherSplit, surrogateId);
+        }
     }
 }

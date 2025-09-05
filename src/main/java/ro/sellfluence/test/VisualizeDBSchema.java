@@ -17,13 +17,16 @@ import org.schemaspy.input.dbms.DriverFromConfig;
 import org.schemaspy.input.dbms.service.DatabaseServiceFactory;
 import org.schemaspy.input.dbms.service.SqlService;
 import org.schemaspy.output.xml.dom.XmlProducerUsingDOM;
+import ro.sellfluence.support.Arguments;
 
 import java.awt.Desktop;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
+
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 
 /**
  * VisualizeDBSchema is responsible for generating a visual representation of a database schema
@@ -37,9 +40,6 @@ import java.util.stream.Stream;
  * <p>NOTE: The <a href="https://graphviz.org/">graphviz</a> package needs to be installed.</p>
  */
 public class VisualizeDBSchema {
-
-    private static final Pattern urlPattern = Pattern.compile("jdbc:postgresql://([^:]+):(\\d+)/(.*)");
-    private static final String dbAlias = "emagLocal";
 
     public static void run(String... args) {
         CommandLineArgumentParser commandLineArgumentParser =
@@ -79,41 +79,39 @@ public class VisualizeDBSchema {
     }
 
     public static void main(String[] args) throws Exception {
+        var arguments = new Arguments(args);
+        var dbAlias = arguments.getOption(databaseOptionName, defaultDatabase);
         var db = DBPass.findDB(dbAlias);
-        var m = urlPattern.matcher(db.connect());
+        var host = db.dbHost();
+        var port = db.dbPort();
+        var dbName = db.dbName();
         var tmp = Paths.get(System.getProperty("java.io.tmpdir"));
         var dbSchemaDir = tmp.resolve(dbAlias + ".dbschema");
-        if (m.matches()) {
-            String host = m.group(1);
-            String port = m.group(2);
-            String dbName = m.group(3);
-
-            var home = Paths.get(System.getProperty("user.home"));
-            var m2cache = home.resolve(".m2").resolve("repository");
-            var postgresql = m2cache.resolve("org").resolve("postgresql").resolve("postgresql");
-            try (Stream<Path> pathStream = Files.list(postgresql)) {
-                var version = pathStream.filter(p -> p.getFileName().toString().matches("[\\d.]+")).sorted().toList().getLast();
-                var jar = postgresql.resolve(version).resolve("postgresql-" + version.getFileName().toString() + ".jar");
-                run(
-                        "-t",
-                        "pgsql11",
-                        "-dp",
-                        jar.toString(),
-                        "-db",
-                        dbName,
-                        "-host",
-                        host,
-                        "-port",
-                        port,
-                        "-u",
-                        db.user(),
-                        "-p",
-                        db.pw(),
-                        "-o",
-                        dbSchemaDir.toString()
-                );
-                Desktop.getDesktop().browse(dbSchemaDir.toUri().resolve("index.html"));
-            }
+        var home = Paths.get(System.getProperty("user.home"));
+        var m2cache = home.resolve(".m2").resolve("repository");
+        var postgresql = m2cache.resolve("org").resolve("postgresql").resolve("postgresql");
+        try (Stream<Path> pathStream = Files.list(postgresql)) {
+            var version = pathStream.filter(p -> p.getFileName().toString().matches("[\\d.]+")).sorted().toList().getLast();
+            var jar = postgresql.resolve(version).resolve("postgresql-" + version.getFileName().toString() + ".jar");
+            run(
+                    "-t",
+                    "pgsql11",
+                    "-dp",
+                    jar.toString(),
+                    "-db",
+                    dbName,
+                    "-host",
+                    host,
+                    "-port",
+                    Integer.toString(port),
+                    "-u",
+                    db.user(),
+                    "-p",
+                    db.pw(),
+                    "-o",
+                    dbSchemaDir.toString()
+            );
+            Desktop.getDesktop().browse(dbSchemaDir.toUri().resolve("index.html"));
         }
     }
 }

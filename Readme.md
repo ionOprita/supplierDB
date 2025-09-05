@@ -1,19 +1,29 @@
-Emag -> Google Drive
-=
+# eMAG -> Google Drive
 
-Start Update Feedback Clients Sheets Application
--
+## Run the bot
 
 To start the application, run the class from this path:
 ```
-src/main/java/ro/sellfluence/app/UpdateAllSheetsMain.java
+src/main/java/ro/sellfluence/app/EmagBot.java
 ```
 
-Emag Mirror to DB
-=
+It accepts an optional argument `--db=dbAlias` which specifies the database to use.
+If no database is specified, the default database is used.
 
-Database setup
--
+The following arguments are known to EmagDBApp and passed from EmagBot to it:
+
+- `--refetch-some` Use the probabilistic refetching algorithm.
+- `--refetch-all` Refetch everything from the past 3 years. This takes about 10-12 hours to run.
+- `--nofetch` Do not fetch anything from eMAG.
+
+# eMAG Mirror to DB
+
+[PostgreSQL](https://www.postgresql.org/) is used as the database system the eMAG mirror DB.
+The most important commands for setup, backup etc. are listed below.
+For further information see the [PostgreSQL documentation](https://www.postgresql.org/docs/current/index.html).
+
+## Database setup
+
 These instructions work for the development environment of claudio. Maybe they need to be modified for other environments.
 
 ```
@@ -22,6 +32,14 @@ psql -1 -X -c "CREATE ROLE emag WITH LOGIN PASSWORD 'password'; GRANT SELECT,INS
 ```
 
 Substitute *password* with the real password.
+
+The `-X` aka `--no-psqlrc` option tells psql to not read any start-up files like `~/.psqlrc`.
+It makes sense to add this option if you do not know what is in your start-up file and prefer to run the command in a reproducible way.
+You better omit this option if you know that your startup-file contain special configurations that you need.
+
+The `-c` aka `--command=` option is used to execute a single command.
+
+The `-1` aka `--single-transaction` option is used to execute all the commands in single transaction mode.
 
 Then add the following line to $HOME/Secrets/dbpass.txt again putting the password instead of the word *password*.
 
@@ -32,6 +50,14 @@ emag    jdbc:postgresql://127.0.0.1:5432/emag       emag        password
 Make sure each field is separated by a single TAB character.
 
 ### Backup and restore
+
+The following instructions use the command line tools.
+
+If you prefer to use pgAdmin to backup and restore your database, read the
+[Backup/Restore](https://www.pgadmin.org/docs/pgadmin4/latest/backup_and_restore.html)
+chapter in its documentation.
+
+#### Backup
 
 Create a backup of the database using the command (will contain date and hour in name)
 
@@ -60,6 +86,8 @@ pg_dump -Fc -f "db_emag_$timestamp.dump" emag
 </pre>
 </details>
 
+#### Restore into existing database
+
 Restore from a specific backup using the command (substituting date and time for your latest backup)
 ```
 pg_restore -d emag -1 -C -c --if-exists db_emag_2025-05-15T16.dump
@@ -75,31 +103,45 @@ The `--if-exists` option avoids errors when an object to be DROPed does not exis
 
 Combining -C and -c has the effect of dropping and recreating the database.
 
-To restore into a new database, e.g. for testing purpose, create it first and then restore into it:
+#### Restore into a new database
 
+Before the very first time you need to create the user, that will own the new database.
 ```
 pw=$(grep emag_test $HOME/Secrets/dbpass.txt | cut -f 4)
-psql -c "CREATE DATABASE emag_test WITH OWNER = $(id -nu) TEMPLATE template0"
-psql -1 -X -c "CREATE ROLE emag_test WITH LOGIN PASSWORD '$pw'; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO emag_test"
-pg_restore -d emag_test -1 -c -O --if-exists db_emag_2025-05-15T16.dump
+psql -d emag_test -1 -X -c "CREATE ROLE emag_test WITH LOGIN PASSWORD '$pw';"
+```
+
+This needs to be done only once. Then you can create the database and restore the backup into it.
+
+```
+psql -c "CREATE DATABASE emag_test WITH OWNER = emag_test TEMPLATE template0"
+pg_restore -d emag_test -1 -c -O --if-exists --role=emag_test db_emag_2025-05-15T16.dump
 ```
 
 Once the test database is not needed anymore, drop it:
 ```
 psql -c "DROP DATABASE emag_test"
 ```
+#### Transfer from a remote database to a local (test) database
 
+```
+pwremote=$(grep emagOprita $HOME/Secrets/dbpass.txt | cut -f 4)
+pwlocal=$(grep emag_test $HOME/Secrets/dbpass.txt | cut -f 4)
+dumpfile=/tmp/db_remote_$(date +%Y-%m-%dT%H).dump
+PGPASSWORD=$pwremote pgdump -v -Fc -h 86.124.84.214 -U emag -d emag -f "$dumpfile"
+PGPASSWORD=$pwlocale pg_restore -v -d emag_test -1 -c -O --if-exists --role=emag_test "$dumpfile"
+```
 
-If you prefer to use pgAdmin to backup and restore your database read the
-[Backup/Restore](https://www.pgadmin.org/docs/pgadmin4/latest/backup_and_restore.html)
-chapter in its documentation.
+#### Inspect the dump file
 
 The restore command can also be used to get a human-readable version of the dump file using this command:
 ```
 pg_restore -f - db_emag_2025-05-15T16.dump | less
 ```
 
-### Drop tables for testing
+To see only the DDL commands add the options `-s` aka `--schema-only`.
+
+### Drop all tables for testing
 
 To quickly drop all tables for testing, execute this:
 
@@ -147,11 +189,10 @@ Here's a breakdown of the part "LEAD(order_start) OVER (PARTITION BY emag_login 
 
 Putting it all together, the LEAD(order_start) OVER (PARTITION BY emag_login ORDER BY order_start) AS next_order_start part of the query calculates the order_start value for the next row in the same emag_login group. This calculated value is then used to detect if there are any gaps in the order_start and order_end times for each emag_login.
 
-Stuff related to scraping app
-=
+# Stuff related to scraping app
 
-API-Key
--
+
+## API-Key
 
 The scrpingant api-key needs to be configured in the application.properties by
 adding a line like this:
@@ -161,8 +202,8 @@ ro.koppel.apiKey=ff7320bfe38e2b076fd0a7aa42a4abbc
 ```
 The value behind the = sign needs to be the api-key from the scraping agent website.
 
-Command line arguments
--
+## Command line arguments
+
 Exactly two arguments are required.
 
 The first argument is an absolute or relative
@@ -172,8 +213,7 @@ and can contain one or several words separated by a blank.
 The second argument is an absolute or relative path for the Excel file to be created
 or modified (TODO).
 
-Database creation instructions
--
+## Database creation instructions
 
 As user 'claudio' is already defined as superuser instead of postgres
 and cannot be used with a password, a different user needed to be created.
