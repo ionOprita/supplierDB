@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.function.Supplier;
 
 public class UsefulMethods {
     /**
@@ -138,5 +139,26 @@ public class UsefulMethods {
         return EXCEL_EPOCH_TIME.plusDays(serialDays).plusSeconds(secondsOfDay).truncatedTo(ChronoUnit.SECONDS);
     }
 
+    /**
+     * Validates the provided condition and throws an {@link IllegalStateException} with the specified message
+     * if the condition is false.
+     *
+     * @param condition the boolean condition to be checked. If false, an exception is thrown.
+     * @param message   the exception message to be used in case the condition is not met.
+     */
+    public static void require(boolean condition, String message) {
+        if (!condition) throw new IllegalStateException(message);
+    }
+
+    /**
+     * Validates the provided condition and throws an {@link IllegalStateException} with the specified message
+     * if the condition is false. The message is supplied dynamically through a {@link Supplier}.
+     *
+     * @param condition the boolean condition to be checked. If false, an exception is thrown.
+     * @param message   a {@link Supplier} that provides the exception message to be used if the condition is not met.
+     */
+    public static void require(boolean condition, Supplier<String> message) {
+        if (!condition) throw new IllegalStateException(message.get());
+    }
 
 }

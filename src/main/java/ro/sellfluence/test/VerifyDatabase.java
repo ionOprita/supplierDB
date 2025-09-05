@@ -20,29 +20,12 @@ import java.util.stream.Collectors;
 
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
+import static ro.sellfluence.support.UsefulMethods.require;
 
 /**
- * The {@code VerifyDatabase} class provides functionality for verifying and analyzing data in the database
+ * The {@code VerifyDatabase} class provides functionality for verifying and analysing data in the database
  * regarding orders, vendors, and associated products. This class performs operations such as collecting,
- * grouping, and analyzing order data by vendors and statuses, and verifies the consistency of orders and products.
- *
- * Key features include:
- * - Reading order and product data from a database.
- * - Grouping and analyzing orders based on vendors and statuses.
- * - Verifying product consistency in the orders across different statuses.
- * - Printing detailed logs for detected inconsistencies and status combinations.
- *
- * The class relies on several utility methods:
- * - {@code readAllOrdersFromDB}: Reads all order data from the database.
- * - {@code verifyProducts}: Verifies the products within orders grouped by statuses.
- * - {@code getProductsByStatus}: Retrieves products grouped by status from order data.
- * - {@code compareProducts}: Compares product lists between different statuses.
- * - {@code normalize}: Creates an adjusted representation of a product for comparison purposes.
- * - {@code getString}: Extracts string values from order groupings.
- *
- * Thread Safety:
- * This class is not thread-safe as it uses mutable shared data structures without synchronization.
- * Users must ensure thread safety when used in multi-threaded environments.
+ * grouping, and analysing order data by vendors and statuses, and verifies the consistency of orders and products.
  */
 public class VerifyDatabase {
 
@@ -52,7 +35,7 @@ public class VerifyDatabase {
     private static final Map<@NonNull Integer, @NonNull Integer> set145 = Map.of(1, 1, 4, 0, 5, 1);
 
     /**
-     * Collect orders with missing products in the finalized order, grouped by vendors.
+     * Collect orders with missing products in the finalised order, grouped by vendors.
      */
     private static final Map<String, List<String>> collectOrderNumber = new HashMap<>();
 
@@ -64,7 +47,7 @@ public class VerifyDatabase {
     /**
      * Main method for running the application.
      *
-     * @param args this application honors the --db option for specifying the database to use.
+     * @param args this application honours the --db option for specifying the database to use.
      * @throws SQLException if an error occurs while accessing the database.
      * @throws IOException if an error occurs while reading the database.
      */
@@ -77,11 +60,11 @@ public class VerifyDatabase {
             if (byVendor.size() > 1) {
                 //System.out.println(orderId + " has " + byVendor.size() + " vendors");
                 if (byVendor.size() > 2) {
-                    // System.out.println("WOW " + orderId + " has " + byVendor.size() + " vendors!");
+                     //System.out.println("WOW " + orderId + " has " + byVendor.size() + " vendors!");
                 }
             }
             for (var vendorOrder : byVendor.entrySet()) {
-                var vendorName = vendorOrder.getKey();
+               // var vendorName = vendorOrder.getKey();
                 var orderLines = vendorOrder.getValue();
                 String stati = orderLines.stream().map(t -> t.order().status())
                         .sorted()
@@ -97,8 +80,9 @@ public class VerifyDatabase {
             }
         }
         var mapOrderToVendor = new HashMap<String, String>();
+        System.out.printf("Summary:");
         collectOrderNumber.forEach((vendor, orderList) -> {
-                    System.out.printf("Vendor %s has a missing product in the finalized order in orders: %s.%n", vendor, orderList);
+                    System.out.printf("Vendor %s has a missing product in the finalised order in orders: %s.%n", vendor, orderList);
                     for (String orderId : orderList) {
                         var old = mapOrderToVendor.put(orderId, vendor);
                         if (old != null) {
@@ -107,6 +91,9 @@ public class VerifyDatabase {
                     }
                 }
         );
+        System.out.println();
+        System.out.println("Use these delete statements to remove the incomplete order in status 4.");
+        System.out.println();
         System.out.println(String.join("\n", sqlDeletes));
 
 //        System.out.println(
@@ -119,7 +106,7 @@ public class VerifyDatabase {
 
     /**
      * Verifies the consistency of products by status against the provided orders and products data.
-     * Ensures that product sizes match across statuses or identifies inconsistencies,
+     * Ensures that product sizes match across statuses or identifies inconsistencies
      * and performs comparisons of product details if sizes are consistent.
      *
      * @param ordersByStatus a map where the key represents an order status,
@@ -136,16 +123,16 @@ public class VerifyDatabase {
         if (sizeSet.size() > 1) {
             if (set145.equals(entriesByStatus)) {
                 collectOrderNumber
-                        .computeIfAbsent(vendorName, k -> new ArrayList<>())
+                        .computeIfAbsent(vendorName, _ -> new ArrayList<>())
                         .add(orderId);
                 var order4 = ordersByStatus.get(4);
                 if (order4.size() != 1) {
                     throw new IllegalStateException("order4.size()!=1");
                 }
                 var order = order4.getFirst();
-                var sql = "delete from emag_order where id = '%s' and vendor_id = '%s' and status = 4 and surrogate_id = %d".formatted(order.order().id(), order.vendorId(), order.surrogateId());
+                var sql = "delete from emag_order where id = '%s' and vendor_id = '%s' and status = 4 and surrogate_id = %d;".formatted(order.order().id(), order.vendorId(), order.surrogateId());
                 sqlDeletes.add(sql);
-                System.out.printf("Order %s by %s has inconsistent product sizes in the order: %s.%n", orderId, vendorName, order);
+                System.out.printf("Order %s by %s has inconsistent product sizes in the order, 1 in status 1 and 5, 0 in status 4:%n%s.%n%n", orderId, vendorName, format(ordersByStatus));
             } else {
                 System.out.printf("Order %s by %s has inconsistent product sizes in the order: %s.%n", orderId, vendorName, entriesByStatus);
             }
@@ -161,6 +148,27 @@ public class VerifyDatabase {
         }
     }
 
+    private static String format(Map<Integer, List<ExtendedOrder>> ordersByStatus) {
+        return ordersByStatus.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(e -> {
+                    var orders = e.getValue();
+                    require(orders.size() == 1, "Only one order expected!");
+                    var order = orders.getFirst();
+                    var products = orders.getFirst().order().products();
+                    require(products.size() <= 1, "Maximal one product expected!");
+                    if (products.isEmpty()) {
+                        return "Status %d of order %s%n no product in order%n"
+                                .formatted(e.getKey(), order.order().id());
+                    } else {
+                        var product = products.getFirst();
+                        return "Status %d of order %s%n product %s qty=%d, init_qty=%d, storno_qty=%d.%n"
+                                .formatted(e.getKey(), order.order().id(), product.part_number_key(), product.quantity(), product.initial_qty(), product.storno_qty());
+                    }
+                })
+                .collect(Collectors.joining("\n"));
+    }
+
     private static String getString(Map<Integer, List<ExtendedOrder>> ordersByStatus, final Function<ExtendedOrder, String> fieldExtractor) {
         var orderIdSet = ordersByStatus.entrySet().stream()
                 .flatMap(e -> e.getValue().stream().map(fieldExtractor))
@@ -168,8 +176,7 @@ public class VerifyDatabase {
         if (orderIdSet.size() != 1) {
             System.out.println("What?! " + orderIdSet);
         }
-        var orderId = orderIdSet.iterator().next();
-        return orderId;
+        return orderIdSet.iterator().next();
     }
 
     private static @NonNull HashMap<String, List<ExtendedOrder>> readAllOrdersFromDB(String[] args) throws SQLException, IOException {
