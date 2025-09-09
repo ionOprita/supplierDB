@@ -99,6 +99,19 @@ public class UsefulMethods {
         return date == null ? null : YearMonth.from(date.toLocalDate());
     }
 
+    /**
+     * Helper function to convert a column number to its corresponding letters.
+     */
+    public static String toColumnName(int columnNumber) {
+        require(columnNumber > 0, "The column number must be positive.");
+        var columnName = new StringBuilder();
+        while (columnNumber > 0) {
+            int modulo = (columnNumber - 1) % 26;
+            columnName.insert(0, (char) ('A' + modulo));
+            columnNumber = (columnNumber - modulo - 1) / 26;
+        }
+        return columnName.toString();
+    }
 
     /**
      * Reference date of Google Sheets serial numbers.
@@ -137,6 +150,31 @@ public class UsefulMethods {
         // Convert fractional day to seconds and add to the date
         long secondsOfDay = fractional.multiply(BigDecimal.valueOf(86400)).longValue(); // 86400 seconds in a day
         return EXCEL_EPOCH_TIME.plusDays(serialDays).plusSeconds(secondsOfDay).truncatedTo(ChronoUnit.SECONDS);
+    }
+
+    /**
+     * Find the column number for a given month.
+     *
+     * @param row data from the spreadsheet
+     * @param month month to look for.
+     * @return column identifier.
+     */
+    public static String findColumnMatchingMonth(List<Object> row, YearMonth month) {
+        String columnIdentifier = null;
+        var columnNumber = 1;
+        for (Object it : row) {
+            if (it instanceof BigDecimal dateSerial) {
+                LocalDate localDate = sheetToLocalDate(dateSerial);
+                if (YearMonth.from(localDate).equals(month)) {
+                    columnIdentifier = toColumnName(columnNumber);
+                }
+            }
+            columnNumber++;
+        }
+        if (columnIdentifier == null) {
+            throw new RuntimeException("Could not find the column for the month %s.".formatted(month));
+        }
+        return columnIdentifier;
     }
 
     /**

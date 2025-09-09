@@ -54,10 +54,20 @@ import static ro.sellfluence.db.Vendor.insertOrUpdateVendor;
 import static ro.sellfluence.db.Vendor.selectFetchTimeByAccount;
 import static ro.sellfluence.db.Vendor.selectVendorIdByName;
 import static ro.sellfluence.db.Vendor.updateFetchTimeByAccount;
+import static ro.sellfluence.support.UsefulMethods.require;
 import static ro.sellfluence.support.UsefulMethods.toLocalDate;
 import static ro.sellfluence.support.UsefulMethods.toLocalDateTime;
 import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 
+/**
+ * EmagMirrorDB provides a mechanism for managing and interacting with the eMAG mirrored database system.
+ * It allows operations such as retrieving, updating, and analysing order data, product information,
+ * vendor details, GMV data, and other related database functionalities. This class ensures database
+ * interaction is streamlined, encapsulated, and accessible through its defined public methods.
+ *
+ * <p>This module delegates all operations, which touch only a single table to the repective class
+ * while it handles operations that need multiple tables itself.</p>
+ */
 public class EmagMirrorDB {
 
     private static final Map<String, EmagMirrorDB> openDatabases = new HashMap<>();
@@ -480,11 +490,11 @@ public class EmagMirrorDB {
                             """)) {
                 try (var rs = s.executeQuery()) {
                     while (rs.next()) {
-                        var priceWithoutVAT = rs.getBigDecimal(6);
-                        var vatRate = new BigDecimal(rs.getString("vat"));
-                        var vat = priceWithoutVAT.multiply(vatRate);
-                        var priceWithVAT = priceWithoutVAT.add(vat);
-                        String customerName = rs.getString(8);
+                        // var priceWithoutVAT = rs.getBigDecimal(6);
+                        // var vatRate = new BigDecimal(rs.getString("vat"));
+                        // var vat = priceWithoutVAT.multiply(vatRate);
+                        // var priceWithVAT = priceWithoutVAT.add(vat);
+                        // String customerName = rs.getString(8);
                         var row = Arrays.<Object>asList(rs.getString(1), // id
                                 rs.getString(2), // company name
                                 rs.getBoolean(3), // platform
@@ -558,6 +568,62 @@ public class EmagMirrorDB {
         return database.readTX(Vendor::selectAllVendors);
     }
 
+    /**
+     * Return the number of storno for each product in a specific month.
+     *
+     * @param month for which to return the number of storno.
+     * @return map from PNK to number of storno.
+     */
+    public @NonNull Map<String, Integer> countStornoByMonth(@NonNull YearMonth month) throws SQLException {
+        return countByMonth(month, """
+                SELECT SUM(pio.storno_qty) AS quantity, pio.part_number_key AS pnk
+                FROM emag_order AS o
+                INNER JOIN product_in_order AS pio
+                ON o.surrogate_id = pio.emag_order_surrogate_id
+                WHERE o.status = 5 AND o.date >= ? AND o.date < ?
+                GROUP BY pnk
+                """);
+    }
+
+    /**
+     * Return the number of returns for each product in a specific month.
+     *
+     * @param month for which to return the number of storno.
+     * @return map from PNK to number of storno.
+     */
+    public @NonNull Map<String, Integer> countReturnByMonth(@NonNull YearMonth month) throws SQLException {
+        return countByMonth(month, """
+                SELECT SUM(rp.quantity) AS quantity, pio.part_number_key AS pnk
+                FROM rma_result AS r
+                INNER JOIN emag_returned_products AS rp
+                ON r.emag_id = rp.emag_id
+                INNER JOIN emag_order AS o
+                ON r.order_id = o.id
+                INNER JOIN product_in_order AS pio
+                ON o.surrogate_id = pio.emag_order_surrogate_id
+                WHERE rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ?
+                GROUP BY pnk
+                """);
+    }
+
+    private @NonNull HashMap<String, Integer> countByMonth(@NonNull final YearMonth month, @NonNull final String sql) throws SQLException {
+        return database.singleReadTX(db -> {
+                    var result = new HashMap<String, Integer>();
+                    try (var s = db.prepareStatement(sql)) {
+                        s.setTimestamp(1, toTimestamp(month.atDay(1).atStartOfDay()));
+                        s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1).atStartOfDay()));
+                        try (var rs = s.executeQuery()) {
+                            while (rs.next()) {
+                                var pnk = rs.getString("pnk");
+                                var oldValue = result.put(pnk, rs.getInt("quantity"));
+                                require(oldValue == null, () -> "Unexpected duplicate for PNK %s".formatted(pnk));
+                            }
+                        }
+                    }
+                    return result;
+                }
+        );
+    }
 
     private static boolean computeGMV(Connection db) throws SQLException {
         var products = getProductCodes(db);
@@ -616,7 +682,6 @@ public class EmagMirrorDB {
                     var vatRate = new BigDecimal(rs.getString("vat"));
                     var vat = priceWithoutVAT.multiply(vatRate);
                     var priceWithVAT = priceWithoutVAT.add(vat);
-                    int status = rs.getInt("status");
                     var data = new EmployeeSheetData(
                             rs.getString("id"),
                             rs.getString("vendor_name"),

@@ -24,7 +24,7 @@ import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.sheetSupport.Conversions.isEMAGFbe;
-import static ro.sellfluence.support.UsefulMethods.sheetToLocalDate;
+import static ro.sellfluence.support.UsefulMethods.findColumnMatchingMonth;
 
 /**
  * Read orders from our database mirror and put them in a sheet.
@@ -96,20 +96,7 @@ public class PopulateDateComenziFromDB {
                 .collect(Collectors.groupingBy(ProductInfo::name));
         var productsInSheet = sheet.getColumn(gmvSheetName, "B").stream().toList();
         var monthsInSheet = sheet.getRowAsDates(gmvSheetName, 2).stream().toList();
-        String columnIdentifier = null;
-        var columnNumber = 1;
-        for (Object it : monthsInSheet) {
-            if (it instanceof BigDecimal dateSerial) {
-                LocalDate localDate = sheetToLocalDate(dateSerial);
-                if (YearMonth.from(localDate).equals(month)) {
-                    columnIdentifier = toColumnName(columnNumber);
-                }
-            }
-            columnNumber++;
-        }
-        if (columnIdentifier == null) {
-            throw new RuntimeException("Could not find the column for the month %s.".formatted(month));
-        }
+        var columnIdentifier = findColumnMatchingMonth(monthsInSheet, month);
         Integer startRow = null;
         var rowNumber = 0;
         var gmvColumn = new ArrayList<BigDecimal>();
@@ -152,14 +139,7 @@ public class PopulateDateComenziFromDB {
             }
         }
         if (startRow != null) {
-            var values = gmvColumn.stream().skip(startRow - 1).map(it -> {
-                var o = it != null ? (Object) it : (Object) "";
-                return List.of(o);
-            }).toList();
-            sheet.updateRange(
-                    "'%s'!%s%d:%s%d".formatted(gmvSheetName, columnIdentifier, startRow, columnIdentifier, startRow + gmvColumn.size() - 1),
-                    values
-            );
+            sheet.updateSheetColumnFromRow(gmvSheetName, columnIdentifier, startRow, gmvColumn);
         } else {
             logger.log(WARNING, "Could not add GMV because no products are found in the sheet.");
         }
@@ -244,18 +224,5 @@ public class PopulateDateComenziFromDB {
         return sheetData.stream()
                 .skip(3)
                 .map(row -> new OrderLine(row.get(1).toString(), (String) row.get(2))).collect(Collectors.toSet());
-    }
-
-    // Helper function to convert a column number to its corresponding letters.
-    public static String toColumnName(int columnNumber) {
-        StringBuilder columnName = new StringBuilder();
-
-        while (columnNumber > 0) {
-            int modulo = (columnNumber - 1) % 26;
-            columnName.insert(0, (char) ('A' + modulo));
-            columnNumber = (columnNumber - modulo - 1) / 26;
-        }
-
-        return columnName.toString();
     }
 }

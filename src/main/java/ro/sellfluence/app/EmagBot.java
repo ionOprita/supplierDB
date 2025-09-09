@@ -38,8 +38,15 @@ public class EmagBot {
         try {
             PopulateDateComenziFromDB.updateSpreadsheets(mirrorDB);
         } catch (SQLException e) {
-            logger.log(WARNING, "Updating the date comenzi sheet ended with an exception. The Bot will continue anyway with the next step.", e);
+            logger.log(WARNING, "Updating the date comenzi sheet ended with an exception.", e);
             throw new RuntimeException("PopulateDateComenzi ended with an exception ", e);
+        }
+        logger.log(INFO, "Update Stornos and Returns for the current month from the %s database to the Cent. Ret. Sto. sheet.".formatted(dbAlias));
+        try {
+            PopulateStornoAndReturns.updateSpreadsheets(mirrorDB);
+        } catch (SQLException e) {
+            logger.log(WARNING, "Updating the Storno and Return sheet ended with an exception.", e);
+            throw new RuntimeException("PopulateStornoAndReturns ended with an exception ", e);
         }
         logger.log(INFO, "Update the sheet used for customer feedback using %s.".formatted(dbAlias));
         UpdateEmployeeSheetsFromDB.updateSheets(mirrorDB);

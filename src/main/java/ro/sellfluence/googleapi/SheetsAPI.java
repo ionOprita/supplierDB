@@ -371,6 +371,25 @@ public class SheetsAPI {
         );
     }
 
+    /**
+     * Updates part of a sheet column.
+     *
+     * @param sheetName the name of the sheet.
+     * @param columnIdentifier the name of the column.
+     * @param startRow the first row to modify.
+     * @param columnData the data. Null values are stored as empty strings.
+     */
+    public void updateSheetColumnFromRow(String sheetName, String columnIdentifier, Integer startRow, List<?> columnData) {
+        var values = columnData.stream().skip(startRow - 1).map(it -> {
+            var o = it != null ? (Object) it : (Object) "";
+            return List.of(o);
+        }).toList();
+        updateRange(
+                "'%s'!%s%d:%s%d".formatted(sheetName, columnIdentifier, startRow, columnIdentifier, startRow + columnData.size() - 1),
+                values
+        );
+    }
+
     public BatchUpdateSpreadsheetResponse formatDate(String spreadSheetId, int startColumn, int endColumn, int startRow, int endRow) {
         // Create the number format object
         NumberFormat numberFormat = new NumberFormat()
