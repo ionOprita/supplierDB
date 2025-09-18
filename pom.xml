@@ -8,7 +8,7 @@
     <name>emagDB</name>
     <description>Extract from eMAG accounts to google sheets</description>
     <properties>
-        <maven.compiler.release>24</maven.compiler.release>
+        <maven.compiler.release>25</maven.compiler.release>
     </properties>
 
     <dependencies>
