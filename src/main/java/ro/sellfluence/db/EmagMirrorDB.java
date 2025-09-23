@@ -571,6 +571,105 @@ public class EmagMirrorDB {
     /**
      * Return the number of storno for each product in a specific month.
      *
+     * @param productCode for which to return the number of storno.
+     * @return map from PNK to number of storno.
+     */
+    public @NonNull Map<LocalDate, Integer> countOrdersByDayForProduct(@NonNull String productCode) throws SQLException {
+        return countByDayForProduct(productCode, """
+                WITH picked AS (
+                  SELECT DISTINCT ON (o.id, pio.part_number_key)
+                         -- If we picked a status 4 row, use pio.quantity; otherwise (only 5 exists) use pio.initial_qty
+                         CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS picked_qty,
+                         CAST(o.date AS date) AS event_date
+                  FROM emag_order o
+                  JOIN product_in_order pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                  JOIN product p ON p.emag_pnk = pio.part_number_key
+                  WHERE o.status IN (4,5) AND p.product_code = ?
+                  ORDER BY o.id, pio.part_number_key,
+                    o.status,  -- prefer status 4; fallback to 5
+                    o.surrogate_id DESC                         -- tie-breaker if needed
+                )
+                SELECT SUM(picked_qty) AS quantity, event_date
+                FROM picked
+                GROUP BY event_date
+                ORDER BY event_date;
+                """);
+    }
+    /**
+     * Return the number of storno for each product in a specific month.
+     *
+     * @param productCode for which to return the number of storno.
+     * @return map from PNK to number of storno.
+     */
+    public @NonNull Map<LocalDate, Integer> countStornoByDayForProduct(@NonNull String productCode) throws SQLException {
+        return countByDayForProduct(productCode, """
+                SELECT SUM(pio.storno_qty) AS quantity, CAST(o.date AS date) AS event_date
+                FROM emag_order AS o
+                INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
+                WHERE o.status = 5 AND p.product_code = ?
+                GROUP BY CAST(o.date AS date)
+                ORDER BY event_date;
+                """);
+    }
+
+    /**
+     * Return the number of returns for each product in a specific month.
+     *
+     * @param productCode for which to return the number of storno.
+     * @return map from PNK to number of storno.
+     */
+    public @NonNull Map<LocalDate, Integer> countReturnByDayForProduct(@NonNull String productCode) throws SQLException {
+        return countByDayForProduct(productCode, """
+                SELECT SUM(rp.quantity) AS quantity, CAST(r.date AS date) AS event_date
+                FROM rma_result AS r
+                INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                INNER JOIN emag_order AS o ON r.order_id = o.id
+                INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
+                WHERE rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND p.product_code = ?
+                GROUP BY CAST(r.date AS date)
+                ORDER BY event_date;
+                """);
+    }
+
+    private @NonNull HashMap<LocalDate, Integer> countByDayForProduct(@NonNull final String productCode, @NonNull final String sql) throws SQLException {
+        return database.singleReadTX(db -> {
+                    var result = new HashMap<LocalDate, Integer>();
+                    try (var s = db.prepareStatement(sql)) {
+                        s.setString(1, productCode);
+                        try (var rs = s.executeQuery()) {
+                            while (rs.next()) {
+                                var date = toLocalDate(rs.getTimestamp("event_Date"));
+                                var oldValue = result.put(date, rs.getInt("quantity"));
+                                require(oldValue == null, () -> "Unexpected duplicate for date %s".formatted(date));
+                            }
+                        }
+                    }
+                    return result;
+                }
+        );
+    }
+
+    /**
+     * Return the number of storno for each product in a specific month.
+     *
+     * @param month for which to return the number of storno.
+     * @return map from PNK to number of storno.
+     */
+    public @NonNull Map<String, Integer> countOrdersByMonth(@NonNull YearMonth month) throws SQLException {
+        return countByMonth(month, """
+                SELECT SUM(pio.initial_qty) AS quantity, pio.part_number_key AS pnk
+                FROM emag_order AS o
+                INNER JOIN product_in_order AS pio
+                ON o.surrogate_id = pio.emag_order_surrogate_id
+                WHERE o.status = 5 AND o.date >= ? AND o.date < ?
+                GROUP BY pnk
+                """);
+    }
+    /**
+     * Return the number of storno for each product in a specific month.
+     *
      * @param month for which to return the number of storno.
      * @return map from PNK to number of storno.
      */
