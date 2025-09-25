@@ -679,7 +679,7 @@ public class EmagMirrorDB {
                 FROM emag_order AS o
                 INNER JOIN product_in_order AS pio
                 ON o.surrogate_id = pio.emag_order_surrogate_id
-                WHERE o.status = 5 AND o.date >= ? AND o.date < ?
+                WHERE o.status = 5 AND o.modified >= ? AND o.modified < ?
                 GROUP BY pnk
                 """);
     }

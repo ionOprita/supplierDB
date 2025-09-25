@@ -38,10 +38,13 @@ public class PopulateStornoAndReturns {
             throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
         }
         YearMonth month = YearMonth.now();
-        logger.log(INFO, "--- Update Stornos for month %s --------------------------".formatted(month));
-        updateSheet(sheet, stornoSheetName, month, mirrorDB.countStornoByMonth(month));
-        logger.log(INFO, "--- Update Returns for month %s ------------------------".formatted(month));
-        updateSheet(sheet, returnsSheetName, month, mirrorDB.countReturnByMonth(month));
+        while (month.getYear() == YearMonth.now().getYear()) {
+            logger.log(INFO, "--- Update Stornos for month %s --------------------------".formatted(month));
+            updateSheet(sheet, stornoSheetName, month, mirrorDB.countStornoByMonth(month));
+            logger.log(INFO, "--- Update Returns for month %s ------------------------".formatted(month));
+            updateSheet(sheet, returnsSheetName, month, mirrorDB.countReturnByMonth(month));
+            month = month.minusMonths(1);
+        }
     }
 
     private static void updateSheet(SheetsAPI sheet, final String sheetName, YearMonth month, @NonNull final Map<String, Integer> valuesByPNK) {
@@ -68,7 +71,7 @@ public class PopulateStornoAndReturns {
     }
 
     private static void updateSheetColumn(SheetsAPI sheet, String sheetName, ArrayList<Integer> columnData, Integer startRow, String columnIdentifier) {
-        var values = columnData.stream().skip(startRow - 1).map(it -> {
+        var values = columnData.stream().map(it -> {
             var o = it != null ? (Object) it : (Object) "";
             return List.of(o);
         }).toList();
