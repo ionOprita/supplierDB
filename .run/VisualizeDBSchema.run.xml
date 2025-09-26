@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="VisualizeDBSchema" type="Application" factoryName="Application" nameIsGenerated="true">
     <option name="MAIN_CLASS_NAME" value="ro.sellfluence.test.VisualizeDBSchema" />
-    <module name="supplierDB" />
+    <module name="emagDB" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="ro.sellfluence.test.*" />

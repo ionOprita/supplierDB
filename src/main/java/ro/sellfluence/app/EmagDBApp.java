@@ -64,6 +64,7 @@ public class EmagDBApp {
             else if (arguments.hasFlag("refetch_all")) { refetchAndStoreToDB(mirrorDB, Period.ofYears(3)); }
             else if (!arguments.hasFlag("nofetch")) { fetchAndStoreToDB(mirrorDB); }
             mirrorDB.updateGMVTable();
+            mirrorDB.updateStornoTable();
         } catch (SQLException e) {
             throw new RuntimeException("error initializing database", e);
         } catch (IOException e) {

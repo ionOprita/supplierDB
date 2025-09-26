@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="VerifyDatabase emagTest" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="ro.sellfluence.test.VerifyDatabase" />
-    <module name="supplierDB" />
+    <module name="emagDB" />
     <option name="PROGRAM_PARAMETERS" value="--db=emagTest" />
     <extension name="coverage">
       <pattern>

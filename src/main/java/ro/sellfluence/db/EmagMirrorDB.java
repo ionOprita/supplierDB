@@ -568,6 +568,10 @@ public class EmagMirrorDB {
         return database.readTX(Vendor::selectAllVendors);
     }
 
+    public int updateStornoTable() throws SQLException {
+        return database.writeTX(EmagMirrorDB::stornoBackfill);
+    }
+
     /**
      * Return the number of storno for each product in a specific month.
      *
@@ -603,12 +607,16 @@ public class EmagMirrorDB {
      */
     public @NonNull Map<LocalDate, Integer> countStornoByDayForProduct(@NonNull String productCode) throws SQLException {
         return countByDayForProduct(productCode, """
-                SELECT SUM(pio.storno_qty) AS quantity, CAST(o.date AS date) AS event_date
-                FROM emag_order AS o
-                INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
-                INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
-                WHERE o.status = 5 AND p.product_code = ?
-                GROUP BY CAST(o.date AS date)
+                SELECT
+                  SUM(s.quantity) AS quantity,
+                  CAST(s.storno_date AS date) AS event_date
+                FROM storno AS s
+                JOIN product_in_order AS pio
+                  ON pio.id = s.product_id
+                JOIN product AS p
+                  ON p.emag_pnk = pio.part_number_key
+                WHERE p.product_code = ?
+                GROUP BY CAST(s.storno_date AS date)
                 ORDER BY event_date;
                 """);
     }
@@ -633,24 +641,6 @@ public class EmagMirrorDB {
                 """);
     }
 
-    private @NonNull HashMap<LocalDate, Integer> countByDayForProduct(@NonNull final String productCode, @NonNull final String sql) throws SQLException {
-        return database.singleReadTX(db -> {
-                    var result = new HashMap<LocalDate, Integer>();
-                    try (var s = db.prepareStatement(sql)) {
-                        s.setString(1, productCode);
-                        try (var rs = s.executeQuery()) {
-                            while (rs.next()) {
-                                var date = toLocalDate(rs.getTimestamp("event_Date"));
-                                var oldValue = result.put(date, rs.getInt("quantity"));
-                                require(oldValue == null, () -> "Unexpected duplicate for date %s".formatted(date));
-                            }
-                        }
-                    }
-                    return result;
-                }
-        );
-    }
-
     /**
      * Return the number of storno for each product in a specific month.
      *
@@ -667,6 +657,7 @@ public class EmagMirrorDB {
                 GROUP BY pnk
                 """);
     }
+
     /**
      * Return the number of storno for each product in a specific month.
      *
@@ -675,15 +666,16 @@ public class EmagMirrorDB {
      */
     public @NonNull Map<String, Integer> countStornoByMonth(@NonNull YearMonth month) throws SQLException {
         return countByMonth(month, """
-                SELECT SUM(pio.storno_qty) AS quantity, pio.part_number_key AS pnk
-                FROM emag_order AS o
-                INNER JOIN product_in_order AS pio
-                ON o.surrogate_id = pio.emag_order_surrogate_id
-                WHERE o.status = 5 AND o.modified >= ? AND o.modified < ?
-                GROUP BY pnk
+                SELECT
+                  SUM(s.quantity) AS quantity,
+                  p.part_number_key AS pnk
+                FROM storno AS s
+                JOIN product_in_order AS p
+                  ON p.id = s.product_id
+                WHERE s.storno_date >= ? AND s.storno_date < ?
+                GROUP BY p.part_number_key;
                 """);
     }
-
     /**
      * Return the number of returns for each product in a specific month.
      *
@@ -705,6 +697,24 @@ public class EmagMirrorDB {
                 """);
     }
 
+    private @NonNull HashMap<LocalDate, Integer> countByDayForProduct(@NonNull final String productCode, @NonNull final String sql) throws SQLException {
+        return database.singleReadTX(db -> {
+                    var result = new HashMap<LocalDate, Integer>();
+                    try (var s = db.prepareStatement(sql)) {
+                        s.setString(1, productCode);
+                        try (var rs = s.executeQuery()) {
+                            while (rs.next()) {
+                                var date = toLocalDate(rs.getTimestamp("event_Date"));
+                                var oldValue = result.put(date, rs.getInt("quantity"));
+                                require(oldValue == null, () -> "Unexpected duplicate for date %s".formatted(date));
+                            }
+                        }
+                    }
+                    return result;
+                }
+        );
+    }
+
     private @NonNull HashMap<String, Integer> countByMonth(@NonNull final YearMonth month, @NonNull final String sql) throws SQLException {
         return database.singleReadTX(db -> {
                     var result = new HashMap<String, Integer>();
@@ -722,6 +732,59 @@ public class EmagMirrorDB {
                     return result;
                 }
         );
+    }
+
+    /**
+     * Computes the delta between product_in_order.storno_qty and what's already recorded in
+     * the storno table, then inserts the missing amount (positive or negative) using the
+     * emag_order.modified timestamp as storno_date.
+     *
+     * @return number of rows inserted into storno
+     */
+    private static int stornoBackfill(Connection db) throws SQLException {
+        try (var s = db.prepareStatement("""
+            WITH cancelled AS (
+              SELECT
+                o.id  AS order_id,
+                p.id  AS product_id,
+                COALESCE(p.storno_qty, 0) AS storno_qty,
+                o.modified AS storno_date
+              FROM emag_order o
+              JOIN product_in_order p
+                ON p.emag_order_surrogate_id = o.surrogate_id
+              WHERE o.status = 5
+                AND COALESCE(p.storno_qty, 0) <> 0
+            ),
+            already AS (
+              SELECT
+                s.order_id,
+                s.product_id,
+                SUM(s.quantity) AS already_qty
+              FROM storno s
+              GROUP BY s.order_id, s.product_id
+            ),
+            to_insert AS (
+              SELECT
+                c.storno_date,
+                c.order_id,
+                c.product_id,
+                (c.storno_qty - COALESCE(a.already_qty, 0)) AS delta_qty
+              FROM cancelled c
+              LEFT JOIN already a
+                ON a.order_id = c.order_id
+               AND a.product_id = c.product_id
+            )
+            INSERT INTO storno (storno_date, order_id, product_id, quantity)
+            SELECT
+              storno_date,
+              order_id,
+              product_id,
+              delta_qty
+            FROM to_insert
+            WHERE delta_qty <> 0
+            """)) {
+            return s.executeUpdate();
+        }
     }
 
     private static boolean computeGMV(Connection db) throws SQLException {

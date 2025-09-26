@@ -1,8 +1,7 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="VisualizeDBSchema emagTest" type="Application" factoryName="Application">
-    <option name="MAIN_CLASS_NAME" value="ro.sellfluence.test.VisualizeDBSchema" />
+  <configuration default="false" name="UpdateTestDB" type="Application" factoryName="Application" nameIsGenerated="true">
+    <option name="MAIN_CLASS_NAME" value="ro.sellfluence.test.UpdateTestDB" />
     <module name="emagDB" />
-    <option name="PROGRAM_PARAMETERS" value="--db=emagTest" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="ro.sellfluence.test.*" />
