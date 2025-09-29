@@ -3,7 +3,10 @@ package ro.sellfluence.db;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ProductTable {
     public record ProductInfo(
@@ -15,8 +18,39 @@ public class ProductTable {
             String category,
             String messageKeyword,
             String employeeSheetName,
-            String emloyeSheetTab
+            String employeeSheetTab
     ) {
+        public static final Comparator<ProductInfo> nameComparator = (p1, p2) -> {
+            ParsedName n1 = parse(p1.name);
+            ParsedName n2 = parse(p2.name);
+
+            // Compare letter first
+            int cmp = Character.compare(n1.letter, n2.letter);
+            if (cmp != 0) return cmp;
+
+            // Compare number numerically
+            cmp = Integer.compare(n1.number, n2.number);
+            if (cmp != 0) return cmp;
+
+            // Fallback: compare remaining text
+            return n1.text.compareTo(n2.text);
+        };
+
+        private static final Pattern namePattern = Pattern.compile("^([A-Z])\\.\\s*(\\d+)\\s*-\\s*(.*)$");
+
+        private record ParsedName(char letter, int number, String text) {}
+
+        private static ParsedName parse(String name) {
+            Matcher m = namePattern.matcher(name);
+            if (m.matches()) {
+                char letter = m.group(1).charAt(0);
+                int number = Integer.parseInt(m.group(2));
+                String text = m.group(3);
+                return new ParsedName(letter, number, text);
+            }
+            // Fallback: treat as "unknown" but still sortable
+            return new ParsedName('\0', Integer.MAX_VALUE, name);
+        }
     }
 
     /**
@@ -157,7 +191,7 @@ public class ProductTable {
             s.setBoolean(5, productInfo.retracted());
             s.setString(6, productInfo.name());
             s.setString(7, productInfo.employeeSheetName());
-            s.setString(8, productInfo.emloyeSheetTab());
+            s.setString(8, productInfo.employeeSheetTab());
             s.setString(9, productInfo.productCode());
             return s.executeUpdate();
         }

@@ -105,7 +105,7 @@ public class UpdateEmployeeSheetsFromDB {
                 logger.log(WARNING, "No spreadsheet found for the product %s".formatted(productInfo));
                 continue;
             }
-            String tabName = productInfo.emloyeSheetTab();
+            String tabName = productInfo.employeeSheetTab();
             if (tabName == null) {
                 logger.log(WARNING, "No tab found for the product %s".formatted(productInfo));
                 continue;
@@ -142,12 +142,12 @@ public class UpdateEmployeeSheetsFromDB {
                     logger.log(WARNING, "No employee sheet found for PNK %s".formatted(pnk));
                     continue;
                 }
-                if (product.emloyeSheetTab() == null) {
+                if (product.employeeSheetTab() == null) {
                     logger.log(WARNING, "No product tab found for PNK %s on the sheet %s.".formatted(pnk, product.employeeSheetName()));
                     continue;
                 }
-                progressLogger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s.".formatted(spreadSheet, product.emloyeSheetTab(), pnk));
-                accumulateExistingOrders(spreadSheet, product.emloyeSheetTab(), existingOrderAssignments);
+                progressLogger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s.".formatted(spreadSheet, product.employeeSheetTab(), pnk));
+                accumulateExistingOrders(spreadSheet, product.employeeSheetTab(), existingOrderAssignments);
                 LocalDate startDate = dates.get(pnk);
                 if (startDate == null) {
                     startDate = LocalDate.now().minusMonths(1);
@@ -156,7 +156,7 @@ public class UpdateEmployeeSheetsFromDB {
                 var endTime = LocalDate.now().minusDays(13).atStartOfDay();
                 var newOrdersForProduct = mirrorDB.readOrderData(pnk, startTime, endTime).stream().filter(it -> it.quantity() > 0).toList();
                 for (EmployeeSheetData it : newOrdersForProduct) {
-                    newAssignments.put(it, product.emloyeSheetTab());
+                    newAssignments.put(it, product.employeeSheetTab());
                 }
             }
         }
@@ -219,7 +219,7 @@ public class UpdateEmployeeSheetsFromDB {
         }
         for (Map.Entry<SheetsAPI, List<EmployeeSheetData>> entry : reorderedByEmployeeSheet.entrySet()) {
             var sheet = entry.getKey();
-            var groupedBySheet = entry.getValue().stream().collect(Collectors.groupingBy(it -> productsByPNK.get(it.partNumberKey()).emloyeSheetTab()));
+            var groupedBySheet = entry.getValue().stream().collect(Collectors.groupingBy(it -> productsByPNK.get(it.partNumberKey()).employeeSheetTab()));
             for (var entry1 : groupedBySheet.entrySet()) {
                 var sheetName = entry1.getKey();
                 List<EmployeeSheetData> orders = entry1.getValue();

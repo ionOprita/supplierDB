@@ -1,8 +1,11 @@
 package ro.sellfluence.app;
 
 import io.javalin.Javalin;
+import io.javalin.validation.Validator;
 import ro.sellfluence.api.API;
 import ro.sellfluence.db.EmagMirrorDB;
+
+import java.time.YearMonth;
 
 /**
  * Server for the EmagMirror app.
@@ -22,6 +25,7 @@ public class Server {
             cfg.http.defaultContentType = "application/json";
             // Serve static files from classpath:/public
             cfg.staticFiles.add("/public");
+            cfg.validation.register(YearMonth.class, YearMonth::parse);
         });
 
         app.get("/products", ctx -> {
@@ -67,6 +71,24 @@ public class Server {
         app.get("/returns/{id}", ctx -> {
             String id = ctx.pathParam("id");
             var returns = api.getReturns(id);
+            if (returns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(returns);
+            }
+        });
+
+        app.get("/stornoTable", ctx -> {
+            var returns = api.getStornosByProductAndMonth();
+            if (returns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(returns);
+            }
+        });
+        app.get("/storno/details", ctx -> {
+            Validator<YearMonth> month = ctx.queryParamAsClass("month", YearMonth.class);
+            var returns = api.stornoDetails(ctx.queryParam("pnk"), month.get());
             if (returns == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {

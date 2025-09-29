@@ -86,7 +86,7 @@ public class EmagMirrorDB {
      * @param alias name of the database.
      * @return instance of this class.
      * @throws SQLException on database errors.
-     * @throws IOException on alias lookup.
+     * @throws IOException  on alias lookup.
      */
     public static EmagMirrorDB getEmagMirrorDB(String alias) throws SQLException, IOException {
         var mirrorDB = openDatabases.get(alias);
@@ -145,6 +145,45 @@ public class EmagMirrorDB {
         });
     }
 
+    public record StronoInfo(LocalDateTime time, String orderId, String vendor, String pnk, String name, int quantity) {
+    }
+
+    public List<StronoInfo> getStornoDetails(String pnk, YearMonth month) throws SQLException {
+        return database.readTX(db -> {
+            var result = new ArrayList<StronoInfo>();
+            try (var s = db.prepareStatement("""
+                    SELECT  s.storno_date, s.order_id, v.vendor_name, pio.part_number_key, p.name, s.quantity  
+                    FROM storno AS s 
+                    JOIN emag_order AS o ON o.id = s.order_id
+                    JOIN product_in_order AS pio ON pio.id = s.product_id AND pio.emag_order_surrogate_id = o.surrogate_id
+                    JOIN vendor AS v ON v.id = o.vendor_id
+                    JOIN product AS p ON pio.part_number_key = p.emag_pnk
+                    WHERE s.storno_date >= ?
+                      AND s.storno_date <  ?
+                      AND pio.part_number_key = ?
+                    ORDER BY s.storno_date, s.order_id;""")) {
+                s.setTimestamp(1, toTimestamp(month.atDay(1)));
+                s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1)));
+                s.setString(3, pnk);
+                try (var rs = s.executeQuery()) {
+                    while (rs.next()) {
+                        result.add(
+                                new StronoInfo(
+                                        toLocalDateTime(rs.getTimestamp(1)),
+                                        rs.getString(2),
+                                        rs.getString(3),
+                                        rs.getString(4),
+                                        rs.getString(5),
+                                        rs.getInt(6)
+                                )
+                        );
+                    }
+                }
+            }
+            return result;
+        });
+    }
+
     @FunctionalInterface
     public interface SQLFunction<R> {
         R apply(Connection db) throws SQLException;
@@ -154,8 +193,8 @@ public class EmagMirrorDB {
      * Execute a read operation on this database.
      *
      * @param readOp operation that reads the database.
+     * @param <T>    type of result.
      * @return result of read operation.
-     * @param <T> type of result.
      * @throws SQLException if a database error occurs in readOp.
      */
     public <T> T read(SQLFunction<T> readOp) throws SQLException {
@@ -169,9 +208,9 @@ public class EmagMirrorDB {
     /**
      * Read orders in a format that is useful to update the employee sheets.
      *
-     * @param pnk Product identifier.
+     * @param pnk       Product identifier.
      * @param startTime start time of the period to read orders for.
-     * @param endTime end time of the period to read orders for.
+     * @param endTime   end time of the period to read orders for.
      * @return list of orders in a format that is useful to update the employee sheets.
      * @throws SQLException if anything goes wrong with the database.
      */
@@ -393,11 +432,12 @@ public class EmagMirrorDB {
      * <b>DEBUG ONLY!</b>
      *
      * <p>
-     *     This returns the orders, which are not fully filled for a given vendor, time range, and status.
+     * This returns the orders, which are not fully filled for a given vendor, time range, and status.
      * </p>
+     *
      * @param startTime start time inclusive
-     * @param endTime end time exclusive
-     * @param vendorId vendor UUID
+     * @param endTime   end time exclusive
+     * @param vendorId  vendor UUID
      * @return Orders that are missing all dependents like products, attachments, and so on.
      * @throws SQLException for database errors.
      */
@@ -599,6 +639,7 @@ public class EmagMirrorDB {
                 ORDER BY event_date;
                 """);
     }
+
     /**
      * Return the number of storno for each product in a specific month.
      *
@@ -676,6 +717,7 @@ public class EmagMirrorDB {
                 GROUP BY p.part_number_key;
                 """);
     }
+
     /**
      * Return the number of returns for each product in a specific month.
      *
@@ -743,46 +785,46 @@ public class EmagMirrorDB {
      */
     private static int stornoBackfill(Connection db) throws SQLException {
         try (var s = db.prepareStatement("""
-            WITH cancelled AS (
-              SELECT
-                o.id  AS order_id,
-                p.id  AS product_id,
-                COALESCE(p.storno_qty, 0) AS storno_qty,
-                o.modified AS storno_date
-              FROM emag_order o
-              JOIN product_in_order p
-                ON p.emag_order_surrogate_id = o.surrogate_id
-              WHERE o.status = 5
-                AND COALESCE(p.storno_qty, 0) <> 0
-            ),
-            already AS (
-              SELECT
-                s.order_id,
-                s.product_id,
-                SUM(s.quantity) AS already_qty
-              FROM storno s
-              GROUP BY s.order_id, s.product_id
-            ),
-            to_insert AS (
-              SELECT
-                c.storno_date,
-                c.order_id,
-                c.product_id,
-                (c.storno_qty - COALESCE(a.already_qty, 0)) AS delta_qty
-              FROM cancelled c
-              LEFT JOIN already a
-                ON a.order_id = c.order_id
-               AND a.product_id = c.product_id
-            )
-            INSERT INTO storno (storno_date, order_id, product_id, quantity)
-            SELECT
-              storno_date,
-              order_id,
-              product_id,
-              delta_qty
-            FROM to_insert
-            WHERE delta_qty <> 0
-            """)) {
+                WITH cancelled AS (
+                  SELECT
+                    o.id  AS order_id,
+                    p.id  AS product_id,
+                    COALESCE(p.storno_qty, 0) AS storno_qty,
+                    o.modified AS storno_date
+                  FROM emag_order o
+                  JOIN product_in_order p
+                    ON p.emag_order_surrogate_id = o.surrogate_id
+                  WHERE o.status = 5
+                    AND COALESCE(p.storno_qty, 0) <> 0
+                ),
+                already AS (
+                  SELECT
+                    s.order_id,
+                    s.product_id,
+                    SUM(s.quantity) AS already_qty
+                  FROM storno s
+                  GROUP BY s.order_id, s.product_id
+                ),
+                to_insert AS (
+                  SELECT
+                    c.storno_date,
+                    c.order_id,
+                    c.product_id,
+                    (c.storno_qty - COALESCE(a.already_qty, 0)) AS delta_qty
+                  FROM cancelled c
+                  LEFT JOIN already a
+                    ON a.order_id = c.order_id
+                   AND a.product_id = c.product_id
+                )
+                INSERT INTO storno (storno_date, order_id, product_id, quantity)
+                SELECT
+                  storno_date,
+                  order_id,
+                  product_id,
+                  delta_qty
+                FROM to_insert
+                WHERE delta_qty <> 0
+                """)) {
             return s.executeUpdate();
         }
     }

@@ -2,16 +2,15 @@ package ro.sellfluence.api;
 
 import com.google.gson.Gson;
 import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.db.EmagMirrorDB.StronoInfo;
+import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.support.DoubleWindow;
 
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -37,8 +36,11 @@ public class API {
     private static final Map<String, CachedDailyAmounts> cachedDailyStorno = new HashMap<>();
     private static final Map<String, CachedDailyAmounts> cachedDailyReturns = new HashMap<>();
 
-    public record CountByDate(LocalDate date, int count) { }
-    public record ValueByDate(LocalDate date, double value) { }
+    public record CountByDate(LocalDate date, int count) {
+    }
+
+    public record ValueByDate(LocalDate date, double value) {
+    }
 
     private interface Retriever<T, V> {
         V retrieve(T t) throws SQLException;
@@ -83,7 +85,7 @@ public class API {
             orderWindow.add(ordersByDate.get(date));
             returnWindow.add(returnsByDate.get(date));
             if (orderWindow.isFull() && returnWindow.isFull()) {
-                result.add(new ValueByDate(date, returnWindow.getSum()/ orderWindow.getSum()));
+                result.add(new ValueByDate(date, returnWindow.getSum() / orderWindow.getSum()));
             }
             date = date.plusDays(1);
         }
@@ -121,6 +123,32 @@ public class API {
      */
     public List<CountByDate> getReturns(String id) {
         return getCountById(id, cachedDailyReturns, mirrorDB::countReturnByDayForProduct);
+    }
+
+    /**
+     * Retrieves the count of the stornos by month for all products, within the past 2 years.
+     *
+     * @return map from product to map of month to the storno count.
+     * @throws SQLException on database error.
+     */
+    public Map<ProductInfo, Map<YearMonth, Integer>> getStornosByProductAndMonth() throws SQLException {
+        var result = new TreeMap<ProductInfo, Map<YearMonth, Integer>>(ProductInfo.nameComparator);
+        var products = mirrorDB.readProducts().stream().sorted(ProductInfo.nameComparator).toList();
+        var end = YearMonth.now();
+        var month = end.minusYears(2);
+        while (month.isBefore(end)) {
+            var storno = mirrorDB.countStornoByMonth(month);
+            for (ProductInfo product : products) {
+                var map = result.computeIfAbsent(product, _ -> new HashMap<>());
+                map.put(month, storno.getOrDefault(product.pnk(), 0));
+            }
+            month = month.plusMonths(1);
+        }
+        return result;
+    }
+
+    public List<StronoInfo> stornoDetails(String pnk, YearMonth month) throws SQLException {
+        return mirrorDB.getStornoDetails(pnk, month);
     }
 
     /**

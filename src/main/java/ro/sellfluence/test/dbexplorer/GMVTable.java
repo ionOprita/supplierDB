@@ -30,12 +30,9 @@ public class GMVTable extends JPanel {
     private JTable mainTable;
     private JTable rowHeaderTable;
     private JTable columnHeaderTable;
-    private JScrollPane scrollPane;
 
     private DefaultTableModel mainModel;
 
-    private List<YearMonth> sortedMonths = new ArrayList<>();
-    private List<ProductInfo> sortedProducts = new ArrayList<>();
     private BiFunction<ProductInfo, YearMonth, Void> cellListener;
 
     public GMVTable() {
@@ -53,7 +50,7 @@ public class GMVTable extends JPanel {
 
         mainTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
         mainTable.setDefaultRenderer(Object.class, new NumberCellRenderer());
-        // Add mouse listener to the table
+        // Add a mouse listener to the table
         mainTable.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -66,7 +63,7 @@ public class GMVTable extends JPanel {
             }
         });
 
-        scrollPane = new JScrollPane(mainTable);
+        JScrollPane scrollPane = new JScrollPane(mainTable);
 
         // Row header table
         rowHeaderTable = new JTable() {
@@ -113,15 +110,15 @@ public class GMVTable extends JPanel {
     public void updateData(SortedMap<ProductInfo, SortedMap<YearMonth, BigDecimal>> data) {
         // Collect months and products
         TreeSet<YearMonth> monthsSet = new TreeSet<>();
-        sortedProducts = data.keySet().stream().toList();
+        List<ProductInfo> sortedProducts = data.keySet().stream().sorted(ProductInfo.nameComparator).toList();
 
         for (Map<YearMonth, BigDecimal> monthData : data.values()) {
             monthsSet.addAll(monthData.keySet());
         }
 
-        sortedMonths = new ArrayList<>(monthsSet);
+        List<YearMonth> sortedMonths = new ArrayList<>(monthsSet);
 
-        // Set column headers for main table
+        // Set column headers for the main table
         Object[] columnNames = sortedMonths.stream().map(YearMonth::toString).toArray();
         Object[][] tableData = new Object[sortedProducts.size()][sortedMonths.size()];
 
@@ -135,7 +132,7 @@ public class GMVTable extends JPanel {
 
         mainModel.setDataVector(tableData, columnNames);
 
-        // Set row header table (1 column: product names)
+        // Set the row header table (1 column: product names)
         Object[][] rowHeaderData = new Object[sortedProducts.size()][1];
         for (int i = 0; i < sortedProducts.size(); i++) {
             rowHeaderData[i][0] = sortedProducts.get(i);
@@ -184,13 +181,13 @@ public class GMVTable extends JPanel {
                 }
             }
 
-            // append row to main table
+            // append row to the main table
             mainM.addRow(sums);
             // append corresponding label to row‐header table
             rowHeaderM.addRow(new Object[]{ prefix + " total" });
         }
 
-        // recalc row‐header width in case a "X total" label needs more room
+        // recalc row‐header width in case an "X total" label needs more room
         FontMetrics fm = rowHeaderTable.getFontMetrics(rowHeaderTable.getFont());
         int rowHeaderWidth = 0;
         for (int i = 0; i < rowHeaderM.getRowCount(); i++) {

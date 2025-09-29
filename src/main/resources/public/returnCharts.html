@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Orders/Storno/Returns by Product</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+    .row { display: grid; gap: 1rem; max-width: 900px; }
+    label { font-weight: 600; padding: .3rem; }
+    select { min-width: 320px; padding: .3rem; }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem; }
+    canvas { width: 100%; height: 30vh; } /* your viewport-relative height */
+  </style>
+  <script src="/js/chart.umd.min.js"></script>
+  <script src="/js/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script type="module" src="/js/graph.js"></script>
+</head>
+<body>
+  <h1>RRR / Orders / Storno / Returns by Product</h1>
+
+  <div class="row">
+    <div class="card">
+      <label for="productSelect">Product</label>
+      <select id="productSelect" disabled>
+        <option>Loading…</option>
+      </select>
+    </div>
+
+    <div class="card"><canvas id="rrrChart"  aria-label="RRR chart"  role="img"></canvas></div>
+    <div class="card"><canvas id="ordersChart"  aria-label="Order chart"  role="img"></canvas></div>
+    <div class="card"><canvas id="stornoChart"  aria-label="Storno chart" role="img"></canvas></div>
+    <div class="card"><canvas id="returnChart"  aria-label="Return chart" role="img"></canvas></div>
+  </div>
+</body>
+</html>

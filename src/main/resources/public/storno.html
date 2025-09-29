@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Storno Table</title>
+    <style>
+        body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+        /* limit to viewport height so vertical scroll happens in the table area */
+        .wrap { max-width: 100%; max-height: 70vh; overflow: auto; border: 1px solid #e5e7eb; }
+
+        table { border-collapse: collapse; min-width: 900px; table-layout: auto; }
+        th, td { border: 1px solid #e5e7eb; padding: .4rem .6rem; text-align: right; background: #fff; }
+        th:nth-child(1), td:nth-child(1),
+        th:nth-child(2), td:nth-child(2) { text-align: left; white-space: nowrap; }
+
+        /* sticky header */
+        thead th { position: sticky; top: 0; z-index: 3; background: #fff; }
+
+        /* sticky columns use classes; left offset set by JS */
+        .sticky-col-1, .sticky-col-2 { position: sticky; z-index: 2; background: #fff; }
+        .sticky-col-1 { left: 0; box-shadow: 2px 0 0 #e5e7eb; }      /* subtle divider */
+        .sticky-col-2 { /* left set dynamically by JS */ box-shadow: 2px 0 0 #e5e7eb; }
+
+        /* ensure header cells for sticky columns are above body cells at intersections */
+        thead .sticky-col-1, thead .sticky-col-2 { z-index: 4; }
+
+        tbody tr:nth-child(even) td { background: #fafafa; }
+        td[data-clickable="true"] { cursor: pointer; }
+        td[data-clickable="true"]:hover { background: #f0f7ff; }
+    </style>
+    <script type="module" src="/js/storno.js"></script>
+</head>
+<body>
+<h1>Storno counts per month</h1>
+
+<div class="wrap">
+    <table id="stornoTable">
+        <!-- no fixed colgroup widths needed now -->
+        <thead id="stornoHead"></thead>
+        <tbody id="stornoBody"></tbody>
+    </table>
+</div>
+
+</body>
+</html>
