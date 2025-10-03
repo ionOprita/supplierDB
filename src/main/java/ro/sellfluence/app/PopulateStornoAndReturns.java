@@ -38,13 +38,13 @@ public class PopulateStornoAndReturns {
             throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
         }
         YearMonth month = YearMonth.now();
-        while (month.getYear() == YearMonth.now().getYear()) {
+//        while (month.getYear() == YearMonth.now().getYear()) {
             logger.log(INFO, "--- Update Stornos for month %s --------------------------".formatted(month));
             updateSheet(sheet, stornoSheetName, month, mirrorDB.countStornoByMonth(month));
             logger.log(INFO, "--- Update Returns for month %s ------------------------".formatted(month));
             updateSheet(sheet, returnsSheetName, month, mirrorDB.countReturnByMonth(month));
             month = month.minusMonths(1);
-        }
+//        }
     }
 
     private static void updateSheet(SheetsAPI sheet, final String sheetName, YearMonth month, @NonNull final Map<String, Integer> valuesByPNK) {
