@@ -85,6 +85,10 @@ public class UpdateEmployeeSheetsFromDB {
      */
     public void transferFromDBToSheet(EmagMirrorDB mirrorDB) throws SQLException {
         var products = mirrorDB.readProducts();
+        // add everything for one employee
+        // products = products.stream().filter(it -> it.employeeSheetName().equals("Z. Purdel Maria Mălina - Feedback Clienti")).toList();
+        // add only for one PNK
+        // products = products.stream().filter(productWithID -> productWithID.pnk().equals("D3YYNY3BM")).toList();
         var productsByPNK = new HashMap<String, ProductInfo>();
         var productsByEmployee = new HashMap<SheetsAPI, List<ProductInfo>>();
         var sheetsByPNK = new HashMap<String, FeedbackTab>();

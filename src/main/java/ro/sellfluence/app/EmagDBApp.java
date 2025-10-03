@@ -37,9 +37,9 @@ public class EmagDBApp {
     private static final Logger logger = Logger.getLogger(EmagDBApp.class.getName());
     private static final Logger consoleLogger = Logs.getConsoleLogger("EmagDBApp", INFO);
     private static final List<String> emagAccounts = List.of(
-            "sellfluence",
-            "zoopieconcept",
-            "zoopieinvest",
+//            "sellfluence",
+//            "zoopieconcept",
+//            "zoopieinvest",
             "zoopiesolutions",
             "judios",
             "koppel",
