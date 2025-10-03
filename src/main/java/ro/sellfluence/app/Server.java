@@ -16,7 +16,7 @@ public class Server {
         int port = Integer.parseInt(System.getProperty(configNamePort,
                 System.getenv().getOrDefault(configNamePort, "8080")));
 
-        EmagMirrorDB db = EmagMirrorDB.getEmagMirrorDB("emagTest");
+        EmagMirrorDB db = EmagMirrorDB.getEmagMirrorDB("emagLocal");
 
         API api = new API(db);
 
