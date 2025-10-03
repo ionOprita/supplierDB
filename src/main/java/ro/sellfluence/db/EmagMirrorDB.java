@@ -145,7 +145,7 @@ public class EmagMirrorDB {
         });
     }
 
-    public record StronoInfo(LocalDateTime time, String orderId, String vendor, String pnk, String name, int quantity) {
+    public record ReturnStronoDetail(LocalDateTime time, String orderId, String vendor, String pnk, String name, int quantity) {
     }
 
     /**
@@ -161,9 +161,9 @@ public class EmagMirrorDB {
      *         a storno record with corresponding metadata.
      * @throws SQLException if any database access error occurs while retrieving the storno details.
      */
-    public List<StronoInfo> getStornoDetails(String pnk, YearMonth month) throws SQLException {
+    public List<ReturnStronoDetail> getStornoDetails(String pnk, YearMonth month) throws SQLException {
         return database.readTX(db -> {
-            var result = new ArrayList<StronoInfo>();
+            var result = new ArrayList<ReturnStronoDetail>();
             try (var s = db.prepareStatement("""
                     SELECT  s.storno_date, s.order_id, v.vendor_name, pio.part_number_key, p.name, s.quantity  
                     FROM storno AS s 
@@ -179,7 +179,43 @@ public class EmagMirrorDB {
                 try (var rs = s.executeQuery()) {
                     while (rs.next()) {
                         result.add(
-                                new StronoInfo(
+                                new ReturnStronoDetail(
+                                        toLocalDateTime(rs.getTimestamp(1)),
+                                        rs.getString(2),
+                                        rs.getString(3),
+                                        rs.getString(4),
+                                        rs.getString(5),
+                                        rs.getInt(6)
+                                )
+                        );
+                    }
+                }
+            }
+            return result;
+        });
+    }
+
+    public List<ReturnStronoDetail> getReturnDetails(String pnk, YearMonth month) throws SQLException {
+        return database.readTX(db -> {
+            var result = new ArrayList<ReturnStronoDetail>();
+            try (var s = db.prepareStatement("""
+                SELECT r.date, r.order_id, v.vendor_name, pio.part_number_key, p.name, rp.quantity
+                FROM rma_result AS r
+                INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                INNER JOIN emag_order AS o ON r.order_id = o.id
+                INNER JOIN vendor AS v ON v.id = o.vendor_id
+                INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                INNER JOIN product AS p ON pio.part_number_key = p.emag_pnk
+                WHERE rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ? AND pio.part_number_key = ?
+                ORDER BY r.date, r.order_id;
+            """)) {
+                s.setTimestamp(1, toTimestamp(month.atDay(1)));
+                s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1)));
+                s.setString(3, pnk);
+                try (var rs = s.executeQuery()) {
+                    while (rs.next()) {
+                        result.add(
+                                new ReturnStronoDetail(
                                         toLocalDateTime(rs.getTimestamp(1)),
                                         rs.getString(2),
                                         rs.getString(3),

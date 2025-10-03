@@ -40,7 +40,7 @@ public class FetchOneOrder {
         EmagApi.setAPILogLevel(FINE);
     //    emagAccounts.forEach(account -> fetchOrder(account,"407649385"));
         //fetchOrder("sellfusion","427037619");
-        fetchOrder("sellfusion", "407404003");
+        fetchOrder("sellfusion", "421390915");
     }
 
     private static void fetchOrder(String vendor, String orderId) {

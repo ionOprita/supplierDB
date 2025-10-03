@@ -95,6 +95,23 @@ public class Server {
                 ctx.json(returns);
             }
         });
+        app.get("/returnTable", ctx -> {
+            var returns = api.getReturnsByProductAndMonth();
+            if (returns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(returns);
+            }
+        });
+        app.get("/returnDetails", ctx -> {
+            Validator<YearMonth> month = ctx.queryParamAsClass("month", YearMonth.class);
+            var returns = api.returnDetails(ctx.queryParam("pnk"), month.get());
+            if (returns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(returns);
+            }
+        });
 
         // Health check (handy)
         app.get("/health", ctx -> ctx.result("ok"));
