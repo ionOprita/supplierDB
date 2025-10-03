@@ -148,6 +148,19 @@ public class EmagMirrorDB {
     public record StronoInfo(LocalDateTime time, String orderId, String vendor, String pnk, String name, int quantity) {
     }
 
+    /**
+     * Retrieves a list of storno details based on the provided part number key and date range.
+     * The storno details include information about the storno date, associated order, vendor,
+     * product, and quantity.
+     *
+     * @param pnk the part number key (PNK) which uniquely identifies the product.
+     * @param month the YearMonth object representing the month for which the storno details should be fetched.
+     *              Details are retrieved for the entire month starting from the first day and ending before
+     *              the first day of the next month.
+     * @return a list of StronoInfo objects containing the storno details. Each entry in the list represents
+     *         a storno record with corresponding metadata.
+     * @throws SQLException if any database access error occurs while retrieving the storno details.
+     */
     public List<StronoInfo> getStornoDetails(String pnk, YearMonth month) throws SQLException {
         return database.readTX(db -> {
             var result = new ArrayList<StronoInfo>();
@@ -158,9 +171,7 @@ public class EmagMirrorDB {
                     JOIN product_in_order AS pio ON pio.id = s.product_id AND pio.emag_order_surrogate_id = o.surrogate_id
                     JOIN vendor AS v ON v.id = o.vendor_id
                     JOIN product AS p ON pio.part_number_key = p.emag_pnk
-                    WHERE s.storno_date >= ?
-                      AND s.storno_date <  ?
-                      AND pio.part_number_key = ?
+                    WHERE o.status = 5 AND s.storno_date >= ? AND s.storno_date <  ? AND pio.part_number_key = ?
                     ORDER BY s.storno_date, s.order_id;""")) {
                 s.setTimestamp(1, toTimestamp(month.atDay(1)));
                 s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1)));
@@ -711,9 +722,9 @@ public class EmagMirrorDB {
                   SUM(s.quantity) AS quantity,
                   p.part_number_key AS pnk
                 FROM storno AS s
-                JOIN product_in_order AS p
-                  ON p.id = s.product_id
-                WHERE s.storno_date >= ? AND s.storno_date < ?
+                JOIN emag_order AS o ON o.id = s.order_id
+                JOIN product_in_order AS p ON p.id = s.product_id AND p.emag_order_surrogate_id = o.surrogate_id
+                WHERE o.status = 5 AND s.storno_date >= ? AND s.storno_date < ?
                 GROUP BY p.part_number_key;
                 """);
     }
