@@ -206,7 +206,7 @@ public class EmagMirrorDB {
                 INNER JOIN vendor AS v ON v.id = o.vendor_id
                 INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
                 INNER JOIN product AS p ON pio.part_number_key = p.emag_pnk
-                WHERE rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ? AND pio.part_number_key = ?
+                WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ? AND pio.part_number_key = ?
                 ORDER BY r.date, r.order_id;
             """)) {
                 s.setTimestamp(1, toTimestamp(month.atDay(1)));
@@ -723,7 +723,7 @@ public class EmagMirrorDB {
                 INNER JOIN emag_order AS o ON r.order_id = o.id
                 INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
                 INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
-                WHERE rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND p.product_code = ?
+                WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND p.product_code = ?
                 GROUP BY CAST(r.date AS date)
                 ORDER BY event_date;
                 """);
@@ -781,7 +781,7 @@ public class EmagMirrorDB {
                 ON r.order_id = o.id
                 INNER JOIN product_in_order AS pio
                 ON o.surrogate_id = pio.emag_order_surrogate_id
-                WHERE rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ?
+                WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ?
                 GROUP BY pnk
                 """);
     }
