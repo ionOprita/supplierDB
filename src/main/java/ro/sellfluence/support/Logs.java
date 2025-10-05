@@ -3,6 +3,9 @@ package ro.sellfluence.support;
 import org.jspecify.annotations.NonNull;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.ZoneId;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.FileHandler;
@@ -21,6 +24,18 @@ import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.sheetSupport.Conversions.isoLikeLocalDateTimeWithoutFractionalSeconds;
 
 public class Logs {
+
+    private static final String logDir = "EmagDBLogs/";
+
+    public static final Path logPath = Paths.get(System.getProperty("java.io.tmpdir")).resolve(logDir);
+
+    static {
+        try {
+            Files.createDirectories(logPath);
+        } catch (IOException e) {
+            IO.println("Could not create directory " + logPath);
+        }
+    }
 
     private static final Formatter defaultFormatter = new Formatter() {
         @Override
@@ -99,7 +114,7 @@ public class Logs {
 
 
     private static @NonNull String makePattern(String name) {
-        return "%t/" + name + "_%g.log";
+        return "%t/" + logDir + name + "_%g.log";
     }
 
     private static void addFileHandler(Logger logger, String pattern, int generations, long maxFileSize) throws IOException {
