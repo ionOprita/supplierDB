@@ -47,7 +47,7 @@ public class PopulateDateComenziFromDB {
     /**
      * Target sheet for the GMVs.
      */
-    private static final String gmvSheetName = "T. GMW/M.";
+    private static final String gmvSheetName = "T. GMV/M.";
 
     public static void main(String[] args) throws SQLException, IOException {
         var arguments = new Arguments(args);
