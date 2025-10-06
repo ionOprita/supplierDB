@@ -430,12 +430,15 @@ public class EmagDBApp {
             logger.log(WARNING, "Missing credentials for alias " + alias);
         } else {
             var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+            var filter = new HashMap<String, Object>();
+            if (startTime != null) {
+                filter.put("date_start", startTime);
+            }
+            if (endTime != null) {
+                filter.put("date_end", endTime);
+            }
             return emag.readRequest("rma",
-                    Map.of(
-                            "date_start",
-                            startTime,
-                            "date_end",
-                            endTime),
+                    filter,
                     null,
                     RMAResult.class);
         }
