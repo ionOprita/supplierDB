@@ -199,15 +199,19 @@ public class EmagMirrorDB {
         return database.readTX(db -> {
             var result = new ArrayList<ReturnStronoDetail>();
             try (var s = db.prepareStatement("""
-                SELECT r.date, r.order_id, v.vendor_name, pio.part_number_key, p.name, rp.quantity
-                FROM rma_result AS r
-                INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
-                INNER JOIN emag_order AS o ON r.order_id = o.id
-                INNER JOIN vendor AS v ON v.id = o.vendor_id
-                INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
-                INNER JOIN product AS p ON pio.part_number_key = p.emag_pnk
-                WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ? AND pio.part_number_key = ?
-                ORDER BY r.date, r.order_id;
+                    SELECT r.date, r.order_id, v.vendor_name, pio.part_number_key, p.name, rp.quantity
+                    FROM rma_result AS r
+                    INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                    INNER JOIN (
+                        SELECT DISTINCT ON (id) id, surrogate_id, vendor_id
+                        FROM emag_order
+                        ORDER BY id, status DESC
+                    ) AS o ON r.order_id = o.id
+                    INNER JOIN vendor AS v ON v.id = o.vendor_id
+                    INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                    INNER JOIN product AS p ON pio.part_number_key = p.emag_pnk
+                    WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ? AND pio.part_number_key = ?
+                    ORDER BY r.date, r.order_id;            
             """)) {
                 s.setTimestamp(1, toTimestamp(month.atDay(1)));
                 s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1)));
