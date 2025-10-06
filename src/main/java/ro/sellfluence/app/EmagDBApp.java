@@ -78,13 +78,14 @@ public class EmagDBApp {
      * Logic for fetching data that follows this specification:
      * <ul>
      *     <li>Get orders with states 1-4 since the last time we fetched.</li>
-     *     <li>Get orders with states 5 for the last two years.</li>
+     *     <li>Get orders with states 5 for the last six months.</li>
      *     <li>Reread all orders having status 0-3 in the database by order ID to see if their value has changed.</li>
+     *     <li>Get returns for the last six months.</li>
      * </ul>
      *
      * @param mirrorDB to which to store the orders.
      */
-    private static void fetchAndStoreToDB(EmagMirrorDB mirrorDB) throws IOException, InterruptedException, SQLException {
+    public static void fetchAndStoreToDB(EmagMirrorDB mirrorDB) throws IOException, InterruptedException, SQLException {
         time(
                 "Fetch new orders",
                 () -> repeatUntilDone(() -> fetchNewOrders(mirrorDB))
@@ -97,13 +98,29 @@ public class EmagDBApp {
                 "Fetch storno orders",
                 () -> repeatUntilDone(() -> fetchStornoOrders(mirrorDB))
         );
+        time(
+                "Fetch RMAs",
+                () -> repeatUntilDone(() -> fetchRMAs(mirrorDB))
+        );
+    }
+
+    private static Boolean fetchRMAs(EmagMirrorDB mirrorDB) {
+        for (String emagAccount : emagAccounts) {
+            System.out.println(emagAccount);
+            try {
+                transferRMAsToDatabase(emagAccount, mirrorDB, LocalDate.now().minusMonths(6).atStartOfDay(), null);
+            } catch (IOException | InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        return true;
     }
 
     private static boolean fetchStornoOrders(EmagMirrorDB mirrorDB) {
         for (String emagAccount : emagAccounts) {
             System.out.println(emagAccount);
             try {
-                transferOrdersToDatabase(emagAccount, mirrorDB, null, null, LocalDate.now().minusYears(2).atStartOfDay(), null, List.of(5), null);
+                transferOrdersToDatabase(emagAccount, mirrorDB, null, null, LocalDate.now().minusMonths(6).atStartOfDay(), null, List.of(5), null);
             } catch (IOException | InterruptedException e) {
                 throw new RuntimeException(e);
             }
@@ -163,7 +180,7 @@ public class EmagDBApp {
      *
      * @param mirrorDB to which to store the orders.
      */
-    private static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) {
+    public static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) {
         var oldestDay = today.minusYears(3);
         cleanupFetchLogs(mirrorDB, oldestDay);
         repeatUntilDone(
