@@ -1,156 +1,61 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <title>Storno Details</title>
-    <style>
-        :root { color-scheme: light dark; }
-        body { font-family: system-ui, Arial, sans-serif; margin: 1rem; }
-        header { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap; }
-        h1 { font-size: 1.2rem; margin: 0; }
-        .muted { color:#666; font-size:.9rem; }
-        .toolbar { display:flex; gap:.5rem; margin-left:auto; }
-        button { padding:.35rem .6rem; border:1px solid #e5e7eb; border-radius: 8px; background:#fff; cursor:pointer; }
-        button:hover { background:#f6f7f9; }
-        #status { margin-top: .5rem; }
-
-        .wrap { margin-top: 1rem; border: 1px solid #e5e7eb; border-radius: 8px; max-height: 75vh; overflow: auto; }
-        table { border-collapse: collapse; min-width: 900px; width: 100%; }
-        th, td { border: 1px solid #e5e7eb; padding: .45rem .6rem; text-align: left; }
-        th { background: #fafafa; position: sticky; top: 0; }
-        td.qty { text-align: right; }
-        code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
-    </style>
-    <script type="module">
-        const params = new URLSearchParams(location.search);
-        const pnk = params.get('pnk') ?? '';
-        const month = params.get('month') ?? '';
-
-        const titleEl = document.getElementById('title');
-        const subEl = document.getElementById('subtitle');
-        const statusEl = document.getElementById('status');
-        const tbody = document.getElementById('tbody');
-
-        titleEl.textContent = 'Storno Details';
-        subEl.textContent = `PNK: ${pnk} • Month: ${month}`;
-
-        function ymdHMSArrayToDate(arr) {
-            // arr = [YYYY, MM, DD, hh, mm, ss]; JS month is 0-based
-            if (!Array.isArray(arr) || arr.length < 3) return null;
-            const [Y, M, D, h=0, m=0, s=0] = arr;
-            const d = new Date(Y, (M ?? 1) - 1, D ?? 1, h, m, s);
-            return isNaN(d.getTime()) ? null : d;
-        }
-
-        const dtFmt = new Intl.DateTimeFormat(undefined, {
-            year: 'numeric', month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit', second: '2-digit'
-        });
-
-        async function fetchJSON(url) {
-            const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return res.json();
-        }
-
-        function renderRows(items) {
-            tbody.innerHTML = '';
-            if (!Array.isArray(items) || items.length === 0) {
-                statusEl.textContent = 'No items for this cell.';
-                return;
-            }
-
-            const frag = document.createDocumentFragment();
-            for (const it of items) {
-                const tr = document.createElement('tr');
-
-                const dt = ymdHMSArrayToDate(it.time);
-                const timeTxt = dt ? dtFmt.format(dt) : '';
-
-                tr.appendChild(td(timeTxt));
-                tr.appendChild(td(it.orderId, true)); // monospace for ids
-                tr.appendChild(td(it.vendor));
-                tr.appendChild(td(it.pnk, true));
-                tr.appendChild(td(it.name));
-                tr.appendChild(td(String(it.quantity), false, 'qty'));
-
-                frag.appendChild(tr);
-            }
-            tbody.appendChild(frag);
-            statusEl.textContent = `Loaded ${items.length} item(s).`;
-        }
-
-        function td(text, mono=false, extraClass='') {
-            const c = document.createElement('td');
-            if (mono) {
-                const codeEl = document.createElement('code');
-                codeEl.textContent = text ?? '';
-                c.appendChild(codeEl);
-            } else {
-                c.textContent = text ?? '';
-            }
-            if (extraClass) c.classList.add(extraClass);
-            return c;
-        }
-
-        async function loadDetails() {
-            try {
-                statusEl.textContent = 'Loading…';
-                const url = `/storno/details?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`;
-                const data = await fetchJSON(url);
-                renderRows(data);
-            } catch (e) {
-                tbody.innerHTML = '';
-                statusEl.textContent = 'Failed to load details.';
-                console.error(e);
-            }
-        }
-
-        // Toolbar actions (optional)
-        document.getElementById('refreshBtn')?.addEventListener('click', loadDetails);
-        document.getElementById('copyBtn')?.addEventListener('click', async () => {
-            const rows = [...document.querySelectorAll('#tbody tr')].map(tr =>
-                [...tr.cells].map(td => td.innerText).join('\t')
-            ).join('\n');
-            try {
-                await navigator.clipboard.writeText(rows);
-                statusEl.textContent = 'Copied table to clipboard.';
-            } catch {
-                statusEl.textContent = 'Copy failed.';
-            }
-        });
-
-        // Initial load
-        loadDetails();
-    </script>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Storno Details</title>
+  <link rel="stylesheet" href="styles.css"/>
+  <!-- style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, Arial, sans-serif; margin: 1rem; }
+    header { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap; }
+    h1 { font-size: 1.2rem; margin: 0; }
+    .muted { color:#666; font-size:.9rem; }
+    .toolbar { display:flex; gap:.5rem; margin-left:auto; }
+    button { padding:.35rem .6rem; border:1px solid #e5e7eb; border-radius: 8px; background:#fff; cursor:pointer; }
+    button:hover { background:#f6f7f9; }
+    #status { margin-top: .5rem; }
+    .wrap { margin-top: 1rem; border: 1px solid #e5e7eb; border-radius: 8px; max-height: 75vh; overflow: auto; }
+    table { border-collapse: collapse; min-width: 900px; width: 100%; }
+    th, td { border: 1px solid #e5e7eb; padding: .45rem .6rem; text-align: left; }
+    th { background: #fafafa; position: sticky; top: 0; }
+    td.qty { text-align: right; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+  </style -->
+  <script type="module">
+    import { initDetailsPage } from './js/details-common.js';
+    window.addEventListener('DOMContentLoaded', () => {
+      initDetailsPage({
+        titleText: "Storno Details",
+        endpointBuilder: (pnk, month) => `/storno/details?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`
+      });
+    });
+  </script>
 </head>
 <body>
 <header>
-    <h1 id="title">Storno Details</h1>
-    <span id="subtitle" class="muted"></span>
-    <div class="toolbar">
-        <button id="refreshBtn" title="Reload">Reload</button>
-        <button id="copyBtn" title="Copy table">Copy</button>
-    </div>
+  <h1 id="title">Storno Details</h1>
+  <span id="subtitle" class="muted"></span>
+  <div class="toolbar">
+    <button id="refreshBtn" title="Reload">Reload</button>
+    <button id="copyBtn" title="Copy table">Copy</button>
+  </div>
 </header>
-
 <div class="wrap">
-    <table>
-        <thead>
-        <tr>
-            <th>Time</th>
-            <th>Order ID</th>
-            <th>Vendor</th>
-            <th>PNK</th>
-            <th>Name</th>
-            <th>Quantity</th>
-        </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-    </table>
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Order ID</th>
+        <th>Vendor</th>
+        <th>PNK</th>
+        <th>Name</th>
+        <th>Quantity</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
 </div>
-
 <div id="status" class="muted"></div>
 </body>
 </html>

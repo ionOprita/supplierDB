@@ -2,7 +2,7 @@
   <configuration default="false" name="Server emagTest" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="ro.sellfluence.app.Server" />
     <module name="emagDB" />
-    <option name="PROGRAM_PARAMETERS" value="--db=emagTest" />
+    <option name="PROGRAM_PARAMETERS" value="--db=emagTest --port=8081" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="ro.sellfluence.app.*" />
