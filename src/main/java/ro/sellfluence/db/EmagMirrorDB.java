@@ -779,12 +779,13 @@ public class EmagMirrorDB {
         return countByMonth(month, """
                 SELECT SUM(rp.quantity) AS quantity, pio.part_number_key AS pnk
                 FROM rma_result AS r
-                INNER JOIN emag_returned_products AS rp
-                ON r.emag_id = rp.emag_id
-                INNER JOIN emag_order AS o
-                ON r.order_id = o.id
-                INNER JOIN product_in_order AS pio
-                ON o.surrogate_id = pio.emag_order_surrogate_id
+                INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                    INNER JOIN (
+                        SELECT DISTINCT ON (id) id, surrogate_id, vendor_id
+                        FROM emag_order
+                        ORDER BY id, status DESC
+                    ) AS o ON r.order_id = o.id
+                INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
                 WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ?
                 GROUP BY pnk
                 """);

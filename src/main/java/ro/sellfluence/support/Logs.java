@@ -22,6 +22,7 @@ import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.sheetSupport.Conversions.isoLikeLocalDateTimeWithoutFractionalSeconds;
+import static ro.sellfluence.support.UsefulMethods.getStackTraceAsString;
 
 public class Logs {
 
@@ -58,6 +59,9 @@ public class Logs {
                         record.getSourceMethodName(),
                         record.getThrown()
                 );
+            }
+            if (record.getLevel().intValue() >= WARNING.intValue()) {
+                output = output + "\n" + getStackTraceAsString(record.getThrown());
             }
             return output;
         }

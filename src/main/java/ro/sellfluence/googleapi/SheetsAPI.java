@@ -1,6 +1,7 @@
 package ro.sellfluence.googleapi;
 
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import com.google.api.client.http.HttpRequestInitializer;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
@@ -496,6 +497,11 @@ public class SheetsAPI {
                 result = caller.execute();
                 retryCount = 0;
             } catch (IOException e) {
+                if (e instanceof GoogleJsonResponseException g) {
+                    if (g.getStatusCode()==400) {
+                        throw new RuntimeException("Bad request. %s".formatted(g.getDetails().getMessage()), e);
+                    }
+                }
                 retryCount--;
                 if (retryCount == 0) {
                     throw new RuntimeException("Issue in %s".formatted(callerDescription), e);
@@ -629,5 +635,4 @@ public class SheetsAPI {
             httpRequest.setReadTimeout(20_000);
         };
     }
-
 }

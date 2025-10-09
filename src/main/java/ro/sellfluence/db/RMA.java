@@ -19,7 +19,18 @@ public class RMA {
         var inserted = insertRMAResult(db, rmaResult);
         if (inserted == 0) {
             updateRMAResult(db,rmaResult);
+            updateDependents(db, rmaResult);
+        } else {
+            insertDependents(db, rmaResult, emagId);
         }
+        return 0;
+    }
+
+    private static void updateDependents(Connection db, RMAResult rmaResult) {
+        // TODO:
+    }
+
+    private static void insertDependents(Connection db, RMAResult rmaResult, int emagId) throws SQLException {
         if (rmaResult.products() != null) {
             for (var product : rmaResult.products()) {
                 insertReturnedProduct(db, product, emagId);
@@ -46,7 +57,6 @@ public class RMA {
                 }
             }
         }
-        return 0;
     }
 
 

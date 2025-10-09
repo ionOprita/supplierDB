@@ -1,9 +1,14 @@
 package ro.sellfluence.support;
 
+import org.postgresql.util.PGInterval;
+
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -93,6 +98,15 @@ public class UsefulMethods {
 
     public static LocalDate toLocalDate(Timestamp timestamp) {
         return timestamp == null ? null : toLocalDateTime(timestamp).toLocalDate();
+    }
+
+    public static Duration toDuration(PGInterval pgInterval) {
+        return pgInterval != null
+                ? Duration.ofSeconds((long) pgInterval.getSeconds())
+                .plusDays(pgInterval.getDays())
+                .plusHours(pgInterval.getHours())
+                .plusMinutes(pgInterval.getMinutes())
+                : null;
     }
 
     public static YearMonth toYearMonth(Date date) {
@@ -198,5 +212,13 @@ public class UsefulMethods {
     public static void require(boolean condition, Supplier<String> message) {
         if (!condition) throw new IllegalStateException(message.get());
     }
+
+    public static String getStackTraceAsString(Throwable e) {
+        if (e == null) { return ""; }
+        StringWriter sw = new StringWriter();
+        e.printStackTrace(new PrintWriter(sw));
+        return sw.toString();
+    }
+
 
 }
