@@ -34,19 +34,19 @@ th, td {
   border: 1px solid #e5e7eb;
   padding: .4rem .6rem;
   text-align: left;
-  background: #fff;
+  /* background: #fff; */
 }
-
+/*
 th {
   background: #fafafa;
 }
-
+*/
 /* Sticky header */
 thead th {
   position: sticky;
   top: 0;
   z-index: 3;
-  background: #fff;
+/*  background: #fff; */
 }
 
 /* Right-aligned cells for numeric data */
@@ -74,7 +74,7 @@ td.qty {
 .sticky-col-2 {
   position: sticky;
   z-index: 2;
-  background: #fff;
+ /* background: #fff; */
 }
 
 .sticky-col-1 {
@@ -93,7 +93,7 @@ thead .sticky-col-2 {
 
 /* Zebra striping */
 tbody tr:nth-child(even) td {
-  background: #fafafa;
+  /* background: #fafafa; */
 }
 
 /* Clickable cells */
@@ -101,10 +101,11 @@ td[data-clickable="true"] {
   cursor: pointer;
 }
 
+/*
 td[data-clickable="true"]:hover {
   background: #f0f7ff;
 }
-
+*/
 /* Details page header */
 header {
   display: flex;
@@ -129,13 +130,15 @@ button {
   padding: .35rem .6rem;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #fff;
+  /*background: #fff;*/
   cursor: pointer;
 }
 
+/*
 button:hover {
   background: #f6f7f9;
 }
+*/
 
 /* Status messages */
 #status {
