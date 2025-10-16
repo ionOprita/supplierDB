@@ -1,8 +1,9 @@
 /**
  * table-common.js
- * Shared utilities to render a month-matrix table with sticky header & first two columns,
+ * Shared utilities to render a month-matrix table with a sticky header and first two columns,
  * plus a delegated click handler that opens a details window.
  */
+import {dtFmt, fetchJSON} from "./common.js";
 
 // --- helpers -------------------------------------------------------------
 
@@ -40,11 +41,6 @@ export function collectAllMonths(rows) {
   return [...set].sort();
 }
 
-export async function fetchJSON(url) {
-  const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
 
 // --- csv export ----------------------------------------------------------
 
@@ -295,7 +291,7 @@ export function bindMonthRangeFilter({
 // --- main init -----------------------------------------------------------
 
 /**
- * Initialize a matrix table page.
+ * Initialise a matrix table page.
  * @param {Object} cfg
  * @param {string} cfg.tableId - DOM id of <table>
  * @param {string} cfg.theadId - DOM id of <thead>
@@ -403,6 +399,130 @@ export function initMatrixTable(cfg) {
       } else {
         renderFiltered();
       }
+    } catch (e) {
+      HEAD.innerHTML = '';
+      BODY.innerHTML = '<tr><td>Failed to load data</td></tr>';
+      console.error(e);
+    }
+  })();
+
+  window.addEventListener('resize', () => applyStickyOffsets(TABLE));
+}
+
+export function arrayToDateTime(arr) {
+  if (!Array.isArray(arr)) return null;
+  const [y, m, d, hh, mm, ss, nano] = arr;
+  // JS Date months are 0-based; nano to millis
+  const ms = Math.floor((nano ?? 0) / 1_000_000);
+  return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, ss ?? 0, ms));
+}
+
+export function toTaskRows(jsonData) {
+  if (!Array.isArray(jsonData)) return [];
+
+  return jsonData.map((item) => {
+    const {
+      name,
+      started,
+      terminated,
+      lastSuccessfulRun,
+      durationOfLastRun,
+      unsuccessfulRuns,
+      error,
+    } = item || {};
+
+    return {
+      name: name ?? "",
+      started: arrayToDateTime(started),
+      terminated: arrayToDateTime(terminated),
+      lastSuccessfulRun: arrayToDateTime(lastSuccessfulRun),
+      durationOfLastRunSeconds:
+          typeof durationOfLastRun === "number" ? durationOfLastRun : null,
+      unsuccessfulRuns: typeof unsuccessfulRuns === "number" ? unsuccessfulRuns : 0,
+      error: typeof error === "string" ? error : "",
+      // include original item if needed:
+      // raw: item
+    };
+  });
+}
+
+export function renderTasksBody(tbodyEl, rows) {
+  tbodyEl.innerHTML = '';
+  const frag = document.createDocumentFragment();
+
+  for (const row of rows) {
+    const tr = document.createElement('tr');
+
+    const tdName = document.createElement('td');
+    tdName.textContent = row.name;
+    tr.appendChild(tdName);
+    const tdStatus = document.createElement('td');
+    if (row.started != null && row.terminated == null) {
+      tdStatus.textContent = "RUNNING";
+    } else if (row.error != null && String(row.error).trim() !== "") {
+      tdStatus.textContent = "ERROR";
+    } else {
+      tdStatus.textContent = "-";
+    }
+    tr.appendChild(tdStatus);
+    const tdDuration = document.createElement('td');
+    tdDuration.textContent = row.durationOfLastRunSeconds;
+    tr.appendChild(tdDuration);
+    const tdLastSuccess = document.createElement('td');
+    tdLastSuccess.textContent = row.lastSuccessfulRun ? dtFmt.format(row.lastSuccessfulRun) : '';
+    tr.appendChild(tdLastSuccess);
+    const tdFailures = document.createElement('td');
+    tdFailures.textContent = row.unsuccessfulRuns;
+    tr.appendChild(tdFailures);
+    const tdError = document.createElement('td');
+    tdError.textContent = row.error;
+    tr.appendChild(tdError);
+    frag.appendChild(tr);
+  }
+  tbodyEl.appendChild(frag);
+}
+
+
+/**
+ * Initialise a task table page.
+ * @param {Object} cfg
+ * @param {string} cfg.tableId - DOM id of <table>
+ * @param {string} cfg.theadId - DOM id of <thead>
+ * @param {string} cfg.tbodyId - DOM id of <tbody>
+ * @param {string} cfg.dataUrl - endpoint to load the matrix JSON from
+ */
+export function initTaskTable(cfg) {
+  const HEAD = document.getElementById(cfg.theadId);
+  const BODY = document.getElementById(cfg.tbodyId);
+  const TABLE = document.getElementById(cfg.tableId);
+
+  (async function init() {
+    try {
+      const data = await fetchJSON(cfg.dataUrl);
+      const rows = toTaskRows(data);
+      const tr = document.createElement('tr');
+
+      const thName = document.createElement('th');
+      thName.textContent = 'Name';
+      tr.appendChild(thName);
+      const thStatus = document.createElement('th');
+      thStatus.textContent = 'Status';
+      tr.appendChild(thStatus);
+      const thRuntime = document.createElement('th');
+      thRuntime.textContent = 'Runtime';
+      tr.appendChild(thRuntime);
+      const thLast = document.createElement('th');
+      thLast.textContent = 'Last Successful';
+      tr.appendChild(thLast);
+      const thFailures = document.createElement('th');
+      thFailures.textContent = 'Failures';
+      tr.appendChild(thFailures);
+      const thError = document.createElement('th');
+      thError.textContent = 'Error';
+      tr.appendChild(thError);
+      HEAD.innerHTML = '';
+      HEAD.appendChild(tr);
+      renderTasksBody(BODY, rows);
     } catch (e) {
       HEAD.innerHTML = '';
       BODY.innerHTML = '<tr><td>Failed to load data</td></tr>';

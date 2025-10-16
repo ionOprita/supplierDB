@@ -1,5 +1,7 @@
 package ro.sellfluence.db;
 
+import org.postgresql.util.PGInterval;
+
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -7,7 +9,11 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-public record Task(String name, LocalDateTime started, LocalDateTime terminated, Duration durationOfLastRun, String error) {
+import static com.google.common.base.Throwables.getStackTraceAsString;
+import static ro.sellfluence.support.UsefulMethods.toDuration;
+
+public record Task(String name, LocalDateTime started, LocalDateTime terminated, LocalDateTime lastSuccessfulRun,
+                   Duration durationOfLastRun, int unsuccessfulRuns, String error) {
 
     /**
      * Record the start of a task by inserting into the tasks table the name and current timestamp.
@@ -16,17 +22,17 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
      * @param name the name of the task.
      * @throws SQLException if a database access error occurs or the SQL statement fails.
      */
-    public static void startTask(Connection db, String name) throws SQLException {
+    public static int startTask(Connection db, String name) throws SQLException {
         String sql = """
                 INSERT INTO tasks (name, started)
                 VALUES (?, CURRENT_TIMESTAMP)
                 ON CONFLICT (name)
-                DO UPDATE SET started = CURRENT_TIMESTAMP
+                DO UPDATE SET started = CURRENT_TIMESTAMP, terminated = NULL, duration_of_last_run = NULL
                 """;
 
         try (var s = db.prepareStatement(sql)) {
             s.setString(1, name);
-            s.execute();
+            return s.executeUpdate();
         }
     }
 
@@ -38,18 +44,28 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
      * @param error the error message if the task failed.
      * @throws SQLException if a database access error occurs or the SQL statement fails.
      */
-    public static void endTask(Connection db, String name, String error) throws SQLException {
+    public static int endTask(Connection db, String name, String error) throws SQLException {
         try (var s = db.prepareStatement("""
                 UPDATE tasks
                 SET terminated = CURRENT_TIMESTAMP,
                     duration_of_last_run = CURRENT_TIMESTAMP - started,
-                    error = ?
+                    error = ?,
+                    last_successful_run = CASE
+                      WHEN error IS NULL OR error = '' THEN CURRENT_TIMESTAMP
+                      ELSE last_successful_run,
+                    unsuccessful_runs = CASE
+                      WHEN error IS NULL OR error = '' THEN 0
+                      ELSE unsuccessful_runs + 1
                 WHERE name = ?
                 """)) {
             s.setString(1, error);
             s.setString(2, name);
-            s.execute();
+            return s.executeUpdate();
         }
+    }
+
+    public static int endTask(Connection db, String name, Throwable e) throws SQLException {
+        return endTask(db, name, getStackTraceAsString(e));
     }
 
     /**
@@ -66,13 +82,21 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
         try (var s = db.prepareStatement("""
                 SELECT COUNT(*)
                 FROM tasks
-                WHERE name = ?
-                  AND (terminated IS NULL OR started > terminated)
+                WHERE name = ? AND started IS NOT NULL AND terminated IS NULL
                 """)) {
             s.setString(1, name);
             try (var rs = s.executeQuery()) {
                 return rs.next() && rs.getInt(1) > 0;
             }
+        }
+    }
+
+    public static int resetState(Connection db) throws SQLException {
+        String sql = """
+                UPDATE tasks SET started = NULL
+                """;
+        try (var s = db.prepareStatement(sql)) {
+            return s.executeUpdate();
         }
     }
 
@@ -84,8 +108,7 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
      * @throws SQLException if a database access error occurs or the SQL statement fails.
      */
     public static List<Task> getAllTasks(Connection db) throws SQLException {
-
-        try (var s = db.prepareStatement("SELECT name, started, terminated, duration_of_last_run, error FROM tasks");
+        try (var s = db.prepareStatement("SELECT name, started, terminated, last_successful_run, duration_of_last_run, unsuccessful_runs, error FROM tasks ORDER BY name");
              var rs = s.executeQuery()) {
             List<Task> tasks = new ArrayList<>();
             while (rs.next()) {
@@ -94,7 +117,9 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
                                 rs.getString("name"),
                                 rs.getObject("started", LocalDateTime.class),
                                 rs.getObject("terminated", LocalDateTime.class),
-                                rs.getObject("duration_of_last_run", Duration.class),
+                                rs.getObject("last_successful_run", LocalDateTime.class),
+                                toDuration(rs.getObject("duration_of_last_run", PGInterval.class)),
+                                rs.getInt("unsuccessful_runs"),
                                 rs.getString("error")
                         )
                 );

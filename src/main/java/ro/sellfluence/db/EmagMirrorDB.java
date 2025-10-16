@@ -146,6 +146,29 @@ public class EmagMirrorDB {
         });
     }
 
+    public int resetTasks() throws SQLException {
+        return database.writeTX(Task::resetState);
+    }
+
+    public int startTask(String name) throws SQLException {
+        return database.writeTX(db -> Task.startTask(db, name));
+    }
+
+    public int endTask(String name, String error) throws SQLException {
+        return database.writeTX(db -> Task.endTask(db, name, error));
+    }
+
+    public int endTask(String name, Throwable e) throws SQLException {
+        return database.writeTX(db -> Task.endTask(db, name, e));
+    }
+
+    public boolean isRunning(String name) throws SQLException {
+        return database.readTX((Connection db) -> Task.isRunning(db, name));
+    }
+    public List<Task> getAllTasks() throws SQLException {
+        return database.readTX(Task::getAllTasks);
+    }
+
     public record ReturnStornoOrderDetail(LocalDateTime time, String orderId, String vendor, String pnk, String name, int quantity) {
     }
 

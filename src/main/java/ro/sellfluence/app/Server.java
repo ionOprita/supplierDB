@@ -3,11 +3,19 @@ package ro.sellfluence.app;
 import io.javalin.Javalin;
 import io.javalin.validation.Validator;
 import ro.sellfluence.api.API;
+import ro.sellfluence.apphelper.BackgroundJob;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.support.Arguments;
+import ro.sellfluence.support.Logs;
 
 import java.time.YearMonth;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
+import static java.util.logging.Level.INFO;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 
@@ -15,15 +23,32 @@ import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
  * Server for the EmagMirror app.
  */
 public class Server {
+    private static final Logger logger = Logs.getFileLogger("Server", INFO, 10, 1_000_000);
+
     static void main(String[] args) throws Exception {
+
         var arguments = new Arguments(args);
-        String configNamePort = "PORT";
+        EmagMirrorDB mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
+
+        mirrorDB.resetTasks();
+
+        API api = new API(mirrorDB);
+
+        final String configNamePort = "PORT";
+
         int port = Integer.parseInt(System.getProperty(configNamePort,
-                System.getenv().getOrDefault(configNamePort, arguments.getOption("port","8080"))));
+                System.getenv().getOrDefault(configNamePort, "8080")));
 
-        EmagMirrorDB db = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
+        // Setup background job
+        BackgroundJob backgroundJob = new BackgroundJob(mirrorDB);
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r, "BackgroundJob-Thread");
+            thread.setDaemon(true); // Don't prevent JVM shutdown
+            return thread;
+        });
 
-        API api = new API(db);
+        // Schedule the job with auto-restart on failure
+        scheduleWithRestart(scheduler, backgroundJob);
 
         var app = Javalin.create(cfg -> {
             cfg.bundledPlugins.enableDevLogging();                 // request log
@@ -134,10 +159,47 @@ public class Server {
                 ctx.json(returns);
             }
         });
+        app.get("/tasks", ctx -> {
+            var returns = api.getTasks();
+            if (returns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(returns);
+            }
+        });
 
         // Health check (handy)
         app.get("/health", ctx -> ctx.result("ok"));
 
         app.start(port);
+
+        // Graceful shutdown
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            //logger.info("Shutting down...");
+            backgroundJob.shutdown();
+            scheduler.shutdown();
+            try {
+                if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
+                    scheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                scheduler.shutdownNow();
+            }
+            app.stop();
+        }));
+    }
+
+    private static void scheduleWithRestart(ScheduledExecutorService scheduler, BackgroundJob job) {
+        scheduler.schedule(() -> {
+            try {
+                job.performWork();
+                // Success - schedule next run immediately
+                scheduleWithRestart(scheduler, job);
+            } catch (Exception e) {
+                logger.log(Level.SEVERE, "BackgroundJob failed, restarting in 1 minute", e);
+                // Failure - schedule restart after 1 minute
+                scheduler.schedule(() -> scheduleWithRestart(scheduler, job), 1, TimeUnit.MINUTES);
+            }
+        }, 0, TimeUnit.SECONDS);
     }
 }

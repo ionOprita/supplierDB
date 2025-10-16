@@ -2,6 +2,8 @@
 // Assumes Chart.js UMD is loaded first (global Chart)
 // Uses the existing DOM structure/IDs from index.html
 
+import {fetchJSON} from "./common";
+
 const selectEl = document.getElementById("productSelect");
 
 // -------- Per-series configuration (new) --------
@@ -76,13 +78,6 @@ const SERIES = [
 const charts = new Map();
 const numberFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
-/** Fetch JSON with basic error handling **/
-async function fetchJSON(url) {
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
 /** Build (or rebuild) the product dropdown **/
 async function populateProducts() {
   const items = await fetchJSON("/products"); // [{name, id}, ...]
@@ -122,7 +117,7 @@ function toPoints(series, def) {
 
 /** Create or replace a chart in a canvas **/
 function renderLineChart(def, points, productId) {
-  // 1) Destroy chart we track (by key)
+  // 1) Destroy the chart we track (by key)
   const tracked = charts.get(def.key);
   if (tracked) tracked.destroy();
 
@@ -201,14 +196,14 @@ async function loadAndRender(def, productId) {
     }
     renderLineChart(def, points, productId);
   } catch (err) {
-    // Render empty chart as a visible fallback
+    // Render an empty chart as a visible fallback
     renderLineChart(def, [], productId);
     // Log error to console for debugging
     console.error(`Failed to load ${def.key}:`, err);
   }
 }
 
-/** When product changes, (re)draw all charts **/
+/** When the product changes, (re)draw all charts **/
 function onProductChange() {
   const productId = selectEl.value;
   if (!productId) return;
