@@ -87,7 +87,7 @@ public class DriveAPI {
                 return fileId;
             } else {
                 var myFiles = matchingFiles.stream().filter(File::getOwnedByMe).toList();
-                if (myFiles.size() == 1) {
+                  if (myFiles.size() == 1) {
                     var fileId = myFiles.getFirst().getId();
                     warnLogger.log(Level.WARNING, "Found more than one file with the name %s, using the single one owned by me with the ID %s.".formatted(name, fileId));
                     updateCaches(name, fileId);
