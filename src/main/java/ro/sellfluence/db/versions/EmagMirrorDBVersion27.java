@@ -18,4 +18,14 @@ class EmagMirrorDBVersion27 {
                   ADD COLUMN vendor UUID;
                 """);
     }
+
+    static void version29(Connection db) throws SQLException {
+        executeStatement(db, """
+                ALTER TABLE tasks ADD COLUMN last_successful_run TIMESTAMP;
+                """);
+        executeStatement(db, """
+                ALTER TABLE tasks ADD COLUMN unsuccessful_runs INTEGER;
+                """);
+    }
+
 }

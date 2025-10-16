@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
 import ro.sellfluence.db.ProductTable.ProductInfo;
+import ro.sellfluence.db.Task;
 import ro.sellfluence.support.DoubleWindow;
 
 import java.sql.SQLException;
@@ -201,6 +202,9 @@ public class API {
 
     public List<ReturnStornoOrderDetail> returnDetails(String pnk, YearMonth month) throws SQLException {
         return mirrorDB.getReturnDetails(pnk, month);
+    }
+    public List<Task> getTasks() throws SQLException {
+        return mirrorDB.getAllTasks();
     }
 
     /**
