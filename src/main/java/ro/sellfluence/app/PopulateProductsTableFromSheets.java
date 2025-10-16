@@ -2,6 +2,7 @@ package ro.sellfluence.app;
 
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductTable.ProductInfo;
+import ro.sellfluence.db.Vendor;
 import ro.sellfluence.googleapi.SheetsAPI;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
@@ -12,7 +13,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 import static java.lang.Boolean.TRUE;
 import static java.util.logging.Level.INFO;
@@ -40,7 +43,13 @@ public class PopulateProductsTableFromSheets {
         if (sheet == null) {
             throw new RuntimeException("Spreadsheet %s not found.".formatted(productSpreadsheetName));
         }
-        var productInfos = populateFrom(sheet, "Cons. Date Prod.");
+        Map<String, UUID> vendors;
+        try {
+            vendors = mirrorDB.getAllVendors().stream().filter(Vendor::isFBE).collect(Collectors.toMap(Vendor::companyName, Vendor::id));
+        } catch (SQLException e) {
+            throw new RuntimeException("Could not read vendor table.");
+        }
+        var productInfos = populateFrom(sheet, "Cons. Date Prod.", vendors);
         for (ProductInfo productInfo : productInfos) {
             try {
                 mirrorDB.addOrUpdateProduct(productInfo);
@@ -107,14 +116,15 @@ public class PopulateProductsTableFromSheets {
     /**
      * Read from the Google spreadsheet our product information.
      *
-     * @param spreadSheet from which to read the product data.
+     * @param spreadSheet       from which to read the product data.
      * @param overviewSheetName name of the tab holding the product data.
+     * @param vendors   for mapping vendors to UUID.
      * @return list of record needed for populating the database.
      */
-    private static List<ProductInfo> populateFrom(SheetsAPI spreadSheet, String overviewSheetName) {
+    private static List<ProductInfo> populateFrom(SheetsAPI spreadSheet, String overviewSheetName, Map<String, UUID> vendors) {
         Objects.requireNonNull(spreadSheet);
         Objects.requireNonNull(overviewSheetName);
-        var productsData = spreadSheet.getMultipleColumns(overviewSheetName, "C", "K", "U", "V", "BH", "CN", "DW", "EI").stream()
+        var productsData = spreadSheet.getMultipleColumns(overviewSheetName, "C", "K", "U", "V", "BH", "BK", "CN", "DW", "EI").stream()
                 .skip(3).toList();
         return productsData.stream()
                 .<ProductInfo>mapMulti((row, nextConsumer) -> {
@@ -123,9 +133,10 @@ public class PopulateProductsTableFromSheets {
                             var continueToSell = TRUE.equals(row.get(2));
                             var retracted = TRUE.equals(row.get(3));
                             var pnk = row.get(4).toString();
-                            var category = row.get(5).toString();
-                            var messageKeyword = row.get(6).toString();
-                            var employeeSheetName = row.get(7).toString();
+                            var vendorName = row.get(5).toString();
+                            var category = row.get(6).toString();
+                            var messageKeyword = row.get(7).toString();
+                            var employeeSheetName = row.get(8).toString();
                             if (employeeSheetName.equals("0") || employeeSheetName.isBlank()) {
                                 employeeSheetName = null;
                             }
@@ -138,14 +149,14 @@ public class PopulateProductsTableFromSheets {
                                 retracted = false;
                             }
                             var employeeSheetTab = getEmployeeSheetTabFor(pnk, employeeSheetName);
-                            if (!productCode.isBlank()) {
-                                nextConsumer.accept(new ProductInfo(pnk, productCode, name, continueToSell, retracted, category, messageKeyword, employeeSheetName, employeeSheetTab));
+                            if (!(productCode.isBlank()||productCode.equals("0"))) {
+                                nextConsumer.accept(new ProductInfo(pnk, productCode, name, vendors.get(vendorName), continueToSell, retracted, category, messageKeyword, employeeSheetName, employeeSheetTab));
                             }
                         }
                 ).toList();
     }
 
-    public static void main(String[] args) throws SQLException, IOException {
+    static void main(String[] args) throws SQLException, IOException {
         updateProductTable(EmagMirrorDB.getEmagMirrorDB(new Arguments(args).getOption(databaseOptionName, defaultDatabase)));
     }
 }

@@ -7,7 +7,9 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -16,7 +18,7 @@ import static java.util.logging.Level.SEVERE;
 import static ro.sellfluence.support.UsefulMethods.toLocalDateTime;
 import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 
-public class Vendor {
+public record Vendor (UUID id, String name, boolean isFBE, String companyName, String account, LocalDateTime lastFetch) {
     private static final Logger logger = Logger.getLogger(Vendor.class.getName());
 
     /**
@@ -24,7 +26,7 @@ public class Vendor {
      *
      * @param db      the database connection.
      * @param name    vendor name.
-     * @param account emag account used wehn accessing the API.
+     * @param account eMAG account used when accessing the API.
      * @return the UUID of the vendor.
      * @throws SQLException if a database access error occurs.
      */
@@ -110,6 +112,34 @@ public class Vendor {
                     vendors.put(
                             rs.getObject("id", UUID.class),
                             rs.getString("vendor_name")
+                    );
+                }
+            }
+        }
+        return vendors;
+    }
+
+    /**
+     * Generate a map from vendor UUID to vendor name.
+     *
+     * @param db database connection.
+     * @return map.
+     * @throws SQLException if a database access error occurs.
+     */
+    static @NonNull List<Vendor> getVendors(Connection db) throws SQLException {
+        var vendors = new ArrayList<Vendor>();
+        try (var s = db.prepareStatement("SELECT id, vendor_name, isfbe, company_name, account, last_fetch FROM vendor;")) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    vendors.add(
+                            new Vendor(
+                                    rs.getObject("id", UUID.class),
+                                    rs.getString("vendor_name"),
+                                    rs.getBoolean("isfbe"),
+                                    rs.getString("company_name"),
+                                    rs.getString("account"),
+                                    toLocalDateTime(rs.getTimestamp("last_fetch"))
+                            )
                     );
                 }
             }

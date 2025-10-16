@@ -165,8 +165,8 @@ public class EmagMirrorDB {
         return database.readTX(db -> {
             var result = new ArrayList<ReturnStronoDetail>();
             try (var s = db.prepareStatement("""
-                    SELECT  s.storno_date, s.order_id, v.vendor_name, pio.part_number_key, p.name, s.quantity  
-                    FROM storno AS s 
+                    SELECT  s.storno_date, s.order_id, v.vendor_name, pio.part_number_key, p.name, s.quantity
+                    FROM storno AS s
                     JOIN emag_order AS o ON o.id = s.order_id
                     JOIN product_in_order AS pio ON pio.id = s.product_id AND pio.emag_order_surrogate_id = o.surrogate_id
                     JOIN vendor AS v ON v.id = o.vendor_id
@@ -211,7 +211,7 @@ public class EmagMirrorDB {
                     INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
                     INNER JOIN product AS p ON pio.part_number_key = p.emag_pnk
                     WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ? AND pio.part_number_key = ?
-                    ORDER BY r.date, r.order_id;            
+                    ORDER BY r.date, r.order_id;
             """)) {
                 s.setTimestamp(1, toTimestamp(month.atDay(1)));
                 s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1)));
@@ -657,6 +657,10 @@ public class EmagMirrorDB {
 
     public @NonNull Map<UUID, String> readVendors() throws SQLException {
         return database.readTX(Vendor::selectAllVendors);
+    }
+
+    public @NonNull List<Vendor> getAllVendors() throws SQLException {
+        return database.readTX(Vendor::getVendors);
     }
 
     public int updateStornoTable() throws SQLException {
