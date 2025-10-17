@@ -44,11 +44,11 @@ public class PopulateStornoAndReturns {
         }
         var vendors = mirrorDB.readVendors();
         var products = mirrorDB.readProducts().stream().sorted(ProductTable.ProductInfo.nameComparator).toList();
-        updateProductColumns(sheet, stornoSheetName, products, vendors);
-        updateProductColumns(sheet, returnsSheetName, products, vendors);
         YearMonth month = YearMonth.now();
         var monthsInStorno = sheet.getRowAsDates(stornoSheetName, monthRow);
         var monthsInReturns = sheet.getRowAsDates(returnsSheetName, monthRow);
+        updateProductColumns(sheet, stornoSheetName, products, vendors);
+        updateProductColumns(sheet, returnsSheetName, products, vendors);
         while (month.getYear() == YearMonth.now().getYear()) {
             logger.log(INFO, "--- Update Stornos for month %s --------------------------".formatted(month));
             updateSheet(sheet, stornoSheetName, month, products, monthsInStorno, mirrorDB.countStornoByMonth(month));
