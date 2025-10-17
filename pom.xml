@@ -147,6 +147,19 @@
             <artifactId>javalin</artifactId>
             <version>6.7.0</version>
         </dependency>
+        <!-- https://mvnrepository.com/artifact/io.javalin.community.ssl/ssl-plugin -->
+        <dependency>
+            <groupId>io.javalin.community.ssl</groupId>
+            <artifactId>ssl-plugin</artifactId>
+            <version>6.7.0</version>
+        </dependency>
+
+        <!-- https://mvnrepository.com/artifact/com.yubico/webauthn-server-core -->
+        <dependency>
+            <groupId>com.yubico</groupId>
+            <artifactId>webauthn-server-core</artifactId>
+            <version>2.7.0</version>
+        </dependency>
 
         <!-- https://mvnrepository.com/artifact/gg.jte/jte -->
         <dependency>
