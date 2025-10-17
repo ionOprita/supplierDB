@@ -1,6 +1,9 @@
 package ro.sellfluence.db;
 
 import ch.claudio.db.DB;
+import com.yubico.webauthn.RegisteredCredential;
+import com.yubico.webauthn.data.ByteArray;
+import com.yubico.webauthn.data.PublicKeyCredentialDescriptor;
 import org.jspecify.annotations.NonNull;
 import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.db.EmagFetchLog.EmagFetchHistogram;
@@ -30,6 +33,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -886,6 +890,26 @@ public class EmagMirrorDB {
                 WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ?
                 GROUP BY pnk
                 """);
+    }
+
+    public Set<PublicKeyCredentialDescriptor> getCredentialIdsForUsername(String username) throws SQLException {
+        return database.readTX(db -> PassKey.getCredentialIdsForUsername(db, username));
+    }
+
+    public Optional<ByteArray> getUserHandleForUsername(String username) throws SQLException {
+        return database.readTX(db -> PassKey.getUserHandleForUsername(db, username));
+    }
+
+    public Optional<String> getUsernameForUserHandle(ByteArray userHandle) throws SQLException {
+        return database.readTX(db -> PassKey.getUsernameForUserHandle(db, userHandle));
+    }
+
+    public Optional<RegisteredCredential> lookup(ByteArray credentialId, ByteArray userHandle) throws SQLException {
+        return database.readTX(db -> PassKey.lookup(db, credentialId, userHandle));
+    }
+
+    public Set<RegisteredCredential> lookupAll(ByteArray credentialId) throws SQLException {
+        return database.readTX(db -> PassKey.lookupAll(db, credentialId));
     }
 
     private @NonNull HashMap<LocalDate, Integer> countByDayForProduct(@NonNull final String productCode, @NonNull final String sql) throws SQLException {
