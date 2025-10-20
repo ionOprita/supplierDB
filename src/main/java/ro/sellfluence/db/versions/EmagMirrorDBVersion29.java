@@ -31,38 +31,24 @@ class EmagMirrorDBVersion29 {
         userTable(db);
         credentialsTable(db);
         challengeTable(db);
+        roleTable(db);
     }
 
-    private static void challengeTable(Connection db) throws SQLException {
+    private static void userTable(Connection db) throws SQLException {
         executeStatement(db, """
-                create type webauthn_flow as enum ('registration', 'authentication');
+                create table app_user (
+                  id                 bigserial primary key,
+                  username           varchar(255) not null unique,
+                  display_name       varchar(255) not null,
+                  -- WebAuthn requires a stable, opaque user handle (byte array).
+                  -- Keep it unique and never change it.
+                  user_handle        bytea not null unique,
+                  created_at         timestamptz not null default now(),
+                  updated_at         timestamptz not null default now()
+                );
                 """);
         executeStatement(db, """
-                create table if not exists webauthn_challenge (
-                    id            bigserial primary key,
-                    flow          webauthn_flow not null,
-                    user_id       bigint references app_user(id) on delete cascade,
-                    -- The exact challenge bytes you sent to the browser.
-                    challenge     bytea not null,
-                
-                    -- Origin/RP checks (optional; handy for auditing multi-env dev)
-                    rp_id         varchar(255) not null,
-                    origin        varchar(1024) not null,
-                
-                    -- Validity window
-                    created_at    timestamptz not null default now(),
-                    expires_at    timestamptz not null,
-                    used_at       timestamptz,
-                
-                    -- Prevent reuse
-                    is_used       boolean not null default false
-                    );
-                """);
-        executeStatement(db, """
-                create index if not exists idx_webauthn_challenge_user on webauthn_challenge(user_id);
-                """);
-        executeStatement(db, """
-                create index if not exists idx_webauthn_challenge_expires on webauthn_challenge(expires_at);
+                create index idx_app_user_user_handle on app_user(user_handle);
                 """);
     }
 
@@ -111,21 +97,54 @@ class EmagMirrorDBVersion29 {
                 """);
     }
 
-    private static void userTable(Connection db) throws SQLException {
+    private static void challengeTable(Connection db) throws SQLException {
         executeStatement(db, """
-                create table app_user (
+                create type webauthn_flow as enum ('registration', 'authentication');
+                """);
+        executeStatement(db, """
+                create table if not exists webauthn_challenge (
+                    id            bigserial primary key,
+                    flow          webauthn_flow not null,
+                    user_id       bigint references app_user(id) on delete cascade,
+                    -- The exact challenge bytes you sent to the browser.
+                    challenge     bytea not null,
+                
+                    -- Origin/RP checks (optional; handy for auditing multi-env dev)
+                    rp_id         varchar(255) not null,
+                    origin        varchar(1024) not null,
+                
+                    -- Validity window
+                    created_at    timestamptz not null default now(),
+                    expires_at    timestamptz not null,
+                    used_at       timestamptz,
+                
+                    -- Prevent reuse
+                    is_used       boolean not null default false
+                    );
+                """);
+        executeStatement(db, """
+                create index if not exists idx_webauthn_challenge_user on webauthn_challenge(user_id);
+                """);
+        executeStatement(db, """
+                create index if not exists idx_webauthn_challenge_expires on webauthn_challenge(expires_at);
+                """);
+    }
+
+    private static void roleTable(Connection db) throws SQLException {
+        executeStatement(db, """
+                create table role (
                   id                 bigserial primary key,
-                  username           varchar(255) not null unique,
-                  display_name       varchar(255) not null,
-                  -- WebAuthn requires a stable, opaque user handle (byte array).
-                  -- Keep it unique and never change it.
-                  user_handle        bytea not null unique,
-                  created_at         timestamptz not null default now(),
-                  updated_at         timestamptz not null default now()
+                  rolename           varchar(255) not null unique,
                 );
                 """);
         executeStatement(db, """
-                create index idx_app_user_user_handle on app_user(user_handle);
+                insert into role (id, rolename) values ('unauthorized'), ('admin');
+                """);
+        executeStatement(db, """
+                create table user_role (
+                  user_id  bigint references app_user(id) on delete cascade,
+                  role_id  bigint references role(id) on delete cascade
+                );
                 """);
     }
 

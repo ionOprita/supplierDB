@@ -18,7 +18,7 @@ const SERIES = [
     canvasId: "rrrChart",
     title: "Rolling Return Rate (90 days)",
     yLabel: "RRR",
-    endpoint: (id) => `/rrr/${encodeURIComponent(id)}`,
+    endpoint: (id) => `/app/rrr/${encodeURIComponent(id)}`,
     // RRR API shape: { date:[y,m,d], value:number in [0..1] }
     getY: (row) => Number(row.value ?? 0),
     yTicks: {
@@ -34,7 +34,7 @@ const SERIES = [
     canvasId: "ordersChart",
     title: "Orders",
     yLabel: "Orders",
-    endpoint: (id) => `/orders/${encodeURIComponent(id)}`,
+    endpoint: (id) => `/app/orders/${encodeURIComponent(id)}`,
     // Integer counts: { date:[y,m,d], count:int }
     getY: (row) => Number(row.count ?? 0),
     yTicks: {
@@ -49,7 +49,7 @@ const SERIES = [
     canvasId: "stornoChart",
     title: "Stornos",
     yLabel: "Stornos",
-    endpoint: (id) => `/stornos/${encodeURIComponent(id)}`,
+    endpoint: (id) => `/app/stornos/${encodeURIComponent(id)}`,
     getY: (row) => Number(row.count ?? 0),
     yTicks: {
       stepSize: 1,
@@ -63,7 +63,7 @@ const SERIES = [
     canvasId: "returnChart",
     title: "Returns",
     yLabel: "Returns",
-    endpoint: (id) => `/returns/${encodeURIComponent(id)}`,
+    endpoint: (id) => `/app/returns/${encodeURIComponent(id)}`,
     getY: (row) => Number(row.count ?? 0),
     yTicks: {
       stepSize: 1,

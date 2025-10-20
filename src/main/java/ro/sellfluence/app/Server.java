@@ -13,6 +13,8 @@ import io.javalin.config.JavalinConfig;
 import io.javalin.validation.Validator;
 import org.eclipse.jetty.server.UserIdentity;
 import ro.sellfluence.api.API;
+import ro.sellfluence.api.MyCredentialRepo;
+import ro.sellfluence.api.WebAuthnServer;
 import ro.sellfluence.apphelper.BackgroundJob;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.support.Arguments;
@@ -86,6 +88,8 @@ public class Server {
             thread.setDaemon(true); // Don't prevent JVM shutdown
             return thread;
         });
+
+        var rp = WebAuthnServer.create(new MyCredentialRepo(mirrorDB));
 
         // Schedule the job with auto-restart on failure
         scheduleWithRestart(scheduler, backgroundJob);
@@ -194,7 +198,7 @@ public class Server {
                 ctx.json(returns);
             }
         });
-        app.get("/tasks", ctx -> {
+        app.get("/app/tasks", ctx -> {
             var returns = api.getTasks();
             if (returns == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
@@ -249,6 +253,8 @@ public class Server {
 
             ctx.status(204);
         });
+
+        // Missing authenticate/options and /authenticate/verify
 
         app.before("/app/*", ctx -> {
             var session = ctx.req().getSession(false);
