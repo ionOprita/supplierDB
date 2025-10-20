@@ -4,7 +4,7 @@ initMatrixTable({
   tableId: 'stornoTable',
   theadId: 'stornoHead',
   tbodyId: 'stornoBody',
-  dataUrl: '/stornoTable',
-  detailsUrlBuilder: (pnk, month) => `/storno-details.html?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
+  dataUrl: '/app/stornoTable',
+  detailsUrlBuilder: (pnk, month) => `/app/storno-details.html?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
   detailsWindowName: 'stornoDetails'
 });

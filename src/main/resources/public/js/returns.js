@@ -4,7 +4,7 @@ initMatrixTable({
   tableId: 'returnsTable',
   theadId: 'returnsHead',
   tbodyId: 'returnsBody',
-  dataUrl: '/returnTable',
-  detailsUrlBuilder: (pnk, month) => `/return-details.html?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
+  dataUrl: '/app/returnTable',
+  detailsUrlBuilder: (pnk, month) => `/app/return-details.html?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
   detailsWindowName: 'returnDetails'
 });
