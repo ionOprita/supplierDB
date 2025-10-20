@@ -706,6 +706,10 @@ public class EmagMirrorDB {
         return database.readTX(Vendor::selectAllVendors);
     }
 
+    public @NonNull Map<UUID, String> readVendorCompanies() throws SQLException {
+        return database.readTX(Vendor::selectAllVendorCompanies);
+    }
+
     public @NonNull List<Vendor> getAllVendors() throws SQLException {
         return database.readTX(Vendor::getVendors);
     }

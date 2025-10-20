@@ -118,6 +118,27 @@ public record Vendor (UUID id, String name, boolean isFBE, String companyName, S
         }
         return vendors;
     }
+    /**
+     * Generate a map from vendor UUID to vendor name.
+     *
+     * @param db database connection.
+     * @return map.
+     * @throws SQLException if a database access error occurs.
+     */
+    static @NonNull Map<UUID, String> selectAllVendorCompanies(Connection db) throws SQLException {
+        var vendors = new HashMap<UUID, String>();
+        try (var s = db.prepareStatement("SELECT id, company_name FROM vendor")) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    vendors.put(
+                            rs.getObject("id", UUID.class),
+                            rs.getString("company_name")
+                    );
+                }
+            }
+        }
+        return vendors;
+    }
 
     /**
      * Generate a map from vendor UUID to vendor name.
