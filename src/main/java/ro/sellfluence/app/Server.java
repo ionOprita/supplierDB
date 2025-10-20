@@ -78,6 +78,23 @@ public class Server {
             }
         });
 
+        app.get("/orderTable", ctx -> {
+            var returns = api.getOrdersByProductAndMonth();
+            if (returns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(returns);
+            }
+        });
+        app.get("/orderDetails", ctx -> {
+            Validator<YearMonth> month = ctx.queryParamAsClass("month", YearMonth.class);
+            var returns = api.orderDetails(ctx.queryParam("pnk"), month.get());
+            if (returns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(returns);
+            }
+        });
         app.get("/stornoTable", ctx -> {
             var returns = api.getStornosByProductAndMonth();
             if (returns == null) {
@@ -86,7 +103,7 @@ public class Server {
                 ctx.json(returns);
             }
         });
-        app.get("/storno/details", ctx -> {
+        app.get("/stornoDetails", ctx -> {
             Validator<YearMonth> month = ctx.queryParamAsClass("month", YearMonth.class);
             var returns = api.stornoDetails(ctx.queryParam("pnk"), month.get());
             if (returns == null) {

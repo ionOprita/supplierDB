@@ -145,7 +145,7 @@ public class EmagMirrorDB {
         });
     }
 
-    public record ReturnStronoDetail(LocalDateTime time, String orderId, String vendor, String pnk, String name, int quantity) {
+    public record ReturnStornoOrderDetail(LocalDateTime time, String orderId, String vendor, String pnk, String name, int quantity) {
     }
 
     /**
@@ -161,9 +161,56 @@ public class EmagMirrorDB {
      *         a storno record with corresponding metadata.
      * @throws SQLException if any database access error occurs while retrieving the storno details.
      */
-    public List<ReturnStronoDetail> getStornoDetails(String pnk, YearMonth month) throws SQLException {
+    public List<ReturnStornoOrderDetail> getOrderDetails(String pnk, YearMonth month) throws SQLException {
         return database.readTX(db -> {
-            var result = new ArrayList<ReturnStronoDetail>();
+            var result = new ArrayList<ReturnStornoOrderDetail>();
+            try (var s = db.prepareStatement("""
+                    SELECT DISTINCT ON (o.id, pio.part_number_key) o.id, o.date, v.vendor_name, pio.part_number_key, p.name, CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS quantity
+                    FROM emag_order AS o
+                    JOIN product_in_order AS pio ON pio.emag_order_surrogate_id = o.surrogate_id
+                    JOIN vendor AS v ON v.id = o.vendor_id
+                    JOIN product AS p ON pio.part_number_key = p.emag_pnk
+                    WHERE o.status IN (4,5) AND o.date >= ? AND o.date <  ? AND pio.part_number_key = ?
+                    ORDER BY o.id, pio.part_number_key;
+                    """)) {
+                s.setTimestamp(1, toTimestamp(month.atDay(1)));
+                s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1)));
+                s.setString(3, pnk);
+                try (var rs = s.executeQuery()) {
+                    while (rs.next()) {
+                        result.add(
+                                new ReturnStornoOrderDetail(
+                                        toLocalDateTime(rs.getTimestamp("date")),
+                                        rs.getString("id"),
+                                        rs.getString("vendor_name"),
+                                        rs.getString("part_number_key"),
+                                        rs.getString("name"),
+                                        rs.getInt("quantity")
+                                )
+                        );
+                    }
+                }
+            }
+            return result;
+        });
+    }
+
+    /**
+     * Retrieves a list of storno details based on the provided part number key and date range.
+     * The storno details include information about the storno date, associated order, vendor,
+     * product, and quantity.
+     *
+     * @param pnk the part number key (PNK) which uniquely identifies the product.
+     * @param month the YearMonth object representing the month for which the storno details should be fetched.
+     *              Details are retrieved for the entire month starting from the first day and ending before
+     *              the first day of the next month.
+     * @return a list of StronoInfo objects containing the storno details. Each entry in the list represents
+     *         a storno record with corresponding metadata.
+     * @throws SQLException if any database access error occurs while retrieving the storno details.
+     */
+    public List<ReturnStornoOrderDetail> getStornoDetails(String pnk, YearMonth month) throws SQLException {
+        return database.readTX(db -> {
+            var result = new ArrayList<ReturnStornoOrderDetail>();
             try (var s = db.prepareStatement("""
                     SELECT  s.storno_date, s.order_id, v.vendor_name, pio.part_number_key, p.name, s.quantity
                     FROM storno AS s
@@ -179,7 +226,7 @@ public class EmagMirrorDB {
                 try (var rs = s.executeQuery()) {
                     while (rs.next()) {
                         result.add(
-                                new ReturnStronoDetail(
+                                new ReturnStornoOrderDetail(
                                         toLocalDateTime(rs.getTimestamp(1)),
                                         rs.getString(2),
                                         rs.getString(3),
@@ -195,9 +242,9 @@ public class EmagMirrorDB {
         });
     }
 
-    public List<ReturnStronoDetail> getReturnDetails(String pnk, YearMonth month) throws SQLException {
+    public List<ReturnStornoOrderDetail> getReturnDetails(String pnk, YearMonth month) throws SQLException {
         return database.readTX(db -> {
-            var result = new ArrayList<ReturnStronoDetail>();
+            var result = new ArrayList<ReturnStornoOrderDetail>();
             try (var s = db.prepareStatement("""
                     SELECT r.date, r.order_id, v.vendor_name, pio.part_number_key, p.name, rp.quantity
                     FROM rma_result AS r
@@ -219,7 +266,7 @@ public class EmagMirrorDB {
                 try (var rs = s.executeQuery()) {
                     while (rs.next()) {
                         result.add(
-                                new ReturnStronoDetail(
+                                new ReturnStornoOrderDetail(
                                         toLocalDateTime(rs.getTimestamp(1)),
                                         rs.getString(2),
                                         rs.getString(3),
@@ -745,12 +792,25 @@ public class EmagMirrorDB {
      */
     public @NonNull Map<String, Integer> countOrdersByMonth(@NonNull YearMonth month) throws SQLException {
         return countByMonth(month, """
-                SELECT SUM(pio.initial_qty) AS quantity, pio.part_number_key AS pnk
-                FROM emag_order AS o
-                INNER JOIN product_in_order AS pio
-                ON o.surrogate_id = pio.emag_order_surrogate_id
-                WHERE o.status = 5 AND o.date >= ? AND o.date < ?
+                WITH picked AS (
+                  SELECT DISTINCT ON (o.id, pio.part_number_key)
+                         CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS picked_qty,
+                         pio.part_number_key AS pnk
+                  FROM emag_order AS o
+                  JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                  WHERE o.status IN (4,5)
+                    AND o.date >= ?
+                    AND o.date < ?
+                  ORDER BY
+                    o.id,
+                    pio.part_number_key,
+                    o.status,          -- prefer status 4; fallback to 5
+                    o.surrogate_id DESC
+                )
+                SELECT SUM(picked_qty) AS quantity, pnk
+                FROM picked
                 GROUP BY pnk
+                ORDER BY pnk;
                 """);
     }
 

@@ -2,7 +2,7 @@ package ro.sellfluence.api;
 
 import com.google.gson.Gson;
 import ro.sellfluence.db.EmagMirrorDB;
-import ro.sellfluence.db.EmagMirrorDB.ReturnStronoDetail;
+import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.support.DoubleWindow;
 
@@ -131,6 +131,32 @@ public class API {
      * @return map from product to map of month to the storno count.
      * @throws SQLException on database error.
      */
+    public Map<ProductInfo, Map<YearMonth, Integer>> getOrdersByProductAndMonth() throws SQLException {
+        var result = new TreeMap<ProductInfo, Map<YearMonth, Integer>>(ProductInfo.nameComparator);
+        var products = mirrorDB.readProducts().stream().sorted(ProductInfo.nameComparator).toList();
+        var end = YearMonth.now();
+        var month = end.minusYears(2);
+        while (month.isBefore(end)) {
+            var ordersByMonth = mirrorDB.countOrdersByMonth(month);
+            for (ProductInfo product : products) {
+                var map = result.computeIfAbsent(product, _ -> new HashMap<>());
+                map.put(month, ordersByMonth.getOrDefault(product.pnk(), 0));
+            }
+            month = month.plusMonths(1);
+        }
+        return result;
+    }
+
+    public List<ReturnStornoOrderDetail> orderDetails(String pnk, YearMonth month) throws SQLException {
+        return mirrorDB.getOrderDetails(pnk, month);
+    }
+
+    /**
+     * Retrieves the count of the stornos by month for all products, within the past 2 years.
+     *
+     * @return map from product to map of month to the storno count.
+     * @throws SQLException on database error.
+     */
     public Map<ProductInfo, Map<YearMonth, Integer>> getStornosByProductAndMonth() throws SQLException {
         var result = new TreeMap<ProductInfo, Map<YearMonth, Integer>>(ProductInfo.nameComparator);
         var products = mirrorDB.readProducts().stream().sorted(ProductInfo.nameComparator).toList();
@@ -147,7 +173,7 @@ public class API {
         return result;
     }
 
-    public List<ReturnStronoDetail> stornoDetails(String pnk, YearMonth month) throws SQLException {
+    public List<ReturnStornoOrderDetail> stornoDetails(String pnk, YearMonth month) throws SQLException {
         return mirrorDB.getStornoDetails(pnk, month);
     }
 
@@ -173,7 +199,7 @@ public class API {
         return result;
     }
 
-    public List<ReturnStronoDetail> returnDetails(String pnk, YearMonth month) throws SQLException {
+    public List<ReturnStornoOrderDetail> returnDetails(String pnk, YearMonth month) throws SQLException {
         return mirrorDB.getReturnDetails(pnk, month);
     }
 
