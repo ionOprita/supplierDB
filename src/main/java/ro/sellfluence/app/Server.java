@@ -4,19 +4,24 @@ import io.javalin.Javalin;
 import io.javalin.validation.Validator;
 import ro.sellfluence.api.API;
 import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.support.Arguments;
 
 import java.time.YearMonth;
+
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 
 /**
  * Server for the EmagMirror app.
  */
 public class Server {
-    static void main() throws Exception {
+    static void main(String[] args) throws Exception {
+        var arguments = new Arguments(args);
         String configNamePort = "PORT";
         int port = Integer.parseInt(System.getProperty(configNamePort,
-                System.getenv().getOrDefault(configNamePort, "8080")));
+                System.getenv().getOrDefault(configNamePort, arguments.getOption("port","8080"))));
 
-        EmagMirrorDB db = EmagMirrorDB.getEmagMirrorDB("emagLocal");
+        EmagMirrorDB db = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
 
         API api = new API(db);
 

@@ -10,6 +10,7 @@ import ro.sellfluence.support.Logs;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -22,6 +23,7 @@ import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.support.UsefulMethods.findColumnMatchingMonth;
+import static ro.sellfluence.support.UsefulMethods.toColumnName;
 
 public class PopulateStornoAndReturns {
     private static final Logger logger = Logs.getConsoleLogger("PopulateStornoAndReturns", INFO);
@@ -52,22 +54,20 @@ public class PopulateStornoAndReturns {
         updateProductColumns(sheet, returnsSheetName, products, vendors);
         updateProductColumns(sheet, percentStornoSheetName, products, vendors);
         updateProductColumns(sheet, percentReturnSheetName, products, vendors);
-        var monthsInStorno = sheet.getRowAsDates(stornoSheetName, monthRow);
-        //var monthsInReturns = sheet.getRowAsDates(returnsSheetName, monthRow);
-        while (month.getYear() == YearMonth.now().getYear()) {
+        while (month.getYear() >= 2024) {
             Map<String, Integer> orderByPNK = mirrorDB.countOrdersByMonth(month);
             Map<String, Integer> stornoByPNK = mirrorDB.countStornoByMonth(month);
             Map<String, Integer> returnByPNK = mirrorDB.countReturnByMonth(month);
             Map<String, Double> percentStornoByPNK = computePercent(stornoByPNK, orderByPNK);
             Map<String, Double> percentReturnByPNK = computePercent(returnByPNK, orderByPNK);
             logger.log(INFO, "--- Update Percentage Storno for month %s ------------------------".formatted(month));
-            updateSheet(sheet, percentStornoSheetName, month, products, monthsInStorno,percentStornoByPNK);
+            updateSheet(sheet, percentStornoSheetName, month, products,percentStornoByPNK);
             logger.log(INFO, "--- Update Percentage Returns for month %s ------------------------".formatted(month));
-            updateSheet(sheet, percentReturnSheetName, month, products, monthsInStorno, percentReturnByPNK);
+            updateSheet(sheet, percentReturnSheetName, month, products, percentReturnByPNK);
             logger.log(INFO, "--- Update Stornos for month %s --------------------------".formatted(month));
-            updateSheet(sheet, stornoSheetName, month, products, monthsInStorno, stornoByPNK);
+            updateSheet(sheet, stornoSheetName, month, products, stornoByPNK);
             logger.log(INFO, "--- Update Returns for month %s ------------------------".formatted(month));
-            updateSheet(sheet, returnsSheetName, month, products, monthsInStorno, returnByPNK);
+            updateSheet(sheet, returnsSheetName, month, products, returnByPNK);
             month = month.minusMonths(1);
         }
     }
@@ -76,8 +76,8 @@ public class PopulateStornoAndReturns {
         var result = new HashMap<String, Double>();
         for (var entry : totalByPNK.entrySet()) {
             var pnk = entry.getKey();
-            var part = entry.getValue();
-            var total = partByPNK.getOrDefault(pnk, 0);
+            var total = entry.getValue();
+            var part = (double)partByPNK.getOrDefault(pnk, 0);
             result.put(pnk, total == 0 ? 0.0 : part / total);
         }
         return result;
@@ -100,8 +100,8 @@ public class PopulateStornoAndReturns {
         sheet.updateRange("'%s'!%s%d:%s%d".formatted(sheetName, "A", firstDataRow, "E", firstDataRow + rows.size() - 1), rows);
     }
 
-    private static <T> void updateSheet(SheetsAPI sheet, final String sheetName, YearMonth month, @NonNull List<ProductTable.ProductInfo> products, List<Object> monthsInSheet, @NonNull final Map<String, T> valuesByPNK) {
-        var columnIdentifier = findColumnMatchingMonth(monthsInSheet, month);
+    private static <T> void updateSheet(SheetsAPI sheet, final String sheetName, YearMonth month, @NonNull List<ProductTable.ProductInfo> products, @NonNull final Map<String, T> valuesByPNK) {
+        var columnIdentifier = toColumnName((int)YearMonth.of(2023,7).until(month, ChronoUnit.MONTHS));
         var columnData = new ArrayList<T>();
         for (var product : products) {
             var pnk = product.pnk();
