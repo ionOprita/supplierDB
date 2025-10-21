@@ -1,10 +1,9 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="PopulateStornoAndReturns emagTest" type="Application" factoryName="Application">
-    <option name="ALTERNATIVE_JRE_PATH" value="25" />
-    <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="true" />
     <option name="MAIN_CLASS_NAME" value="ro.sellfluence.app.PopulateStornoAndReturns" />
     <module name="emagDB" />
     <option name="PROGRAM_PARAMETERS" value="--db=emagTest" />
+    <option name="WORKING_DIRECTORY" value="$ContentRoot$" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="ro.sellfluence.app.*" />

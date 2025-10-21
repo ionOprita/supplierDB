@@ -2,6 +2,7 @@
   <configuration default="false" name="PopulateDateComenziFromDB" type="Application" factoryName="Application" nameIsGenerated="true">
     <option name="MAIN_CLASS_NAME" value="ro.sellfluence.app.PopulateDateComenziFromDB" />
     <module name="emagDB" />
+    <option name="WORKING_DIRECTORY" value="$ContentRoot$" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="ro.sellfluence.app.*" />

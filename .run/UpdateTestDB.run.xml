@@ -2,6 +2,7 @@
   <configuration default="false" name="UpdateTestDB" type="Application" factoryName="Application" nameIsGenerated="true">
     <option name="MAIN_CLASS_NAME" value="ro.sellfluence.test.UpdateTestDB" />
     <module name="emagDB" />
+    <option name="WORKING_DIRECTORY" value="$ContentRoot$" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="ro.sellfluence.test.*" />

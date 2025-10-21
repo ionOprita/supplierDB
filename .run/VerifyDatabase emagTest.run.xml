@@ -3,6 +3,7 @@
     <option name="MAIN_CLASS_NAME" value="ro.sellfluence.test.VerifyDatabase" />
     <module name="emagDB" />
     <option name="PROGRAM_PARAMETERS" value="--db=emagTest" />
+    <option name="WORKING_DIRECTORY" value="$ContentRoot$" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="ro.sellfluence.test.*" />
