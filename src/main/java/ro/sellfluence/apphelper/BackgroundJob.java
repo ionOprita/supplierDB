@@ -1,6 +1,7 @@
 package ro.sellfluence.apphelper;
 
 import ro.sellfluence.app.EmagDBApp;
+import ro.sellfluence.app.PopulateDateComenziFromDB;
 import ro.sellfluence.app.PopulateProductsTableFromSheets;
 import ro.sellfluence.app.PopulateStornoAndReturns;
 import ro.sellfluence.app.UpdateEmployeeSheetsFromDB;
@@ -134,7 +135,7 @@ public class BackgroundJob {
         transferFromDB(consumerInfo,
                 orderSheetTaskName,
                 (lastRun) -> LocalDateTime.now().minusHours(1).isAfter(lastRun),
-                () -> PopulateStornoAndReturns.updateSpreadsheets(mirrorDB),
+                () -> PopulateDateComenziFromDB.updateSpreadsheets(mirrorDB),
                 "Updating the Order and GMV sheet ended with an exception.");
 
     }
@@ -180,7 +181,7 @@ public class BackgroundJob {
     }
 
     private void refetchFromEmag() throws SQLException {
-        mirrorDB.startTask(fetchTaskName);
+        mirrorDB.startTask(refetchTaskName);
         try {
             PopulateProductsTableFromSheets.updateProductTable(mirrorDB);
             EmagDBApp.fetchAndStoreToDBProbabilistic(mirrorDB);
