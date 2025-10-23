@@ -9,11 +9,6 @@ export function ymdHMSArrayToDate(arr) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-export const dtFmt = new Intl.DateTimeFormat(undefined, {
-  year: 'numeric', month: '2-digit', day: '2-digit',
-  hour: '2-digit', minute: '2-digit', second: '2-digit'
-});
-
 export async function fetchJSON(url) {
   const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -32,3 +27,24 @@ export function td(text, mono = false, extraClass = '') {
   if (extraClass) c.classList.add(extraClass);
   return c;
 }
+
+export function formatLocalDateTime(date) {
+  if (!date) return ''; // handles null, undefined, 0, etc.
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+      `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+export function formatDuration(seconds) {
+  if (seconds == null || isNaN(seconds) || seconds == 0) return ''; // handle null, undefined, NaN
+  seconds = Math.floor(seconds); // just in case it’s not an integer
+
+  if (seconds < 60) {
+    return `${seconds} sec`;
+  } else {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return secs > 0 ? `${mins} min ${secs} sec` : `${mins} min`;
+  }
+}
+

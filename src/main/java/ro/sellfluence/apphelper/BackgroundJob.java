@@ -162,7 +162,7 @@ public class BackgroundJob {
                 mirrorDB.startTask(taskName);
                 transferMethod.transfer();
                 mirrorDB.endTask(taskName, "");
-            } catch (SQLException e) {
+            } catch (Exception e) {
                 mirrorDB.endTask(taskName, e);
                 logger.log(WARNING, errorMessage, e);
             }
