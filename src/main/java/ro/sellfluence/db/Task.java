@@ -46,19 +46,21 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
      */
     public static int endTask(Connection db, String name, String error) throws SQLException {
         try (var s = db.prepareStatement("""
-                UPDATE tasks
+                WITH input AS (SELECT ?::text AS new_error)
+                UPDATE tasks AS t
                 SET terminated = CURRENT_TIMESTAMP,
-                    duration_of_last_run = CURRENT_TIMESTAMP - started,
-                    error = ?,
+                    duration_of_last_run = CURRENT_TIMESTAMP - t.started,
+                    error = i.new_error,
                     last_successful_run = CASE
-                      WHEN error IS NULL OR error = '' THEN CURRENT_TIMESTAMP
-                      ELSE last_successful_run
+                      WHEN i.new_error IS NULL OR i.new_error = '' THEN CURRENT_TIMESTAMP
+                      ELSE t.last_successful_run
                     END,
                     unsuccessful_runs = CASE
-                      WHEN error IS NULL OR error = '' THEN 0
-                      ELSE unsuccessful_runs + 1
+                      WHEN i.new_error IS NULL OR i.new_error = '' THEN 0
+                      ELSE COALESCE(t.unsuccessful_runs, 0) + 1
                     END
-                WHERE name = ?
+                FROM input AS i
+                WHERE t.name = ?
                 """)) {
             s.setString(1, error);
             s.setString(2, name);

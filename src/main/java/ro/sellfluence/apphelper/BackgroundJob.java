@@ -31,8 +31,6 @@ public class BackgroundJob {
     private static final Decider always = (_) -> true;
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final EmagMirrorDB mirrorDB;
-    private final String fetchTaskName = "Fetch from eMAG";
-    private final String refetchTaskName = "Refetch some from eMAG";
 
     public BackgroundJob(EmagMirrorDB db) {
         mirrorDB = db;
@@ -56,17 +54,17 @@ public class BackgroundJob {
 
 
     private final List<TaskRunner> fetchers = List.of(
-            new TaskRunner(fetchTaskName, hourly, always, db -> {
+            new TaskRunner("Fetch from eMAG", hourly, always, db -> {
                 PopulateProductsTableFromSheets.updateProductTable(db);
                 EmagDBApp.fetchAndStoreToDB(db);
             }),
-            new TaskRunner(refetchTaskName, weekly, always, EmagDBApp::fetchAndStoreToDBProbabilistic)
+            new TaskRunner("Refetch some from eMAG", weekly, always, EmagDBApp::fetchAndStoreToDBProbabilistic)
     );
 
     private final List<TaskRunner> consumers = List.of(
-            new TaskRunner("Transfer to storno and return sheets", Duration.ofHours(1), always, PopulateStornoAndReturns::updateSpreadsheets),
-            new TaskRunner("Transfer to order and GMV sheets", Duration.ofHours(1), always, PopulateDateComenziFromDB::updateSpreadsheets),
-            new TaskRunner("Transfer to employee sheet", Duration.ofHours(1), this::outOfOfficeHour, UpdateEmployeeSheetsFromDB::updateSheets)
+            new TaskRunner("Transfer to storno and return sheets", hourly, always, PopulateStornoAndReturns::updateSpreadsheets),
+            new TaskRunner("Transfer to order and GMV sheets", hourly, always, PopulateDateComenziFromDB::updateSpreadsheets),
+            new TaskRunner("Transfer to employee sheet", hourly, this::outOfOfficeHour, UpdateEmployeeSheetsFromDB::updateSheets)
     );
 
     private boolean outOfOfficeHour(LocalDateTime time) {
@@ -94,7 +92,7 @@ public class BackgroundJob {
     private void selectJobToRun() {
         try {
             var taskInfos = mirrorDB.getAllTasks();
-            executeRunners(fetchers, taskInfos, LocalDateTime.MIN);
+            executeRunners(fetchers, taskInfos, LocalDateTime.MAX);
             var latestFetchTime = findLatestFetchTime(taskInfos);
             executeRunners(consumers, taskInfos, latestFetchTime);
         } catch (SQLException e) {
@@ -144,6 +142,7 @@ public class BackgroundJob {
                     mirrorDB.endTask(taskName, e);
                     logger.log(WARNING, taskName + " ended with an error.", e);
                 }
+                return; // Execute only one task at a time.
             }
         }
     }
