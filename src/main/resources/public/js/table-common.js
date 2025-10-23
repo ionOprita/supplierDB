@@ -3,7 +3,7 @@
  * Shared utilities to render a month-matrix table with a sticky header and first two columns,
  * plus a delegated click handler that opens a details window.
  */
-import {dtFmt, fetchJSON} from "./common.js";
+import {fetchJSON, formatDuration, formatLocalDateTime} from "./common.js";
 
 // --- helpers -------------------------------------------------------------
 
@@ -465,11 +465,14 @@ export function renderTasksBody(tbodyEl, rows) {
       tdStatus.textContent = "-";
     }
     tr.appendChild(tdStatus);
+    const tdLastRun = document.createElement('td');
+    tdLastRun.textContent = formatLocalDateTime(row.terminated);
+    tr.appendChild(tdLastRun);
     const tdDuration = document.createElement('td');
-    tdDuration.textContent = row.durationOfLastRunSeconds;
+    tdDuration.textContent = formatDuration(row.durationOfLastRunSeconds);
     tr.appendChild(tdDuration);
     const tdLastSuccess = document.createElement('td');
-    tdLastSuccess.textContent = row.lastSuccessfulRun ? dtFmt.format(row.lastSuccessfulRun) : '';
+    tdLastSuccess.textContent = formatLocalDateTime(row.lastSuccessfulRun);
     tr.appendChild(tdLastSuccess);
     const tdFailures = document.createElement('td');
     tdFailures.textContent = row.unsuccessfulRuns;
@@ -508,6 +511,9 @@ export function initTaskTable(cfg) {
       const thStatus = document.createElement('th');
       thStatus.textContent = 'Status';
       tr.appendChild(thStatus);
+      const thLastRun = document.createElement('th');
+      thLastRun.textContent = 'Last Run';
+      tr.appendChild(thLastRun);
       const thRuntime = document.createElement('th');
       thRuntime.textContent = 'Runtime';
       tr.appendChild(thRuntime);
