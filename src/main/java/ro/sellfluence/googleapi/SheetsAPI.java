@@ -504,7 +504,7 @@ public class SheetsAPI {
             } catch (IOException e) {
                 if (e instanceof GoogleJsonResponseException g) {
                     if (g.getStatusCode() == 400) {
-                        throw new RuntimeException("Bad request. %s".formatted(g.getDetails().getMessage()), e);
+                        throw new RuntimeException("Bad request. %s on sheet %s".formatted(g.getDetails().getMessage(), spreadSheetName), e);
                     }
                 }
                 retryCount--;
