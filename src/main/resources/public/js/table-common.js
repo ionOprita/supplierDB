@@ -105,32 +105,37 @@ export function bindTableCsvDownload({ buttonId, tableId, filePrefix = 'table', 
   });
 }
 
+// --- small shared DOM builders ------------------------------------------
+
+function buildHeaderRow(labels) {
+  const tr = document.createElement('tr');
+  for (const label of labels) {
+    const th = document.createElement('th');
+    th.textContent = label;
+    tr.appendChild(th);
+  }
+  return tr;
+}
+
+function renderTbody(tbodyEl, items, renderRowFn) {
+  tbodyEl.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  for (const item of items) {
+    frag.appendChild(renderRowFn(item));
+  }
+  tbodyEl.appendChild(frag);
+}
+
 // --- rendering -----------------------------------------------------------
 
 export function renderHeader(headEl, months) {
-  const tr = document.createElement('tr');
-
-  const thName = document.createElement('th');
-  thName.textContent = 'Name';
-  tr.appendChild(thName);
-  const thPnk = document.createElement('th');
-  thPnk.textContent = 'PNK';
-  tr.appendChild(thPnk);
-
-  for (const m of months) {
-    const th = document.createElement('th');
-    th.textContent = m;
-    tr.appendChild(th);
-  }
+  const tr = buildHeaderRow(['Name', 'PNK', ...months]);
   headEl.innerHTML = '';
   headEl.appendChild(tr);
 }
 
 export function renderBody(tbodyEl, rows, months, tableEl) {
-  tbodyEl.innerHTML = '';
-  const frag = document.createDocumentFragment();
-
-  for (const row of rows) {
+  function renderRow(row) {
     const tr = document.createElement('tr');
 
     const tdName = document.createElement('td');
@@ -149,14 +154,10 @@ export function renderBody(tbodyEl, rows, months, tableEl) {
       td.dataset.month = m;
       tr.appendChild(td);
     }
-    const isAllZero = Object.values(row.months).every(v => !v);
-    if (!isAllZero) {
-      frag.appendChild(tr);
-    } else {
-      frag.appendChild(tr); // keep if you don't want to filter empty rows
+    return tr;
     }
-  }
-  tbodyEl.appendChild(frag);
+
+  renderTbody(tbodyEl, rows, renderRow);
   applyStickyOffsets(tableEl);
 }
 
@@ -447,10 +448,7 @@ export function toTaskRows(jsonData) {
 }
 
 export function renderTasksBody(tbodyEl, rows) {
-  tbodyEl.innerHTML = '';
-  const frag = document.createDocumentFragment();
-
-  for (const row of rows) {
+  function renderRow(row) {
     const tr = document.createElement('tr');
 
     const tdName = document.createElement('td');
@@ -480,9 +478,11 @@ export function renderTasksBody(tbodyEl, rows) {
     const tdError = document.createElement('td');
     tdError.textContent = row.error;
     tr.appendChild(tdError);
-    frag.appendChild(tr);
+
+    return tr;
   }
-  tbodyEl.appendChild(frag);
+
+  renderTbody(tbodyEl, rows, renderRow);
 }
 
 
@@ -499,33 +499,13 @@ export function initTaskTable(cfg) {
   const BODY = document.getElementById(cfg.tbodyId);
   const TABLE = document.getElementById(cfg.tableId);
 
-  (async function init() {
+  async function loadTasks() {
     try {
       const data = await fetchJSON(cfg.dataUrl);
       const rows = toTaskRows(data);
-      const tr = document.createElement('tr');
-
-      const thName = document.createElement('th');
-      thName.textContent = 'Name';
-      tr.appendChild(thName);
-      const thStatus = document.createElement('th');
-      thStatus.textContent = 'Status';
-      tr.appendChild(thStatus);
-      const thLastRun = document.createElement('th');
-      thLastRun.textContent = 'Last Run';
-      tr.appendChild(thLastRun);
-      const thRuntime = document.createElement('th');
-      thRuntime.textContent = 'Runtime';
-      tr.appendChild(thRuntime);
-      const thLast = document.createElement('th');
-      thLast.textContent = 'Last Successful';
-      tr.appendChild(thLast);
-      const thFailures = document.createElement('th');
-      thFailures.textContent = 'Failures';
-      tr.appendChild(thFailures);
-      const thError = document.createElement('th');
-      thError.textContent = 'Error';
-      tr.appendChild(thError);
+      const tr = buildHeaderRow([
+        'Name', 'Status', 'Last Run', 'Runtime', 'Last Successful', 'Failures', 'Error'
+      ]);
       HEAD.innerHTML = '';
       HEAD.appendChild(tr);
       renderTasksBody(BODY, rows);
@@ -536,5 +516,8 @@ export function initTaskTable(cfg) {
     }
   })();
 
+  document.getElementById('refreshBtn')?.addEventListener('click', loadTasks);
   window.addEventListener('resize', () => applyStickyOffsets(TABLE));
+
+  loadTasks();
 }
