@@ -2,7 +2,7 @@
 // Assumes Chart.js UMD is loaded first (global Chart)
 // Uses the existing DOM structure/IDs from index.html
 
-import {fetchJSON} from "./common";
+import {fetchJSON} from "./common.js";
 
 const selectEl = document.getElementById("productSelect");
 

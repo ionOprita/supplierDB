@@ -2,7 +2,7 @@
  * details-common.js
  * Shared logic for the per-cell details page.
  */
-import {dtFmt, td, ymdHMSArrayToDate} from "./common.js";
+import {fetchJSON, formatLocalDateTime, td, ymdHMSArrayToDate} from "./common.js";
 import { bindTableCsvDownload, sanitizeFileNamePart } from './table-common.js';
 
 export function renderRows(tbody, items) {
@@ -16,7 +16,7 @@ export function renderRows(tbody, items) {
   for (const it of items) {
     const tr = document.createElement('tr');
     const dt = ymdHMSArrayToDate(it.time);
-    const timeTxt = dt ? dtFmt.format(dt) : '';
+    const timeTxt = formatLocalDateTime(dt);
     tr.appendChild(td(timeTxt));
     tr.appendChild(td(it.orderId, true));
     tr.appendChild(td(it.vendor));
