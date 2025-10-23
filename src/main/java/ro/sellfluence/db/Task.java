@@ -52,10 +52,12 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
                     error = ?,
                     last_successful_run = CASE
                       WHEN error IS NULL OR error = '' THEN CURRENT_TIMESTAMP
-                      ELSE last_successful_run,
+                      ELSE last_successful_run
+                    END,
                     unsuccessful_runs = CASE
                       WHEN error IS NULL OR error = '' THEN 0
                       ELSE unsuccessful_runs + 1
+                    END
                 WHERE name = ?
                 """)) {
             s.setString(1, error);
