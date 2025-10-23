@@ -189,17 +189,21 @@ public class Server {
         }));
     }
 
+    /**
+     * Schedule the job immediately and then every minute.
+     *
+     * @param scheduler provided.
+     * @param job to run.
+     */
     private static void scheduleWithRestart(ScheduledExecutorService scheduler, BackgroundJob job) {
         scheduler.schedule(() -> {
             try {
                 job.performWork();
-                // Success - schedule next run immediately
-                scheduleWithRestart(scheduler, job);
             } catch (Exception e) {
-                logger.log(Level.SEVERE, "BackgroundJob failed, restarting in 1 minute", e);
-                // Failure - schedule restart after 1 minute
-                scheduler.schedule(() -> scheduleWithRestart(scheduler, job), 1, TimeUnit.MINUTES);
+                logger.log(Level.SEVERE, "BackgroundJob failed.", e);
             }
+            // Schedule the next run in a minute.
+            scheduler.schedule(() -> scheduleWithRestart(scheduler, job), 1, TimeUnit.MINUTES);
         }, 0, TimeUnit.SECONDS);
     }
 }
