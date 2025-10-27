@@ -869,7 +869,7 @@ public class EmagOrder {
             s.setInt(1, product.id());
             s.setInt(2, surrogateId);
             s.setInt(3, product.product_id());
-            s.setInt(4, product.mkt_id());
+            s.setObject(4, product.mkt_id());
             s.setString(5, product.name());
             s.setInt(6, product.status());
             s.setString(7, product.ext_part_number());
