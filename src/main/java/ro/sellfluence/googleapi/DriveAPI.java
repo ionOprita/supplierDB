@@ -10,14 +10,17 @@ import com.google.api.services.drive.model.FileList;
 import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.security.GeneralSecurityException;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
@@ -46,6 +49,7 @@ public class DriveAPI {
         this.appName = appName;
     }
 
+
     public static DriveAPI getDriveAPI(String appName) {
         var api = nameToAPI.get(appName);
         if (api == null) {
@@ -53,6 +57,33 @@ public class DriveAPI {
             nameToAPI.put(appName, api);
         }
         return api;
+    }
+
+    /**
+     * Download a file to a given output stream.
+     *
+     * @param file file as returned by {@link #findFiles(Pattern, String)}.
+     * @param out output stream.
+     * @throws IOException if something goes wrong.
+     */
+    public void download(FileResult file, OutputStream out) throws IOException {
+        setupDriveService().files()
+                .get(file.fileId)
+                .executeMediaAndDownloadTo(out);
+    }
+
+    /**
+     * Export a file to a given output stream.
+     *
+     * @param file file as returned by {@link #findFiles(Pattern, String)}.
+     * @param mimeType desired mime type.
+     * @param out output stream.
+     * @throws IOException if something goes wrong.
+     */
+    public void exportAs(FileResult file, String mimeType, OutputStream out) throws IOException {
+        setupDriveService().files()
+                .export(file.fileId, mimeType)
+                .executeMediaAndDownloadTo(out);
     }
 
     /**
@@ -87,7 +118,7 @@ public class DriveAPI {
                 return fileId;
             } else {
                 var myFiles = matchingFiles.stream().filter(File::getOwnedByMe).toList();
-                  if (myFiles.size() == 1) {
+                if (myFiles.size() == 1) {
                     var fileId = myFiles.getFirst().getId();
                     warnLogger.log(Level.WARNING, "Found more than one file with the name %s, using the single one owned by me with the ID %s.".formatted(name, fileId));
                     updateCaches(name, fileId);
@@ -99,6 +130,40 @@ public class DriveAPI {
                     );
                 }
             }
+        } catch (IOException e) {
+            throw new RuntimeException("Couldn't retrieve the list of files.", e);
+        }
+    }
+
+    public record FileResult(String name, String fileId) {
+    }
+
+    /**
+     * Find the d of a file given its name.
+     *
+     * @param pattern      for the file name.
+     * @param googleFilter optional filter to be passed to setQ(). Can be null.
+     * @return the ID of the file.
+     * @throws RuntimeException if something goes wrong.
+     */
+    public List<FileResult> findFiles(Pattern pattern, String googleFilter) {
+        Objects.requireNonNull(pattern);
+        try {
+            var matchingFiles = new HashSet<File>();
+            String pageToken = null;
+            do {
+                var list = setupDriveService().files().list();
+                if (googleFilter != null) {
+                    list = list.setQ(googleFilter);
+                }
+                FileList fileList = list.setFields("nextPageToken, files(id, name, trashed)").setPageToken(pageToken).execute();
+                pageToken = fileList.getNextPageToken();
+                var files = fileList.getFiles();
+                files.stream()
+                        .filter(f -> pattern.matcher(f.getName()).matches() && !f.getTrashed())
+                        .forEach(matchingFiles::add);
+            } while (pageToken != null);
+            return matchingFiles.stream().map(file -> new FileResult(file.getName(), file.getId())).toList();
         } catch (IOException e) {
             throw new RuntimeException("Couldn't retrieve the list of files.", e);
         }

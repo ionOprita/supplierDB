@@ -25,6 +25,7 @@ import com.google.api.services.sheets.v4.model.Request;
 import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
 import org.jspecify.annotations.Nullable;
+import ro.sellfluence.googleapi.DriveAPI.FileResult;
 import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
@@ -99,6 +100,21 @@ public class SheetsAPI {
         }
         var key = "%s\t%s".formatted(appName, spreadSheetId);
         return spreadSheets.computeIfAbsent(key, _ -> new SheetsAPI(appName, spreadSheetId, name));
+    }
+
+    /**
+     * Get a spreadsheet by File information gathered from DriveAPI.
+     *
+     * @param appName       name of the application
+     *                      as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
+     * @param file DriveAPI.FileResult.
+     * @return instance of this class representing the spreadsheet, or null if not found.
+     */
+    public static SheetsAPI getSpreadSheetByFileResult(String appName, FileResult file) {
+        requireNonNull(appName);
+        requireNonNull(file);
+        var key = "%s\t%s".formatted(appName, file.fileId());
+        return spreadSheets.computeIfAbsent(key, _ -> new SheetsAPI(appName, file.fileId(), file.name()));
     }
 
     /**

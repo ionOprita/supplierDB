@@ -210,49 +210,49 @@ public class Server {
         // Health check (handy)
         app.get("/health", ctx -> ctx.result("ok"));
 
-        app.post("/webauthn/register/options", ctx -> {
-            var user = loadUser(ctx); // your way to identify the account being registered
-            var userIdentity = UserIdentity.builder()
-                    .name(user.username())
-                    .displayName(user.displayName())
-                    .id(user.userHandle()) // stable opaque bytes
-                    .build();
-
-            var pubKeyCredParams = List.of(
-                    PublicKeyCredentialParameters.ES256, // add algorithms you want
-                    PublicKeyCredentialParameters.RS256
-            );
-
-            var options = rp.startRegistration(StartRegistrationOptions.builder()
-                    .user(userIdentity)
-                    .authenticatorSelection(AuthenticatorSelectionCriteria.builder()
-                            .residentKey(ResidentKeyRequirement.REQUIRED)    // passkey UX
-                            .userVerification(UserVerificationRequirement.REQUIRED)
-                            .build())
-                    .pubKeyCredParams(pubKeyCredParams)
-                    .build());
-
-            saveExpectedChallenge(user.id(), options); // persist challenge to compare later
-            ctx.json(options); // send to browser
-        });
-
-        app.post("/webauthn/register/verify", ctx -> {
-            var response = ctx.bodyAsClass(RegistrationResponse.class);
-            var request = FinishRegistrationOptions.builder()
-                    .requestId(loadExpectedChallenge(response.userId()))
-                    .response(response.credential())
-                    .build();
-
-            var regResult = rp.finishRegistration(request);
-
-            storeCredential(new StoredCredential(
-                    regResult.getKeyId().getId(), response.userId(),
-                    regResult.getPublicKeyCose(), regResult.getSignatureCount(),
-                    regResult.getAttestationMetadata().map(Attestation::getAaguid).orElse(null)
-            ));
-
-            ctx.status(204);
-        });
+//        app.post("/webauthn/register/options", ctx -> {
+//            var user = loadUser(ctx); // your way to identify the account being registered
+//            var userIdentity = UserIdentity.builder()
+//                    .name(user.username())
+//                    .displayName(user.displayName())
+//                    .id(user.userHandle()) // stable opaque bytes
+//                    .build();
+//
+//            var pubKeyCredParams = List.of(
+//                    PublicKeyCredentialParameters.ES256, // add algorithms you want
+//                    PublicKeyCredentialParameters.RS256
+//            );
+//
+//            var options = rp.startRegistration(StartRegistrationOptions.builder()
+//                    .user(userIdentity)
+//                    .authenticatorSelection(AuthenticatorSelectionCriteria.builder()
+//                            .residentKey(ResidentKeyRequirement.REQUIRED)    // passkey UX
+//                            .userVerification(UserVerificationRequirement.REQUIRED)
+//                            .build())
+//                    .pubKeyCredParams(pubKeyCredParams)
+//                    .build());
+//
+//            saveExpectedChallenge(user.id(), options); // persist challenge to compare later
+//            ctx.json(options); // send to browser
+//        });
+//
+//        app.post("/webauthn/register/verify", ctx -> {
+//            var response = ctx.bodyAsClass(RegistrationResponse.class);
+//            var request = FinishRegistrationOptions.builder()
+//                    .requestId(loadExpectedChallenge(response.userId()))
+//                    .response(response.credential())
+//                    .build();
+//
+//            var regResult = rp.finishRegistration(request);
+//
+//            storeCredential(new StoredCredential(
+//                    regResult.getKeyId().getId(), response.userId(),
+//                    regResult.getPublicKeyCose(), regResult.getSignatureCount(),
+//                    regResult.getAttestationMetadata().map(Attestation::getAaguid).orElse(null)
+//            ));
+//
+//            ctx.status(204);
+//        });
 
         // Missing authenticate/options and /authenticate/verify
 
