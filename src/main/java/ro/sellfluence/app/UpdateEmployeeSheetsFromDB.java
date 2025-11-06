@@ -45,13 +45,8 @@ public class UpdateEmployeeSheetsFromDB {
 
     private static final Set<String> suburbsToExclude = Set.of();
 
-    private static final Set<String> citiesToExclude = Set.of("Alba Iulia", "Alexandria", "Arad", "Bacau", "Baia Mare",
-            "Bistrita", "Botosani", "Braila", "Brasov", "Sectorul 1","Sectorul 2","Sectorul 3","Sectorul 4","Sectorul 5", "Sectorul 6",
-            "Buzau", "Calarasi", "Cluj-Napoca", "Constanta", "Craiova", "Deva",
-            "Drobeta-Turnu Severin", "Focsani", "Galati", "Giurgiu", "Iasi", "Miercurea Ciuc",
-            "Oradea", "Piatra Neamt", "Pitesti", "Ploiesti", "Ramnicu Valcea",
-            "Resita", "Satu Mare", "Sfantu Gheorghe", "Sibiu", "Slatina",
-            "Slobozia", "Suceava", "Targoviste", "Targu Jiu", "Targu Mures", "Timisoara", "Tulcea", "Vaslui", "Zalau");
+    private static final Set<String> citiesToExclude = Set.of("Brasov", "Sectorul 1","Sectorul 3","Sectorul 4",
+            "Iasi");
 
     private static final Set<String> vendorsWithExclusions = Set.of("Zoopie Concept FBE",
             "Zoopie Invest",
@@ -88,7 +83,7 @@ public class UpdateEmployeeSheetsFromDB {
         // add everything for one employee
         // products = products.stream().filter(it -> it.employeeSheetName().equals("Z. Purdel Maria Mălina - Feedback Clienti")).toList();
         // add only for one PNK
-        // products = products.stream().filter(productWithID -> productWithID.pnk().equals("D3YYNY3BM")).toList();
+//         products = products.stream().filter(productWithID -> productWithID.pnk().equals("D3YYNY3BM")).toList();
         var productsByPNK = new HashMap<String, ProductInfo>();
         var productsByEmployee = new HashMap<SheetsAPI, List<ProductInfo>>();
         var sheetsByPNK = new HashMap<String, FeedbackTab>();
@@ -153,7 +148,7 @@ public class UpdateEmployeeSheetsFromDB {
                     startDate = LocalDate.now().minusMonths(1);
                 }
                 var startTime = startDate.atStartOfDay();
-                var endTime = LocalDate.now().minusDays(13).atStartOfDay();
+                var endTime = LocalDate.now().minusDays(6).atStartOfDay();
                 var newOrdersForProduct = mirrorDB.readOrderData(pnk, startTime, endTime).stream().filter(it -> it.quantity() > 0).toList();
                 for (EmployeeSheetData it : newOrdersForProduct) {
                     newAssignments.put(it, product.employeeSheetTab());
