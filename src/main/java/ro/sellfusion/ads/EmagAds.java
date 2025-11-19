@@ -47,9 +47,9 @@ public class EmagAds {
 
     static void main() throws Exception {
         // Find KW_auto
-        var filesFound = drive.findFiles(Pattern.compile("KW_auto.*\\.xlsx"), "name contains 'KW_auto'");
+        var filesFound = drive.findFiles(Pattern.compile("KW_(auto|manual).*\\.xlsx"), "name contains 'KW_'");
         logger.log(INFO, "Found " + filesFound.size() + " files");
-        //var dir = Paths.get("/var/folders/93/8hnm_v9x5dq9mwdhzlf0pmcr0000gq/T/ExeclDownloads13568166015013033212");
+        //var dir = Paths.get("/var/folders/93/8hnm_v9x5dq9mwdhzlf0pmcr0000gq/T/ExeclDownloads9916024981997326495/");
         var dir = downloadAllFiles(filesFound);
         logger.log(INFO, "Downloaded " + dir.toFile().listFiles().length + " files to " + dir);
         List<Path> fileList;
@@ -59,7 +59,7 @@ public class EmagAds {
         }
         for (Path file : fileList) {
             var data = extractSearchPhrases(file);
-            var matcher = Pattern.compile("KW_auto_(.*)_(\\d{4,})-(\\d{2,})-(\\d{2,})\\s*-\\s*(\\d{4,})-(\\d{2,})-(\\d{2,})\\.xlsx").matcher(file.getFileName().toString());
+            var matcher = Pattern.compile("KW_\\w+_(.*)_(\\d{4,})-(\\d{2,})-(\\d{2,})\\s*-\\s*(\\d{4,})-(\\d{2,})-(\\d{2,})\\.xlsx").matcher(file.getFileName().toString());
             if (matcher.matches()) {
                 var product = matcher.group(1);
                 var startDate = LocalDate.of(Integer.parseInt(matcher.group(2)), Integer.parseInt(matcher.group(3)), Integer.parseInt(matcher.group(4)));
