@@ -6,6 +6,7 @@ import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.jspecify.annotations.NonNull;
 import ro.sellfluence.googleapi.DriveAPI;
 import ro.sellfluence.googleapi.DriveAPI.FileResult;
 import ro.sellfluence.support.Logs;
@@ -16,7 +17,6 @@ import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -59,12 +59,13 @@ public class EmagAds {
         }
         for (Path file : fileList) {
             var data = extractSearchPhrases(file);
-            var matcher = Pattern.compile("KW_\\w+_(.*)_(\\d{4,})-(\\d{2,})-(\\d{2,})\\s*-\\s*(\\d{4,})-(\\d{2,})-(\\d{2,})\\.xlsx").matcher(file.getFileName().toString());
+            var matcher = Pattern.compile("KW_([A-Za-z]+)_(.+)_(\\d{4,})-(\\d{2,})-(\\d{2,})\\s*-\\s*(\\d{4,})-(\\d{2,})-(\\d{2,})\\.xlsx").matcher(file.getFileName().toString());
             if (matcher.matches()) {
-                var product = matcher.group(1);
-                var startDate = LocalDate.of(Integer.parseInt(matcher.group(2)), Integer.parseInt(matcher.group(3)), Integer.parseInt(matcher.group(4)));
-                var endDate = LocalDate.of(Integer.parseInt(matcher.group(5)), Integer.parseInt(matcher.group(6)), Integer.parseInt(matcher.group(7)));
-                var result = writeToDB(product, startDate, endDate, data);
+                var type = matcher.group(1);
+                var product = matcher.group(2);
+                var startDate = LocalDate.of(Integer.parseInt(matcher.group(3)), Integer.parseInt(matcher.group(4)), Integer.parseInt(matcher.group(5)));
+                var endDate = LocalDate.of(Integer.parseInt(matcher.group(6)), Integer.parseInt(matcher.group(7)), Integer.parseInt(matcher.group(8)));
+                var result = writeToDB(product, startDate, endDate, type, data);
                 if (result.failed > 0) { logger.log(WARNING, "Failed to insert %d rows from %s".formatted(result.failed, file.getFileName()));}
                 if (result.probablyInserted > 0) { logger.log(WARNING, "Unexpected probably inserted %d rows from %s".formatted(result.probablyInserted, file.getFileName()));}
                 if (result.inserted + result.probablyInserted != data.size()) { logger.log(WARNING, "Inserted %d rows instead of %d from %s".formatted(result.inserted + result.probablyInserted, data.size(), file.getFileName()));}
@@ -74,7 +75,7 @@ public class EmagAds {
         }
     }
 
-    private static Path downloadAllFiles(List<FileResult> filesFound) {
+    private static @NonNull Path downloadAllFiles(@NonNull List<FileResult> filesFound) {
         try {
             var tmpDir = Files.createTempDirectory("ExeclDownloads");
             filesFound.forEach(it -> download(it, tmpDir));
@@ -155,16 +156,16 @@ public class EmagAds {
 
     private record BatchResult(long inserted, long probablyInserted, long failed) {}
 
-    private static BatchResult writeToDB(String product, LocalDate startDate, LocalDate endDate, List<List<Object>> data) throws SQLException {
+    private static BatchResult writeToDB(String product, LocalDate startDate, LocalDate endDate, String type, List<List<Object>> data) throws SQLException {
         logger.log(INFO, "Product: " + product + ", start date: " + startDate + ", end date: " + endDate);
         return database.writeTX(db -> {
                     var productId = upsertProductAndGetId(db, product);
                     var periodId = upsertPeriodAndGetId(db, startDate, endDate);
                     try (var s = db.prepareStatement(
                             """
-                                    INSERT INTO searches (product_id, period_id, search_phrase_id, campaign_id, ad_set_id, clicks, impressions, ctr, cpc_actual, cost, cps, order_value, products_sold)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(product_id,period_id,search_phrase_id) DO 
-                                    UPDATE SET 
+                                    INSERT INTO searches (product_id, period_id, search_phrase_id, campaign_id, ad_set_id, clicks, impressions, ctr, cpc_actual, cost, cps, order_value, products_sold, search_type)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(product_id,search_type,period_id,search_phrase_id) DO
+                                    UPDATE SET
                                     campaign_id = EXCLUDED.campaign_id,
                                     ad_set_id = EXCLUDED.ad_set_id,
                                     clicks = EXCLUDED.clicks,
@@ -201,6 +202,7 @@ public class EmagAds {
                                 s.setBigDecimal(11, (BigDecimal) row.get(8));
                                 s.setBigDecimal(12, (BigDecimal) row.get(9));
                                 s.setBigDecimal(13, (BigDecimal) row.get(10));
+                                s.setString(14, type);
                                 s.addBatch();
                             } catch (IllegalStateException e) {
                                 logger.log(SEVERE, "Error in row %s of product %s for period %s - %s".formatted(row, product, startDate, endDate));
@@ -244,7 +246,8 @@ public class EmagAds {
                         createPhraseTable(db);
                         createSearchesTable(db);
                         createIndices(db);
-                    }
+                    },
+                    EmagAds::addTypeTable
             );
             return database;
         } catch (Exception e) {
@@ -393,9 +396,30 @@ public class EmagAds {
         }
     }
 
+    private static void addTypeTable(Connection db) throws SQLException {
+        try (var s = db.prepareStatement("""
+                DELETE FROM searches;
+                """)) {
+            s.execute();
+        }
+        try (var s = db.prepareStatement("""
+                ALTER TABLE searches
+                ADD COLUMN search_type VARCHAR(15) NOT NULL
+                CHECK (search_type IN ('auto', 'manual'));
+                """)) {
+            s.execute();
+        }
+        try (var s = db.prepareStatement("""
+                ALTER TABLE searches
+                DROP CONSTRAINT uq_ids;
+                """)) {
+            s.execute();
+        }
+        try (var s = db.prepareStatement("""
+                ALTER TABLE searches
+                ADD CONSTRAINT uq_ids UNIQUE (product_id, period_id, search_phrase_id, search_type);
+                """)) {
+            s.execute();
+        }
+    }
 }
-
-/*
-    private static final String excelMimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    private static final String tabSeparatedValues = "text/tab-separated-values";
- */
