@@ -119,11 +119,11 @@ class EmagMirrorDBVersion30 {
         executeStatement(db, """
                 create table role (
                   id                 bigserial primary key,
-                  rolename           varchar(255) not null unique,
+                  rolename           varchar(255) not null unique
                 );
                 """);
         executeStatement(db, """
-                insert into role (id, rolename) values ('unauthorized'), ('admin');
+                insert into role (rolename) values ('unauthorized'), ('admin');
                 """);
         executeStatement(db, """
                 create table user_role (
