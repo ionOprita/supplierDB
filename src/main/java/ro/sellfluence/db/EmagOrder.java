@@ -592,7 +592,8 @@ public class EmagOrder {
                             rs.getInt("weekend_delivery"),
                             toLocalDateTime(rs.getTimestamp("created")),
                             toLocalDateTime(rs.getTimestamp("modified")),
-                            enforcedVendorCourierAccounts
+                            enforcedVendorCourierAccounts,
+                            "" // TODO: currency
                     );
                     orders
                             .computeIfAbsent(
@@ -645,7 +646,8 @@ public class EmagOrder {
                             rs.getInt("weekend_delivery"),
                             toLocalDateTime(rs.getTimestamp("created")),
                             toLocalDateTime(rs.getTimestamp("modified")),
-                            enforcedVendorCourierAccounts
+                            enforcedVendorCourierAccounts,
+                            "" //TODO Currency
                     );
                 }
             }

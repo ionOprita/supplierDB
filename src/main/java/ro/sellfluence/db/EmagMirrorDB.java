@@ -574,7 +574,8 @@ public class EmagMirrorDB {
                                 rs.getInt("weekend_delivery"),
                                 toLocalDateTime(rs.getTimestamp("created")),
                                 toLocalDateTime(rs.getTimestamp("modified")),
-                                null
+                                null,
+                                "" //TODO Currency
                         );
                         results.add(order);
                     }
