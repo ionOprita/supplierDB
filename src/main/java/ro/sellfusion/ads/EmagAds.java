@@ -59,7 +59,7 @@ public class EmagAds {
         }
         for (Path file : fileList) {
             var data = extractSearchPhrases(file);
-            var matcher = Pattern.compile("KW_([A-Za-z]+)_(.+)_(\\d{4,})-(\\d{2,})-(\\d{2,})\\s*-\\s*(\\d{4,})-(\\d{2,})-(\\d{2,})\\.xlsx").matcher(file.getFileName().toString());
+            var matcher = Pattern.compile("KW_([A-Za-z]+)_(.+)_(\\d{4,})-(\\d{2,})-(\\d{2,})\\s*-\\s*(\\d{4,})-(\\d{2,})-(\\d{2,})\\w*\\.xlsx").matcher(file.getFileName().toString());
             if (matcher.matches()) {
                 var type = matcher.group(1);
                 var product = matcher.group(2);
