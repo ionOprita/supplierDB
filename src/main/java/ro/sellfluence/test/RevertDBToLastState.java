@@ -4,12 +4,12 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 
 /**
- * Update emagTest from the latest backup dron from Ionut database.
+ * Revert the database to an earlier backup.
  */
 public class RevertDBToLastState {
     static void main() throws Exception {
         var backupDir = Paths.get(System.getProperty("user.home")).resolve("Backups").resolve("postgres");
-        var backupFile = Files.list(backupDir).filter(p -> p.getFileName().toString().startsWith("db_emag_202")).sorted().toList().getLast();
+        var backupFile = Files.list(backupDir).filter(p -> p.getFileName().toString().startsWith("db_emag_2025-11-26T05")).sorted().toList().getLast();
         IO.println("Reverting emag to %s".formatted(backupFile));
         var rc= new ProcessBuilder("psql", "-c", "DROP DATABASE emag").inheritIO().start().waitFor();
         IO.println("RC=%d".formatted(rc));

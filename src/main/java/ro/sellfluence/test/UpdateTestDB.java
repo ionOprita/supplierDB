@@ -1,11 +1,10 @@
 package ro.sellfluence.test;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
 /**
- * Update emagTest from the latest backup dron from Ionut database.
+ * Update emagTest from the latest backup done from Ionut's database.
  */
 public class UpdateTestDB {
     static void main() throws Exception {
