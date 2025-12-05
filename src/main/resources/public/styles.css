@@ -31,6 +31,18 @@ body {
   color: var(--text);
 }
 
+label {
+  display:block;
+  font-weight: 600;
+  padding: .3rem;
+}
+
+input[type="text"] {
+  width:100%;
+  padding:0.4rem;
+  margin-bottom:0.7rem;
+}
+
 h1 {
   font-size: 1.2rem;
   margin: 0;
@@ -176,6 +188,14 @@ button {
   cursor: pointer;
 }
 
+#log {
+  margin-top:1rem;
+  padding:0.7rem;
+  background:#f3f3f3;
+  min-height:2rem;
+  white-space:pre-wrap;
+}
+
 button:hover {
   background: var(--surface-alt);
 }
@@ -205,11 +225,6 @@ button:hover {
   display: grid;
   gap: 1rem;
   max-width: 900px;
-}
-
-label {
-  font-weight: 600;
-  padding: .3rem;
 }
 
 select {

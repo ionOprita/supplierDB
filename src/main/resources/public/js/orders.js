@@ -4,7 +4,7 @@ initMatrixTable({
   tableId: 'ordersTable',
   theadId: 'ordersHead',
   tbodyId: 'ordersBody',
-  dataUrl: '/orderTable',
+  dataUrl: '/app/orderTable',
   detailsUrlBuilder: (pnk, month) => `/order-details.html?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
   detailsWindowName: 'orderDetails',
   csvButtonId: 'downloadCsvBtn',

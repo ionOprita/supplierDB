@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -70,7 +71,7 @@ import static ro.sellfluence.support.UsefulMethods.toTimestamp;
  * vendor details, GMV data, and other related database functionalities. This class ensures database
  * interaction is streamlined, encapsulated, and accessible through its defined public methods.
  *
- * <p>This module delegates all operations, which touch only a single table to the repective class
+ * <p>This module delegates all operations, which touch only a single table to the respective class
  * while it handles operations that need multiple tables itself.</p>
  */
 public class EmagMirrorDB {
@@ -169,11 +170,13 @@ public class EmagMirrorDB {
     public boolean isRunning(String name) throws SQLException {
         return database.readTX((Connection db) -> Task.isRunning(db, name));
     }
+
     public List<Task> getAllTasks() throws SQLException {
         return database.readTX(Task::getAllTasks);
     }
 
-    public record ReturnStornoOrderDetail(LocalDateTime time, String orderId, String vendor, String pnk, String name, int quantity) {
+    public record ReturnStornoOrderDetail(LocalDateTime time, String orderId, String vendor, String pnk, String name,
+                                          int quantity) {
     }
 
     /**
@@ -181,12 +184,12 @@ public class EmagMirrorDB {
      * The storno details include information about the storno date, associated order, vendor,
      * product, and quantity.
      *
-     * @param pnk the part number key (PNK) which uniquely identifies the product.
+     * @param pnk   the part number key (PNK) which uniquely identifies the product.
      * @param month the YearMonth object representing the month for which the storno details should be fetched.
      *              Details are retrieved for the entire month starting from the first day and ending before
      *              the first day of the next month.
      * @return a list of StronoInfo objects containing the storno details. Each entry in the list represents
-     *         a storno record with corresponding metadata.
+     * a storno record with corresponding metadata.
      * @throws SQLException if any database access error occurs while retrieving the storno details.
      */
     public List<ReturnStornoOrderDetail> getOrderDetails(String pnk, YearMonth month) throws SQLException {
@@ -228,12 +231,12 @@ public class EmagMirrorDB {
      * The storno details include information about the storno date, associated order, vendor,
      * product, and quantity.
      *
-     * @param pnk the part number key (PNK) which uniquely identifies the product.
+     * @param pnk   the part number key (PNK) which uniquely identifies the product.
      * @param month the YearMonth object representing the month for which the storno details should be fetched.
      *              Details are retrieved for the entire month starting from the first day and ending before
      *              the first day of the next month.
      * @return a list of StronoInfo objects containing the storno details. Each entry in the list represents
-     *         a storno record with corresponding metadata.
+     * a storno record with corresponding metadata.
      * @throws SQLException if any database access error occurs while retrieving the storno details.
      */
     public List<ReturnStornoOrderDetail> getStornoDetails(String pnk, YearMonth month) throws SQLException {
@@ -274,20 +277,20 @@ public class EmagMirrorDB {
         return database.readTX(db -> {
             var result = new ArrayList<ReturnStornoOrderDetail>();
             try (var s = db.prepareStatement("""
-                    SELECT r.date, r.order_id, v.vendor_name, pio.part_number_key, p.name, rp.quantity
-                    FROM rma_result AS r
-                    INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
-                    INNER JOIN (
-                        SELECT DISTINCT ON (id) id, surrogate_id, vendor_id
-                        FROM emag_order
-                        ORDER BY id, status DESC
-                    ) AS o ON r.order_id = o.id
-                    INNER JOIN vendor AS v ON v.id = o.vendor_id
-                    INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
-                    INNER JOIN product AS p ON pio.part_number_key = p.emag_pnk
-                    WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ? AND pio.part_number_key = ?
-                    ORDER BY r.date, r.order_id;
-            """)) {
+                            SELECT r.date, r.order_id, v.vendor_name, pio.part_number_key, p.name, rp.quantity
+                            FROM rma_result AS r
+                            INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                            INNER JOIN (
+                                SELECT DISTINCT ON (id) id, surrogate_id, vendor_id
+                                FROM emag_order
+                                ORDER BY id, status DESC
+                            ) AS o ON r.order_id = o.id
+                            INNER JOIN vendor AS v ON v.id = o.vendor_id
+                            INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                            INNER JOIN product AS p ON pio.part_number_key = p.emag_pnk
+                            WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ? AND pio.part_number_key = ?
+                            ORDER BY r.date, r.order_id;
+                    """)) {
                 s.setTimestamp(1, toTimestamp(month.atDay(1)));
                 s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1)));
                 s.setString(3, pnk);
@@ -410,7 +413,7 @@ public class EmagMirrorDB {
      * Retrieve GMVs for a particular month.
      *
      * @param month to retrieve.
-     * @return map with the product name as the key and the GMV as the value.
+     * @return map having the product name as the key and the GMV as the value.
      * @throws SQLException on database error.
      */
     public Map<String, BigDecimal> readGMVByMonth(YearMonth month) throws SQLException {
@@ -441,7 +444,7 @@ public class EmagMirrorDB {
 
     /**
      * Read database information and prepare them for inclusion in the spreadsheet.
-     * Only orders with status finalised or returned matching the year are provided.
+     * Only orders with status finalized or returned matching the year are provided.
      *
      * @param year Return only orders where the date has this as its year value.
      * @return list of rows containing a list of cell groups. Each cell group is a list of cells.
@@ -910,6 +913,50 @@ public class EmagMirrorDB {
 
     public Set<RegisteredCredential> lookupAll(ByteArray credentialId) throws SQLException {
         return database.readTX(db -> PassKey.lookupAll(db, credentialId));
+    }
+
+    public int insertCredential(long userId,
+                                ByteArray credentialId,
+                                ByteArray publicKeyCose,
+                                long signCount,
+                                String label) throws SQLException {
+        return database.writeTX(db -> PassKey.insertCredential(db, userId, credentialId, publicKeyCose, signCount, label));
+    }
+
+    public int updateSignCountAndLastUsed(ByteArray credentialId, long newSignCount) throws SQLException {
+        return database.writeTX(db -> PassKey.updateSignCountAndLastUsed(db, credentialId, newSignCount));
+    }
+
+    public Optional<String> findOptionsJson(long id, String flow) throws SQLException {
+        return database.readTX(db -> PassKey.findOptionsJson(db, id, flow));
+    }
+
+    public Optional<Long> findUserIdByUsername(String username) throws SQLException {
+        return database.readTX(db -> PassKey.findUserIdByUsername(db, username));
+    }
+
+    public Optional<Long> insertUser(String username) throws SQLException {
+        return database.writeTX(db -> PassKey.insertUser(db, username));
+    }
+
+    public long findUser(long challengeId) throws SQLException {
+        return database.readTX(db -> PassKey.findUser(db, challengeId));
+    }
+
+    public byte[] findUserHandleByUserID(long userID) throws SQLException {
+        return database.readTX(db -> PassKey.findUserHandleByUserID(db, userID));
+    }
+
+    public int markUsed(long id) throws SQLException {
+        return database.writeTX(db -> PassKey.markUsed(db, id));
+    }
+
+    public long insertAssertionRequest(Long userIdNullable, String rpId, String origin, String requestJson, Instant expiresAt) throws SQLException {
+        return database.writeTX(db -> PassKey.insertAssertionRequest(db, userIdNullable, rpId, origin, requestJson, expiresAt));
+    }
+
+    public long insertRegistrationOptions(long userId, String rpId, String origin, String optionsJson, Instant expiresAt) throws SQLException {
+        return database.writeTX(db -> PassKey.insertRegistrationOptions(db, userId, rpId, origin, optionsJson, expiresAt));
     }
 
     private @NonNull HashMap<LocalDate, Integer> countByDayForProduct(@NonNull final String productCode, @NonNull final String sql) throws SQLException {

@@ -1,16 +1,5 @@
 package ro.sellfluence.emagapi;
 
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationContext;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JsonDeserializer;
-import com.fasterxml.jackson.databind.JsonSerializer;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializerProvider;
-import com.fasterxml.jackson.databind.exc.MismatchedInputException;
-import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.TypeAdapter;
@@ -18,6 +7,17 @@ import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
 import ro.sellfluence.support.Logs;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.SerializationContext;
+import tools.jackson.databind.ValueDeserializer;
+import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.exc.MismatchedInputException;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.module.SimpleModule;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
@@ -117,47 +117,48 @@ public class EmagApi {
             })
             .create();
 
-    private final ObjectMapper objectMapper = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true)
-            .registerModule(new SimpleModule()
+    private final JsonMapper objectMapper = JsonMapper.builder()
+            .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .addModule(
+                    new SimpleModule()
                     .addSerializer(LocalDateTime.class, new LocalDateTimeSerializer())
                     .addDeserializer(LocalDateTime.class, new LocalDateTimeDeserializer())
                     .addSerializer(LocalDate.class, new LocalDateSerializer())
-                    .addDeserializer(LocalDate.class, new LocalDateDeserializer()));
-    //.registerModule(new JavaTimeModule());
+                    .addDeserializer(LocalDate.class, new LocalDateDeserializer())
+            ).build();
 
-    private static class LocalDateTimeSerializer extends JsonSerializer<LocalDateTime> {
+    private static class LocalDateTimeSerializer extends ValueSerializer<LocalDateTime> {
         private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
         @Override
-        public void serialize(LocalDateTime value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+        public void serialize(LocalDateTime value, JsonGenerator gen, SerializationContext serializers) {
             gen.writeString(formatter.format(value));
         }
     }
 
-    private static class LocalDateTimeDeserializer extends JsonDeserializer<LocalDateTime> {
+    private static class LocalDateTimeDeserializer extends ValueDeserializer<LocalDateTime> {
 
         @Override
-        public LocalDateTime deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
-            return toLocalDateTime(p.getText());
+        public LocalDateTime deserialize(JsonParser p, DeserializationContext ctxt) {
+            return toLocalDateTime(p.getString());
         }
     }
 
-    private static class LocalDateSerializer extends JsonSerializer<LocalDate> {
+    private static class LocalDateSerializer extends ValueSerializer<LocalDate> {
         private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
         @Override
-        public void serialize(LocalDate value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+        public void serialize(LocalDate value, JsonGenerator gen, SerializationContext serializers) {
             gen.writeString(formatter.format(value));
         }
     }
 
-    private static class LocalDateDeserializer extends JsonDeserializer<LocalDate> {
+    private static class LocalDateDeserializer extends ValueDeserializer<LocalDate> {
         private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
         @Override
-        public LocalDate deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
-            return LocalDate.parse(p.getText(), formatter);
+        public LocalDate deserialize(JsonParser p, DeserializationContext ctxt) {
+            return LocalDate.parse(p.getString(), formatter);
         }
     }
 

@@ -1,17 +1,23 @@
 package ro.sellfluence.app;
 
-import com.google.api.client.auth.oauth2.StoredCredential;
+import com.yubico.webauthn.AssertionRequest;
+import com.yubico.webauthn.AssertionResult;
+import com.yubico.webauthn.FinishAssertionOptions;
 import com.yubico.webauthn.FinishRegistrationOptions;
+import com.yubico.webauthn.RegistrationResult;
+import com.yubico.webauthn.StartAssertionOptions;
 import com.yubico.webauthn.StartRegistrationOptions;
 import com.yubico.webauthn.data.AuthenticatorSelectionCriteria;
-import com.yubico.webauthn.data.PublicKeyCredentialParameters;
+import com.yubico.webauthn.data.ByteArray;
+import com.yubico.webauthn.data.PublicKeyCredential;
+import com.yubico.webauthn.data.PublicKeyCredentialCreationOptions;
 import com.yubico.webauthn.data.ResidentKeyRequirement;
+import com.yubico.webauthn.data.UserIdentity;
 import com.yubico.webauthn.data.UserVerificationRequirement;
 import io.javalin.Javalin;
 import io.javalin.community.ssl.SslPlugin;
 import io.javalin.config.JavalinConfig;
 import io.javalin.validation.Validator;
-import org.eclipse.jetty.server.UserIdentity;
 import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
 import ro.sellfluence.api.WebAuthnServer;
@@ -19,6 +25,7 @@ import ro.sellfluence.apphelper.BackgroundJob;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -30,7 +37,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.List;
 
 import static java.util.logging.Level.INFO;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
@@ -40,18 +46,19 @@ import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
  * Server for the EmagMirror app.
  */
 public class Server {
-    private static final Path certsDir = Paths.get(System.getProperty("user.home")).resolve("Secrets/Certs");
+    private static final Path certsDir = Paths.get(System.getProperty("user.home")).resolve("Secrets").resolve("Certs");
+    private static final ObjectMapper mapper = (new ObjectMapper());
 
     private static void configure(JavalinConfig config, int port, int securePort) {
         SslPlugin sslPlugin = new SslPlugin(ssl -> {
             String password;
             try {
-                password = Files.readString(certsDir.resolve("localhost.pw")).trim();
+                password = Files.readString(Server.certsDir.resolve("localhost.pw")).trim();
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-            ssl.keystoreFromPath(certsDir.resolve("localhost.p12").toString(), password);
-            // You can adjust ports, whether to enable HTTP (insecure) etc:
+            ssl.keystoreFromPath(Server.certsDir.resolve("localhost.p12").toString(), password);
+            // You can adjust ports, whether to enable HTTP (insecure) etc.
             ssl.securePort = securePort;
             ssl.insecurePort = port;
             ssl.insecure = true;
@@ -77,9 +84,9 @@ public class Server {
         String configNamePort = "PORT";
         String configNameSecurePort = "PORT_SECURE";
         int port = Integer.parseInt(System.getProperty(configNamePort,
-                System.getenv().getOrDefault(configNamePort, arguments.getOption("port","8080"))));
+                System.getenv().getOrDefault(configNamePort, arguments.getOption("port", "8080"))));
         int securePort = Integer.parseInt(System.getProperty(configNamePort,
-                System.getenv().getOrDefault(configNameSecurePort, arguments.getOption("secport","8443"))));
+                System.getenv().getOrDefault(configNameSecurePort, arguments.getOption("secport", "8443"))));
 
         // Setup background job
         BackgroundJob backgroundJob = new BackgroundJob(mirrorDB);
@@ -210,53 +217,150 @@ public class Server {
         // Health check (handy)
         app.get("/health", ctx -> ctx.result("ok"));
 
-//        app.post("/webauthn/register/options", ctx -> {
-//            var user = loadUser(ctx); // your way to identify the account being registered
-//            var userIdentity = UserIdentity.builder()
-//                    .name(user.username())
-//                    .displayName(user.displayName())
-//                    .id(user.userHandle()) // stable opaque bytes
-//                    .build();
-//
-//            var pubKeyCredParams = List.of(
-//                    PublicKeyCredentialParameters.ES256, // add algorithms you want
-//                    PublicKeyCredentialParameters.RS256
-//            );
-//
-//            var options = rp.startRegistration(StartRegistrationOptions.builder()
-//                    .user(userIdentity)
-//                    .authenticatorSelection(AuthenticatorSelectionCriteria.builder()
-//                            .residentKey(ResidentKeyRequirement.REQUIRED)    // passkey UX
-//                            .userVerification(UserVerificationRequirement.REQUIRED)
-//                            .build())
-//                    .pubKeyCredParams(pubKeyCredParams)
-//                    .build());
-//
-//            saveExpectedChallenge(user.id(), options); // persist challenge to compare later
-//            ctx.json(options); // send to browser
-//        });
-//
-//        app.post("/webauthn/register/verify", ctx -> {
-//            var response = ctx.bodyAsClass(RegistrationResponse.class);
-//            var request = FinishRegistrationOptions.builder()
-//                    .requestId(loadExpectedChallenge(response.userId()))
-//                    .response(response.credential())
-//                    .build();
-//
-//            var regResult = rp.finishRegistration(request);
-//
-//            storeCredential(new StoredCredential(
-//                    regResult.getKeyId().getId(), response.userId(),
-//                    regResult.getPublicKeyCose(), regResult.getSignatureCount(),
-//                    regResult.getAttestationMetadata().map(Attestation::getAaguid).orElse(null)
-//            ));
-//
-//            ctx.status(204);
-//        });
+        app.post("/webauthn/register/options", ctx -> {
+            String username = ctx.queryParam("username");
+            if (!username.matches("\\w+")) {
+                ctx.status(400)
+                        .result("Invalid username. Use letters, numbers and underscores only.");
+                return;
+            }
+            long userId = mirrorDB.insertUser(username).orElse(-1L);
+            if (userId < 0) {
+                ctx.status(400)
+                        .result("User with this name %s already exists.".formatted(username));
+                return;
+            }
+            // Load user fields for UserIdentity
+            byte[] userHandle = mirrorDB.findUserHandleByUserID(userId);
+
+            var userIdentity = UserIdentity.builder()
+                    .name(username)
+                    .displayName(username)
+                    .id(new ByteArray(userHandle))
+                    .build();
+
+            var options = rp.startRegistration(StartRegistrationOptions.builder()
+                    .user(userIdentity)
+                    .authenticatorSelection(AuthenticatorSelectionCriteria.builder()
+                            .residentKey(ResidentKeyRequirement.REQUIRED)              // passkey UX
+                            .userVerification(UserVerificationRequirement.REQUIRED)   // biometrics/PIN
+                            .build())
+                    .build());
+
+            // Persist the whole options JSON (expires in 5 minutes)
+            String optionsJson = mapper.writeValueAsString(options);
+            long rowId = mirrorDB.insertRegistrationOptions(userId, rp.getIdentity().getId(), rp.getOrigins().stream().findFirst().get(),
+                    optionsJson, java.time.Instant.now().plusSeconds(300));
+            // (If you split insert+attach, call attachRegistrationOptionsJson here)
+
+            // Return JSON + a request id so we can look it up later
+            var resultJson = mapper.writeValueAsString(new java.util.HashMap<>() {{
+                put("requestId", rowId);
+                put("publicKey", options);
+            }});
+            ctx.result(resultJson);
+        });
+
+        app.post("/webauthn/register/verify", ctx -> {
+            long requestId = Long.parseLong(ctx.queryParam("requestId"));
+
+            // Load saved options JSON
+            String optionsJson = mirrorDB.findOptionsJson(requestId, "registration")
+                    .orElseThrow(() -> new IllegalStateException("Registration options not found/expired"));
+
+            // Parse browser JSON into Yubico PublicKeyCredential
+            String credentialJson = ctx.body(); // raw JSON from fetch()
+            var pkc = PublicKeyCredential.parseRegistrationResponseJson(credentialJson);
+
+            // Re-hydrate the original options
+            PublicKeyCredentialCreationOptions creationOptions =
+                    mapper.readValue(optionsJson, PublicKeyCredentialCreationOptions.class);
+
+            // Finish registration
+            RegistrationResult result = rp.finishRegistration(FinishRegistrationOptions.builder()
+                    .request(creationOptions)
+                    .response(pkc)
+                    .build());
+
+            // Persist credential
+            var credId = pkc.getId();                          // ByteArray
+            var pubKey = result.getPublicKeyCose();            // ByteArray
+            long signCount = result.getSignatureCount();
+
+            // We need the userId bound to this options row:
+            long userId = mirrorDB.findUser(requestId);
+
+            mirrorDB.insertCredential(userId, credId, pubKey, signCount, /*label*/ "Passkey");
+            mirrorDB.markUsed(requestId);
+
+            ctx.status(204);
+        });
+
+        app.post("/webauthn/authenticate/options", ctx -> {
+            String username = ctx.queryParam("username"); // optional
+            if (!username.matches("\\w+")) {
+                ctx.status(400)
+                        .result("Invalid username. Use letters, numbers and underscores only.");
+                return;
+            }
+            var b = StartAssertionOptions.builder()
+                    .userVerification(UserVerificationRequirement.REQUIRED);
+            b.username(username); // username-first
+            AssertionRequest request = rp.startAssertion(b.build());
+            String requestJson = mapper.writeValueAsString(request);
+            Long userId = mirrorDB.findUserIdByUsername(username).orElse(null);
+            if (userId == null) {
+                ctx.status(400)
+                        .result("User %s not found.".formatted(username));
+                return;
+            }
+            long rowId = mirrorDB.insertAssertionRequest(userId, rp.getIdentity().getId(), rp.getOrigins().stream().findFirst().get(),
+                    requestJson, java.time.Instant.now().plusSeconds(300));
+            var resultJson = mapper.writeValueAsString(new java.util.HashMap<>() {{
+                put("requestId", rowId);
+                put("publicKey", request.getPublicKeyCredentialRequestOptions());
+            }});
+            ctx.result(resultJson);
+        });
+
+        app.post("/webauthn/authenticate/verify", ctx -> {
+            long requestId = Long.parseLong(ctx.queryParam("requestId"));
+
+            String requestJson = mirrorDB.findOptionsJson(requestId, "authentication")
+                    .orElseThrow(() -> new IllegalStateException("Assertion request not found/expired"));
+
+            String assertionJson = ctx.body();
+
+            // Parse browser JSON to Yubico credential
+            var pkc = PublicKeyCredential.parseAssertionResponseJson(assertionJson);
+
+            AssertionRequest assertionRequest =
+                    mapper.readValue(requestJson, AssertionRequest.class);
+
+            AssertionResult result = rp.finishAssertion(FinishAssertionOptions.builder()
+                    .request(assertionRequest)
+                    .response(pkc)
+                    .build());
+
+            if (!result.isSuccess()) {
+                ctx.status(401);
+                return;
+            }
+
+            // Update signCount and last_used_at
+            mirrorDB.updateSignCountAndLastUsed(result.getCredential().getCredentialId(), result.getSignatureCount());
+            mirrorDB.markUsed(requestId);
+
+            // Start session/JWT
+            var session = ctx.req().getSession(true);
+            session.setAttribute("uid", result.getCredential().getUserHandle().getBytes()); // or store your app user id
+
+            ctx.status(204);
+        });
 
         // Missing authenticate/options and /authenticate/verify
 
-        app.before("/app/*", ctx -> {
+        app.before("/appXXX/*", ctx -> {
             var session = ctx.req().getSession(false);
             if (session == null || session.getAttribute("uid") == null) {
                 ctx.redirect("/login");
@@ -281,11 +385,12 @@ public class Server {
         }));
     }
 
+
     /**
      * Schedule the job immediately and then every minute.
      *
      * @param scheduler provided.
-     * @param job to run.
+     * @param job       to run.
      */
     private static void scheduleWithRestart(ScheduledExecutorService scheduler, BackgroundJob job) {
         scheduler.schedule(() -> {
@@ -301,7 +406,6 @@ public class Server {
 }
 
 /*
-                                                       -- Auto-clean job is a good idea:
-                                                       -- delete from webauthn_challenge where (is_used or now() > expires_at);
-
+   -- Auto-clean job is a good idea:
+   -- delete from webauthn_challenge where (is_used or now() > expires_at);
  */

@@ -1,6 +1,7 @@
 package ro.sellfluence.emagapi;
 
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -24,7 +25,7 @@ public record RMAResult(
         String pickup_city,
         String pickup_address,
         String pickup_zipcode,
-        int pickup_locality_id,
+        Integer pickup_locality_id,
         int pickup_method,
         String customer_account_iban,
         String customer_account_bank,
