@@ -907,6 +907,10 @@ public class EmagMirrorDB {
         return database.readTX(db -> PassKey.getUsernameForUserHandle(db, userHandle));
     }
 
+    public Optional<PassKey.User> getUserForUserHandle(ByteArray userHandle) throws SQLException {
+        return database.readTX(db -> PassKey.getUserForUserHandle(db, userHandle));
+    }
+
     public Optional<RegisteredCredential> lookup(ByteArray credentialId, ByteArray userHandle) throws SQLException {
         return database.readTX(db -> PassKey.lookup(db, credentialId, userHandle));
     }
