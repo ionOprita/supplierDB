@@ -4,5 +4,5 @@ initTaskTable({
   tableId: 'tasksTable',
   theadId: 'tasksHead',
   tbodyId: 'tasksBody',
-  dataUrl: '/tasks'
+  dataUrl: '/app/tasks'
 });

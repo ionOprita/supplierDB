@@ -6,13 +6,12 @@ import com.yubico.webauthn.data.ByteArray;
 import com.yubico.webauthn.data.PublicKeyCredentialDescriptor;
 import ro.sellfluence.db.EmagMirrorDB;
 
-import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Optional;
 import java.util.Set;
 
 public class MyCredentialRepo implements CredentialRepository {
-    private EmagMirrorDB mirrorDB;
+    private final EmagMirrorDB mirrorDB;
 
     public MyCredentialRepo(EmagMirrorDB mirrorDB) {
         this.mirrorDB = mirrorDB;
@@ -38,16 +37,28 @@ public class MyCredentialRepo implements CredentialRepository {
 
     @Override
     public Optional<String> getUsernameForUserHandle(ByteArray userHandle) {
-        return Optional.empty();
+        try {
+            return mirrorDB.getUsernameForUserHandle(userHandle);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
     public Optional<RegisteredCredential> lookup(ByteArray credentialId, ByteArray userHandle) {
-        return Optional.empty();
+        try {
+            return mirrorDB.lookup(credentialId, userHandle);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
     public Set<RegisteredCredential> lookupAll(ByteArray credentialId) {
-        return Set.of();
+        try {
+            return mirrorDB.lookupAll(credentialId);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

@@ -7,7 +7,7 @@ import static ro.sellfluence.db.versions.EmagMirrorDBVersion1.executeStatement;
 
 class EmagMirrorDBVersion30 {
     /**
-     * Create tables for passkey authentication.
+     * Create tables for the passkey authentication.
      *
      * @param db database connection to use.
      * @throws SQLException all errors are passed back to the caller.
@@ -16,7 +16,6 @@ class EmagMirrorDBVersion30 {
         userTable(db);
         credentialsTable(db);
         challengeTable(db);
-        roleTable(db);
     }
 
     private static void userTable(Connection db) throws SQLException {
@@ -24,12 +23,12 @@ class EmagMirrorDBVersion30 {
                 create table app_user (
                   id                 bigserial primary key,
                   username           varchar(255) not null unique,
-                  display_name       varchar(255) not null,
                   -- WebAuthn requires a stable, opaque user handle (byte array).
                   -- Keep it unique and never change it.
                   user_handle        bytea not null unique,
                   created_at         timestamptz not null default now(),
-                  updated_at         timestamptz not null default now()
+                  updated_at         timestamptz not null default now(),
+                  role text check (role in ('user', 'admin')) -- NULL means unauthorized.
                 );
                 """);
         executeStatement(db, """
@@ -87,16 +86,17 @@ class EmagMirrorDBVersion30 {
                 create type webauthn_flow as enum ('registration', 'authentication');
                 """);
         executeStatement(db, """
-                create table if not exists webauthn_challenge (
+                create table webauthn_challenge (
                     id            bigserial primary key,
                     flow          webauthn_flow not null,
                     user_id       bigint references app_user(id) on delete cascade,
-                    -- The exact challenge bytes you sent to the browser.
-                    challenge     bytea not null,
                 
                     -- Origin/RP checks (optional; handy for auditing multi-env dev)
                     rp_id         varchar(255) not null,
                     origin        varchar(1024) not null,
+                
+                    -- The challenge plus other stuff.
+                    options_json jsonb,
                 
                     -- Validity window
                     created_at    timestamptz not null default now(),
@@ -108,29 +108,10 @@ class EmagMirrorDBVersion30 {
                     );
                 """);
         executeStatement(db, """
-                create index if not exists idx_webauthn_challenge_user on webauthn_challenge(user_id);
+                create index idx_webauthn_challenge_user on webauthn_challenge(user_id);
                 """);
         executeStatement(db, """
-                create index if not exists idx_webauthn_challenge_expires on webauthn_challenge(expires_at);
+                create index idx_webauthn_challenge_expires on webauthn_challenge(expires_at);
                 """);
     }
-
-    private static void roleTable(Connection db) throws SQLException {
-        executeStatement(db, """
-                create table role (
-                  id                 bigserial primary key,
-                  rolename           varchar(255) not null unique
-                );
-                """);
-        executeStatement(db, """
-                insert into role (rolename) values ('unauthorized'), ('admin');
-                """);
-        executeStatement(db, """
-                create table user_role (
-                  user_id  bigint references app_user(id) on delete cascade,
-                  role_id  bigint references role(id) on delete cascade
-                );
-                """);
-    }
-
 }

@@ -340,7 +340,7 @@ public class RMA {
             s.setString(13, rmaResult.pickup_city());
             s.setString(14, rmaResult.pickup_address());
             s.setString(15, rmaResult.pickup_zipcode());
-            s.setInt(16, rmaResult.pickup_locality_id());
+            s.setObject(16, rmaResult.pickup_locality_id());
             s.setInt(17, rmaResult.pickup_method());
             s.setString(18, rmaResult.customer_account_iban());
             s.setString(19, rmaResult.customer_account_bank());
@@ -435,7 +435,7 @@ public class RMA {
             s.setString(12, rmaResult.pickup_city());
             s.setString(13, rmaResult.pickup_address());
             s.setString(14, rmaResult.pickup_zipcode());
-            s.setInt(15, rmaResult.pickup_locality_id());
+            s.setObject(15, rmaResult.pickup_locality_id());
             s.setInt(16, rmaResult.pickup_method());
             s.setString(17, rmaResult.customer_account_iban());
             s.setString(18, rmaResult.customer_account_bank());

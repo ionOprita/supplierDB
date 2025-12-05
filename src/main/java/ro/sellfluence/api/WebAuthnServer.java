@@ -15,7 +15,7 @@ public final class WebAuthnServer {
                         .build())
                 .credentialRepository(repo)
                 .origins(Set.of(env.origin)) // "https://localhost:8443" OR your tunnel/prod origin
-                .allowUntrustedAttestation(false)
+                .allowUntrustedAttestation(true)
                 .build();
     }
 }
