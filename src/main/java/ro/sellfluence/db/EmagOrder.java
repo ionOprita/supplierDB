@@ -193,7 +193,7 @@ public class EmagOrder {
             s.setBigDecimal(15, or.cashed_cod());
             s.setBigDecimal(16, or.shipping_tax());
             s.setObject(17, or.customer() != null ? or.customer().id() : null);
-            s.setBoolean(18, or.is_storno());
+            s.setBoolean(18, Boolean.TRUE.equals(or.is_storno()));
             s.setObject(19, or.reason_cancellation() == null ? null : or.reason_cancellation().id());
             s.setBigDecimal(20, or.refunded_amount());
             s.setString(21, or.refund_status());
@@ -533,7 +533,7 @@ public class EmagOrder {
                     productsBySurrogate
                             .computeIfAbsent(
                                     rs.getInt("emag_order_surrogate_id"),
-                                    k -> new ArrayList<>()
+                                    _ -> new ArrayList<>()
                             )
                             .add(product);
 
@@ -598,7 +598,7 @@ public class EmagOrder {
                     orders
                             .computeIfAbsent(
                                     order.id(),
-                                    k -> new ArrayList<>()
+                                    _ -> new ArrayList<>()
                             )
                             .add(new ExtendedOrder(order, vendorId, surrogateId));
                 }
@@ -788,7 +788,7 @@ public class EmagOrder {
     }
 
     /**
-     * Update order products, flags, attachments and vouchers.
+     * Update order products, flags, attachments, and vouchers.
      *
      * @param db database connection.
      * @param order order with the up-to-date values.
@@ -832,7 +832,7 @@ public class EmagOrder {
     }
 
     private static int insertEnforcedVendorCourierAccount(Connection db, String enforcedVendorCourierAccount, int surrogateId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO enforced_vendor_courier_account (emag_order_surrogate_id, courier) VALUES (?, ?) ON CONFLICT(emag_order_surrogate_id, courier)")) {
+        try (var s = db.prepareStatement("INSERT INTO enforced_vendor_courier_account (emag_order_surrogate_id, courier) VALUES (?, ?) ON CONFLICT(emag_order_surrogate_id, courier) DO NOTHING")) {
             s.setInt(1, surrogateId);
             s.setString(2, enforcedVendorCourierAccount);
             return s.executeUpdate();

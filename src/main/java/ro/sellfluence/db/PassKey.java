@@ -4,6 +4,7 @@ import com.yubico.webauthn.RegisteredCredential;
 import com.yubico.webauthn.data.ByteArray;
 import com.yubico.webauthn.data.PublicKeyCredentialDescriptor;
 
+import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.HashSet;
@@ -11,6 +12,9 @@ import java.util.Optional;
 import java.util.Set;
 
 public class PassKey {
+
+    private static final SecureRandom random = new SecureRandom();
+
     /**
      * Return credential descriptors for the given username (used to build allowCredentials).
      */
@@ -164,7 +168,7 @@ public class PassKey {
 
     /* ---------- Convenience write helpers (optional but handy) ---------- */
 
-    public static void insertCredential(
+    public static int insertCredential(
             Connection db,
             long userId,
             ByteArray credentialId,
@@ -185,13 +189,13 @@ public class PassKey {
             ps.setBytes(3, publicKeyCose.getBytes());
             ps.setLong(4, signCount);
             ps.setString(5, label);
-            ps.executeUpdate();
+            return ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("DB error in insertCredential", e);
         }
     }
 
-    public static void updateSignCountAndLastUsed(Connection db, ByteArray credentialId, long newSignCount) {
+    public static int updateSignCountAndLastUsed(Connection db, ByteArray credentialId, long newSignCount) {
         final String sql =
                 """
                         update webauthn_credential
@@ -201,23 +205,122 @@ public class PassKey {
         try (var ps = db.prepareStatement(sql)) {
             ps.setLong(1, newSignCount);
             ps.setBytes(2, credentialId.getBytes());
-            ps.executeUpdate();
+            return ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("DB error in updateSignCountAndLastUsed", e);
         }
     }
 
-    public static Optional<Long> findUserIdByUsername(Connection db, String username) {
-        final String sql = "select id from app_user where username = ?";
+    public static Optional<Long> insertUser(Connection db, String username) {
+        byte[] userHandle = new byte[32];
+        random.nextBytes(userHandle);
+        String sql = """
+            insert into app_user (username, user_handle)
+            values (?, ?)
+            returning id
+            """;
         try (var ps = db.prepareStatement(sql)) {
             ps.setString(1, username);
+            ps.setBytes(2, userHandle);
             try (var rs = ps.executeQuery()) {
+                rs.next();
+                return Optional.of(rs.getLong(1));
+            }
+        } catch (SQLException e) {
+            return Optional.empty();
+        }
+    }
+
+    public static Optional<Long> findUserIdByUsername(Connection db, String username) {
+        try (var s = db.prepareStatement("select id from app_user where username = ?")) {
+            s.setString(1, username);
+            try (var rs = s.executeQuery()) {
                 if (rs.next()) return Optional.of(rs.getLong("id"));
             }
         } catch (SQLException e) {
             throw new RuntimeException("DB error in findUserIdByUsername", e);
         }
         return Optional.empty();
+    }
+    public static byte[] findUserHandleByUserID(Connection db, long userID) {
+        final String sql = "select user_handle from app_user where id = ?";
+        byte[] handle;
+        try (var ps = db.prepareStatement(sql)) {
+            ps.setLong(1, userID);
+            try (var rs = ps.executeQuery()) {
+                if (rs.next()) handle = rs.getBytes(1); else throw new RuntimeException("No user found for id " + userID);
+                if (rs.next()) throw new RuntimeException("Found multiple handles for id " + userID);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("DB error in findUserIdByUsername", e);
+        }
+        return handle;
+    }
+
+    // Save registration options JSON
+    public static long insertRegistrationOptions(Connection db, long userId, String rpId, String origin, String optionsJson, java.time.Instant expiresAt) throws SQLException {
+        String sql = """
+      insert into webauthn_challenge(flow, user_id, rp_id, origin, options_json, created_at, expires_at, is_used)
+      values ('registration', ?, ?, ?, ?::jsonb, now(), ?, false)
+      returning id
+      """;
+        try (var ps = db.prepareStatement(sql)) {
+            ps.setLong(1, userId);
+            ps.setString(2, rpId);
+            ps.setString(3, origin);
+            ps.setString(4, optionsJson);
+            ps.setObject(5, java.sql.Timestamp.from(expiresAt));
+            try (var rs = ps.executeQuery()) { rs.next(); return rs.getLong(1); }
+        }
+    }
+
+    public static Optional<String> findOptionsJson(Connection db, long id, String flow) throws SQLException {
+        String sql = "select options_json from webauthn_challenge where id = ? and flow = ?::webauthn_flow and is_used = false and now() < expires_at";
+        try (var ps = db.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            ps.setString(2, flow);
+            try (var rs = ps.executeQuery()) {
+                if (rs.next()) return Optional.ofNullable(rs.getString(1));
+            }
+        }
+        return Optional.empty();
+    }
+
+    public static long findUser(Connection db, long id) throws SQLException {
+        String sql = "select user_id from webauthn_challenge where id = ?";
+        var userId = -1L;
+        try (var ps = db.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            try (var rs = ps.executeQuery()) {
+                if (rs.next()) userId = rs.getLong(1); else throw new RuntimeException("No user found for challenge id " + id);
+                if (rs.next()) throw new RuntimeException("Found multiple users for challenge id " + id);
+            }
+        }
+        return userId;
+    }
+
+    public static int markUsed(Connection db, long id) throws SQLException {
+        try (var ps = db.prepareStatement("update webauthn_challenge set is_used = true, used_at = now() where id = ?")) {
+            ps.setLong(1, id);
+            return ps.executeUpdate();
+        }
+    }
+
+    // Same pattern for assertion requests:
+    public static long insertAssertionRequest(Connection db, Long userIdNullable, String rpId, String origin, String requestJson, java.time.Instant expiresAt) throws SQLException {
+        String sql = """
+      insert into webauthn_challenge(flow, user_id, rp_id, origin, created_at, expires_at, is_used, options_json)
+      values ('authentication', ?, ?, ?, now(), ?, false, ?::jsonb)
+      returning id
+      """;
+        try (var ps = db.prepareStatement(sql)) {
+            if (userIdNullable == null) ps.setNull(1, java.sql.Types.BIGINT); else ps.setLong(1, userIdNullable);
+            ps.setString(2, rpId);
+            ps.setString(3, origin);
+            ps.setObject(4, java.sql.Timestamp.from(expiresAt));
+            ps.setString(5, requestJson);
+            try (var rs = ps.executeQuery()) { rs.next(); return rs.getLong(1); }
+        }
     }
 
 }
