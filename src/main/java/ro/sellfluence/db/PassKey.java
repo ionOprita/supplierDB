@@ -15,6 +15,21 @@ public class PassKey {
 
     private static final SecureRandom random = new SecureRandom();
 
+    public enum Role {
+        nobody, user, admin;
+
+        static Role fromString(String r) {
+            return switch (r) {
+                case "user" -> user;
+                case "admin" -> admin;
+                case null, default -> nobody;
+            };
+        }
+    }
+
+    public record User(String username, Role role) {
+    }
+
     /**
      * Return credential descriptors for the given username (used to build allowCredentials).
      */
@@ -81,6 +96,30 @@ public class PassKey {
             try (var rs = ps.executeQuery()) {
                 if (rs.next()) {
                     return Optional.of(rs.getString("username"));
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("DB error in getUsernameForUserHandle", e);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Map userHandle -> username.
+     */
+    public static Optional<User> getUserForUserHandle(Connection db, ByteArray userHandle) {
+        final String sql =
+                "select username, role from app_user where user_handle = ?";
+
+        try (var ps = db.prepareStatement(sql)) {
+            ps.setBytes(1, userHandle.getBytes());
+            try (var rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return Optional.of(new User(
+                                    rs.getString("username"),
+                                    Role.fromString(rs.getString("role"))
+                            )
+                    );
                 }
             }
         } catch (SQLException e) {
@@ -215,10 +254,10 @@ public class PassKey {
         byte[] userHandle = new byte[32];
         random.nextBytes(userHandle);
         String sql = """
-            insert into app_user (username, user_handle)
-            values (?, ?)
-            returning id
-            """;
+                insert into app_user (username, user_handle)
+                values (?, ?)
+                returning id
+                """;
         try (var ps = db.prepareStatement(sql)) {
             ps.setString(1, username);
             ps.setBytes(2, userHandle);
@@ -242,13 +281,15 @@ public class PassKey {
         }
         return Optional.empty();
     }
+
     public static byte[] findUserHandleByUserID(Connection db, long userID) {
         final String sql = "select user_handle from app_user where id = ?";
         byte[] handle;
         try (var ps = db.prepareStatement(sql)) {
             ps.setLong(1, userID);
             try (var rs = ps.executeQuery()) {
-                if (rs.next()) handle = rs.getBytes(1); else throw new RuntimeException("No user found for id " + userID);
+                if (rs.next()) handle = rs.getBytes(1);
+                else throw new RuntimeException("No user found for id " + userID);
                 if (rs.next()) throw new RuntimeException("Found multiple handles for id " + userID);
             }
         } catch (SQLException e) {
@@ -260,17 +301,20 @@ public class PassKey {
     // Save registration options JSON
     public static long insertRegistrationOptions(Connection db, long userId, String rpId, String origin, String optionsJson, java.time.Instant expiresAt) throws SQLException {
         String sql = """
-      insert into webauthn_challenge(flow, user_id, rp_id, origin, options_json, created_at, expires_at, is_used)
-      values ('registration', ?, ?, ?, ?::jsonb, now(), ?, false)
-      returning id
-      """;
+                insert into webauthn_challenge(flow, user_id, rp_id, origin, options_json, created_at, expires_at, is_used)
+                values ('registration', ?, ?, ?, ?::jsonb, now(), ?, false)
+                returning id
+                """;
         try (var ps = db.prepareStatement(sql)) {
             ps.setLong(1, userId);
             ps.setString(2, rpId);
             ps.setString(3, origin);
             ps.setString(4, optionsJson);
             ps.setObject(5, java.sql.Timestamp.from(expiresAt));
-            try (var rs = ps.executeQuery()) { rs.next(); return rs.getLong(1); }
+            try (var rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
+            }
         }
     }
 
@@ -292,7 +336,8 @@ public class PassKey {
         try (var ps = db.prepareStatement(sql)) {
             ps.setLong(1, id);
             try (var rs = ps.executeQuery()) {
-                if (rs.next()) userId = rs.getLong(1); else throw new RuntimeException("No user found for challenge id " + id);
+                if (rs.next()) userId = rs.getLong(1);
+                else throw new RuntimeException("No user found for challenge id " + id);
                 if (rs.next()) throw new RuntimeException("Found multiple users for challenge id " + id);
             }
         }
@@ -309,17 +354,21 @@ public class PassKey {
     // Same pattern for assertion requests:
     public static long insertAssertionRequest(Connection db, Long userIdNullable, String rpId, String origin, String requestJson, java.time.Instant expiresAt) throws SQLException {
         String sql = """
-      insert into webauthn_challenge(flow, user_id, rp_id, origin, created_at, expires_at, is_used, options_json)
-      values ('authentication', ?, ?, ?, now(), ?, false, ?::jsonb)
-      returning id
-      """;
+                insert into webauthn_challenge(flow, user_id, rp_id, origin, created_at, expires_at, is_used, options_json)
+                values ('authentication', ?, ?, ?, now(), ?, false, ?::jsonb)
+                returning id
+                """;
         try (var ps = db.prepareStatement(sql)) {
-            if (userIdNullable == null) ps.setNull(1, java.sql.Types.BIGINT); else ps.setLong(1, userIdNullable);
+            if (userIdNullable == null) ps.setNull(1, java.sql.Types.BIGINT);
+            else ps.setLong(1, userIdNullable);
             ps.setString(2, rpId);
             ps.setString(3, origin);
             ps.setObject(4, java.sql.Timestamp.from(expiresAt));
             ps.setString(5, requestJson);
-            try (var rs = ps.executeQuery()) { rs.next(); return rs.getLong(1); }
+            try (var rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
+            }
         }
     }
 
