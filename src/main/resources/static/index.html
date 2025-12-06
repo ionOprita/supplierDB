@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Login</title>
+    <link rel="stylesheet" href="styles.css"/>
+    <script src="js/passkey.js"></script>
+</head>
+<body>
+<h1>Sellfusion login</h1>
+
+<label for="username">Enter your username to sign in</label>
+<input id="username" type="text" autocomplete="username" placeholder="alice" onkeydown="if (event.key === 'Enter') loginWithPasskey()">
+
+<p>If you do not have an account yet, please <a href="register.html">register here</a>.</p>
+
+<div id="log"></div>
+
+</body>
+</html>

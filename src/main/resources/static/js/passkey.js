@@ -121,7 +121,7 @@
     // --- Registration flow -----------------------------------------------------
 
     async function registerPasskey() {
-      const username = document.getElementById('username').value.trim();
+      const username = document.getElementById('newname').value.trim();
       if (!username) {
         log('Please enter a username to register.');
         return;
@@ -160,6 +160,7 @@
 
         if (verifyResp.ok) {
           log('Passkey registered successfully ✔ You can now sign in with it.');
+          window.setTimeout(function(){window.location.href = "/";},3000);
         } else {
           log(`Registration verification failed: ${verifyResp.status}`);
         }
@@ -212,9 +213,8 @@
         });
 
         if (verifyResp.ok) {
-          log('Signed in ✔ You should now have a session on the server.');
-          // Optionally redirect:
-          // window.location.href = '/app/';
+          //log('Signed in ✔ You should now have a session on the server.');
+          window.location.href = '/private/overview';
         } else {
           log(`Authentication verification failed: ${verifyResp.status}`);
         }

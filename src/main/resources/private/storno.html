@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Returns Table</title>
-  <link rel="stylesheet" href="styles.css"/>
-  <script type="module" src="./js/returns.js"></script>
+  <title>Storno Table</title>
+  <link rel="stylesheet" href="../static/styles.css"/>
+  <script type="module" src="../static/js/storno.js"></script>
 </head>
 <body>
-<h1>Returns counts per month</h1>
+<h1>Storno counts per month</h1>
 <div class="page-actions">
   <label for="vendorFilterSelect">Vendor:</label>
   <select id="vendorFilterSelect" class="vendor-filter-select">
@@ -26,9 +26,9 @@
   <button id="downloadCsvBtn" type="button">Download CSV</button>
 </div>
 <div class="wrap">
-  <table id="returnsTable">
-    <thead id="returnsHead"></thead>
-    <tbody id="returnsBody"></tbody>
+  <table id="stornoTable">
+    <thead id="stornoHead"></thead>
+    <tbody id="stornoBody"></tbody>
   </table>
 </div>
 </body>
