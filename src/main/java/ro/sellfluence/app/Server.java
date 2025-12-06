@@ -17,12 +17,16 @@ import com.yubico.webauthn.data.UserVerificationRequirement;
 import io.javalin.Javalin;
 import io.javalin.community.ssl.SslPlugin;
 import io.javalin.config.JavalinConfig;
+import io.javalin.http.Context;
+import io.javalin.rendering.template.JavalinJte;
 import io.javalin.validation.Validator;
 import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
 import ro.sellfluence.api.WebAuthnServer;
 import ro.sellfluence.apphelper.BackgroundJob;
 import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.db.PassKey;
+import ro.sellfluence.db.PassKey.User;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 import tools.jackson.databind.ObjectMapper;
@@ -32,15 +36,22 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.YearMonth;
+import java.util.Arrays;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
+import static io.javalin.http.HttpStatus.FORBIDDEN;
 import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.SEVERE;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
+import static ro.sellfluence.db.PassKey.Role.admin;
+import static ro.sellfluence.db.PassKey.Role.nobody;
+import static ro.sellfluence.db.PassKey.Role.user;
 
 /**
  * Server for the EmagMirror app.
@@ -66,10 +77,10 @@ public class Server {
         });
         config.registerPlugin(sslPlugin);
         config.bundledPlugins.enableDevLogging();
+        config.fileRenderer(new JavalinJte(createJteEngine()));
         config.http.defaultContentType = "application/json";
-        config.staticFiles.add("/public");
+        config.staticFiles.add("/static");
         config.validation.register(YearMonth.class, YearMonth::parse);
-
     }
 
     private static final Logger logger = Logs.getFileLogger("Server", INFO, 10, 1_000_000);
@@ -99,7 +110,7 @@ public class Server {
         var rp = WebAuthnServer.create(new MyCredentialRepo(mirrorDB));
 
         // Schedule the job with auto-restart on failure
-        scheduleWithRestart(scheduler, backgroundJob);
+        //scheduleWithRestart(scheduler, backgroundJob);
 
         var app = Javalin.create(config -> configure(config, port, securePort));
 
@@ -219,11 +230,12 @@ public class Server {
 
         app.post("/webauthn/register/options", ctx -> {
             String username = ctx.queryParam("username");
-            if (!username.matches("\\w+")) {
+            if (username==null || !username.matches("\\w+")) {
                 ctx.status(400)
                         .result("Invalid username. Use letters, numbers and underscores only.");
                 return;
             }
+            username = username.toLowerCase();
             long userId = mirrorDB.insertUser(username).orElse(-1L);
             if (userId < 0) {
                 ctx.status(400)
@@ -298,11 +310,12 @@ public class Server {
 
         app.post("/webauthn/authenticate/options", ctx -> {
             String username = ctx.queryParam("username"); // optional
-            if (!username.matches("\\w+")) {
+            if (username == null || !username.matches("\\w+")) {
                 ctx.status(400)
                         .result("Invalid username. Use letters, numbers and underscores only.");
                 return;
             }
+            username = username.toLowerCase();
             var b = StartAssertionOptions.builder()
                     .userVerification(UserVerificationRequirement.REQUIRED);
             b.username(username); // username-first
@@ -353,19 +366,42 @@ public class Server {
 
             // Start session/JWT
             var session = ctx.req().getSession(true);
-            session.setAttribute("uid", result.getCredential().getUserHandle().getBytes()); // or store your app user id
-
-            ctx.status(204);
+            var uid = result.getCredential().getUserHandle();
+            if (uid.isEmpty()) {
+                ctx.redirect("/");
+            }
+            var userOpt = mirrorDB.getUserForUserHandle(uid);
+            if (userOpt.isEmpty()) {
+                ctx.redirect("/");
+            } else {
+                session.setAttribute("uid", uid); // or store your app user id
+                session.setAttribute("user", userOpt.get());
+                ctx.status(204);
+            }
         });
+
+        app.post("/logout", ctx -> {
+            ctx.req().getSession().invalidate();
+            ctx.redirect("/");
+        });
+
+        app.get("/private/{page}", ctx -> renderPage(ctx, ctx.pathParam("page")));
+
+        app.get("/admin/{page}", ctx -> renderPage(ctx, ctx.pathParam("page")));
+
+        app.get("/welcome.html", ctx -> renderPage(ctx, "welcome"));
 
         // Missing authenticate/options and /authenticate/verify
 
-        app.before("/appXXX/*", ctx -> {
-            var session = ctx.req().getSession(false);
-            if (session == null || session.getAttribute("uid") == null) {
-                ctx.redirect("/login");
-            }
-        });
+        app.before("/admin/*", ctx -> checkRole(ctx, admin));
+
+        app.before("/app/*", ctx -> checkRole(ctx, user));
+
+        app.before("/private/*", ctx -> checkRole(ctx, user));
+
+        app.before("/public/*", ctx -> checkRole(ctx, nobody));
+
+        app.before("/static/*", ctx -> checkRole(ctx, null));
 
         app.start();
 
@@ -385,6 +421,49 @@ public class Server {
         }));
     }
 
+    private static void renderPage(Context ctx, String page) {
+        if (!page.matches("[a-zA-Z0-9_-]+")) {
+            ctx.status(400).result("Invalid page name");
+            return;
+        }
+        Object userAttribute = ctx.sessionAttribute("user");
+        if (userAttribute instanceof User(String username, PassKey.Role role)) {
+            ctx.render(page + ".jte", Map.of(
+                    "userName", username,
+                    "userRole", role.name(),
+                    "pageTitle", toPageTitle(page)
+            ));
+        }
+    }
+
+    private static String toPageTitle(String page) {
+        var words = page.split("-");
+        return Arrays.stream(words)
+                .map(String::trim)
+                .map(word -> word.substring(0, 1).toUpperCase() + word.substring(1))
+                .collect(Collectors.joining(" "));
+    }
+
+    private static void checkRole(Context ctx, PassKey.Role minimalRole) {
+        var session = ctx.req().getSession(false);
+        if (minimalRole != null) {  // No checks if no role is required.
+            if (session == null) {
+                ctx.redirect("/");
+            } else if (session.getAttribute("user") instanceof User(String username, PassKey.Role role)) {
+                if (role == nobody) {
+                    ctx.redirect("/welcome.html");
+                } else if (role.ordinal() < minimalRole.ordinal()) {
+                    ctx.status(FORBIDDEN);
+                } else {
+                    logger.log(INFO, "User = " + username);
+                }
+            }
+        }
+    }
+
+    private static gg.jte.TemplateEngine createJteEngine() {
+        return gg.jte.TemplateEngine.create(new gg.jte.resolve.DirectoryCodeResolver(Paths.get("src/main/jte")), gg.jte.ContentType.Html);
+    }
 
     /**
      * Schedule the job immediately and then every minute.
@@ -397,7 +476,7 @@ public class Server {
             try {
                 job.performWork();
             } catch (Exception e) {
-                logger.log(Level.SEVERE, "BackgroundJob failed.", e);
+                logger.log(SEVERE, "BackgroundJob failed.", e);
             }
             // Schedule the next run in a minute.
             scheduler.schedule(() -> scheduleWithRestart(scheduler, job), 1, TimeUnit.MINUTES);

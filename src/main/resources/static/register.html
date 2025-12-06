@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Login</title>
+    <link rel="stylesheet" href="styles.css"/>
+    <script src="js/passkey.js"></script>
+</head>
+<body>
+<h1>Registration page</h1>
+
+<label for="newname">Please enter your desired user name</label>
+<input id="newname" type="text" autocomplete="username" placeholder="alice" onkeydown="if (event.key === 'Enter') registerPasskey()">
+<p>The username may contain only letters ('a'-'z'), digits ('0'-'9') and the underscore '_' character.</p>
+
+<div id="log"></div>
+
+</body>
+</html>

@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Storno Details</title>
-  <link rel="stylesheet" href="styles.css"/>
+  <title>Order Details</title>
+  <link rel="stylesheet" href="../static/styles.css"/>
   <script type="module">
     import { initDetailsPage } from './js/details-common.js';
     window.addEventListener('DOMContentLoaded', () => {
       initDetailsPage({
-        titleText: "Storno Details",
-        endpointBuilder: (pnk, month) => `/app/stornoDetails?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
-        csvFilenamePrefix: 'storno-details',
+        titleText: "Order Details",
+        endpointBuilder: (pnk, month) => `/orderDetails?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
+        csvFilenamePrefix: 'order-details',
         includePnkInCsvFilename: true
       });
     });
@@ -19,7 +19,7 @@
 </head>
 <body>
 <header>
-  <h1 id="title">Storno Details</h1>
+  <h1 id="title">Order Details</h1>
   <span id="subtitle" class="muted"></span>
   <div class="toolbar">
     <button id="refreshBtn" title="Reload">Reload</button>

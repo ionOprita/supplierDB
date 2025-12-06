@@ -11,6 +11,7 @@
         <maven.compiler.release>25</maven.compiler.release>
         <encoding>UTF-8</encoding>
         <jackson-version>3.0.3</jackson-version>
+        <jte.version>3.2.1</jte.version>
     </properties>
 
     <dependencies>
@@ -147,19 +148,25 @@
             <artifactId>ssl-plugin</artifactId>
             <version>6.7.0</version>
         </dependency>
-
-        <!-- https://mvnrepository.com/artifact/com.yubico/webauthn-server-core -->
+        <!-- https://mvnrepository.com/artifact/io.javalin/javalin-rendering -->
         <dependency>
-            <groupId>com.yubico</groupId>
-            <artifactId>webauthn-server-core</artifactId>
-            <version>2.7.0</version>
+            <groupId>io.javalin</groupId>
+            <artifactId>javalin-rendering</artifactId>
+            <version>6.7.0</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/gg.jte/jte -->
         <dependency>
             <groupId>gg.jte</groupId>
             <artifactId>jte</artifactId>
-            <version>3.2.1</version>
+            <version>${jte.version}</version>
+        </dependency>
+
+        <!-- https://mvnrepository.com/artifact/com.yubico/webauthn-server-core -->
+        <dependency>
+            <groupId>com.yubico</groupId>
+            <artifactId>webauthn-server-core</artifactId>
+            <version>2.7.0</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/org.junit.jupiter/junit-jupiter -->
@@ -207,6 +214,40 @@
                 <artifactId>jcommander</artifactId>
                 <version>1.82</version>
             </dependency>
+            <!-- https://mvnrepository.com/artifact/org.eclipse.jetty.http2/http2-common -->
+            <dependency>
+                <groupId>org.eclipse.jetty.http2</groupId>
+                <artifactId>http2-common</artifactId>
+                <version>11.0.26</version>
+            </dependency>
+            <!-- https://mvnrepository.com/artifact/org.jruby/jruby -->
+            <dependency>
+                <groupId>org.jruby</groupId>
+                <artifactId>jruby</artifactId>
+                <version>9.4.14.0</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>gg.jte</groupId>
+                <artifactId>jte-maven-plugin</artifactId>
+                <version>${jte.version}</version>
+                <configuration>
+                    <sourceDirectory>${project.basedir}/src/main/jte</sourceDirectory>
+                    <targetDirectory>${project.build.directory}/jte-classes</targetDirectory>
+                    <contentType>Html</contentType>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>precompile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>
