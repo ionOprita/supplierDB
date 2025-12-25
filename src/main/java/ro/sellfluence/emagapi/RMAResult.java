@@ -51,7 +51,8 @@ public record RMAResult(
         Integer return_address_id,
         String country,
         String address_type,
-        Integer request_status_reason
+        Integer request_status_reason,
+        String currency
 ) {
     public RMAResult {
         // Normalize Lists
