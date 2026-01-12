@@ -45,7 +45,7 @@ public class UpdateEmployeeSheetsFromDB {
 
     private static final Set<String> suburbsToExclude = Set.of();
 
-    private static final Set<String> citiesToExclude = Set.of("Brasov", "Sectorul 1","Sectorul 3","Sectorul 4",
+    private static final Set<String> citiesToExclude = Set.of("Brasov", "Sectorul 1", "Sectorul 3", "Sectorul 4",
             "Iasi");
 
     private static final Set<String> vendorsWithExclusions = Set.of("Zoopie Concept FBE",
@@ -222,10 +222,10 @@ public class UpdateEmployeeSheetsFromDB {
                         .filter(it ->
                                 !(
                                         vendorsWithExclusions.contains(it.vendorName()) &&
-                                        (
-                                                suburbsToExclude.contains(it.shippingSuburb())
-                                                || citiesToExclude.contains(it.shippingCity())
-                                        )
+                                                (
+                                                        (it.shippingSuburb() != null && suburbsToExclude.contains(it.shippingSuburb()))
+                                                                || (it.shippingCity() != null && citiesToExclude.contains(it.shippingCity()))
+                                                )
                                 )
                         )
                         .toList();
@@ -249,7 +249,7 @@ public class UpdateEmployeeSheetsFromDB {
      * Read the ID of the orders already recorded in this sheet.
      *
      * @param sheet                    spreadsheet.
-     * @param tabName                name of the sheet within the spreadsheet.
+     * @param tabName                  name of the sheet within the spreadsheet.
      * @param existingOrderAssignments map of existing order IDs to sheets.
      */
     private static void accumulateExistingOrders(SheetsAPI sheet, final String tabName, HashMap<String, FeedbackTab> existingOrderAssignments) {
@@ -376,10 +376,10 @@ public class UpdateEmployeeSheetsFromDB {
     /**
      * Split the rows into chunks of size chunkSize and call sheet.updateRange for each.
      *
-     * @param sheet the SheetsAPI instance
+     * @param sheet     the SheetsAPI instance
      * @param sheetName target sheet name
-     * @param startRow 1-based row number where the first chunk should be inserted
-     * @param rows the full list of rows to insert
+     * @param startRow  1-based row number where the first chunk should be inserted
+     * @param rows      the full list of rows to insert
      */
     private void updateRangeInChunks(SheetsAPI sheet,
                                      String sheetName,
