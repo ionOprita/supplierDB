@@ -4,10 +4,8 @@ import ro.sellfluence.apphelper.Vendor;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.googleapi.SheetsAPI;
-import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -20,8 +18,6 @@ import java.util.stream.Collectors;
 
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
-import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
-import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.sheetSupport.Conversions.isEMAGFbe;
 import static ro.sellfluence.support.UsefulMethods.findColumnMatchingMonth;
@@ -32,12 +28,18 @@ import static ro.sellfluence.support.UsefulMethods.findColumnMatchingMonth;
 public class PopulateDateComenziFromDB {
 
     private static final Logger logger = Logs.getConsoleLogger("PopulateDateComenziFromDB", INFO);
-    private static final int year = 2025;
+
+    private final int year;
 
     /**
      * Target spreadsheet.
      */
-    private static final String spreadSheetName = year + " - Date comenzi";
+    private final String spreadSheetName;
+
+    PopulateDateComenziFromDB(int year) {
+        this.year = year;
+        spreadSheetName = this.year + " - Date comenzi";
+    }
 
     /**
      * Target sheet for the orders.
@@ -49,13 +51,7 @@ public class PopulateDateComenziFromDB {
      */
     private static final String gmvSheetName = "T. GMV/M.";
 
-    public static void main(String[] args) throws SQLException, IOException {
-        var arguments = new Arguments(args);
-        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
-        updateSpreadsheets(mirrorDB);
-    }
-
-    public static void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
+    public void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
         var sheet = SheetsAPI.getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
         if (sheet == null) {
             throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
@@ -73,7 +69,7 @@ public class PopulateDateComenziFromDB {
      * @param sheet target sheet.
      * @throws SQLException if something goes wrong.
      */
-    private static void updateGMVs(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
+    private void updateGMVs(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
         var month = YearMonth.from(LocalDate.now());
         while (month.getYear() == year) {
             updateGMVForMonth(mirrorDB, sheet, month);
@@ -155,7 +151,7 @@ public class PopulateDateComenziFromDB {
      * @param sheet target sheet.
      * @throws SQLException if something goes wrong.
      */
-    private static void updateOrders(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
+    private void updateOrders(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
         var spreadSheetId = sheet.getSpreadSheetId();
         logger.log(INFO, "Read from the database.");
         var rows = mirrorDB.readForSheet(year);

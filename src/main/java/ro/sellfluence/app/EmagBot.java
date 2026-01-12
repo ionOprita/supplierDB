@@ -20,7 +20,7 @@ import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 public class EmagBot {
     private static final Logger logger = Logs.getConsoleLogger("EmagBot", INFO);
 
-    public static void main(String[] args) throws SQLException, IOException {
+    static void main(String[] args) throws SQLException, IOException {
         var arguments = new Arguments(args);
         var dbAlias = arguments.getOption(databaseOptionName, defaultDatabase);
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB(dbAlias);
@@ -36,7 +36,8 @@ public class EmagBot {
         }
         logger.log(INFO, "Transfer orders from the %s database to the date comenzi sheet.".formatted(dbAlias));
         try {
-            PopulateDateComenziFromDB.updateSpreadsheets(mirrorDB);
+            (new PopulateDateComenziFromDB(2026)).updateSpreadsheets(mirrorDB);
+            (new PopulateDateComenziFromDB(2025)).updateSpreadsheets(mirrorDB);
         } catch (SQLException e) {
             logger.log(WARNING, "Updating the date comenzi sheet ended with an exception.", e);
             throw new RuntimeException("PopulateDateComenzi ended with an exception ", e);
@@ -46,7 +47,7 @@ public class EmagBot {
 //            PopulateStornoAndReturns.updateSpreadsheets(mirrorDB);
 //        } catch (SQLException e) {
 //            logger.log(WARNING, "Updating the Storno and Return sheet ended with an exception.", e);
-//            throw new RuntimeException("PopulateStornoAndReturns ended with an exception ", e);
+//            throw new RuntimeException("PopulateStornoAndReturns ended with an exception", e);
 //        }
         logger.log(INFO, "Update the sheet used for customer feedback using %s.".formatted(dbAlias));
         UpdateEmployeeSheetsFromDB.updateSheets(mirrorDB);

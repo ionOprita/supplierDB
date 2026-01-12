@@ -16,7 +16,6 @@ import java.time.LocalDateTime;
 import java.time.Period;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.logging.Logger;
 import java.util.random.RandomGenerator;
@@ -37,13 +36,13 @@ public class EmagDBApp {
     private static final Logger logger = Logger.getLogger(EmagDBApp.class.getName());
     private static final Logger consoleLogger = Logs.getConsoleLogger("EmagDBApp", INFO);
     private static final List<String> emagAccounts = List.of(
-//            "sellfluence",
-//            "zoopieconcept",
-//            "zoopieinvest",
-            "zoopiesolutions",
-            "judios",
             "koppel",
             "koppelfbe",
+            "sellfluence",
+            "zoopieconcept",
+            "zoopieinvest",
+            "zoopiesolutions",
+            "judios",
             "sellfusion"
     );
 
@@ -322,7 +321,7 @@ public class EmagDBApp {
      * and how old the day is.</p>
      *
      * @param fetchLog as retrieved from the database or null.
-     * @return true if this day and account needs to be fetched.
+     * @return true if this day and this account needs to be fetched.
      */
     private static boolean needsFetch(EmagFetchLog fetchLog) {
         // If this day was never retrieved, then we must do it now.
