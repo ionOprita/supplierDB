@@ -4,8 +4,10 @@ import ro.sellfluence.apphelper.Vendor;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.googleapi.SheetsAPI;
+import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -18,6 +20,8 @@ import java.util.stream.Collectors;
 
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.sheetSupport.Conversions.isEMAGFbe;
 import static ro.sellfluence.support.UsefulMethods.findColumnMatchingMonth;
@@ -220,5 +224,12 @@ public class PopulateDateComenziFromDB {
         return sheetData.stream()
                 .skip(3)
                 .map(row -> new OrderLine(row.get(1).toString(), (String) row.get(2))).collect(Collectors.toSet());
+    }
+
+    static void main(String[] args) throws SQLException, IOException {
+        var arguments = new Arguments(args);
+        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
+        (new PopulateDateComenziFromDB(2026)).updateSpreadsheets(mirrorDB);
+        (new PopulateDateComenziFromDB(2025)).updateSpreadsheets(mirrorDB);
     }
 }
