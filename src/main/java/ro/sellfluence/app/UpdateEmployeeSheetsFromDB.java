@@ -54,7 +54,7 @@ public class UpdateEmployeeSheetsFromDB {
             "Koppel",
             "Koppel FBE");
 
-    public static void main(String[] args) throws SQLException, IOException {
+    static void main(String[] args) throws SQLException, IOException {
         var arguments = new Arguments(args);
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
         updateSheets(mirrorDB);
@@ -79,7 +79,8 @@ public class UpdateEmployeeSheetsFromDB {
      * @throws SQLException on database errors.
      */
     public void transferFromDBToSheet(EmagMirrorDB mirrorDB) throws SQLException {
-        var products = mirrorDB.readProducts();
+        // Consider only products that are still sold.
+        var products = mirrorDB.readProducts().stream().filter(it -> !it.retracted()).toList();
         // add everything for one employee
         // products = products.stream().filter(it -> it.employeeSheetName().equals("Z. Purdel Maria Mălina - Feedback Clienti")).toList();
         // add only for one PNK
