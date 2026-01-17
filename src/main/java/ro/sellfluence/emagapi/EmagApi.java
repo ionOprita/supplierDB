@@ -38,6 +38,7 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static java.net.HttpURLConnection.HTTP_FORBIDDEN;
 import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.util.logging.Level.FINE;
@@ -57,6 +58,7 @@ public class EmagApi {
     private static final Logger logger = Logger.getLogger(EmagApi.class.getName());
 
     private static final Logger communicationLogger = Logs.getFileLogger("emag_communication", INFO, 20, 100_000_000);
+    private static final Logger errorLogger = Logs.getConsoleAndFileLogger("emag_error", INFO, 20, 100_000_000);
 
     private static final Logger jsonLogger = Logs.getFileLogger("emag_decoded_json", FINE, 20, 100_000_000);
 
@@ -64,9 +66,9 @@ public class EmagApi {
 
     private static final String orderURI = emagRO + "/order";
 
-    private static final String readOrder = orderURI + "/read";
     private static final String countOrders = orderURI + "/count";
 
+    private final String emagUser;
     private final String credentials;
     private final HttpClient httpClient;
 
@@ -161,6 +163,7 @@ public class EmagApi {
 
 
     public EmagApi(String username, String password) {
+        emagUser = username;
         credentials = Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
         httpClient = HttpClient.newHttpClient();
     }
@@ -180,9 +183,9 @@ public class EmagApi {
                 var response = objectMapper.readValue(receivedJSON, typeRef);
 
                 if (response.isError) {
-                    logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
+                    errorLogger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
                     if (Arrays.stream(response.messages).anyMatch(x -> x.contains("Invalid vendor ip"))) {
-                        logger.log(INFO, "Please register your IP address in the EMAG dashboard.");
+                        errorLogger.log(INFO, "Please register your IP address in the EMAG dashboard for user %s.".formatted(emagUser));
                     }
                 } else {
                     jsonLogger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
@@ -190,8 +193,8 @@ public class EmagApi {
                 }
             } catch (MismatchedInputException e) {
                 String msg = "JSON decoded ended with error %s".formatted(e.getMessage());
-                logger.log(SEVERE, msg);
-                logger.log(SEVERE, receivedJSON);
+                errorLogger.log(SEVERE, msg);
+                errorLogger.log(SEVERE, receivedJSON);
                 throw new RuntimeException(msg, e);
             }
         }
@@ -262,13 +265,13 @@ public class EmagApi {
                         var response = objectMapper.readValue(receivedJSON, typeRef);
 
                         if (response.isError) {
-                            logger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
+                            errorLogger.log(SEVERE, "Received error response %s".formatted(Arrays.toString(response.messages)));
                             if (Arrays.stream(response.messages).anyMatch(x -> x.contains("Invalid vendor ip"))) {
-                                logger.log(INFO, "Please register your IP address in the EMAG dashboard.");
+                                errorLogger.log(INFO, "Please register your IP address in the EMAG dashboard for user %s.".formatted(emagUser));
                                 finished = true;
                             }
                         } else {
-                            logger.log(INFO, () -> "Received %d items.".formatted(response.results.length));
+                            errorLogger.log(INFO, () -> "Received %d items.".formatted(response.results.length));
                             jsonLogger.log(FINE, () -> "Decoded JSON: %s".formatted(response));
                             if (response.results.length > 0) {
                                 accumulatedResponses.addAll(Arrays.asList(response.results));
@@ -278,12 +281,15 @@ public class EmagApi {
                         }
                     } catch (MismatchedInputException e) {
                         String message = "JSON decoded ended with error %s".formatted(e.getMessage());
-                        logger.log(SEVERE, message);
-                        logger.log(SEVERE, receivedJSON);
+                        errorLogger.log(SEVERE, message);
+                        errorLogger.log(SEVERE, receivedJSON);
                         throw new RuntimeException(message, e);
                     }
+                } else if (statusCode == HTTP_FORBIDDEN) {
+                    errorLogger.log(SEVERE, "Received 403 for user %s, please check your password.".formatted(emagUser));
+                    finished = true;
                 } else if (statusCode == HTTP_GATEWAY_TIMEOUT && retryCount > 0) {
-                    logger.log(WARNING, "Received 504, retrying, retryCount=%d, retryDelay=%d s".formatted(retryCount, retryDelay / 1000));
+                    errorLogger.log(WARNING, "Received 504, retrying, retryCount=%d, retryDelay=%d s".formatted(retryCount, retryDelay / 1000));
                     retryCount--;
                     Thread.sleep(retryDelay);
                     retryDelay *= 2; // Double delay

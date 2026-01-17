@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="EmagBot emagTest" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="ro.sellfluence.app.EmagBot" />
-    <module name="supplierDB" />
+    <module name="emagDB" />
     <option name="PROGRAM_PARAMETERS" value="--db=emagTest" />
     <option name="WORKING_DIRECTORY" value="$ContentRoot$" />
     <extension name="coverage">

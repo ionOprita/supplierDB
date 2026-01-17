@@ -16,7 +16,6 @@ import java.time.LocalDateTime;
 import java.time.Period;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.logging.Logger;
 import java.util.random.RandomGenerator;
@@ -37,13 +36,13 @@ public class EmagDBApp {
     private static final Logger logger = Logger.getLogger(EmagDBApp.class.getName());
     private static final Logger consoleLogger = Logs.getConsoleLogger("EmagDBApp", INFO);
     private static final List<String> emagAccounts = List.of(
-//            "sellfluence",
-//            "zoopieconcept",
-//            "zoopieinvest",
-            "zoopiesolutions",
-            "judios",
             "koppel",
             "koppelfbe",
+            "sellfluence",
+            "zoopieconcept",
+            "zoopieinvest",
+            "zoopiesolutions",
+            "judios",
             "sellfusion"
     );
 
@@ -64,6 +63,7 @@ public class EmagDBApp {
             else if (arguments.hasFlag("refetch_all")) { refetchAndStoreToDB(mirrorDB, Period.ofYears(3)); }
             else if (!arguments.hasFlag("nofetch")) { fetchAndStoreToDB(mirrorDB); }
             mirrorDB.updateGMVTable();
+            mirrorDB.updateStornoTable();
         } catch (SQLException e) {
             throw new RuntimeException("error initializing database", e);
         } catch (IOException e) {
@@ -77,13 +77,14 @@ public class EmagDBApp {
      * Logic for fetching data that follows this specification:
      * <ul>
      *     <li>Get orders with states 1-4 since the last time we fetched.</li>
-     *     <li>Get orders with states 5 for the last two years.</li>
+     *     <li>Get orders with states 5 for the last six months.</li>
      *     <li>Reread all orders having status 0-3 in the database by order ID to see if their value has changed.</li>
+     *     <li>Get returns for the last six months.</li>
      * </ul>
      *
      * @param mirrorDB to which to store the orders.
      */
-    private static void fetchAndStoreToDB(EmagMirrorDB mirrorDB) throws IOException, InterruptedException, SQLException {
+    public static void fetchAndStoreToDB(EmagMirrorDB mirrorDB) throws IOException, InterruptedException, SQLException {
         time(
                 "Fetch new orders",
                 () -> repeatUntilDone(() -> fetchNewOrders(mirrorDB))
@@ -96,13 +97,29 @@ public class EmagDBApp {
                 "Fetch storno orders",
                 () -> repeatUntilDone(() -> fetchStornoOrders(mirrorDB))
         );
+        time(
+                "Fetch RMAs",
+                () -> repeatUntilDone(() -> fetchRMAs(mirrorDB))
+        );
+    }
+
+    private static Boolean fetchRMAs(EmagMirrorDB mirrorDB) {
+        for (String emagAccount : emagAccounts) {
+            System.out.println(emagAccount);
+            try {
+                transferRMAsToDatabase(emagAccount, mirrorDB, LocalDate.now().minusMonths(6).atStartOfDay(), null);
+            } catch (IOException | InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        return true;
     }
 
     private static boolean fetchStornoOrders(EmagMirrorDB mirrorDB) {
         for (String emagAccount : emagAccounts) {
             System.out.println(emagAccount);
             try {
-                transferOrdersToDatabase(emagAccount, mirrorDB, null, null, LocalDate.now().minusYears(2).atStartOfDay(), null, List.of(5), null);
+                transferOrdersToDatabase(emagAccount, mirrorDB, null, null, LocalDate.now().minusMonths(6).atStartOfDay(), null, List.of(5), null);
             } catch (IOException | InterruptedException e) {
                 throw new RuntimeException(e);
             }
@@ -162,7 +179,7 @@ public class EmagDBApp {
      *
      * @param mirrorDB to which to store the orders.
      */
-    private static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) {
+    public static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) {
         var oldestDay = today.minusYears(3);
         cleanupFetchLogs(mirrorDB, oldestDay);
         repeatUntilDone(
@@ -304,7 +321,7 @@ public class EmagDBApp {
      * and how old the day is.</p>
      *
      * @param fetchLog as retrieved from the database or null.
-     * @return true if this day and account needs to be fetched.
+     * @return true if this day and this account needs to be fetched.
      */
     private static boolean needsFetch(EmagFetchLog fetchLog) {
         // If this day was never retrieved, then we must do it now.
@@ -412,12 +429,15 @@ public class EmagDBApp {
             logger.log(WARNING, "Missing credentials for alias " + alias);
         } else {
             var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+            var filter = new HashMap<String, Object>();
+            if (startTime != null) {
+                filter.put("date_start", startTime);
+            }
+            if (endTime != null) {
+                filter.put("date_end", endTime);
+            }
             return emag.readRequest("rma",
-                    Map.of(
-                            "date_start",
-                            startTime,
-                            "date_end",
-                            endTime),
+                    filter,
                     null,
                     RMAResult.class);
         }

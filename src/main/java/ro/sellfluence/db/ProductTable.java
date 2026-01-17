@@ -3,20 +3,72 @@ package ro.sellfluence.db;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ProductTable {
     public record ProductInfo(
             String pnk,
             String productCode,
             String name,
+            UUID vendor,
             boolean continueToSell,
             boolean retracted,
             String category,
             String messageKeyword,
             String employeeSheetName,
-            String emloyeSheetTab
+            String employeeSheetTab
     ) {
+        public static final Comparator<ProductInfo> nameComparator = (p1, p2) -> {
+            ParsedName n1 = parse(p1.name);
+            ParsedName n2 = parse(p2.name);
+
+            // Compare letter rank first
+            int cmp = Integer.compare(rank(n1.letter), rank(n2.letter));
+            if (cmp != 0) return cmp;
+
+            // Compare letter first
+            cmp = Character.compare(n1.letter, n2.letter);
+            if (cmp != 0) return cmp;
+
+            // Compare number numerically
+            cmp = Integer.compare(n1.number, n2.number);
+            if (cmp != 0) return cmp;
+
+            // Fallback: compare remaining text
+            return n1.text.compareTo(n2.text);
+        };
+
+        private static int rank(char letter) {
+            return switch (Character.toUpperCase(letter)) {
+                case 'Z' -> 0;
+                case 'J' -> 1;
+                case 'S' -> 2;
+                case 'K' -> 3;
+                default -> 4; // others after the special ones
+            };
+        }
+
+
+        private static final Pattern namePattern = Pattern.compile("^([A-Z])\\.\\s*(\\d+)\\s*-\\s*(.*)$");
+
+        private record ParsedName(char letter, int number, String text) {
+        }
+
+        private static ParsedName parse(String name) {
+            Matcher m = namePattern.matcher(name);
+            if (m.matches()) {
+                char letter = m.group(1).charAt(0);
+                int number = Integer.parseInt(m.group(2));
+                String text = m.group(3);
+                return new ParsedName(letter, number, text);
+            }
+            // Fallback: treat as "unknown" but still sortable
+            return new ParsedName('\0', Integer.MAX_VALUE, name);
+        }
     }
 
     /**
@@ -24,10 +76,10 @@ public class ProductTable {
      * the method attempts to update the product's information. If neither insertion nor update is successful,
      * a runtime exception is thrown.
      *
-     * @param db the database connection to use for the operation
+     * @param db          the database connection to use for the operation
      * @param productInfo the product information to be inserted or updated
      * @return always returns 0 upon successful completion
-     * @throws SQLException if a database access error occurs
+     * @throws SQLException     if a database access error occurs
      * @throws RuntimeException if the product cannot be inserted or updated
      */
     static int insertOrUpdateProduct(Connection db, ProductInfo productInfo) throws SQLException {
@@ -50,7 +102,7 @@ public class ProductTable {
      */
     static List<ProductInfo> getProducts(Connection db) throws SQLException {
         var products = new ArrayList<ProductInfo>();
-        try (var s = db.prepareStatement("SELECT emag_pnk, product_code, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name, employee_sheet_tab FROM product")) {
+        try (var s = db.prepareStatement("SELECT emag_pnk, product_code, name, vendor, continue_to_sell, retracted, category, message_keyword, employee_sheet_name, employee_sheet_tab FROM product")) {
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     products.add(
@@ -58,6 +110,7 @@ public class ProductTable {
                                     rs.getString("emag_pnk"),
                                     rs.getString("product_code"),
                                     rs.getString("name"),
+                                    rs.getObject("vendor", UUID.class),
                                     rs.getBoolean("continue_to_sell"),
                                     rs.getBoolean("retracted"),
                                     rs.getString("category"),
@@ -94,8 +147,8 @@ public class ProductTable {
     /**
      * Updates the employee_sheet_tab column of the product table for the product identified by the given PNK.
      *
-     * @param db the database connection to use for the update operation
-     * @param pnk the PNK of the product to be updated
+     * @param db      the database connection to use for the update operation
+     * @param pnk     the PNK of the product to be updated
      * @param tabName the new value to set for the employee_sheet_tab column
      * @return the number of rows affected by the update operation
      * @throws SQLException if a database access error occurs
@@ -110,36 +163,37 @@ public class ProductTable {
 
     /**
      * Insert a product in the table that records our information about a product and associates our name and
-     * category with the PNK used by emag.
+     * category with the PNK used by eMAG.
      *
-     * @param db database
+     * @param db          database
      * @param productInfo record mapping to column
      * @return 1 or 0 depending on whether the insertion was successful or not.
      * @throws SQLException if anything bad happens.
      */
     private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
         try (var s = db.prepareStatement("""
-                INSERT INTO product (product_code, emag_pnk, name, continue_to_sell, retracted, category, message_keyword, employee_sheet_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO product (product_code, emag_pnk, name, vendor, continue_to_sell, retracted, category, message_keyword, employee_sheet_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT DO NOTHING
                 """)) {
             s.setString(1, productInfo.productCode());
             s.setString(2, productInfo.pnk());
             s.setString(3, productInfo.name());
-            s.setBoolean(4, productInfo.continueToSell());
-            s.setBoolean(5, productInfo.retracted());
-            s.setString(6, productInfo.category());
-            s.setString(7, productInfo.messageKeyword());
-            s.setString(8, productInfo.employeeSheetName());
+            s.setObject(4, productInfo.vendor());
+            s.setBoolean(5, productInfo.continueToSell());
+            s.setBoolean(6, productInfo.retracted());
+            s.setString(7, productInfo.category());
+            s.setString(8, productInfo.messageKeyword());
+            s.setString(9, productInfo.employeeSheetName());
             return s.executeUpdate();
         }
     }
 
     /**
      * Insert a product in the table that records our information about a product and associates our name and
-     * category with the PNK used by emag.
+     * category with the PNK used by eMAG.
      *
-     * @param db database
+     * @param db          database
      * @param productInfo record mapping to column
      * @return 1 or 0 depending on whether the insertion was successful or not.
      * @throws SQLException if anything bad happens.
@@ -147,7 +201,7 @@ public class ProductTable {
     private static int updateProduct(Connection db, ProductInfo productInfo) throws SQLException {
         try (var s = db.prepareStatement("""
                 UPDATE product
-                SET emag_pnk = ?, category = ?, message_keyword = ?, continue_to_sell = ?, retracted = ?, name = ?, employee_sheet_name = ?, employee_sheet_tab = ?
+                SET emag_pnk = ?, category = ?, message_keyword = ?, continue_to_sell = ?, retracted = ?, name = ?, employee_sheet_name = ?, employee_sheet_tab = ?, vendor = ?
                 WHERE product_code = ?
                 """)) {
             s.setString(1, productInfo.pnk());
@@ -157,8 +211,9 @@ public class ProductTable {
             s.setBoolean(5, productInfo.retracted());
             s.setString(6, productInfo.name());
             s.setString(7, productInfo.employeeSheetName());
-            s.setString(8, productInfo.emloyeSheetTab());
-            s.setString(9, productInfo.productCode());
+            s.setString(8, productInfo.employeeSheetTab());
+            s.setObject(9, productInfo.vendor());
+            s.setString(10, productInfo.productCode());
             return s.executeUpdate();
         }
     }

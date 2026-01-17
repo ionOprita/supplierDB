@@ -5,7 +5,6 @@ import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.RMAResult;
 import ro.sellfluence.support.UserPassword;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
@@ -26,13 +25,13 @@ public class FetchOneOrder {
 /*
     All sellfusion:
 
-    Anulat de client 430733210
-    Anulat de seller 424716128
-    Stornate 429684548
-    Finalizate locker 430991369
-    Finalizate curier 430986576
-
-    Inlocuire needs to read sheet from google because they are handled within sellfusion etc.
+    - Anulat de client 430733210.
+    - Anulat de seller 424716128.
+    - Stornate 429684548.
+    - Finalizate locker 430991369.
+    - Finalizate curier 430986576.
+-
+    Inlocuire needs to read the sheet from google because they are handled within sellfusion.
     => RER Exchange Rate
 
     427037619
@@ -41,7 +40,7 @@ public class FetchOneOrder {
         EmagApi.setAPILogLevel(FINE);
     //    emagAccounts.forEach(account -> fetchOrder(account,"407649385"));
         //fetchOrder("sellfusion","427037619");
-        fetchOrder("zoopieconcept", "345672982");
+        fetchOrder("sellfusion", "421390915");
     }
 
     private static void fetchOrder(String vendor, String orderId) {

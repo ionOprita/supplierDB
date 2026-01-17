@@ -11,7 +11,8 @@ public record StatusRequest(
     String refund_type,
     String refund_status,
     String rma_id,
-    LocalDateTime status_date
+    LocalDateTime status_date,
+    String currency
 ) {
     public StatusRequest {
         amount = UsefulMethods.round(amount);

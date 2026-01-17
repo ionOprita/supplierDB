@@ -1,6 +1,7 @@
 package ro.sellfluence.googleapi;
 
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import com.google.api.client.http.HttpRequestInitializer;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
@@ -82,8 +83,8 @@ public class SheetsAPI {
     /**
      * Get a spreadsheet by its ID.
      *
-     * @param appName name of the application
-     *                     as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
+     * @param appName       name of the application
+     *                      as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
      * @param spreadSheetId ID of the spreadsheet.
      * @return instance of this class representing the spreadsheet, or null if not found.
      */
@@ -103,8 +104,8 @@ public class SheetsAPI {
     /**
      * Get a spreadsheet by its name.
      *
-     * @param appName name of the application
-     *                     as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
+     * @param appName         name of the application
+     *                        as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
      * @param spreadSheetName name of the spreadsheet.
      * @return instance of this class representing the spreadsheet, or null if not found.
      */
@@ -284,14 +285,14 @@ public class SheetsAPI {
     }
 
     public List<Object> getRowAsDates(String sheetName, int rowNumber) {
-        var range = "%1$s!%2$s:%2$s".formatted(sheetName, rowNumber);
+        var range = "%1$s!A%2$s:AC%2$s".formatted(sheetName, rowNumber);
         var inputValues = getSheetsService().spreadsheets().values();
         var get = repeatCellRequest(
                 4,
                 "get(%s,%s)".formatted(spreadSheetId, range),
                 () -> inputValues.get(spreadSheetId, range)
         );
-        var command = get.setMajorDimension("ROWS").setValueRenderOption("UNFORMATTED_VALUE");
+        var command = get.setMajorDimension("ROWS").setValueRenderOption("UNFORMATTED_VALUE").setFields("values");
         var response = repeatCellRequest(
                 5,
                 "getRowAsDates(%s,%d)".formatted(sheetName, rowNumber),
@@ -368,6 +369,25 @@ public class SheetsAPI {
                 5,
                 "updateRanges(%s,%s)".formatted(rows, Arrays.toString(ranges)),
                 update::execute
+        );
+    }
+
+    /**
+     * Updates part of a sheet column.
+     *
+     * @param sheetName        the name of the sheet.
+     * @param columnIdentifier the name of the column.
+     * @param startRow         the first row to modify.
+     * @param columnData       the data. Null values are stored as empty strings.
+     */
+    public void updateSheetColumnFromRow(String sheetName, String columnIdentifier, Integer startRow, List<?> columnData) {
+        var values = columnData.stream().skip(startRow - 1).map(it -> {
+            var o = it != null ? (Object) it : (Object) "";
+            return List.of(o);
+        }).toList();
+        updateRange(
+                "'%s'!%s%d:%s%d".formatted(sheetName, columnIdentifier, startRow, columnIdentifier, startRow + columnData.size() - 1),
+                values
         );
     }
 
@@ -474,9 +494,19 @@ public class SheetsAPI {
         T result = null;
         while (retryCount > 0) {
             try {
+                var t0 = System.currentTimeMillis();
                 result = caller.execute();
+                var t1 = System.currentTimeMillis();
+                if (t1 - t0 > 5_000) {
+                    logger.log(WARNING, "Slow call to %s. Time: %d ms".formatted(callerDescription, t1 - t0));
+                }
                 retryCount = 0;
             } catch (IOException e) {
+                if (e instanceof GoogleJsonResponseException g) {
+                    if (g.getStatusCode() == 400) {
+                        throw new RuntimeException("Bad request. %s".formatted(g.getDetails().getMessage()), e);
+                    }
+                }
                 retryCount--;
                 if (retryCount == 0) {
                     throw new RuntimeException("Issue in %s".formatted(callerDescription), e);
@@ -489,7 +519,6 @@ public class SheetsAPI {
                 }
                 retryDelay *= 2;
             }
-
         }
         return result;
     }
@@ -511,7 +540,7 @@ public class SheetsAPI {
      * Read multiple columns from a sheet.
      *
      * @param sheetName name of the sheet.
-     * @param columns columns to read.
+     * @param columns   columns to read.
      * @return list of rows.
      */
     public List<List<Object>> getMultipleColumns(String sheetName, String... columns) {
@@ -607,8 +636,7 @@ public class SheetsAPI {
         return httpRequest -> {
             requestInitializer.initialize(httpRequest);
             httpRequest.setConnectTimeout(10_000);
-            httpRequest.setReadTimeout(20_000);
+            httpRequest.setReadTimeout(100_000);
         };
     }
-
 }

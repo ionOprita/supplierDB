@@ -24,7 +24,7 @@ import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.sheetSupport.Conversions.isEMAGFbe;
-import static ro.sellfluence.support.UsefulMethods.sheetToLocalDate;
+import static ro.sellfluence.support.UsefulMethods.findColumnMatchingMonth;
 
 /**
  * Read orders from our database mirror and put them in a sheet.
@@ -32,12 +32,18 @@ import static ro.sellfluence.support.UsefulMethods.sheetToLocalDate;
 public class PopulateDateComenziFromDB {
 
     private static final Logger logger = Logs.getConsoleLogger("PopulateDateComenziFromDB", INFO);
-    private static final int year = 2025;
+
+    private final int year;
 
     /**
      * Target spreadsheet.
      */
-    private static final String spreadSheetName = year + " - Date comenzi";
+    private final String spreadSheetName;
+
+    PopulateDateComenziFromDB(int year) {
+        this.year = year;
+        spreadSheetName = this.year + " - Date comenzi";
+    }
 
     /**
      * Target sheet for the orders.
@@ -47,15 +53,9 @@ public class PopulateDateComenziFromDB {
     /**
      * Target sheet for the GMVs.
      */
-    private static final String gmvSheetName = "T. GMW/M.";
+    private static final String gmvSheetName = "T. GMV/M.";
 
-    public static void main(String[] args) throws SQLException, IOException {
-        var arguments = new Arguments(args);
-        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
-        updateSpreadsheets(mirrorDB);
-    }
-
-    public static void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
+    public void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
         var sheet = SheetsAPI.getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
         if (sheet == null) {
             throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
@@ -73,7 +73,7 @@ public class PopulateDateComenziFromDB {
      * @param sheet target sheet.
      * @throws SQLException if something goes wrong.
      */
-    private static void updateGMVs(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
+    private void updateGMVs(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
         var month = YearMonth.from(LocalDate.now());
         while (month.getYear() == year) {
             updateGMVForMonth(mirrorDB, sheet, month);
@@ -96,20 +96,7 @@ public class PopulateDateComenziFromDB {
                 .collect(Collectors.groupingBy(ProductInfo::name));
         var productsInSheet = sheet.getColumn(gmvSheetName, "B").stream().toList();
         var monthsInSheet = sheet.getRowAsDates(gmvSheetName, 2).stream().toList();
-        String columnIdentifier = null;
-        var columnNumber = 1;
-        for (Object it : monthsInSheet) {
-            if (it instanceof BigDecimal dateSerial) {
-                LocalDate localDate = sheetToLocalDate(dateSerial);
-                if (YearMonth.from(localDate).equals(month)) {
-                    columnIdentifier = toColumnName(columnNumber);
-                }
-            }
-            columnNumber++;
-        }
-        if (columnIdentifier == null) {
-            throw new RuntimeException("Could not find the column for the month %s.".formatted(month));
-        }
+        var columnIdentifier = findColumnMatchingMonth(monthsInSheet, month);
         Integer startRow = null;
         var rowNumber = 0;
         var gmvColumn = new ArrayList<BigDecimal>();
@@ -152,14 +139,7 @@ public class PopulateDateComenziFromDB {
             }
         }
         if (startRow != null) {
-            var values = gmvColumn.stream().skip(startRow - 1).map(it -> {
-                var o = it != null ? (Object) it : (Object) "";
-                return List.of(o);
-            }).toList();
-            sheet.updateRange(
-                    "'%s'!%s%d:%s%d".formatted(gmvSheetName, columnIdentifier, startRow, columnIdentifier, startRow + gmvColumn.size() - 1),
-                    values
-            );
+            sheet.updateSheetColumnFromRow(gmvSheetName, columnIdentifier, startRow, gmvColumn);
         } else {
             logger.log(WARNING, "Could not add GMV because no products are found in the sheet.");
         }
@@ -175,7 +155,7 @@ public class PopulateDateComenziFromDB {
      * @param sheet target sheet.
      * @throws SQLException if something goes wrong.
      */
-    private static void updateOrders(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
+    private void updateOrders(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
         var spreadSheetId = sheet.getSpreadSheetId();
         logger.log(INFO, "Read from the database.");
         var rows = mirrorDB.readForSheet(year);
@@ -246,16 +226,10 @@ public class PopulateDateComenziFromDB {
                 .map(row -> new OrderLine(row.get(1).toString(), (String) row.get(2))).collect(Collectors.toSet());
     }
 
-    // Helper function to convert a column number to its corresponding letters.
-    public static String toColumnName(int columnNumber) {
-        StringBuilder columnName = new StringBuilder();
-
-        while (columnNumber > 0) {
-            int modulo = (columnNumber - 1) % 26;
-            columnName.insert(0, (char) ('A' + modulo));
-            columnNumber = (columnNumber - modulo - 1) / 26;
-        }
-
-        return columnName.toString();
+    static void main(String[] args) throws SQLException, IOException {
+        var arguments = new Arguments(args);
+        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
+        (new PopulateDateComenziFromDB(2026)).updateSpreadsheets(mirrorDB);
+        (new PopulateDateComenziFromDB(2025)).updateSpreadsheets(mirrorDB);
     }
 }

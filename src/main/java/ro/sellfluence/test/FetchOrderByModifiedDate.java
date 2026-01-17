@@ -1,6 +1,5 @@
 package ro.sellfluence.test;
 
-import org.hibernate.type.descriptor.jdbc.NVarcharJdbcType;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.emagapi.EmagApi;
 import ro.sellfluence.emagapi.OrderResult;

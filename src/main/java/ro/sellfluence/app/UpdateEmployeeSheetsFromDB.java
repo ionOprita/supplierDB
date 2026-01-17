@@ -45,13 +45,8 @@ public class UpdateEmployeeSheetsFromDB {
 
     private static final Set<String> suburbsToExclude = Set.of();
 
-    private static final Set<String> citiesToExclude = Set.of("Alba Iulia", "Alexandria", "Arad", "Bacau", "Baia Mare",
-            "Bistrita", "Botosani", "Braila", "Brasov", "Sectorul 1","Sectorul 2","Sectorul 3","Sectorul 4","Sectorul 5", "Sectorul 6",
-            "Buzau", "Calarasi", "Cluj-Napoca", "Constanta", "Craiova", "Deva",
-            "Drobeta-Turnu Severin", "Focsani", "Galati", "Giurgiu", "Iasi", "Miercurea Ciuc",
-            "Oradea", "Piatra Neamt", "Pitesti", "Ploiesti", "Ramnicu Valcea",
-            "Resita", "Satu Mare", "Sfantu Gheorghe", "Sibiu", "Slatina",
-            "Slobozia", "Suceava", "Targoviste", "Targu Jiu", "Targu Mures", "Timisoara", "Tulcea", "Vaslui", "Zalau");
+    private static final Set<String> citiesToExclude = Set.of("Brasov", "Sectorul 1", "Sectorul 3", "Sectorul 4",
+            "Iasi");
 
     private static final Set<String> vendorsWithExclusions = Set.of("Zoopie Concept FBE",
             "Zoopie Invest",
@@ -59,7 +54,7 @@ public class UpdateEmployeeSheetsFromDB {
             "Koppel",
             "Koppel FBE");
 
-    public static void main(String[] args) throws SQLException, IOException {
+    static void main(String[] args) throws SQLException, IOException {
         var arguments = new Arguments(args);
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
         updateSheets(mirrorDB);
@@ -84,11 +79,12 @@ public class UpdateEmployeeSheetsFromDB {
      * @throws SQLException on database errors.
      */
     public void transferFromDBToSheet(EmagMirrorDB mirrorDB) throws SQLException {
-        var products = mirrorDB.readProducts();
+        // Consider only products that are still sold.
+        var products = mirrorDB.readProducts().stream().filter(it -> !it.retracted()).toList();
         // add everything for one employee
         // products = products.stream().filter(it -> it.employeeSheetName().equals("Z. Purdel Maria Mălina - Feedback Clienti")).toList();
         // add only for one PNK
-        // products = products.stream().filter(productWithID -> productWithID.pnk().equals("D3YYNY3BM")).toList();
+//         products = products.stream().filter(productWithID -> productWithID.pnk().equals("D3YYNY3BM")).toList();
         var productsByPNK = new HashMap<String, ProductInfo>();
         var productsByEmployee = new HashMap<SheetsAPI, List<ProductInfo>>();
         var sheetsByPNK = new HashMap<String, FeedbackTab>();
@@ -105,7 +101,7 @@ public class UpdateEmployeeSheetsFromDB {
                 logger.log(WARNING, "No spreadsheet found for the product %s".formatted(productInfo));
                 continue;
             }
-            String tabName = productInfo.emloyeSheetTab();
+            String tabName = productInfo.employeeSheetTab();
             if (tabName == null) {
                 logger.log(WARNING, "No tab found for the product %s".formatted(productInfo));
                 continue;
@@ -142,21 +138,21 @@ public class UpdateEmployeeSheetsFromDB {
                     logger.log(WARNING, "No employee sheet found for PNK %s".formatted(pnk));
                     continue;
                 }
-                if (product.emloyeSheetTab() == null) {
+                if (product.employeeSheetTab() == null) {
                     logger.log(WARNING, "No product tab found for PNK %s on the sheet %s.".formatted(pnk, product.employeeSheetName()));
                     continue;
                 }
-                progressLogger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s.".formatted(spreadSheet, product.emloyeSheetTab(), pnk));
-                accumulateExistingOrders(spreadSheet, product.emloyeSheetTab(), existingOrderAssignments);
+                progressLogger.log(INFO, () -> "Read orders from the spreadsheet %s tab %s for PNK %s.".formatted(spreadSheet, product.employeeSheetTab(), pnk));
+                accumulateExistingOrders(spreadSheet, product.employeeSheetTab(), existingOrderAssignments);
                 LocalDate startDate = dates.get(pnk);
                 if (startDate == null) {
                     startDate = LocalDate.now().minusMonths(1);
                 }
                 var startTime = startDate.atStartOfDay();
-                var endTime = LocalDate.now().minusDays(13).atStartOfDay();
+                var endTime = LocalDate.now().minusDays(6).atStartOfDay();
                 var newOrdersForProduct = mirrorDB.readOrderData(pnk, startTime, endTime).stream().filter(it -> it.quantity() > 0).toList();
                 for (EmployeeSheetData it : newOrdersForProduct) {
-                    newAssignments.put(it, product.emloyeSheetTab());
+                    newAssignments.put(it, product.employeeSheetTab());
                 }
             }
         }
@@ -219,7 +215,7 @@ public class UpdateEmployeeSheetsFromDB {
         }
         for (Map.Entry<SheetsAPI, List<EmployeeSheetData>> entry : reorderedByEmployeeSheet.entrySet()) {
             var sheet = entry.getKey();
-            var groupedBySheet = entry.getValue().stream().collect(Collectors.groupingBy(it -> productsByPNK.get(it.partNumberKey()).emloyeSheetTab()));
+            var groupedBySheet = entry.getValue().stream().collect(Collectors.groupingBy(it -> productsByPNK.get(it.partNumberKey()).employeeSheetTab()));
             for (var entry1 : groupedBySheet.entrySet()) {
                 var sheetName = entry1.getKey();
                 List<EmployeeSheetData> orders = entry1.getValue();
@@ -227,10 +223,10 @@ public class UpdateEmployeeSheetsFromDB {
                         .filter(it ->
                                 !(
                                         vendorsWithExclusions.contains(it.vendorName()) &&
-                                        (
-                                                suburbsToExclude.contains(it.shippingSuburb())
-                                                || citiesToExclude.contains(it.shippingCity())
-                                        )
+                                                (
+                                                        (it.shippingSuburb() != null && suburbsToExclude.contains(it.shippingSuburb()))
+                                                                || (it.shippingCity() != null && citiesToExclude.contains(it.shippingCity()))
+                                                )
                                 )
                         )
                         .toList();
@@ -254,7 +250,7 @@ public class UpdateEmployeeSheetsFromDB {
      * Read the ID of the orders already recorded in this sheet.
      *
      * @param sheet                    spreadsheet.
-     * @param tabName                name of the sheet within the spreadsheet.
+     * @param tabName                  name of the sheet within the spreadsheet.
      * @param existingOrderAssignments map of existing order IDs to sheets.
      */
     private static void accumulateExistingOrders(SheetsAPI sheet, final String tabName, HashMap<String, FeedbackTab> existingOrderAssignments) {
@@ -381,10 +377,10 @@ public class UpdateEmployeeSheetsFromDB {
     /**
      * Split the rows into chunks of size chunkSize and call sheet.updateRange for each.
      *
-     * @param sheet the SheetsAPI instance
+     * @param sheet     the SheetsAPI instance
      * @param sheetName target sheet name
-     * @param startRow 1-based row number where the first chunk should be inserted
-     * @param rows the full list of rows to insert
+     * @param startRow  1-based row number where the first chunk should be inserted
+     * @param rows      the full list of rows to insert
      */
     private void updateRangeInChunks(SheetsAPI sheet,
                                      String sheetName,

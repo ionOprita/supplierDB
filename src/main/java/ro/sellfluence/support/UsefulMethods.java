@@ -1,14 +1,20 @@
 package ro.sellfluence.support;
 
+import org.postgresql.util.PGInterval;
+
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.function.Supplier;
 
 public class UsefulMethods {
     /**
@@ -94,10 +100,32 @@ public class UsefulMethods {
         return timestamp == null ? null : toLocalDateTime(timestamp).toLocalDate();
     }
 
+    public static Duration toDuration(PGInterval pgInterval) {
+        return pgInterval != null
+                ? Duration.ofSeconds((long) pgInterval.getSeconds())
+                .plusDays(pgInterval.getDays())
+                .plusHours(pgInterval.getHours())
+                .plusMinutes(pgInterval.getMinutes())
+                : null;
+    }
+
     public static YearMonth toYearMonth(Date date) {
         return date == null ? null : YearMonth.from(date.toLocalDate());
     }
 
+    /**
+     * Helper function to convert a column number to its corresponding letters.
+     */
+    public static String toColumnName(int columnNumber) {
+        require(columnNumber > 0, "The column number must be positive.");
+        var columnName = new StringBuilder();
+        while (columnNumber > 0) {
+            int modulo = (columnNumber - 1) % 26;
+            columnName.insert(0, (char) ('A' + modulo));
+            columnNumber = (columnNumber - modulo - 1) / 26;
+        }
+        return columnName.toString();
+    }
 
     /**
      * Reference date of Google Sheets serial numbers.
@@ -136,6 +164,60 @@ public class UsefulMethods {
         // Convert fractional day to seconds and add to the date
         long secondsOfDay = fractional.multiply(BigDecimal.valueOf(86400)).longValue(); // 86400 seconds in a day
         return EXCEL_EPOCH_TIME.plusDays(serialDays).plusSeconds(secondsOfDay).truncatedTo(ChronoUnit.SECONDS);
+    }
+
+    /**
+     * Find the column number for a given month.
+     *
+     * @param row data from the spreadsheet
+     * @param month month to look for.
+     * @return column identifier.
+     */
+    public static String findColumnMatchingMonth(List<Object> row, YearMonth month) {
+        String columnIdentifier = null;
+        var columnNumber = 1;
+        for (Object it : row) {
+            if (it instanceof BigDecimal dateSerial) {
+                LocalDate localDate = sheetToLocalDate(dateSerial);
+                if (YearMonth.from(localDate).equals(month)) {
+                    columnIdentifier = toColumnName(columnNumber);
+                }
+            }
+            columnNumber++;
+        }
+        if (columnIdentifier == null) {
+            throw new RuntimeException("Could not find the column for the month %s.".formatted(month));
+        }
+        return columnIdentifier;
+    }
+
+    /**
+     * Validates the provided condition and throws an {@link IllegalStateException} with the specified message
+     * if the condition is false.
+     *
+     * @param condition the boolean condition to be checked. If false, an exception is thrown.
+     * @param message   the exception message to be used in case the condition is not met.
+     */
+    public static void require(boolean condition, String message) {
+        if (!condition) throw new IllegalStateException(message);
+    }
+
+    /**
+     * Validates the provided condition and throws an {@link IllegalStateException} with the specified message
+     * if the condition is false. The message is supplied dynamically through a {@link Supplier}.
+     *
+     * @param condition the boolean condition to be checked. If false, an exception is thrown.
+     * @param message   a {@link Supplier} that provides the exception message to be used if the condition is not met.
+     */
+    public static void require(boolean condition, Supplier<String> message) {
+        if (!condition) throw new IllegalStateException(message.get());
+    }
+
+    public static String getStackTraceAsString(Throwable e) {
+        if (e == null) { return ""; }
+        StringWriter sw = new StringWriter();
+        e.printStackTrace(new PrintWriter(sw));
+        return sw.toString();
     }
 
 

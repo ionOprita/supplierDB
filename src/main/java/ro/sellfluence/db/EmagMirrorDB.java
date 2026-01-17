@@ -54,10 +54,20 @@ import static ro.sellfluence.db.Vendor.insertOrUpdateVendor;
 import static ro.sellfluence.db.Vendor.selectFetchTimeByAccount;
 import static ro.sellfluence.db.Vendor.selectVendorIdByName;
 import static ro.sellfluence.db.Vendor.updateFetchTimeByAccount;
+import static ro.sellfluence.support.UsefulMethods.require;
 import static ro.sellfluence.support.UsefulMethods.toLocalDate;
 import static ro.sellfluence.support.UsefulMethods.toLocalDateTime;
 import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 
+/**
+ * EmagMirrorDB provides a mechanism for managing and interacting with the eMAG mirrored database system.
+ * It allows operations such as retrieving, updating, and analysing order data, product information,
+ * vendor details, GMV data, and other related database functionalities. This class ensures database
+ * interaction is streamlined, encapsulated, and accessible through its defined public methods.
+ *
+ * <p>This module delegates all operations, which touch only a single table to the repective class
+ * while it handles operations that need multiple tables itself.</p>
+ */
 public class EmagMirrorDB {
 
     private static final Map<String, EmagMirrorDB> openDatabases = new HashMap<>();
@@ -76,7 +86,7 @@ public class EmagMirrorDB {
      * @param alias name of the database.
      * @return instance of this class.
      * @throws SQLException on database errors.
-     * @throws IOException on alias lookup.
+     * @throws IOException  on alias lookup.
      */
     public static EmagMirrorDB getEmagMirrorDB(String alias) throws SQLException, IOException {
         var mirrorDB = openDatabases.get(alias);
@@ -135,6 +145,143 @@ public class EmagMirrorDB {
         });
     }
 
+    public record ReturnStornoOrderDetail(LocalDateTime time, String orderId, String vendor, String pnk, String name, int quantity) {
+    }
+
+    /**
+     * Retrieves a list of storno details based on the provided part number key and date range.
+     * The storno details include information about the storno date, associated order, vendor,
+     * product, and quantity.
+     *
+     * @param pnk the part number key (PNK) which uniquely identifies the product.
+     * @param month the YearMonth object representing the month for which the storno details should be fetched.
+     *              Details are retrieved for the entire month starting from the first day and ending before
+     *              the first day of the next month.
+     * @return a list of StronoInfo objects containing the storno details. Each entry in the list represents
+     *         a storno record with corresponding metadata.
+     * @throws SQLException if any database access error occurs while retrieving the storno details.
+     */
+    public List<ReturnStornoOrderDetail> getOrderDetails(String pnk, YearMonth month) throws SQLException {
+        return database.readTX(db -> {
+            var result = new ArrayList<ReturnStornoOrderDetail>();
+            try (var s = db.prepareStatement("""
+                    SELECT DISTINCT ON (o.id, pio.part_number_key) o.id, o.date, v.vendor_name, pio.part_number_key, p.name, CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS quantity
+                    FROM emag_order AS o
+                    JOIN product_in_order AS pio ON pio.emag_order_surrogate_id = o.surrogate_id
+                    JOIN vendor AS v ON v.id = o.vendor_id
+                    JOIN product AS p ON pio.part_number_key = p.emag_pnk
+                    WHERE o.status IN (4,5) AND o.date >= ? AND o.date <  ? AND pio.part_number_key = ?
+                    ORDER BY o.id, pio.part_number_key;
+                    """)) {
+                s.setTimestamp(1, toTimestamp(month.atDay(1)));
+                s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1)));
+                s.setString(3, pnk);
+                try (var rs = s.executeQuery()) {
+                    while (rs.next()) {
+                        result.add(
+                                new ReturnStornoOrderDetail(
+                                        toLocalDateTime(rs.getTimestamp("date")),
+                                        rs.getString("id"),
+                                        rs.getString("vendor_name"),
+                                        rs.getString("part_number_key"),
+                                        rs.getString("name"),
+                                        rs.getInt("quantity")
+                                )
+                        );
+                    }
+                }
+            }
+            return result;
+        });
+    }
+
+    /**
+     * Retrieves a list of storno details based on the provided part number key and date range.
+     * The storno details include information about the storno date, associated order, vendor,
+     * product, and quantity.
+     *
+     * @param pnk the part number key (PNK) which uniquely identifies the product.
+     * @param month the YearMonth object representing the month for which the storno details should be fetched.
+     *              Details are retrieved for the entire month starting from the first day and ending before
+     *              the first day of the next month.
+     * @return a list of StronoInfo objects containing the storno details. Each entry in the list represents
+     *         a storno record with corresponding metadata.
+     * @throws SQLException if any database access error occurs while retrieving the storno details.
+     */
+    public List<ReturnStornoOrderDetail> getStornoDetails(String pnk, YearMonth month) throws SQLException {
+        return database.readTX(db -> {
+            var result = new ArrayList<ReturnStornoOrderDetail>();
+            try (var s = db.prepareStatement("""
+                    SELECT  s.storno_date, s.order_id, v.vendor_name, pio.part_number_key, p.name, s.quantity
+                    FROM storno AS s
+                    JOIN emag_order AS o ON o.id = s.order_id
+                    JOIN product_in_order AS pio ON pio.id = s.product_id AND pio.emag_order_surrogate_id = o.surrogate_id
+                    JOIN vendor AS v ON v.id = o.vendor_id
+                    JOIN product AS p ON pio.part_number_key = p.emag_pnk
+                    WHERE o.status = 5 AND s.storno_date >= ? AND s.storno_date <  ? AND pio.part_number_key = ?
+                    ORDER BY s.storno_date, s.order_id;""")) {
+                s.setTimestamp(1, toTimestamp(month.atDay(1)));
+                s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1)));
+                s.setString(3, pnk);
+                try (var rs = s.executeQuery()) {
+                    while (rs.next()) {
+                        result.add(
+                                new ReturnStornoOrderDetail(
+                                        toLocalDateTime(rs.getTimestamp(1)),
+                                        rs.getString(2),
+                                        rs.getString(3),
+                                        rs.getString(4),
+                                        rs.getString(5),
+                                        rs.getInt(6)
+                                )
+                        );
+                    }
+                }
+            }
+            return result;
+        });
+    }
+
+    public List<ReturnStornoOrderDetail> getReturnDetails(String pnk, YearMonth month) throws SQLException {
+        return database.readTX(db -> {
+            var result = new ArrayList<ReturnStornoOrderDetail>();
+            try (var s = db.prepareStatement("""
+                    SELECT r.date, r.order_id, v.vendor_name, pio.part_number_key, p.name, rp.quantity
+                    FROM rma_result AS r
+                    INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                    INNER JOIN (
+                        SELECT DISTINCT ON (id) id, surrogate_id, vendor_id
+                        FROM emag_order
+                        ORDER BY id, status DESC
+                    ) AS o ON r.order_id = o.id
+                    INNER JOIN vendor AS v ON v.id = o.vendor_id
+                    INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                    INNER JOIN product AS p ON pio.part_number_key = p.emag_pnk
+                    WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ? AND pio.part_number_key = ?
+                    ORDER BY r.date, r.order_id;
+            """)) {
+                s.setTimestamp(1, toTimestamp(month.atDay(1)));
+                s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1)));
+                s.setString(3, pnk);
+                try (var rs = s.executeQuery()) {
+                    while (rs.next()) {
+                        result.add(
+                                new ReturnStornoOrderDetail(
+                                        toLocalDateTime(rs.getTimestamp(1)),
+                                        rs.getString(2),
+                                        rs.getString(3),
+                                        rs.getString(4),
+                                        rs.getString(5),
+                                        rs.getInt(6)
+                                )
+                        );
+                    }
+                }
+            }
+            return result;
+        });
+    }
+
     @FunctionalInterface
     public interface SQLFunction<R> {
         R apply(Connection db) throws SQLException;
@@ -144,8 +291,8 @@ public class EmagMirrorDB {
      * Execute a read operation on this database.
      *
      * @param readOp operation that reads the database.
+     * @param <T>    type of result.
      * @return result of read operation.
-     * @param <T> type of result.
      * @throws SQLException if a database error occurs in readOp.
      */
     public <T> T read(SQLFunction<T> readOp) throws SQLException {
@@ -159,9 +306,9 @@ public class EmagMirrorDB {
     /**
      * Read orders in a format that is useful to update the employee sheets.
      *
-     * @param pnk Product identifier.
+     * @param pnk       Product identifier.
      * @param startTime start time of the period to read orders for.
-     * @param endTime end time of the period to read orders for.
+     * @param endTime   end time of the period to read orders for.
      * @return list of orders in a format that is useful to update the employee sheets.
      * @throws SQLException if anything goes wrong with the database.
      */
@@ -383,11 +530,12 @@ public class EmagMirrorDB {
      * <b>DEBUG ONLY!</b>
      *
      * <p>
-     *     This returns the orders, which are not fully filled for a given vendor, time range, and status.
+     * This returns the orders, which are not fully filled for a given vendor, time range, and status.
      * </p>
+     *
      * @param startTime start time inclusive
-     * @param endTime end time exclusive
-     * @param vendorId vendor UUID
+     * @param endTime   end time exclusive
+     * @param vendorId  vendor UUID
      * @return Orders that are missing all dependents like products, attachments, and so on.
      * @throws SQLException for database errors.
      */
@@ -426,7 +574,8 @@ public class EmagMirrorDB {
                                 rs.getInt("weekend_delivery"),
                                 toLocalDateTime(rs.getTimestamp("created")),
                                 toLocalDateTime(rs.getTimestamp("modified")),
-                                null
+                                null,
+                                "" //TODO Currency
                         );
                         results.add(order);
                     }
@@ -480,11 +629,11 @@ public class EmagMirrorDB {
                             """)) {
                 try (var rs = s.executeQuery()) {
                     while (rs.next()) {
-                        var priceWithoutVAT = rs.getBigDecimal(6);
-                        var vatRate = new BigDecimal(rs.getString("vat"));
-                        var vat = priceWithoutVAT.multiply(vatRate);
-                        var priceWithVAT = priceWithoutVAT.add(vat);
-                        String customerName = rs.getString(8);
+                        // var priceWithoutVAT = rs.getBigDecimal(6);
+                        // var vatRate = new BigDecimal(rs.getString("vat"));
+                        // var vat = priceWithoutVAT.multiply(vatRate);
+                        // var priceWithVAT = priceWithoutVAT.add(vat);
+                        // String customerName = rs.getString(8);
                         var row = Arrays.<Object>asList(rs.getString(1), // id
                                 rs.getString(2), // company name
                                 rs.getBoolean(3), // platform
@@ -558,6 +707,248 @@ public class EmagMirrorDB {
         return database.readTX(Vendor::selectAllVendors);
     }
 
+    public @NonNull Map<UUID, String> readVendorCompanies() throws SQLException {
+        return database.readTX(Vendor::selectAllVendorCompanies);
+    }
+
+    public @NonNull List<Vendor> getAllVendors() throws SQLException {
+        return database.readTX(Vendor::getVendors);
+    }
+
+    public int updateStornoTable() throws SQLException {
+        return database.writeTX(EmagMirrorDB::stornoBackfill);
+    }
+
+    /**
+     * Return the number of storno for each product in a specific month.
+     *
+     * @param productCode for which to return the number of storno.
+     * @return map from PNK to number of storno.
+     */
+    public @NonNull Map<LocalDate, Integer> countOrdersByDayForProduct(@NonNull String productCode) throws SQLException {
+        return countByDayForProduct(productCode, """
+                WITH picked AS (
+                  SELECT DISTINCT ON (o.id, pio.part_number_key)
+                         -- If we picked a status 4 row, use pio.quantity; otherwise (only 5 exists) use pio.initial_qty
+                         CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS picked_qty,
+                         CAST(o.date AS date) AS event_date
+                  FROM emag_order o
+                  JOIN product_in_order pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                  JOIN product p ON p.emag_pnk = pio.part_number_key
+                  WHERE o.status IN (4,5) AND p.product_code = ?
+                  ORDER BY o.id, pio.part_number_key,
+                    o.status,  -- prefer status 4; fallback to 5
+                    o.surrogate_id DESC                         -- tie-breaker if needed
+                )
+                SELECT SUM(picked_qty) AS quantity, event_date
+                FROM picked
+                GROUP BY event_date
+                ORDER BY event_date;
+                """);
+    }
+
+    /**
+     * Return the number of storno for each product in a specific month.
+     *
+     * @param productCode for which to return the number of storno.
+     * @return map from PNK to number of storno.
+     */
+    public @NonNull Map<LocalDate, Integer> countStornoByDayForProduct(@NonNull String productCode) throws SQLException {
+        return countByDayForProduct(productCode, """
+                SELECT
+                  SUM(s.quantity) AS quantity,
+                  CAST(s.storno_date AS date) AS event_date
+                FROM storno AS s
+                JOIN product_in_order AS pio
+                  ON pio.id = s.product_id
+                JOIN product AS p
+                  ON p.emag_pnk = pio.part_number_key
+                WHERE p.product_code = ?
+                GROUP BY CAST(s.storno_date AS date)
+                ORDER BY event_date;
+                """);
+    }
+
+    /**
+     * Return the number of returns for each product in a specific month.
+     *
+     * @param productCode for which to return the number of storno.
+     * @return map from PNK to number of storno.
+     */
+    public @NonNull Map<LocalDate, Integer> countReturnByDayForProduct(@NonNull String productCode) throws SQLException {
+        return countByDayForProduct(productCode, """
+                SELECT SUM(rp.quantity) AS quantity, CAST(r.date AS date) AS event_date
+                FROM rma_result AS r
+                INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                INNER JOIN emag_order AS o ON r.order_id = o.id
+                INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
+                WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND p.product_code = ?
+                GROUP BY CAST(r.date AS date)
+                ORDER BY event_date;
+                """);
+    }
+
+    /**
+     * Return the number of storno for each product in a specific month.
+     *
+     * @param month for which to return the number of storno.
+     * @return map from PNK to number of storno.
+     */
+    public @NonNull Map<String, Integer> countOrdersByMonth(@NonNull YearMonth month) throws SQLException {
+        return countByMonth(month, """
+                WITH picked AS (
+                  SELECT DISTINCT ON (o.id, pio.part_number_key)
+                         CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS picked_qty,
+                         pio.part_number_key AS pnk
+                  FROM emag_order AS o
+                  JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                  WHERE o.status IN (4,5)
+                    AND o.date >= ?
+                    AND o.date < ?
+                  ORDER BY
+                    o.id,
+                    pio.part_number_key,
+                    o.status,          -- prefer status 4; fallback to 5
+                    o.surrogate_id DESC
+                )
+                SELECT SUM(picked_qty) AS quantity, pnk
+                FROM picked
+                GROUP BY pnk
+                ORDER BY pnk;
+                """);
+    }
+
+    /**
+     * Return the number of storno for each product in a specific month.
+     *
+     * @param month for which to return the number of storno.
+     * @return map from PNK to number of storno.
+     */
+    public @NonNull Map<String, Integer> countStornoByMonth(@NonNull YearMonth month) throws SQLException {
+        return countByMonth(month, """
+                SELECT
+                  SUM(s.quantity) AS quantity,
+                  p.part_number_key AS pnk
+                FROM storno AS s
+                JOIN emag_order AS o ON o.id = s.order_id
+                JOIN product_in_order AS p ON p.id = s.product_id AND p.emag_order_surrogate_id = o.surrogate_id
+                WHERE o.status = 5 AND s.storno_date >= ? AND s.storno_date < ?
+                GROUP BY p.part_number_key;
+                """);
+    }
+
+    /**
+     * Return the number of returns for each product in a specific month.
+     *
+     * @param month for which to return the number of storno.
+     * @return map from PNK to number of storno.
+     */
+    public @NonNull Map<String, Integer> countReturnByMonth(@NonNull YearMonth month) throws SQLException {
+        return countByMonth(month, """
+                SELECT SUM(rp.quantity) AS quantity, pio.part_number_key AS pnk
+                FROM rma_result AS r
+                INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                    INNER JOIN (
+                        SELECT DISTINCT ON (id) id, surrogate_id, vendor_id
+                        FROM emag_order
+                        ORDER BY id, status DESC
+                    ) AS o ON r.order_id = o.id
+                INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ?
+                GROUP BY pnk
+                """);
+    }
+
+    private @NonNull HashMap<LocalDate, Integer> countByDayForProduct(@NonNull final String productCode, @NonNull final String sql) throws SQLException {
+        return database.singleReadTX(db -> {
+                    var result = new HashMap<LocalDate, Integer>();
+                    try (var s = db.prepareStatement(sql)) {
+                        s.setString(1, productCode);
+                        try (var rs = s.executeQuery()) {
+                            while (rs.next()) {
+                                var date = toLocalDate(rs.getTimestamp("event_Date"));
+                                var oldValue = result.put(date, rs.getInt("quantity"));
+                                require(oldValue == null, () -> "Unexpected duplicate for date %s".formatted(date));
+                            }
+                        }
+                    }
+                    return result;
+                }
+        );
+    }
+
+    private @NonNull HashMap<String, Integer> countByMonth(@NonNull final YearMonth month, @NonNull final String sql) throws SQLException {
+        return database.singleReadTX(db -> {
+                    var result = new HashMap<String, Integer>();
+                    try (var s = db.prepareStatement(sql)) {
+                        s.setTimestamp(1, toTimestamp(month.atDay(1).atStartOfDay()));
+                        s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1).atStartOfDay()));
+                        try (var rs = s.executeQuery()) {
+                            while (rs.next()) {
+                                var pnk = rs.getString("pnk");
+                                var oldValue = result.put(pnk, rs.getInt("quantity"));
+                                require(oldValue == null, () -> "Unexpected duplicate for PNK %s".formatted(pnk));
+                            }
+                        }
+                    }
+                    return result;
+                }
+        );
+    }
+
+    /**
+     * Computes the delta between product_in_order.storno_qty and what's already recorded in
+     * the storno table, then inserts the missing amount (positive or negative) using the
+     * emag_order.modified timestamp as storno_date.
+     *
+     * @return number of rows inserted into storno
+     */
+    private static int stornoBackfill(Connection db) throws SQLException {
+        try (var s = db.prepareStatement("""
+                WITH cancelled AS (
+                  SELECT
+                    o.id  AS order_id,
+                    p.id  AS product_id,
+                    COALESCE(p.storno_qty, 0) AS storno_qty,
+                    o.modified AS storno_date
+                  FROM emag_order o
+                  JOIN product_in_order p
+                    ON p.emag_order_surrogate_id = o.surrogate_id
+                  WHERE o.status = 5
+                    AND COALESCE(p.storno_qty, 0) <> 0
+                ),
+                already AS (
+                  SELECT
+                    s.order_id,
+                    s.product_id,
+                    SUM(s.quantity) AS already_qty
+                  FROM storno s
+                  GROUP BY s.order_id, s.product_id
+                ),
+                to_insert AS (
+                  SELECT
+                    c.storno_date,
+                    c.order_id,
+                    c.product_id,
+                    (c.storno_qty - COALESCE(a.already_qty, 0)) AS delta_qty
+                  FROM cancelled c
+                  LEFT JOIN already a
+                    ON a.order_id = c.order_id
+                   AND a.product_id = c.product_id
+                )
+                INSERT INTO storno (storno_date, order_id, product_id, quantity)
+                SELECT
+                  storno_date,
+                  order_id,
+                  product_id,
+                  delta_qty
+                FROM to_insert
+                WHERE delta_qty <> 0
+                """)) {
+            return s.executeUpdate();
+        }
+    }
 
     private static boolean computeGMV(Connection db) throws SQLException {
         var products = getProductCodes(db);
@@ -616,7 +1007,6 @@ public class EmagMirrorDB {
                     var vatRate = new BigDecimal(rs.getString("vat"));
                     var vat = priceWithoutVAT.multiply(vatRate);
                     var priceWithVAT = priceWithoutVAT.add(vat);
-                    int status = rs.getInt("status");
                     var data = new EmployeeSheetData(
                             rs.getString("id"),
                             rs.getString("vendor_name"),

@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="EmagDBApp nofetch" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="ro.sellfluence.app.EmagDBApp" />
-    <module name="supplierDB" />
+    <module name="emagDB" />
     <option name="PROGRAM_PARAMETERS" value="--nofetch" />
     <option name="WORKING_DIRECTORY" value="$ContentRoot$" />
     <extension name="coverage">

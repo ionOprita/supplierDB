@@ -52,7 +52,8 @@ public record OrderResult(
         int weekend_delivery,
         LocalDateTime created,
         LocalDateTime modified,
-        List<String> enforced_vendor_courier_accounts
+        List<String> enforced_vendor_courier_accounts,
+        String currency
 ) {
     public OrderResult {
         // Normalize Lists and BigDecimals

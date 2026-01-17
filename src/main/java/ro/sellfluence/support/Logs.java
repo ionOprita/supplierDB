@@ -3,8 +3,10 @@ package ro.sellfluence.support;
 import org.jspecify.annotations.NonNull;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.FileHandler;
 import java.util.logging.Formatter;
@@ -13,29 +15,53 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
+import static java.util.logging.Level.CONFIG;
+import static java.util.logging.Level.FINE;
+import static java.util.logging.Level.FINER;
+import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.SEVERE;
+import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.sheetSupport.Conversions.isoLikeLocalDateTimeWithoutFractionalSeconds;
+import static ro.sellfluence.support.UsefulMethods.getStackTraceAsString;
+
 public class Logs {
+
+    private static final String logDir = "EmagDBLogs/";
+
+    public static final Path logPath = Paths.get(System.getProperty("java.io.tmpdir")).resolve(logDir);
+
+    static {
+        try {
+            Files.createDirectories(logPath);
+        } catch (IOException e) {
+            IO.println("Could not create directory " + logPath);
+        }
+    }
 
     private static final Formatter defaultFormatter = new Formatter() {
         @Override
         public String format(LogRecord record) {
             String output;
             if (record.getThrown() == null) {
-                output = ("%s %-10s %s (%s.%s)%n").formatted(
-                        DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(record.getInstant().atZone(ZoneId.systemDefault())),
-                        record.getLevel(),
+                output = ("%s %s %s (%s.%s)%n").formatted(
+                        isoLikeLocalDateTimeWithoutFractionalSeconds.format(record.getInstant().atZone(ZoneId.systemDefault())),
+                        emoji(record.getLevel()),
                         record.getMessage(),
                         record.getSourceClassName(),
                         record.getSourceMethodName()
                 );
             } else {
-                output = ("%s %-10s %s (%s.%s)%n%s%n").formatted(
-                        DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(record.getInstant().atZone(ZoneId.systemDefault())),
-                        record.getLevel(),
+                output = ("%s %s %s (%s.%s)%n%s%n").formatted(
+                        isoLikeLocalDateTimeWithoutFractionalSeconds.format(record.getInstant().atZone(ZoneId.systemDefault())),
+                        emoji(record.getLevel()),
                         record.getMessage(),
                         record.getSourceClassName(),
                         record.getSourceMethodName(),
                         record.getThrown()
                 );
+            }
+            if (record.getLevel().intValue() >= WARNING.intValue()) {
+                output = output + "\n" + getStackTraceAsString(record.getThrown());
             }
             return output;
         }
@@ -53,7 +79,7 @@ public class Logs {
         try {
             addFileHandler(logger, makePattern(name), generations, maxFileSize);
         } catch (IOException e) {
-            Logger.getGlobal().log(Level.WARNING, "Could not create a file handler for logger " + name + " thus logging only to the console.");
+            Logger.getGlobal().log(WARNING, "Could not create a file handler for logger " + name + " thus logging only to the console.");
         }
         return logger;
     }
@@ -64,13 +90,35 @@ public class Logs {
             addFileHandler(logger, makePattern(name), generations, maxFileSize);
         } catch (IOException e) {
             logger.setUseParentHandlers(true);
-            Logger.getGlobal().log(Level.WARNING, "Could not create a file handler for logger " + name + " which therefore will use the default handler.");
+            Logger.getGlobal().log(WARNING, "Could not create a file handler for logger " + name + " which therefore will use the default handler.");
         }
         return logger;
     }
 
+    private static String emoji(Level level) {
+        String s;
+        int l = level.intValue();
+        if (l >= SEVERE.intValue()) {
+            s = "‼️";
+        } else if (l >= WARNING.intValue()) {
+            s = "⚠️";
+        } else if (l >= INFO.intValue()) {
+            s = "ℹ️";
+        } else if (l >= CONFIG.intValue()) {
+            s = "⚙️";
+        } else if (l >= FINE.intValue()) {
+            s = "🪲";
+        } else if (l >= FINER.intValue()) {
+            s = "🔍";
+        } else {
+            s = "🔬";
+        }
+        return s;
+    }
+
+
     private static @NonNull String makePattern(String name) {
-        return "%t/" + name + "_%g.log";
+        return "%t/" + logDir + name + "_%g.log";
     }
 
     private static void addFileHandler(Logger logger, String pattern, int generations, long maxFileSize) throws IOException {

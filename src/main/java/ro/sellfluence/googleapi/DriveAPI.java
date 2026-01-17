@@ -76,7 +76,7 @@ public class DriveAPI {
                 pageToken = fileList.getNextPageToken();
                 var files = fileList.getFiles();
                 files.stream()
-                        .filter(f -> name.equals(f.getName()))
+                        .filter(f -> name.equals(f.getName()) && !f.getTrashed())
                         .forEach(matchingFiles::add);
             } while (pageToken != null);
             if (matchingFiles.isEmpty()) {
