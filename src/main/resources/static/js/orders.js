@@ -1,11 +1,11 @@
-import { initMatrixTable } from './table-common.js';
+import { initMatrixTable } from '/js/table-common.js';
 
 initMatrixTable({
   tableId: 'ordersTable',
   theadId: 'ordersHead',
   tbodyId: 'ordersBody',
   dataUrl: '/app/orderTable',
-  detailsUrlBuilder: (pnk, month) => `/static/order-details.html?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
+  detailsUrlBuilder: (pnk, month) => `/private/order-details?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
   detailsWindowName: 'orderDetails',
   csvButtonId: 'downloadCsvBtn',
   csvFilenamePrefix: 'orders-table',

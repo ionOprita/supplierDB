@@ -1,5 +1,6 @@
 package ro.sellfluence.app;
 
+import org.jspecify.annotations.NullMarked;
 import ro.sellfluence.apphelper.Vendor;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductTable.ProductInfo;
@@ -29,6 +30,7 @@ import static ro.sellfluence.support.UsefulMethods.findColumnMatchingMonth;
 /**
  * Read orders from our database mirror and put them in a sheet.
  */
+@NullMarked
 public class PopulateDateComenziFromDB {
 
     private static final Logger logger = Logs.getConsoleLogger("PopulateDateComenziFromDB", INFO);
@@ -40,7 +42,7 @@ public class PopulateDateComenziFromDB {
      */
     private final String spreadSheetName;
 
-    PopulateDateComenziFromDB(int year) {
+    public PopulateDateComenziFromDB(int year) {
         this.year = year;
         spreadSheetName = this.year + " - Date comenzi";
     }
@@ -109,7 +111,7 @@ public class PopulateDateComenziFromDB {
             }
             if (productInfos == null || productInfos.isEmpty()) {
                 logger.log(WARNING, "No entry found for the product " + productName + ". Until you update the table, no GMV is computed for this product.");
-                gmvColumn.add(null);
+                gmvColumn.add(BigDecimal.ZERO);
             } else {
                 productInfo = productInfos.getFirst();
 
@@ -134,7 +136,7 @@ public class PopulateDateComenziFromDB {
                     }
                 }
                 if (startRow != null) {
-                    gmvColumn.add(gmv);
+                    gmvColumn.add(gmv!=null ? gmv : BigDecimal.ZERO);
                 }
             }
         }
@@ -195,7 +197,7 @@ public class PopulateDateComenziFromDB {
                     var order_id = (String) groupedRow.get(0).get(1);
                     var vendor = Vendor.fromSheet((String) groupedRow.get(1).get(0), isEMAGFbe((String) groupedRow.get(1).get(1)));
                     var productName = (String) groupedRow.get(0).get(5);
-                    if (productName == null || productName.isBlank()) {
+                    if (productName.isBlank()) {
                         throw new RuntimeException("Could not find the product name for order %s (%s).".formatted(order_id, vendor.name()));
                     }
                     var orderLine = new OrderLine(order_id, /*vendor,*/ productName);

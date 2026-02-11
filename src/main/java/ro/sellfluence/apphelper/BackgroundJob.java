@@ -1,6 +1,6 @@
 package ro.sellfluence.apphelper;
 
-import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import ro.sellfluence.app.EmagDBApp;
 import ro.sellfluence.app.PopulateDateComenziFromDB;
@@ -22,7 +22,7 @@ import java.util.logging.Logger;
 import static com.google.common.base.Throwables.getStackTraceAsString;
 import static java.util.logging.Level.WARNING;
 
-
+@NullMarked
 public class BackgroundJob {
 
     private static final Logger logger = Logs.getFileLogger("BackgroundJob", Level.INFO, 10, 1_000_000);
@@ -63,7 +63,8 @@ public class BackgroundJob {
 
     private final List<TaskRunner> consumers = List.of(
             new TaskRunner("Transfer to storno and return sheets", hourly, always, PopulateStornoAndReturns::updateSpreadsheets),
-            new TaskRunner("Transfer to order and GMV sheets", hourly, always, PopulateDateComenziFromDB::updateSpreadsheets),
+            new TaskRunner("Transfer to order and GMV sheets for 2026", hourly, always, (new PopulateDateComenziFromDB(2026))::updateSpreadsheets),
+            new TaskRunner("Transfer to order and GMV sheets for 2025", weekly, always, (new PopulateDateComenziFromDB(2025))::updateSpreadsheets),
             new TaskRunner("Transfer to employee sheet", hourly, this::outOfOfficeHour, UpdateEmployeeSheetsFromDB::updateSheets)
     );
 
@@ -100,7 +101,7 @@ public class BackgroundJob {
         }
     }
 
-    private @NonNull LocalDateTime findLatestFetchTime(List<Task> taskInfos) {
+    private LocalDateTime findLatestFetchTime(List<Task> taskInfos) {
         var latestFetchTime = LocalDateTime.MIN;
         for (TaskRunner taskRunner : fetchers) {
             var taskInfo = findTask(taskInfos, taskRunner.name);
@@ -165,7 +166,7 @@ public class BackgroundJob {
      * @param taskInfo or null.
      * @return last run time.
      */
-    private static LocalDateTime getLastRunTime(Task taskInfo) {
+    private static LocalDateTime getLastRunTime(@Nullable Task taskInfo) {
         LocalDateTime last = taskInfo == null ? LocalDateTime.MIN : taskInfo.lastSuccessfulRun();
         return last != null ? last : LocalDateTime.MIN;
     }

@@ -5,7 +5,7 @@ initMatrixTable({
   theadId: 'returnsHead',
   tbodyId: 'returnsBody',
   dataUrl: '/app/returnTable',
-  detailsUrlBuilder: (pnk, month) => `/app/return-details.html?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
+  detailsUrlBuilder: (pnk, month) => `/private/return-details?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
   detailsWindowName: 'returnDetails',
   csvButtonId: 'downloadCsvBtn',
   csvFilenamePrefix: 'returns-table',

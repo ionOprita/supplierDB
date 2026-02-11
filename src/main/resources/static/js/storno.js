@@ -5,7 +5,7 @@ initMatrixTable({
   theadId: 'stornoHead',
   tbodyId: 'stornoBody',
   dataUrl: '/app/stornoTable',
-  detailsUrlBuilder: (pnk, month) => `/app/storno-details.html?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
+  detailsUrlBuilder: (pnk, month) => `/private/storno-details?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
   detailsWindowName: 'stornoDetails',
   csvButtonId: 'downloadCsvBtn',
   csvFilenamePrefix: 'storno-table',

@@ -31,12 +31,12 @@
 </header>
 
 <main style="margin-top: 60px;">
-    <h1>${pageTitle}</h1>
+    <h1 id="title">${pageTitle}</h1>
     ${content}
 </main>
 
 <footer>
-    <small>© Sellfusion 2025</small>
+    <small>© Sellfusion 2025 - 2026</small>
 </footer>
 
 </body>
