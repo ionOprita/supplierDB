@@ -11,7 +11,7 @@
         `
 }
         <li><a href="/private/orders">Order Table</a></li>
-        <li><a href="/private/storno">Storno Table</a></li>
+        <li><a href="/private/stornos">Storno Table</a></li>
         <li><a href="/private/returns">Return Table</a></li>
         <li><a href="/private/returnCharts">Return Charts</a></li>
         <li><a href="/private/tasks">Tasks</a></li>
