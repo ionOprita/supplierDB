@@ -13,6 +13,12 @@ h1 {
   margin: 0;
 }
 
+.page-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: .75rem 0;
+}
+
 /* Table wrapper styles */
 .wrap {
   max-width: 100%;
