@@ -18,11 +18,16 @@ h1 {
   align-items: center;
   gap: .5rem;
   justify-content: flex-end;
+  flex-wrap: wrap;
   margin: .75rem 0;
 }
 
 .vendor-filter-select {
   min-width: 240px;
+}
+
+.month-filter-select {
+  min-width: 130px;
 }
 
 /* Table wrapper styles */

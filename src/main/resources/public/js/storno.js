@@ -9,5 +9,8 @@ initMatrixTable({
   detailsWindowName: 'stornoDetails',
   csvButtonId: 'downloadCsvBtn',
   csvFilenamePrefix: 'storno-table',
-  vendorFilterSelectId: 'vendorFilterSelect'
+  vendorFilterSelectId: 'vendorFilterSelect',
+  monthFromSelectId: 'monthFromSelect',
+  monthToSelectId: 'monthToSelect',
+  monthResetButtonId: 'monthFilterResetBtn'
 });
