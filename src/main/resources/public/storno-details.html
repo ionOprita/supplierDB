@@ -10,7 +10,9 @@
     window.addEventListener('DOMContentLoaded', () => {
       initDetailsPage({
         titleText: "Storno Details",
-        endpointBuilder: (pnk, month) => `/stornoDetails?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`
+        endpointBuilder: (pnk, month) => `/stornoDetails?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
+        csvFilenamePrefix: 'storno-details',
+        includePnkInCsvFilename: true
       });
     });
   </script>
@@ -22,10 +24,11 @@
   <div class="toolbar">
     <button id="refreshBtn" title="Reload">Reload</button>
     <button id="copyBtn" title="Copy table">Copy</button>
+    <button id="downloadCsvBtn" title="Download as CSV">CSV</button>
   </div>
 </header>
 <div class="wrap">
-  <table>
+  <table id="detailsTable">
     <thead>
       <tr>
         <th>Time</th>

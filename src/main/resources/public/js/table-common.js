@@ -7,18 +7,28 @@
 // --- helpers -------------------------------------------------------------
 
 export function parseKey(key) {
+  const extractField = (fieldName) => {
+    const m = key.match(new RegExp(`${fieldName}=(.*?)(?=, [a-zA-Z0-9_]+=|\\]$)`));
+    return m ? m[1].trim() : '';
+  };
+
   const pnkMatch = key.match(/pnk=([^,\]]+)/);
   const nameMatch = key.match(/name=([^,\]]+)/);
+  const vendorNameMatch = key.match(/vendorName=([^,\]]+)/);
+  const pnk = extractField('pnk') || (pnkMatch ? pnkMatch[1].trim() : '');
+  const name = extractField('name') || (nameMatch ? nameMatch[1].trim() : key);
+  const vendorNameRaw = extractField('vendorName') || (vendorNameMatch ? vendorNameMatch[1].trim() : '');
   return {
-    pnk: pnkMatch ? pnkMatch[1].trim() : '',
-    name: nameMatch ? nameMatch[1].trim() : key
+    pnk,
+    name,
+    vendorName: vendorNameRaw === 'null' ? '' : vendorNameRaw
   };
 }
 
 export function toRows(jsonMap) {
   return Object.entries(jsonMap).map(([key, monthsObj]) => {
-    const { pnk, name } = parseKey(key);
-    return { key, pnk, name, months: monthsObj };
+    const { pnk, name, vendorName } = parseKey(key);
+    return { key, pnk, name, vendorName, months: monthsObj };
   });
 }
 
@@ -34,6 +44,69 @@ export async function fetchJSON(url) {
   const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+// --- csv export ----------------------------------------------------------
+
+export function csvEscape(value) {
+  const normalized = String(value ?? '').replace(/\r?\n|\r/g, ' ').trim();
+  if (/[",\n]/.test(normalized)) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+  return normalized;
+}
+
+export function tableToCsv(table) {
+  if (!table) return '';
+  const rows = Array.from(table.querySelectorAll('tr'));
+  if (!rows.length) return '';
+
+  return rows
+    .map((row) => Array.from(row.cells).map((cell) => csvEscape(cell.textContent ?? '')).join(','))
+    .join('\r\n');
+}
+
+export function downloadCsvFromTable(table, fileName) {
+  const csv = tableToCsv(table);
+  if (!csv) return false;
+
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  return true;
+}
+
+export function sanitizeFileNamePart(value) {
+  return String(value ?? '')
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, '-');
+}
+
+export function bindTableCsvDownload({ buttonId, tableId, filePrefix = 'table', fileNameBuilder }) {
+  const button = document.getElementById(buttonId);
+  const table = document.getElementById(tableId);
+  if (!button || !table) return;
+
+  button.addEventListener('click', () => {
+    const datePart = new Date().toISOString().slice(0, 10);
+    let fileName = '';
+    if (typeof fileNameBuilder === 'function') {
+      fileName = String(fileNameBuilder({ datePart, filePrefix }) ?? '');
+    }
+    if (!fileName) {
+      fileName = `${filePrefix}-${datePart}.csv`;
+    } else if (!fileName.toLowerCase().endsWith('.csv')) {
+      fileName = `${fileName}.csv`;
+    }
+    downloadCsvFromTable(table, fileName);
+  });
 }
 
 // --- rendering -----------------------------------------------------------
@@ -116,6 +189,29 @@ export function applyStickyOffsets(table) {
   }
 }
 
+export function bindVendorFilter({ selectId, rows, onChange, allLabel = 'All vendors' }) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+
+  const vendors = [...new Set(rows.map((row) => row.vendorName).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+
+  select.innerHTML = '';
+  const allOption = document.createElement('option');
+  allOption.value = '';
+  allOption.textContent = allLabel;
+  select.appendChild(allOption);
+
+  for (const vendor of vendors) {
+    const opt = document.createElement('option');
+    opt.value = vendor;
+    opt.textContent = vendor;
+    select.appendChild(opt);
+  }
+
+  select.addEventListener('change', () => onChange(select.value));
+}
+
 // --- main init -----------------------------------------------------------
 
 /**
@@ -127,11 +223,17 @@ export function applyStickyOffsets(table) {
  * @param {string} cfg.dataUrl - endpoint to load the matrix JSON from
  * @param {function} cfg.detailsUrlBuilder - (pnk, month) => string details URL
  * @param {string} [cfg.detailsWindowName] - name for the popup window
+ * @param {string} [cfg.csvButtonId] - DOM id of CSV download button
+ * @param {string} [cfg.csvFilenamePrefix] - downloaded CSV filename prefix
+ * @param {string} [cfg.vendorFilterSelectId] - DOM id of vendor filter <select>
+ * @param {string} [cfg.vendorFilterAllLabel] - "show all" text for vendor filter
  */
 export function initMatrixTable(cfg) {
   const HEAD = document.getElementById(cfg.theadId);
   const BODY = document.getElementById(cfg.tbodyId);
   const TABLE = document.getElementById(cfg.tableId);
+  let rows = [];
+  let months = [];
 
   let detailsWin = null;
 
@@ -152,13 +254,36 @@ export function initMatrixTable(cfg) {
     openOrUpdateDetails(pnk, month);
   });
 
+  if (cfg.csvButtonId) {
+    bindTableCsvDownload({
+      buttonId: cfg.csvButtonId,
+      tableId: cfg.tableId,
+      filePrefix: cfg.csvFilenamePrefix || 'table'
+    });
+  }
+
+  function renderForVendor(vendorName) {
+    const filteredRows = !vendorName
+      ? rows
+      : rows.filter((row) => row.vendorName === vendorName);
+    renderBody(BODY, filteredRows, months, TABLE);
+  }
+
   (async function init() {
     try {
       const data = await fetchJSON(cfg.dataUrl);
-      const rows = toRows(data);
-      const months = collectAllMonths(rows);
+      rows = toRows(data);
+      months = collectAllMonths(rows);
       renderHeader(HEAD, months);
-      renderBody(BODY, rows, months, TABLE);
+      if (cfg.vendorFilterSelectId) {
+        bindVendorFilter({
+          selectId: cfg.vendorFilterSelectId,
+          rows,
+          onChange: renderForVendor,
+          allLabel: cfg.vendorFilterAllLabel || 'All vendors'
+        });
+      }
+      renderForVendor('');
     } catch (e) {
       HEAD.innerHTML = '';
       BODY.innerHTML = '<tr><td>Failed to load data</td></tr>';

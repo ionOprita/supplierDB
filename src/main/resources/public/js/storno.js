@@ -6,5 +6,8 @@ initMatrixTable({
   tbodyId: 'stornoBody',
   dataUrl: '/stornoTable',
   detailsUrlBuilder: (pnk, month) => `/storno-details.html?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
-  detailsWindowName: 'stornoDetails'
+  detailsWindowName: 'stornoDetails',
+  csvButtonId: 'downloadCsvBtn',
+  csvFilenamePrefix: 'storno-table',
+  vendorFilterSelectId: 'vendorFilterSelect'
 });

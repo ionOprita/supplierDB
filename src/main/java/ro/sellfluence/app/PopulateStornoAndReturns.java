@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
 
+import static com.google.common.base.Strings.nullToEmpty;
 import static java.util.logging.Level.INFO;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
@@ -92,8 +93,8 @@ public class PopulateStornoAndReturns {
                     lineCount,
                     product.name(),
                     vendors.get(product.vendor()),
-                    product.pnk(),
-                    product.category()
+                    nullToEmpty(product.pnk()),
+                    nullToEmpty(product.category())
             );
             rows.add(row);
         }
