@@ -37,18 +37,22 @@
                         <td>${managedUser.username()}</td>
                         <td>${managedUser.role().name()}</td>
                         <td>
-                            <form action="/admin/users/${managedUser.id()}/role" method="post" style="display:flex; gap:.4rem; align-items:center;">
-                                <select name="role">
-                                    @for(var roleOption : Role.values())
-                                        @if(roleOption == managedUser.role())
-                                            <option value="${roleOption.name()}" selected>${roleOption.name()}</option>
-                                        @else
-                                            <option value="${roleOption.name()}">${roleOption.name()}</option>
-                                        @endif
-                                    @endfor
-                                </select>
-                                <button type="submit">Save</button>
-                            </form>
+                            @if(managedUser.username().equals(userName))
+                                <button type="button" disabled title="Another administrator must change your role">Current user</button>
+                            @else
+                                <form action="/admin/users/${managedUser.id()}/role" method="post" style="display:flex; gap:.4rem; align-items:center;">
+                                    <select name="role">
+                                        @for(var roleOption : Role.values())
+                                            @if(roleOption == managedUser.role())
+                                                <option value="${roleOption.name()}" selected>${roleOption.name()}</option>
+                                            @else
+                                                <option value="${roleOption.name()}">${roleOption.name()}</option>
+                                            @endif
+                                        @endfor
+                                    </select>
+                                    <button type="submit">Save</button>
+                                </form>
+                            @endif
                         </td>
                         <td>
                             @if(managedUser.username().equals(userName))

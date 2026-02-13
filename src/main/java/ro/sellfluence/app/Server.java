@@ -480,6 +480,17 @@ public class Server {
         }
 
         try {
+            Object sessionUser = ctx.sessionAttribute("user");
+            if (!(sessionUser instanceof User(String currentUsername, PassKey.Role _))) {
+                ctx.status(FORBIDDEN);
+                return;
+            }
+            var currentUserId = mirrorDB.findUserIdByUsername(currentUsername);
+            if (currentUserId.isPresent() && currentUserId.get() == userId) {
+                ctx.redirect("/admin/users?error=You+cannot+change+your+own+role");
+                return;
+            }
+
             int updated = mirrorDB.updateUserRole(userId, newRole);
             if (updated > 0) {
                 ctx.redirect("/admin/users?message=Role+updated");
