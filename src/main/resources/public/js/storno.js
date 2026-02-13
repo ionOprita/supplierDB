@@ -8,5 +8,6 @@ initMatrixTable({
   detailsUrlBuilder: (pnk, month) => `/storno-details.html?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
   detailsWindowName: 'stornoDetails',
   csvButtonId: 'downloadCsvBtn',
-  csvFilenamePrefix: 'storno-table'
+  csvFilenamePrefix: 'storno-table',
+  vendorFilterSelectId: 'vendorFilterSelect'
 });

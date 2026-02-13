@@ -7,18 +7,28 @@
 // --- helpers -------------------------------------------------------------
 
 export function parseKey(key) {
+  const extractField = (fieldName) => {
+    const m = key.match(new RegExp(`${fieldName}=(.*?)(?=, [a-zA-Z0-9_]+=|\\]$)`));
+    return m ? m[1].trim() : '';
+  };
+
   const pnkMatch = key.match(/pnk=([^,\]]+)/);
   const nameMatch = key.match(/name=([^,\]]+)/);
+  const vendorNameMatch = key.match(/vendorName=([^,\]]+)/);
+  const pnk = extractField('pnk') || (pnkMatch ? pnkMatch[1].trim() : '');
+  const name = extractField('name') || (nameMatch ? nameMatch[1].trim() : key);
+  const vendorNameRaw = extractField('vendorName') || (vendorNameMatch ? vendorNameMatch[1].trim() : '');
   return {
-    pnk: pnkMatch ? pnkMatch[1].trim() : '',
-    name: nameMatch ? nameMatch[1].trim() : key
+    pnk,
+    name,
+    vendorName: vendorNameRaw === 'null' ? '' : vendorNameRaw
   };
 }
 
 export function toRows(jsonMap) {
   return Object.entries(jsonMap).map(([key, monthsObj]) => {
-    const { pnk, name } = parseKey(key);
-    return { key, pnk, name, months: monthsObj };
+    const { pnk, name, vendorName } = parseKey(key);
+    return { key, pnk, name, vendorName, months: monthsObj };
   });
 }
 
@@ -179,6 +189,29 @@ export function applyStickyOffsets(table) {
   }
 }
 
+export function bindVendorFilter({ selectId, rows, onChange, allLabel = 'All vendors' }) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+
+  const vendors = [...new Set(rows.map((row) => row.vendorName).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+
+  select.innerHTML = '';
+  const allOption = document.createElement('option');
+  allOption.value = '';
+  allOption.textContent = allLabel;
+  select.appendChild(allOption);
+
+  for (const vendor of vendors) {
+    const opt = document.createElement('option');
+    opt.value = vendor;
+    opt.textContent = vendor;
+    select.appendChild(opt);
+  }
+
+  select.addEventListener('change', () => onChange(select.value));
+}
+
 // --- main init -----------------------------------------------------------
 
 /**
@@ -192,11 +225,15 @@ export function applyStickyOffsets(table) {
  * @param {string} [cfg.detailsWindowName] - name for the popup window
  * @param {string} [cfg.csvButtonId] - DOM id of CSV download button
  * @param {string} [cfg.csvFilenamePrefix] - downloaded CSV filename prefix
+ * @param {string} [cfg.vendorFilterSelectId] - DOM id of vendor filter <select>
+ * @param {string} [cfg.vendorFilterAllLabel] - "show all" text for vendor filter
  */
 export function initMatrixTable(cfg) {
   const HEAD = document.getElementById(cfg.theadId);
   const BODY = document.getElementById(cfg.tbodyId);
   const TABLE = document.getElementById(cfg.tableId);
+  let rows = [];
+  let months = [];
 
   let detailsWin = null;
 
@@ -225,13 +262,28 @@ export function initMatrixTable(cfg) {
     });
   }
 
+  function renderForVendor(vendorName) {
+    const filteredRows = !vendorName
+      ? rows
+      : rows.filter((row) => row.vendorName === vendorName);
+    renderBody(BODY, filteredRows, months, TABLE);
+  }
+
   (async function init() {
     try {
       const data = await fetchJSON(cfg.dataUrl);
-      const rows = toRows(data);
-      const months = collectAllMonths(rows);
+      rows = toRows(data);
+      months = collectAllMonths(rows);
       renderHeader(HEAD, months);
-      renderBody(BODY, rows, months, TABLE);
+      if (cfg.vendorFilterSelectId) {
+        bindVendorFilter({
+          selectId: cfg.vendorFilterSelectId,
+          rows,
+          onChange: renderForVendor,
+          allLabel: cfg.vendorFilterAllLabel || 'All vendors'
+        });
+      }
+      renderForVendor('');
     } catch (e) {
       HEAD.innerHTML = '';
       BODY.innerHTML = '<tr><td>Failed to load data</td></tr>';

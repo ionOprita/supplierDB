@@ -8,5 +8,6 @@ initMatrixTable({
   detailsUrlBuilder: (pnk, month) => `/return-details.html?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
   detailsWindowName: 'returnDetails',
   csvButtonId: 'downloadCsvBtn',
-  csvFilenamePrefix: 'returns-table'
+  csvFilenamePrefix: 'returns-table',
+  vendorFilterSelectId: 'vendorFilterSelect'
 });

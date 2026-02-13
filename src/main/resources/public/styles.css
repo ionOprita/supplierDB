@@ -15,8 +15,14 @@ h1 {
 
 .page-actions {
   display: flex;
+  align-items: center;
+  gap: .5rem;
   justify-content: flex-end;
   margin: .75rem 0;
+}
+
+.vendor-filter-select {
+  min-width: 240px;
 }
 
 /* Table wrapper styles */
