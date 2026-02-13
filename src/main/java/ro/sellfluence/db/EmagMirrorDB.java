@@ -911,6 +911,18 @@ public class EmagMirrorDB {
         return database.readTX(db -> PassKey.getUserForUserHandle(db, userHandle));
     }
 
+    public List<PassKey.AdminUser> listUsers() throws SQLException {
+        return database.readTX(PassKey::listUsers);
+    }
+
+    public int updateUserRole(long userId, PassKey.Role role) throws SQLException {
+        return database.writeTX(db -> PassKey.updateUserRole(db, userId, role));
+    }
+
+    public int deleteUser(long userId) throws SQLException {
+        return database.writeTX(db -> PassKey.deleteUser(db, userId));
+    }
+
     public Optional<RegisteredCredential> lookup(ByteArray credentialId, ByteArray userHandle) throws SQLException {
         return database.readTX(db -> PassKey.lookup(db, credentialId, userHandle));
     }

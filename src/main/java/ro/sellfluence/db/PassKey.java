@@ -7,7 +7,10 @@ import com.yubico.webauthn.data.PublicKeyCredentialDescriptor;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.Types;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -28,6 +31,9 @@ public class PassKey {
     }
 
     public record User(String username, Role role) {
+    }
+
+    public record AdminUser(long id, String username, Role role) {
     }
 
     /**
@@ -126,6 +132,54 @@ public class PassKey {
             throw new RuntimeException("DB error in getUsernameForUserHandle", e);
         }
         return Optional.empty();
+    }
+
+    public static List<AdminUser> listUsers(Connection db) {
+        final String sql = "select id, username, role from app_user order by username";
+        var users = new ArrayList<AdminUser>();
+        try (var ps = db.prepareStatement(sql);
+             var rs = ps.executeQuery()) {
+            while (rs.next()) {
+                users.add(new AdminUser(
+                        rs.getLong("id"),
+                        rs.getString("username"),
+                        Role.fromString(rs.getString("role"))
+                ));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("DB error in listUsers", e);
+        }
+        return users;
+    }
+
+    public static int updateUserRole(Connection db, long userId, Role role) {
+        final String sql =
+                """
+                        update app_user
+                        set role = ?, updated_at = now()
+                        where id = ?
+                        """;
+        try (var ps = db.prepareStatement(sql)) {
+            if (role == Role.nobody) {
+                ps.setNull(1, Types.VARCHAR);
+            } else {
+                ps.setString(1, role.name());
+            }
+            ps.setLong(2, userId);
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("DB error in updateUserRole", e);
+        }
+    }
+
+    public static int deleteUser(Connection db, long userId) {
+        final String sql = "delete from app_user where id = ?";
+        try (var ps = db.prepareStatement(sql)) {
+            ps.setLong(1, userId);
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("DB error in deleteUser", e);
+        }
     }
 
     /**
