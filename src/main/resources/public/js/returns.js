@@ -9,5 +9,8 @@ initMatrixTable({
   detailsWindowName: 'returnDetails',
   csvButtonId: 'downloadCsvBtn',
   csvFilenamePrefix: 'returns-table',
-  vendorFilterSelectId: 'vendorFilterSelect'
+  vendorFilterSelectId: 'vendorFilterSelect',
+  monthFromSelectId: 'monthFromSelect',
+  monthToSelectId: 'monthToSelect',
+  monthResetButtonId: 'monthFilterResetBtn'
 });

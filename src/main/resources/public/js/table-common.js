@@ -212,6 +212,86 @@ export function bindVendorFilter({ selectId, rows, onChange, allLabel = 'All ven
   select.addEventListener('change', () => onChange(select.value));
 }
 
+export function bindMonthRangeFilter({
+  fromSelectId,
+  toSelectId,
+  resetButtonId,
+  months,
+  onChange,
+  fromAllLabel = 'From start',
+  toAllLabel = 'To end'
+}) {
+  const fromSelect = fromSelectId ? document.getElementById(fromSelectId) : null;
+  const toSelect = toSelectId ? document.getElementById(toSelectId) : null;
+  const resetButton = resetButtonId ? document.getElementById(resetButtonId) : null;
+
+  if (!fromSelect && !toSelect && !resetButton) return;
+
+  const populate = (select, allLabel) => {
+    if (!select) return;
+    select.innerHTML = '';
+
+    const allOption = document.createElement('option');
+    allOption.value = '';
+    allOption.textContent = allLabel;
+    select.appendChild(allOption);
+
+    for (const m of months) {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      select.appendChild(opt);
+    }
+  };
+
+  populate(fromSelect, fromAllLabel);
+  populate(toSelect, toAllLabel);
+
+  if (fromSelect) fromSelect.value = '';
+  if (toSelect) toSelect.value = '';
+
+  const normalize = (changedSide) => {
+    const fromMonth = fromSelect?.value || '';
+    const toMonth = toSelect?.value || '';
+    if (!fromMonth || !toMonth) return;
+
+    const fromIdx = months.indexOf(fromMonth);
+    const toIdx = months.indexOf(toMonth);
+    if (fromIdx < 0 || toIdx < 0 || fromIdx <= toIdx) return;
+
+    if (changedSide === 'from' && toSelect) {
+      toSelect.value = fromMonth;
+    } else if (changedSide === 'to' && fromSelect) {
+      fromSelect.value = toMonth;
+    }
+  };
+
+  const emitChange = () => {
+    onChange({
+      fromMonth: fromSelect?.value || '',
+      toMonth: toSelect?.value || ''
+    });
+  };
+
+  fromSelect?.addEventListener('change', () => {
+    normalize('from');
+    emitChange();
+  });
+
+  toSelect?.addEventListener('change', () => {
+    normalize('to');
+    emitChange();
+  });
+
+  resetButton?.addEventListener('click', () => {
+    if (fromSelect) fromSelect.value = '';
+    if (toSelect) toSelect.value = '';
+    emitChange();
+  });
+
+  emitChange();
+}
+
 // --- main init -----------------------------------------------------------
 
 /**
@@ -227,6 +307,11 @@ export function bindVendorFilter({ selectId, rows, onChange, allLabel = 'All ven
  * @param {string} [cfg.csvFilenamePrefix] - downloaded CSV filename prefix
  * @param {string} [cfg.vendorFilterSelectId] - DOM id of vendor filter <select>
  * @param {string} [cfg.vendorFilterAllLabel] - "show all" text for vendor filter
+ * @param {string} [cfg.monthFromSelectId] - DOM id of "from month" <select>
+ * @param {string} [cfg.monthToSelectId] - DOM id of "to month" <select>
+ * @param {string} [cfg.monthResetButtonId] - DOM id of reset month-range button
+ * @param {string} [cfg.monthFromAllLabel] - label for no lower month bound
+ * @param {string} [cfg.monthToAllLabel] - label for no upper month bound
  */
 export function initMatrixTable(cfg) {
   const HEAD = document.getElementById(cfg.theadId);
@@ -234,6 +319,9 @@ export function initMatrixTable(cfg) {
   const TABLE = document.getElementById(cfg.tableId);
   let rows = [];
   let months = [];
+  let selectedVendorName = '';
+  let selectedFromMonth = '';
+  let selectedToMonth = '';
 
   let detailsWin = null;
 
@@ -262,11 +350,23 @@ export function initMatrixTable(cfg) {
     });
   }
 
-  function renderForVendor(vendorName) {
-    const filteredRows = !vendorName
+  function resolveVisibleMonths() {
+    if (!months.length) return [];
+
+    const startIdx = selectedFromMonth ? months.indexOf(selectedFromMonth) : 0;
+    const endIdx = selectedToMonth ? months.indexOf(selectedToMonth) : (months.length - 1);
+    if (startIdx < 0 || endIdx < 0 || startIdx > endIdx) return [];
+
+    return months.slice(startIdx, endIdx + 1);
+  }
+
+  function renderFiltered() {
+    const visibleMonths = resolveVisibleMonths();
+    const filteredRows = !selectedVendorName
       ? rows
-      : rows.filter((row) => row.vendorName === vendorName);
-    renderBody(BODY, filteredRows, months, TABLE);
+      : rows.filter((row) => row.vendorName === selectedVendorName);
+    renderHeader(HEAD, visibleMonths);
+    renderBody(BODY, filteredRows, visibleMonths, TABLE);
   }
 
   (async function init() {
@@ -274,16 +374,35 @@ export function initMatrixTable(cfg) {
       const data = await fetchJSON(cfg.dataUrl);
       rows = toRows(data);
       months = collectAllMonths(rows);
-      renderHeader(HEAD, months);
       if (cfg.vendorFilterSelectId) {
         bindVendorFilter({
           selectId: cfg.vendorFilterSelectId,
           rows,
-          onChange: renderForVendor,
+          onChange: (vendorName) => {
+            selectedVendorName = vendorName;
+            renderFiltered();
+          },
           allLabel: cfg.vendorFilterAllLabel || 'All vendors'
         });
       }
-      renderForVendor('');
+
+      if (cfg.monthFromSelectId || cfg.monthToSelectId || cfg.monthResetButtonId) {
+        bindMonthRangeFilter({
+          fromSelectId: cfg.monthFromSelectId,
+          toSelectId: cfg.monthToSelectId,
+          resetButtonId: cfg.monthResetButtonId,
+          months,
+          onChange: ({ fromMonth, toMonth }) => {
+            selectedFromMonth = fromMonth;
+            selectedToMonth = toMonth;
+            renderFiltered();
+          },
+          fromAllLabel: cfg.monthFromAllLabel || 'From start',
+          toAllLabel: cfg.monthToAllLabel || 'To end'
+        });
+      } else {
+        renderFiltered();
+      }
     } catch (e) {
       HEAD.innerHTML = '';
       BODY.innerHTML = '<tr><td>Failed to load data</td></tr>';
