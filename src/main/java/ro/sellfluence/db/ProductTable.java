@@ -71,6 +71,33 @@ public class ProductTable {
         }
     }
 
+    public record ProductWithVendor(
+            String pnk,
+            String productCode,
+            String name,
+            String vendorName
+    ) {
+        public static final Comparator<ProductWithVendor> nameComparator = (p1, p2) -> ProductInfo.nameComparator.compare(
+                toProductInfo(p1),
+                toProductInfo(p2)
+        );
+
+        private static ProductInfo toProductInfo(ProductWithVendor product) {
+            return new ProductInfo(
+                    product.pnk(),
+                    product.productCode(),
+                    product.name(),
+                    null,
+                    false,
+                    false,
+                    null,
+                    null,
+                    null,
+                    null
+            );
+        }
+    }
+
     /**
      * Inserts or updates a product in the product table. If an insertion attempt fails because the product already exists,
      * the method attempts to update the product's information. If neither insertion nor update is successful,
@@ -117,6 +144,36 @@ public class ProductTable {
                                     rs.getString("message_keyword"),
                                     rs.getString("employee_sheet_name"),
                                     rs.getString("employee_sheet_tab")
+                            )
+                    );
+                }
+            }
+        }
+        return products;
+    }
+
+    /**
+     * Retrieve all products from the product table, including vendor name.
+     *
+     * @param db database
+     * @return list of all products with vendor name.
+     * @throws SQLException if anything bad happens.
+     */
+    static List<ProductWithVendor> getProductsWithVendor(Connection db) throws SQLException {
+        var products = new ArrayList<ProductWithVendor>();
+        try (var s = db.prepareStatement("""
+                SELECT p.emag_pnk, p.product_code, p.name, v.vendor_name
+                FROM product AS p
+                LEFT JOIN vendor AS v ON p.vendor = v.id
+                """)) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    products.add(
+                            new ProductWithVendor(
+                                    rs.getString("emag_pnk"),
+                                    rs.getString("product_code"),
+                                    rs.getString("name"),
+                                    rs.getString("vendor_name")
                             )
                     );
                 }

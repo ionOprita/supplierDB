@@ -3,7 +3,7 @@ package ro.sellfluence.api;
 import com.google.gson.Gson;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
-import ro.sellfluence.db.ProductTable.ProductInfo;
+import ro.sellfluence.db.ProductTable.ProductWithVendor;
 import ro.sellfluence.support.DoubleWindow;
 
 import java.sql.SQLException;
@@ -131,14 +131,16 @@ public class API {
      * @return map from product to map of month to the storno count.
      * @throws SQLException on database error.
      */
-    public Map<ProductInfo, Map<YearMonth, Integer>> getOrdersByProductAndMonth() throws SQLException {
-        var result = new TreeMap<ProductInfo, Map<YearMonth, Integer>>(ProductInfo.nameComparator);
-        var products = mirrorDB.readProducts().stream().sorted(ProductInfo.nameComparator).toList();
+    public Map<ProductWithVendor, Map<YearMonth, Integer>> getOrdersByProductAndMonth() throws SQLException {
+        var result = new LinkedHashMap<ProductWithVendor, Map<YearMonth, Integer>>();
+        var products = mirrorDB.readProductsWithVendor().stream()
+                .sorted(ProductWithVendor.nameComparator)
+                .toList();
         var end = YearMonth.now();
         var month = end.minusYears(2);
         while (month.isBefore(end)) {
             var ordersByMonth = mirrorDB.countOrdersByMonth(month);
-            for (ProductInfo product : products) {
+            for (ProductWithVendor product : products) {
                 var map = result.computeIfAbsent(product, _ -> new HashMap<>());
                 map.put(month, ordersByMonth.getOrDefault(product.pnk(), 0));
             }
@@ -157,14 +159,16 @@ public class API {
      * @return map from product to map of month to the storno count.
      * @throws SQLException on database error.
      */
-    public Map<ProductInfo, Map<YearMonth, Integer>> getStornosByProductAndMonth() throws SQLException {
-        var result = new TreeMap<ProductInfo, Map<YearMonth, Integer>>(ProductInfo.nameComparator);
-        var products = mirrorDB.readProducts().stream().sorted(ProductInfo.nameComparator).toList();
+    public Map<ProductWithVendor, Map<YearMonth, Integer>> getStornosByProductAndMonth() throws SQLException {
+        var result = new LinkedHashMap<ProductWithVendor, Map<YearMonth, Integer>>();
+        var products = mirrorDB.readProductsWithVendor().stream()
+                .sorted(ProductWithVendor.nameComparator)
+                .toList();
         var end = YearMonth.now();
         var month = end.minusYears(2);
         while (month.isBefore(end)) {
             var storno = mirrorDB.countStornoByMonth(month);
-            for (ProductInfo product : products) {
+            for (ProductWithVendor product : products) {
                 var map = result.computeIfAbsent(product, _ -> new HashMap<>());
                 map.put(month, storno.getOrDefault(product.pnk(), 0));
             }
@@ -183,14 +187,16 @@ public class API {
      * @return map from product to map of month to the storno count.
      * @throws SQLException on database error.
      */
-    public Map<ProductInfo, Map<YearMonth, Integer>> getReturnsByProductAndMonth() throws SQLException {
-        var result = new TreeMap<ProductInfo, Map<YearMonth, Integer>>(ProductInfo.nameComparator);
-        var products = mirrorDB.readProducts().stream().sorted(ProductInfo.nameComparator).toList();
+    public Map<ProductWithVendor, Map<YearMonth, Integer>> getReturnsByProductAndMonth() throws SQLException {
+        var result = new LinkedHashMap<ProductWithVendor, Map<YearMonth, Integer>>();
+        var products = mirrorDB.readProductsWithVendor().stream()
+                .sorted(ProductWithVendor.nameComparator)
+                .toList();
         var end = YearMonth.now();
         var month = end.minusYears(2);
         while (month.isBefore(end)) {
             var countByPNK = mirrorDB.countReturnByMonth(month);
-            for (ProductInfo product : products) {
+            for (ProductWithVendor product : products) {
                 var map = result.computeIfAbsent(product, _ -> new HashMap<>());
                 map.put(month, countByPNK.getOrDefault(product.pnk(), 0));
             }

@@ -6,6 +6,7 @@ import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.db.EmagFetchLog.EmagFetchHistogram;
 import ro.sellfluence.db.EmagOrder.ExtendedOrder;
 import ro.sellfluence.db.ProductTable.ProductInfo;
+import ro.sellfluence.db.ProductTable.ProductWithVendor;
 import ro.sellfluence.db.versions.SetupDB;
 import ro.sellfluence.emagapi.CancellationReason;
 import ro.sellfluence.emagapi.LockerDetails;
@@ -363,6 +364,10 @@ public class EmagMirrorDB {
 
     public List<ProductInfo> readProducts() throws SQLException {
         return database.readTX(ProductTable::getProducts);
+    }
+
+    public List<ProductWithVendor> readProductsWithVendor() throws SQLException {
+        return database.readTX(ProductTable::getProductsWithVendor);
     }
 
     /**
