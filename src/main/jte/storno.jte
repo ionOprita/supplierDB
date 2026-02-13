@@ -3,7 +3,7 @@
 @param String pageTitle
 
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
-    <script type="module" src="/js/returns.js"></script>
+    <script type="module" src="/js/storno.js"></script>
     <div class="page-actions">
         <label for="vendorFilterSelect">Vendor:</label>
         <select id="vendorFilterSelect" class="vendor-filter-select">
@@ -21,9 +21,9 @@
         <button id="downloadCsvBtn" type="button">Download CSV</button>
     </div>
     <div class="wrap">
-        <table id="returnsTable">
-            <thead id="returnsHead"></thead>
-            <tbody id="returnsBody"></tbody>
+        <table id="stornoTable">
+            <thead id="stornoHead"></thead>
+            <tbody id="stornoBody"></tbody>
         </table>
     </div>
 `)

@@ -343,13 +343,13 @@ public class Server {
             }
         });
 
-        app.get("/app/stornos/{id}", ctx -> {
+        app.get("/app/storno/{id}", ctx -> {
             String id = ctx.pathParam("id");
-            var stornos = api.getStornos(id);
-            if (stornos == null) {
+            var storno = api.getStorno(id);
+            if (storno == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
-                ctx.json(stornos);
+                ctx.json(storno);
             }
         });
 
@@ -382,7 +382,7 @@ public class Server {
         });
 
         app.get("/app/stornoTable", ctx -> {
-            var returns = api.getStornosByProductAndMonth();
+            var returns = api.getStornoByProductAndMonth();
             if (returns == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {

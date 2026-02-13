@@ -111,7 +111,7 @@ public class API {
      * @param id the product ID for which the order counts are to be retrieved.
      * @return a JSON string representation of order counts by date
      */
-    public List<CountByDate> getStornos(String id) {
+    public List<CountByDate> getStorno(String id) {
         return getCountById(id, cachedDailyStorno, mirrorDB::countStornoByDayForProduct);
     }
 
@@ -127,7 +127,7 @@ public class API {
     }
 
     /**
-     * Retrieves the count of the stornos by month for all products, within the past 2 years.
+     * Retrieves the count of the orders by month for all products, within the past 2 years.
      *
      * @return map from product to map of month to the storno count.
      * @throws SQLException on database error.
@@ -155,12 +155,12 @@ public class API {
     }
 
     /**
-     * Retrieves the count of the stornos by month for all products, within the past 2 years.
+     * Retrieves the count of the storno by month for all products, within the past 2 years.
      *
      * @return map from product to map of month to the storno count.
      * @throws SQLException on database error.
      */
-    public Map<ProductWithVendor, Map<YearMonth, Integer>> getStornosByProductAndMonth() throws SQLException {
+    public Map<ProductWithVendor, Map<YearMonth, Integer>> getStornoByProductAndMonth() throws SQLException {
         var result = new LinkedHashMap<ProductWithVendor, Map<YearMonth, Integer>>();
         var products = mirrorDB.readProductsWithVendor().stream()
                 .sorted(ProductWithVendor.nameComparator)
@@ -183,7 +183,7 @@ public class API {
     }
 
     /**
-     * Retrieves the count of the stornos by month for all products, within the past 2 years.
+     * Retrieves the count of the returns by month for all products, within the past 2 years.
      *
      * @return map from product to map of month to the storno count.
      * @throws SQLException on database error.

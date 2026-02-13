@@ -4,12 +4,13 @@
 
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
     <span id="subtitle" class="muted"></span>
-    <div class="toolbar">
+    <div class="page-actions">
         <button id="refreshBtn" title="Reload">Reload</button>
         <button id="copyBtn" title="Copy table">Copy</button>
+        <button id="downloadCsvBtn" title="Download as CSV">CSV</button>
     </div>
     <div class="wrap">
-        <table>
+  <table id="detailsTable">
             <thead>
             <tr>
                 <th>Time</th>

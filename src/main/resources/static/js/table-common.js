@@ -514,7 +514,7 @@ export function initTaskTable(cfg) {
       BODY.innerHTML = '<tr><td>Failed to load data</td></tr>';
       console.error(e);
     }
-  })();
+  };
 
   document.getElementById('refreshBtn')?.addEventListener('click', loadTasks);
   window.addEventListener('resize', () => applyStickyOffsets(TABLE));

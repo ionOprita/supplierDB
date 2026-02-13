@@ -42,7 +42,7 @@ public class EmagBot {
             logger.log(WARNING, "Updating the date comenzi sheet ended with an exception.", e);
             throw new RuntimeException("PopulateDateComenzi ended with an exception ", e);
         }
-        logger.log(INFO, "Update Stornos and Returns for the current month from the %s database to the Cent. Ret. Sto. sheet.".formatted(dbAlias));
+        logger.log(INFO, "Update Storno and Returns for the current month from the %s database to the Cent. Ret. Sto. sheet.".formatted(dbAlias));
         try {
             PopulateStornoAndReturns.updateSpreadsheets(mirrorDB);
         } catch (SQLException e) {
