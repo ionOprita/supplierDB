@@ -3,7 +3,7 @@
 @param String pageTitle
 
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
-  <div class="toolbar">
+  <div class="page-actions">
     <button id="refreshBtn" title="Reload">Reload</button>
   </div>
   <div class="wrap">
@@ -12,4 +12,5 @@
       <tbody id="tasksBody"></tbody>
     </table>
   </div>
+  <script type="module" src="/js/tasks.js"></script>
 `)

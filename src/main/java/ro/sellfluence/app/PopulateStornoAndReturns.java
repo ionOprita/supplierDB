@@ -65,7 +65,7 @@ public class PopulateStornoAndReturns {
             updateSheet(sheet, percentStornoSheetName, month, products,percentStornoByPNK);
             logger.log(INFO, "--- Update Percentage Returns for month %s ------------------------".formatted(month));
             updateSheet(sheet, percentReturnSheetName, month, products, percentReturnByPNK);
-            logger.log(INFO, "--- Update Stornos for month %s --------------------------".formatted(month));
+            logger.log(INFO, "--- Update Storno for month %s --------------------------".formatted(month));
             updateSheet(sheet, stornoSheetName, month, products, stornoByPNK);
             logger.log(INFO, "--- Update Returns for month %s ------------------------".formatted(month));
             updateSheet(sheet, returnsSheetName, month, products, returnByPNK);

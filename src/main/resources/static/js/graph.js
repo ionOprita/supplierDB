@@ -45,17 +45,17 @@ const SERIES = [
     yBeginAtZero: true
   },
   {
-    key: "stornos",
+    key: "storno",
     canvasId: "stornoChart",
-    title: "Stornos",
-    yLabel: "Stornos",
-    endpoint: (id) => `/app/stornos/${encodeURIComponent(id)}`,
+    title: "Storno",
+    yLabel: "Storno",
+    endpoint: (id) => `/app/storno/${encodeURIComponent(id)}`,
     getY: (row) => Number(row.count ?? 0),
     yTicks: {
       stepSize: 1,
       callback: (v) => (Number.isInteger(v) ? intFmt.format(v) : null)
     },
-    tooltipLabel: (y) => ` Stornos: ${intFmt.format(y)}`,
+    tooltipLabel: (y) => ` Storno: ${intFmt.format(y)}`,
     yBeginAtZero: true
   },
   {
@@ -80,7 +80,7 @@ const numberFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 })
 
 /** Build (or rebuild) the product dropdown **/
 async function populateProducts() {
-  const items = await fetchJSON("/products"); // [{name, id}, ...]
+  const items = await fetchJSON("/app/products"); // [{name, id}, ...]
   items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
   // Clear + placeholder
