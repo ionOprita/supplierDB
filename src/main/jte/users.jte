@@ -51,9 +51,13 @@
                             </form>
                         </td>
                         <td>
-                            <form action="/admin/users/${managedUser.id()}/delete" method="post" onsubmit="return confirm('Delete user ${managedUser.username()}?');">
-                                <button type="submit">Delete</button>
-                            </form>
+                            @if(managedUser.username().equals(userName))
+                                <button type="button" disabled title="You cannot delete your own account">Current user</button>
+                            @else
+                                <form action="/admin/users/${managedUser.id()}/delete" method="post" onsubmit="return confirm('Delete user ${managedUser.username()}?');">
+                                    <button type="submit">Delete</button>
+                                </form>
+                            @endif
                         </td>
                     </tr>
                 @endfor
