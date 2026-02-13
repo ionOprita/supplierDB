@@ -1,11 +1,34 @@
 /* Common styles for all pages */
 :root {
   color-scheme: light dark;
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface-alt: #f5f7fa;
+  --text: #111827;
+  --muted: #6b7280;
+  --border: #d1d5db;
+  --hover: #eaf4ff;
+  --sticky-separator: #d1d5db;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f141a;
+    --surface: #161d24;
+    --surface-alt: #1d2630;
+    --text: #e5e7eb;
+    --muted: #9aa4b2;
+    --border: #334155;
+    --hover: #243447;
+    --sticky-separator: #475569;
+  }
 }
 
 body {
   font-family: system-ui, Arial, sans-serif;
   margin: 2rem;
+  background: var(--bg);
+  color: var(--text);
 }
 
 h1 {
@@ -35,8 +58,9 @@ h1 {
   max-width: 100%;
   max-height: 70vh;
   overflow: auto;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--surface);
 }
 
 /* Table styles */
@@ -48,22 +72,18 @@ table {
 }
 
 th, td {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   padding: .4rem .6rem;
   text-align: left;
-  /* background: #fff; */
+  background: var(--surface);
 }
-/*
-th {
-  background: #fafafa;
-}
-*/
+
 /* Sticky header */
 thead th {
   position: sticky;
   top: 0;
   z-index: 3;
-/*  background: #fff; */
+  background: var(--surface);
 }
 
 /* Right-aligned cells for numeric data */
@@ -91,26 +111,32 @@ td.qty {
 .sticky-col-2 {
   position: sticky;
   z-index: 2;
- /* background: #fff; */
+  background: var(--surface);
 }
 
 .sticky-col-1 {
   left: 0;
-  box-shadow: 2px 0 0 #e5e7eb;
+  box-shadow: 2px 0 0 var(--sticky-separator);
 }
 
 .sticky-col-2 {
-  box-shadow: 2px 0 0 #e5e7eb;
+  box-shadow: 2px 0 0 var(--sticky-separator);
 }
 
 thead .sticky-col-1,
 thead .sticky-col-2 {
   z-index: 4;
+  background: var(--surface);
 }
 
 /* Zebra striping */
 tbody tr:nth-child(even) td {
-  /* background: #fafafa; */
+  background: var(--surface-alt);
+}
+
+tbody tr:nth-child(even) .sticky-col-1,
+tbody tr:nth-child(even) .sticky-col-2 {
+  background: var(--surface-alt);
 }
 
 /* Clickable cells */
@@ -118,11 +144,9 @@ td[data-clickable="true"] {
   cursor: pointer;
 }
 
-/*
 td[data-clickable="true"]:hover {
-  background: #f0f7ff;
+  background: var(--hover);
 }
-*/
 /* Details page header */
 header {
   display: flex;
@@ -132,7 +156,7 @@ header {
 }
 
 .muted {
-  color: #666;
+  color: var(--muted);
   font-size: .9rem;
 }
 
@@ -145,17 +169,16 @@ header {
 /* Buttons */
 button {
   padding: .35rem .6rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  /*background: #fff;*/
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
 }
 
-/*
 button:hover {
-  background: #f6f7f9;
+  background: var(--surface-alt);
 }
-*/
 
 /* Status messages */
 #status {
