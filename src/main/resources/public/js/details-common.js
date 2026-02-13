@@ -2,7 +2,7 @@
  * details-common.js
  * Shared logic for the per-cell details page.
  */
-import { bindTableCsvDownload } from './table-common.js';
+import { bindTableCsvDownload, sanitizeFileNamePart } from './table-common.js';
 
 export function ymdHMSArrayToDate(arr) {
   if (!Array.isArray(arr) || arr.length < 3) return null;
@@ -64,7 +64,8 @@ export function initDetailsPage({
   endpointBuilder,
   tableId = 'detailsTable',
   csvButtonId = 'downloadCsvBtn',
-  csvFilenamePrefix = 'details-table'
+  csvFilenamePrefix = 'details-table',
+  includePnkInCsvFilename = false
 }) {
   const params = new URLSearchParams(location.search);
   const pnk = params.get('pnk') ?? '';
@@ -75,11 +76,18 @@ export function initDetailsPage({
 
   const tbody = document.getElementById('tbody');
   const statusEl = document.getElementById('status');
+  const safePnk = sanitizeFileNamePart(pnk);
 
   bindTableCsvDownload({
     buttonId: csvButtonId,
     tableId,
-    filePrefix: csvFilenamePrefix
+    filePrefix: csvFilenamePrefix,
+    fileNameBuilder: ({ datePart, filePrefix }) => {
+      if (includePnkInCsvFilename && safePnk) {
+        return `${filePrefix}-${safePnk}-${datePart}.csv`;
+      }
+      return `${filePrefix}-${datePart}.csv`;
+    }
   });
 
   async function loadDetails() {

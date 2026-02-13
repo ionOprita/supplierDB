@@ -11,7 +11,8 @@
       initDetailsPage({
         titleText: "Storno Details",
         endpointBuilder: (pnk, month) => `/stornoDetails?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
-        csvFilenamePrefix: 'storno-details'
+        csvFilenamePrefix: 'storno-details',
+        includePnkInCsvFilename: true
       });
     });
   </script>

@@ -72,14 +72,30 @@ export function downloadCsvFromTable(table, fileName) {
   return true;
 }
 
-export function bindTableCsvDownload({ buttonId, tableId, filePrefix = 'table' }) {
+export function sanitizeFileNamePart(value) {
+  return String(value ?? '')
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, '-');
+}
+
+export function bindTableCsvDownload({ buttonId, tableId, filePrefix = 'table', fileNameBuilder }) {
   const button = document.getElementById(buttonId);
   const table = document.getElementById(tableId);
   if (!button || !table) return;
 
   button.addEventListener('click', () => {
     const datePart = new Date().toISOString().slice(0, 10);
-    downloadCsvFromTable(table, `${filePrefix}-${datePart}.csv`);
+    let fileName = '';
+    if (typeof fileNameBuilder === 'function') {
+      fileName = String(fileNameBuilder({ datePart, filePrefix }) ?? '');
+    }
+    if (!fileName) {
+      fileName = `${filePrefix}-${datePart}.csv`;
+    } else if (!fileName.toLowerCase().endsWith('.csv')) {
+      fileName = `${fileName}.csv`;
+    }
+    downloadCsvFromTable(table, fileName);
   });
 }
 

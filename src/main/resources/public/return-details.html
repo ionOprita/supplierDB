@@ -11,7 +11,8 @@
       initDetailsPage({
         titleText: "Return Details",
         endpointBuilder: (pnk, month) => `/returnDetails?pnk=${encodeURIComponent(pnk)}&month=${encodeURIComponent(month)}`,
-        csvFilenamePrefix: 'return-details'
+        csvFilenamePrefix: 'return-details',
+        includePnkInCsvFilename: true
       });
     });
   </script>
