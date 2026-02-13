@@ -36,9 +36,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.SQLException;
 import java.time.YearMonth;
 import java.util.Arrays;
-import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -120,16 +121,18 @@ public class Server {
         configurePasskey(app, mirrorDB, rp);
 
         app.before("/private/*", ctx -> checkRole(ctx, user));
-        app.get("/private/{page}", ctx -> renderPage(ctx, ctx.pathParam("page")));
+        app.get("/private/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
 
         app.before("/admin/*", ctx -> checkRole(ctx, admin));
-        app.get("/admin/{page}", ctx -> renderPage(ctx, ctx.pathParam("page")));
+        app.get("/admin/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
+        app.post("/admin/users/{userId}/role", ctx -> changeUserRole(ctx, mirrorDB));
+        app.post("/admin/users/{userId}/delete", ctx -> deleteUser(ctx, mirrorDB));
 
         app.before("/public/*", ctx -> checkRole(ctx, nobody));
 
         app.before("/static/*", ctx -> checkRole(ctx, null));
 
-        app.get("/welcome.html", ctx -> renderPage(ctx, "welcome"));
+        app.get("/welcome.html", ctx -> renderPage(ctx, mirrorDB, "welcome"));
 
         // Health check (handy)
         app.get("/health", ctx -> ctx.result("ok"));
@@ -425,18 +428,89 @@ public class Server {
         });
     }
 
-    private static void renderPage(Context ctx, String page) {
+    private static void renderPage(Context ctx, EmagMirrorDB mirrorDB, String page) {
         if (!page.matches("[a-zA-Z0-9_-]+")) {
             ctx.status(400).result("Invalid page name");
             return;
         }
         Object userAttribute = ctx.sessionAttribute("user");
         if (userAttribute instanceof User(String username, PassKey.Role role)) {
-            ctx.render(page + ".jte", Map.of(
-                    "userName", username,
-                    "userRole", role.name(),
-                    "pageTitle", toPageTitle(page)
-            ));
+            if ("users".equals(page) && role != admin) {
+                ctx.status(FORBIDDEN);
+                return;
+            }
+            var model = new HashMap<String, Object>();
+            model.put("userName", username);
+            model.put("userRole", role.name());
+            model.put("pageTitle", toPageTitle(page));
+            if ("users".equals(page)) {
+                try {
+                    model.put("users", mirrorDB.listUsers());
+                } catch (SQLException e) {
+                    logger.log(SEVERE, "Failed to load users page.", e);
+                    ctx.status(500).result("Failed to load users.");
+                    return;
+                }
+                model.put("message", ctx.queryParam("message"));
+                model.put("error", ctx.queryParam("error"));
+            }
+            ctx.render(page + ".jte", model);
+        }
+    }
+
+    private static void changeUserRole(Context ctx, EmagMirrorDB mirrorDB) {
+        final long userId;
+        try {
+            userId = Long.parseLong(ctx.pathParam("userId"));
+        } catch (NumberFormatException e) {
+            ctx.status(400).result("Invalid user id.");
+            return;
+        }
+
+        String roleParam = ctx.formParam("role");
+        PassKey.Role newRole = switch (roleParam) {
+            case "user" -> user;
+            case "admin" -> admin;
+            case "nobody" -> nobody;
+            case null, default -> null;
+        };
+        if (newRole == null) {
+            ctx.status(400).result("Invalid role.");
+            return;
+        }
+
+        try {
+            int updated = mirrorDB.updateUserRole(userId, newRole);
+            if (updated > 0) {
+                ctx.redirect("/admin/users?message=Role+updated");
+            } else {
+                ctx.redirect("/admin/users?error=User+not+found");
+            }
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to update role for user id " + userId, e);
+            ctx.redirect("/admin/users?error=Failed+to+update+role");
+        }
+    }
+
+    private static void deleteUser(Context ctx, EmagMirrorDB mirrorDB) {
+        final long userId;
+        try {
+            userId = Long.parseLong(ctx.pathParam("userId"));
+        } catch (NumberFormatException e) {
+            ctx.status(400).result("Invalid user id.");
+            return;
+        }
+
+        try {
+            int deleted = mirrorDB.deleteUser(userId);
+            if (deleted > 0) {
+                ctx.redirect("/admin/users?message=User+deleted");
+            } else {
+                ctx.redirect("/admin/users?error=User+not+found");
+            }
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to delete user id " + userId, e);
+            ctx.redirect("/admin/users?error=Failed+to+delete+user");
         }
     }
 
