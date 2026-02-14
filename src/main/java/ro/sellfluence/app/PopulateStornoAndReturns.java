@@ -92,7 +92,7 @@ public class PopulateStornoAndReturns {
             var row = List.<Object>of(
                     lineCount,
                     product.name(),
-                    vendors.get(product.vendor()),
+                    nullToEmpty(vendors.get(product.vendor())),
                     nullToEmpty(product.pnk()),
                     nullToEmpty(product.category())
             );
