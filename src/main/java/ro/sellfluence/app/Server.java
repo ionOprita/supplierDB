@@ -112,7 +112,7 @@ public class Server {
         var rp = WebAuthnServer.create(new MyCredentialRepo(mirrorDB));
 
         // Schedule the job with auto-restart on failure
-        //scheduleWithRestart(scheduler, backgroundJob);
+        scheduleWithRestart(scheduler, backgroundJob);
 
         var app = Javalin.create(config -> configure(config, port, securePort));
 
