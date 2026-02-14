@@ -31,6 +31,20 @@
 </header>
 
 <main style="margin-top: 60px;">
+    @if(userRole != null && !userRole.equals("nobody"))
+        <nav class="app-menu" aria-label="Main menu">
+            <ul>
+                @if(userRole.equals("admin"))
+                    <li><a href="/admin/users">Administrate Users</a></li>
+                @endif
+                <li><a href="/private/orders">Order Table</a></li>
+                <li><a href="/private/storno">Storno Table</a></li>
+                <li><a href="/private/returns">Return Table</a></li>
+                <li><a href="/private/returnCharts">Return Charts</a></li>
+                <li><a href="/private/tasks">Tasks</a></li>
+            </ul>
+        </nav>
+    @endif
     <h1 id="title">${pageTitle}</h1>
     ${content}
 </main>
