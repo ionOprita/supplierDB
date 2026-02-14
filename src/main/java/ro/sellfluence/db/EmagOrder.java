@@ -182,7 +182,7 @@ public class EmagOrder {
             s.setInt(4, or.is_complete());
             s.setInt(5, or.type());
             s.setString(6, or.payment_mode());
-            s.setInt(7, or.payment_mode_id());
+            s.setObject(7, or.payment_mode_id());
             s.setString(8, or.delivery_payment_mode());
             s.setString(9, or.delivery_mode());
             s.setString(10, or.observation());

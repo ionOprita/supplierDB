@@ -21,7 +21,7 @@ public record OrderResult(
         Integer is_complete,
         Integer type,
         String payment_mode,
-        int payment_mode_id,
+        Integer payment_mode_id,
         String delivery_payment_mode,
         String delivery_mode,
         String observation,
