@@ -55,7 +55,7 @@ public class PopulateStornoAndReturns {
         updateProductColumns(sheet, returnsSheetName, products, vendors);
         updateProductColumns(sheet, percentStornoSheetName, products, vendors);
         updateProductColumns(sheet, percentReturnSheetName, products, vendors);
-        while (month.getYear() >= 2024) {
+        while (month.getYear() >= 2025) {
             Map<String, Integer> orderByPNK = mirrorDB.countOrdersByMonth(month);
             Map<String, Integer> stornoByPNK = mirrorDB.countStornoByMonth(month);
             Map<String, Integer> returnByPNK = mirrorDB.countReturnByMonth(month);
