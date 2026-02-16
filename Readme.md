@@ -191,13 +191,52 @@ Putting it all together, the LEAD(order_start) OVER (PARTITION BY emag_login ORD
 
 ## Certificates
 
+Use these commands to generate a local certificate for `localhost` and convert it to a password-protected `PKCS#12` file (`.p12`) that can be used by Jetty.
+
+### macOS
+
 ```
 brew install mkcert nss
 mkcert -install
-mkdir ~/Secrets/Certs
+mkdir -p ~/Secrets/Certs
 cd ~/Secrets/Certs
 mkcert localhost
-openssl rand -base64 24 >localhost.pw
+openssl rand -base64 24 > localhost.pw
 openssl pkcs12 -export -in localhost.pem -inkey localhost-key.pem -out localhost.p12 -name jetty -passout file:localhost.pw
 ```
 
+What each command does:
+
+- `brew install mkcert nss`: Installs `mkcert` and NSS tools.
+- `mkcert -install`: Creates and trusts a local development Certificate Authority (CA) on your machine.
+- `mkdir -p ~/Secrets/Certs`: Creates a folder to store the generated certificate files.
+- `cd ~/Secrets/Certs`: Moves into that folder so all generated files are written there.
+- `mkcert localhost`: Generates `localhost.pem` (certificate) and `localhost-key.pem` (private key).
+- `openssl rand -base64 24 > localhost.pw`: Creates a random password and saves it in `localhost.pw`.
+- `openssl pkcs12 ...`: Bundles certificate + key into `localhost.p12` using alias `jetty`, protected by the password from `localhost.pw`.
+
+### Windows 11 (PowerShell)
+
+```powershell
+winget install -e --id FiloSottile.mkcert
+winget install -e --id ShiningLight.OpenSSL.Light
+mkcert -install
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\Secrets\Certs"
+Set-Location "$env:USERPROFILE\Secrets\Certs"
+mkcert localhost
+openssl rand -base64 24 > localhost.pw
+openssl pkcs12 -export -in localhost.pem -inkey localhost-key.pem -out localhost.p12 -name jetty -passout file:localhost.pw
+```
+
+What each command does:
+
+- `winget install -e --id FiloSottile.mkcert`: Installs `mkcert`.
+- `winget install -e --id ShiningLight.OpenSSL.Light`: Installs `openssl` command-line tools.
+- `mkcert -install`: Creates and trusts a local development Certificate Authority (CA) in Windows.
+- `New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\Secrets\Certs"`: Creates the target folder for certificates (or keeps it if it already exists).
+- `Set-Location "$env:USERPROFILE\Secrets\Certs"`: Changes to the certificates folder.
+- `mkcert localhost`: Generates `localhost.pem` (certificate) and `localhost-key.pem` (private key).
+- `openssl rand -base64 24 > localhost.pw`: Creates a random password and saves it in `localhost.pw`.
+- `openssl pkcs12 ...`: Exports `localhost.pem` + `localhost-key.pem` to `localhost.p12` with alias `jetty`, protected by the password from `localhost.pw`.
+
+If `openssl` is not found right after installation, close and reopen the PowerShell window so `PATH` is refreshed.
