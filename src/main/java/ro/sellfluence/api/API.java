@@ -43,6 +43,9 @@ public class API {
     public record ValueByDate(LocalDate date, double value) {
     }
 
+    public record CurrentMonthRatesRow(String name, String pnk, Double returnRate, Double stornoRate) {
+    }
+
     private interface Retriever<T, V> {
         V retrieve(T t) throws SQLException;
     }
@@ -256,6 +259,30 @@ public class API {
                 map.put(month, value);
             }
             month = month.plusMonths(1);
+        }
+        return result;
+    }
+
+    /**
+     * Retrieves a compact table of current-month percentages for all products.
+     * The value for the current month M is computed as avg(M-3..M-1) numerator / avg(M-3..M-1) orders.
+     *
+     * @return list of rows with product name, PNK, return percentage and storno percentage.
+     * @throws SQLException on database error.
+     */
+    public List<CurrentMonthRatesRow> getCurrentMonthRatesTable() throws SQLException {
+        var products = mirrorDB.readProductsWithVendor().stream()
+                .sorted(ProductWithVendor.nameComparator)
+                .toList();
+        var month = YearMonth.now();
+        var end = month.plusMonths(1);
+        var returnRateByPNK = mirrorDB.getReturnRateByProductAndMonth(month, end);
+        var stornoRateByPNK = mirrorDB.getStornoRateByProductAndMonth(month, end);
+        var result = new ArrayList<CurrentMonthRatesRow>(products.size());
+        for (ProductWithVendor product : products) {
+            var returnRate = returnRateByPNK.getOrDefault(product.pnk(), Map.of()).get(month);
+            var stornoRate = stornoRateByPNK.getOrDefault(product.pnk(), Map.of()).get(month);
+            result.add(new CurrentMonthRatesRow(product.name(), product.pnk(), returnRate, stornoRate));
         }
         return result;
     }
