@@ -64,6 +64,7 @@ import static ro.sellfluence.support.UsefulMethods.require;
 import static ro.sellfluence.support.UsefulMethods.toLocalDate;
 import static ro.sellfluence.support.UsefulMethods.toLocalDateTime;
 import static ro.sellfluence.support.UsefulMethods.toTimestamp;
+import static ro.sellfluence.support.UsefulMethods.toYearMonth;
 
 /**
  * EmagMirrorDB provides a mechanism for managing and interacting with the eMAG mirrored database system.
@@ -895,6 +896,65 @@ public class EmagMirrorDB {
                 """);
     }
 
+    /**
+     * Return storno percentage by product and month where the percentage for month M is
+     * avg(storno in M-3..M-1) / avg(orders in M-3..M-1).
+     *
+     * @param startMonth first month to return (inclusive).
+     * @param endMonth   last month to return (exclusive).
+     * @return map from PNK to map of month to storno ratio.
+     * @throws SQLException on database error.
+     */
+    public @NonNull Map<String, Map<YearMonth, Double>> getStornoRateByProductAndMonth(@NonNull YearMonth startMonth,
+                                                                                          @NonNull YearMonth endMonth) throws SQLException {
+        return getRateByProductAndMonth(startMonth, endMonth, """
+                SELECT
+                  p.part_number_key AS pnk,
+                  DATE_TRUNC('month', s.storno_date)::date AS month_start,
+                  SUM(s.quantity)::double precision AS quantity
+                FROM storno AS s
+                JOIN emag_order AS o ON o.id = s.order_id
+                JOIN product_in_order AS p ON p.id = s.product_id AND p.emag_order_surrogate_id = o.surrogate_id
+                WHERE o.status = 5
+                  AND s.storno_date >= (SELECT start_month - INTERVAL '3 month' FROM params)
+                  AND s.storno_date < (SELECT end_month FROM params)
+                GROUP BY p.part_number_key, month_start
+                """);
+    }
+
+    /**
+     * Return return percentage by product and month where the percentage for month M is
+     * avg(returns in M-3..M-1) / avg(orders in M-3..M-1).
+     *
+     * @param startMonth first month to return (inclusive).
+     * @param endMonth   last month to return (exclusive).
+     * @return map from PNK to map of month to return ratio.
+     * @throws SQLException on database error.
+     */
+    public @NonNull Map<String, Map<YearMonth, Double>> getReturnRateByProductAndMonth(@NonNull YearMonth startMonth,
+                                                                                          @NonNull YearMonth endMonth) throws SQLException {
+        return getRateByProductAndMonth(startMonth, endMonth, """
+                SELECT
+                  pio.part_number_key AS pnk,
+                  DATE_TRUNC('month', r.date)::date AS month_start,
+                  SUM(rp.quantity)::double precision AS quantity
+                FROM rma_result AS r
+                JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                JOIN (
+                    SELECT DISTINCT ON (id) id, surrogate_id
+                    FROM emag_order
+                    ORDER BY id, status DESC
+                ) AS o ON r.order_id = o.id
+                JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                WHERE r.request_status = 7
+                  AND rp.product_id = pio.product_id
+                  AND rp.product_emag_id = pio.mkt_id
+                  AND r.date >= (SELECT start_month - INTERVAL '3 month' FROM params)
+                  AND r.date < (SELECT end_month FROM params)
+                GROUP BY pio.part_number_key, month_start
+                """);
+    }
+
     public Set<PublicKeyCredentialDescriptor> getCredentialIdsForUsername(String username) throws SQLException {
         return database.readTX(db -> PassKey.getCredentialIdsForUsername(db, username));
     }
@@ -1010,6 +1070,103 @@ public class EmagMirrorDB {
                     return result;
                 }
         );
+    }
+
+    private @NonNull HashMap<String, Map<YearMonth, Double>> getRateByProductAndMonth(@NonNull final YearMonth startMonth,
+                                                                                        @NonNull final YearMonth endMonth,
+                                                                                        @NonNull final String numeratorAggregationSQL) throws SQLException {
+        require(startMonth.isBefore(endMonth), () -> "Invalid month interval: [%s, %s).".formatted(startMonth, endMonth));
+        var sql = """
+                WITH params AS (
+                    SELECT ?::timestamp AS start_month,
+                           ?::timestamp AS end_month
+                ),
+                months AS (
+                    SELECT generate_series(
+                        (SELECT (start_month - INTERVAL '3 month')::date FROM params),
+                        (SELECT (end_month - INTERVAL '1 month')::date FROM params),
+                        INTERVAL '1 month'
+                    )::date AS month_start
+                ),
+                products AS (
+                    SELECT p.emag_pnk AS pnk
+                    FROM product AS p
+                ),
+                orders_agg AS (
+                    WITH picked AS (
+                        SELECT DISTINCT ON (o.id, pio.part_number_key)
+                            CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS picked_qty,
+                            pio.part_number_key AS pnk,
+                            DATE_TRUNC('month', o.date)::date AS month_start
+                        FROM emag_order AS o
+                        JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                        WHERE o.status IN (4,5)
+                          AND o.date >= (SELECT start_month - INTERVAL '3 month' FROM params)
+                          AND o.date < (SELECT end_month FROM params)
+                        ORDER BY o.id, pio.part_number_key, o.status, o.surrogate_id DESC
+                    )
+                    SELECT pnk, month_start, SUM(picked_qty)::double precision AS quantity
+                    FROM picked
+                    GROUP BY pnk, month_start
+                ),
+                numerator_agg AS (
+                    %s
+                ),
+                base AS (
+                    SELECT
+                        p.pnk,
+                        m.month_start,
+                        COALESCE(n.quantity, 0) AS numerator_quantity,
+                        COALESCE(o.quantity, 0) AS orders_quantity
+                    FROM products AS p
+                    CROSS JOIN months AS m
+                    LEFT JOIN numerator_agg AS n ON n.pnk = p.pnk AND n.month_start = m.month_start
+                    LEFT JOIN orders_agg AS o ON o.pnk = p.pnk AND o.month_start = m.month_start
+                ),
+                with_window AS (
+                    SELECT
+                        pnk,
+                        month_start,
+                        AVG(numerator_quantity) OVER (
+                            PARTITION BY pnk
+                            ORDER BY month_start
+                            ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING
+                        ) AS numerator_avg,
+                        AVG(orders_quantity) OVER (
+                            PARTITION BY pnk
+                            ORDER BY month_start
+                            ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING
+                        ) AS orders_avg
+                    FROM base
+                )
+                SELECT
+                    pnk,
+                    month_start,
+                    CASE
+                        WHEN orders_avg IS NULL OR orders_avg = 0 THEN NULL
+                        ELSE numerator_avg / orders_avg
+                    END AS ratio
+                FROM with_window
+                WHERE month_start >= (SELECT start_month::date FROM params)
+                ORDER BY pnk, month_start;
+                """.formatted(numeratorAggregationSQL);
+
+        return database.singleReadTX(db -> {
+            var result = new HashMap<String, Map<YearMonth, Double>>();
+            try (var s = db.prepareStatement(sql)) {
+                s.setTimestamp(1, toTimestamp(startMonth.atDay(1).atStartOfDay()));
+                s.setTimestamp(2, toTimestamp(endMonth.atDay(1).atStartOfDay()));
+                try (var rs = s.executeQuery()) {
+                    while (rs.next()) {
+                        var pnk = rs.getString("pnk");
+                        var month = toYearMonth(rs.getDate("month_start"));
+                        var ratio = rs.getObject("ratio", Double.class);
+                        result.computeIfAbsent(pnk, _ -> new HashMap<>()).put(month, ratio);
+                    }
+                }
+            }
+            return result;
+        });
     }
 
     /**

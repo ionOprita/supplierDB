@@ -134,7 +134,12 @@ export function renderHeader(headEl, months) {
   headEl.appendChild(tr);
 }
 
-export function renderBody(tbodyEl, rows, months, tableEl) {
+export function renderBody(tbodyEl, rows, months, tableEl, options = {}) {
+  const valueFormatter = typeof options.valueFormatter === 'function'
+    ? options.valueFormatter
+    : (val) => (Number.isFinite(val) ? String(val) : '');
+  const enableCellClick = options.enableCellClick !== false;
+
   function renderRow(row) {
     const tr = document.createElement('tr');
 
@@ -147,11 +152,13 @@ export function renderBody(tbodyEl, rows, months, tableEl) {
 
     for (const m of months) {
       const td = document.createElement('td');
-      const val = row.months[m] ?? '';
-      td.textContent = Number.isFinite(val) ? String(val) : '';
-      td.dataset.clickable = "true";
-      td.dataset.pnk = row.pnk;
-      td.dataset.month = m;
+      const rawValue = row.months[m];
+      td.textContent = valueFormatter(rawValue, row, m);
+      if (enableCellClick) {
+        td.dataset.clickable = "true";
+        td.dataset.pnk = row.pnk;
+        td.dataset.month = m;
+      }
       tr.appendChild(td);
     }
     return tr;
@@ -309,6 +316,8 @@ export function bindMonthRangeFilter({
  * @param {string} [cfg.monthResetButtonId] - DOM id of reset month-range button
  * @param {string} [cfg.monthFromAllLabel] - label for no lower month bound
  * @param {string} [cfg.monthToAllLabel] - label for no upper month bound
+ * @param {boolean} [cfg.enableCellClick] - whether matrix cells open a details window
+ * @param {function} [cfg.valueFormatter] - (value, row, month) => display text for each matrix cell
  */
 export function initMatrixTable(cfg) {
   const HEAD = document.getElementById(cfg.theadId);
@@ -332,12 +341,15 @@ export function initMatrixTable(cfg) {
     detailsWin.focus?.();
   }
 
-  TABLE.addEventListener('click', (ev) => {
-    const td = ev.target.closest('td[data-clickable="true"]');
-    if (!td) return;
-    const { pnk, month } = td.dataset;
-    openOrUpdateDetails(pnk, month);
-  });
+  const enableCellClick = cfg.enableCellClick !== false && typeof cfg.detailsUrlBuilder === 'function';
+  if (enableCellClick) {
+    TABLE.addEventListener('click', (ev) => {
+      const td = ev.target.closest('td[data-clickable="true"]');
+      if (!td) return;
+      const { pnk, month } = td.dataset;
+      openOrUpdateDetails(pnk, month);
+    });
+  }
 
   if (cfg.csvButtonId) {
     bindTableCsvDownload({
@@ -363,7 +375,10 @@ export function initMatrixTable(cfg) {
       ? rows
       : rows.filter((row) => row.vendorName === selectedVendorName);
     renderHeader(HEAD, visibleMonths);
-    renderBody(BODY, filteredRows, visibleMonths, TABLE);
+    renderBody(BODY, filteredRows, visibleMonths, TABLE, {
+      enableCellClick,
+      valueFormatter: cfg.valueFormatter
+    });
   }
 
   (async function init() {

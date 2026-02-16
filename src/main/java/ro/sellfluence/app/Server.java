@@ -409,6 +409,22 @@ public class Server {
                 ctx.json(returns);
             }
         });
+        app.get("/app/stornoRateTable", ctx -> {
+            var returns = api.getStornoRateByProductAndMonth();
+            if (returns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(returns);
+            }
+        });
+        app.get("/app/returnRateTable", ctx -> {
+            var returns = api.getReturnRateByProductAndMonth();
+            if (returns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(returns);
+            }
+        });
         app.get("/app/returnDetails", ctx -> {
             Validator<YearMonth> month = ctx.queryParamAsClass("month", YearMonth.class);
             var returns = api.returnDetails(ctx.queryParam("pnk"), month.get());

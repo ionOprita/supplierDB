@@ -206,6 +206,60 @@ public class API {
         return result;
     }
 
+    /**
+     * Retrieves the storno percentage by month for all products, within the past 2 years.
+     * For month M, the value is avg(storno in M-3..M-1) / avg(orders in M-3..M-1).
+     *
+     * @return map from product to map of month to storno percentage.
+     * @throws SQLException on database error.
+     */
+    public Map<ProductWithVendor, Map<YearMonth, Double>> getStornoRateByProductAndMonth() throws SQLException {
+        var result = new LinkedHashMap<ProductWithVendor, Map<YearMonth, Double>>();
+        var products = mirrorDB.readProductsWithVendor().stream()
+                .sorted(ProductWithVendor.nameComparator)
+                .toList();
+        var end = YearMonth.now();
+        var start = end.minusYears(2);
+        var ratioByPNK = mirrorDB.getStornoRateByProductAndMonth(start, end);
+        var month = start;
+        while (month.isBefore(end)) {
+            for (ProductWithVendor product : products) {
+                var map = result.computeIfAbsent(product, _ -> new HashMap<>());
+                var value = ratioByPNK.getOrDefault(product.pnk(), Map.of()).get(month);
+                map.put(month, value);
+            }
+            month = month.plusMonths(1);
+        }
+        return result;
+    }
+
+    /**
+     * Retrieves the return percentage by month for all products, within the past 2 years.
+     * For month M, the value is avg(returns in M-3..M-1) / avg(orders in M-3..M-1).
+     *
+     * @return map from product to map of month to return percentage.
+     * @throws SQLException on database error.
+     */
+    public Map<ProductWithVendor, Map<YearMonth, Double>> getReturnRateByProductAndMonth() throws SQLException {
+        var result = new LinkedHashMap<ProductWithVendor, Map<YearMonth, Double>>();
+        var products = mirrorDB.readProductsWithVendor().stream()
+                .sorted(ProductWithVendor.nameComparator)
+                .toList();
+        var end = YearMonth.now();
+        var start = end.minusYears(2);
+        var ratioByPNK = mirrorDB.getReturnRateByProductAndMonth(start, end);
+        var month = start;
+        while (month.isBefore(end)) {
+            for (ProductWithVendor product : products) {
+                var map = result.computeIfAbsent(product, _ -> new HashMap<>());
+                var value = ratioByPNK.getOrDefault(product.pnk(), Map.of()).get(month);
+                map.put(month, value);
+            }
+            month = month.plusMonths(1);
+        }
+        return result;
+    }
+
     public List<ReturnStornoOrderDetail> returnDetails(String pnk, YearMonth month) throws SQLException {
         return mirrorDB.getReturnDetails(pnk, month);
     }
