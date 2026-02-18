@@ -118,7 +118,7 @@ public class EmagOrder {
                 updateString(db, orderInserted.surrogateId, "payment_mode", order.payment_mode());
             }
             if (!Objects.equals(oldOrder.payment_mode_id(), order.payment_mode_id())) {
-                updateInt(db, orderInserted.surrogateId, "payment_mode_id", order.payment_mode_id());
+                updateInteger(db, orderInserted.surrogateId, "payment_mode_id", order.payment_mode_id());
             }
             if (!Objects.equals(oldOrder.detailed_payment_method(), order.detailed_payment_method())) {
                 updateString(db, orderInserted.surrogateId, "detailed_payment_method", order.detailed_payment_method());
@@ -727,6 +727,24 @@ public class EmagOrder {
     private static int updateInt(Connection db, int surrogateId, final String field, int newValue) throws SQLException {
         try (var s = db.prepareStatement("UPDATE emag_order SET " + field + " =? WHERE surrogate_id= ?")) {
             s.setInt(1, newValue);
+            s.setInt(2, surrogateId);
+            return s.executeUpdate();
+        }
+    }
+
+    /**
+     * Update an integer field in the emag_order table.
+     *
+     * @param db database connection.
+     * @param surrogateId row id.
+     * @param field name of the field.
+     * @param newValue value to store.
+     * @return 1 if the row was updated or 0 if no row matched the surrogateId.
+     * @throws SQLException on database errors.
+     */
+    private static int updateInteger(Connection db, int surrogateId, final String field, Integer newValue) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE emag_order SET " + field + " =? WHERE surrogate_id= ?")) {
+            s.setObject(1, newValue);
             s.setInt(2, surrogateId);
             return s.executeUpdate();
         }

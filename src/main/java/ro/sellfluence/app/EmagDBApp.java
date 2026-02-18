@@ -180,7 +180,7 @@ public class EmagDBApp {
      * @param mirrorDB to which to store the orders.
      */
     public static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) {
-        var oldestDay = today.minusYears(3);
+        var oldestDay = today.minusYears(2);
         cleanupFetchLogs(mirrorDB, oldestDay);
         repeatUntilDone(
                 () -> {

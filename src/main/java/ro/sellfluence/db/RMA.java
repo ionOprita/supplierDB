@@ -235,7 +235,7 @@ public class RMA {
             s.setString(7, returnedProduct.observations());
             s.setString(8, returnedProduct.diagnostic());
             s.setObject(9, returnedProduct.reject_reason());
-            s.setInt(10, returnedProduct.retained_amount());
+            s.setObject(10, returnedProduct.retained_amount());
             s.setInt(11, emagId);
             return s.executeUpdate();
         }
@@ -266,7 +266,7 @@ public class RMA {
             s.setString(6, returnedProduct.observations());
             s.setString(7, returnedProduct.diagnostic());
             s.setObject(8, returnedProduct.reject_reason());
-            s.setInt(9, returnedProduct.retained_amount());
+            s.setObject(9, returnedProduct.retained_amount());
             s.setInt(10, emagId);
 
             // WHERE id = ?
