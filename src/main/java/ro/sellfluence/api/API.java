@@ -3,8 +3,10 @@ package ro.sellfluence.api;
 import com.google.gson.Gson;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
+import ro.sellfluence.db.ProductTable;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
 import ro.sellfluence.db.Task;
+import ro.sellfluence.emagapi.Product;
 import ro.sellfluence.support.DoubleWindow;
 
 import java.sql.SQLException;
@@ -13,6 +15,9 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.logging.Logger;
+
+import static java.util.logging.Level.SEVERE;
 
 /**
  * The API for the frontend.
@@ -22,6 +27,7 @@ public class API {
     private final EmagMirrorDB mirrorDB;
 
     private static final Gson gson = new Gson();
+    private static final Logger logger = Logger.getLogger(API.class.getName());
 
     public API(EmagMirrorDB db) {
         mirrorDB = db;
@@ -43,6 +49,14 @@ public class API {
     public record ValueByDate(LocalDate date, double value) {
     }
 
+    public record SmoothedRateByDate(LocalDate date,
+                                     long soldQty,
+                                     long returnedQty,
+                                     Double rawRate,
+                                     double smoothedRate,
+                                     boolean reliable) {
+    }
+
     public record CurrentMonthRatesRow(String name, String pnk, Double returnRate, Double stornoRate) {
     }
 
@@ -59,7 +73,7 @@ public class API {
      */
     public String getProducts() {
         try {
-            var productList = mirrorDB.readProducts().stream()
+            var productList = mirrorDB.readProducts().stream().sorted(ProductTable.ProductInfo::nameComparator)
                     .map(it -> new ProductForFrontend(it.name(), it.productCode()))
                     .toList();
             return gson.toJson(productList);
@@ -94,6 +108,24 @@ public class API {
             date = date.plusDays(1);
         }
         return result;
+    }
+
+    public List<SmoothedRateByDate> getCohortSmoothedRRR(String id) {
+        try {
+            return mirrorDB.getCohortSmoothedRollingReturnRate(id, 90, 90, 100, 20).stream()
+                    .map(it -> new SmoothedRateByDate(
+                            it.date(),
+                            it.soldQty(),
+                            it.returnedQty(),
+                            it.rawRate(),
+                            it.smoothedRate(),
+                            it.reliable()
+                    ))
+                    .toList();
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to compute cohort smoothed RRR for product " + id, e);
+            return null;
+        }
     }
 
     /**

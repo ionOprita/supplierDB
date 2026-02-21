@@ -30,6 +30,7 @@ import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.db.EmagFetchLog.isDone;
 import static ro.sellfluence.support.Time.time;
+import static ro.sellfluence.support.Time.timeE;
 
 public class EmagDBApp {
 
@@ -100,6 +101,10 @@ public class EmagDBApp {
         time(
                 "Fetch RMAs",
                 () -> repeatUntilDone(() -> fetchRMAs(mirrorDB))
+        );
+        timeE(
+                "Refresh return-rate materialized views",
+                mirrorDB::refreshReturnRateMaterializedViews
         );
     }
 
@@ -179,7 +184,7 @@ public class EmagDBApp {
      *
      * @param mirrorDB to which to store the orders.
      */
-    public static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) {
+    public static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) throws SQLException {
         var oldestDay = today.minusYears(2);
         cleanupFetchLogs(mirrorDB, oldestDay);
         repeatUntilDone(
@@ -193,6 +198,10 @@ public class EmagDBApp {
                     return result;
                 }
         );
+        timeE(
+                "Refresh return-rate materialized views",
+                mirrorDB::refreshReturnRateMaterializedViews
+        );
     }
 
     /**
@@ -201,7 +210,7 @@ public class EmagDBApp {
      * @param mirrorDB the database to use.
      * @param period how far back from today to fetch.
      */
-    private static void refetchAndStoreToDB(EmagMirrorDB mirrorDB, Period period) {
+    private static void refetchAndStoreToDB(EmagMirrorDB mirrorDB, Period period) throws SQLException {
         final var maxRetries = 4;
         var chunkSize = Period.ofWeeks(1);
         var endTime = LocalDateTime.now();
@@ -240,7 +249,10 @@ public class EmagDBApp {
             endTime = startTime;
             startTime = endTime.minus(chunkSize);
         }
-
+        timeE(
+                "Refresh return-rate materialized views",
+                mirrorDB::refreshReturnRateMaterializedViews
+        );
     }
 
     /**

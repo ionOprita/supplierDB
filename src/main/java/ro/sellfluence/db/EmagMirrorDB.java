@@ -411,6 +411,27 @@ public class EmagMirrorDB {
     }
 
     /**
+     * Refresh materialized views used by the cohort-based rolling return rate chart.
+     * Refresh order matters because downstream views depend on upstream ones.
+     *
+     * @throws SQLException on database errors.
+     */
+    public void refreshReturnRateMaterializedViews() throws SQLException {
+        database.writeTX(db -> {
+            try (var s = db.prepareStatement("REFRESH MATERIALIZED VIEW orders_canonical")) {
+                s.execute();
+            }
+            try (var s = db.prepareStatement("REFRESH MATERIALIZED VIEW sales_daily")) {
+                s.execute();
+            }
+            try (var s = db.prepareStatement("REFRESH MATERIALIZED VIEW returns_linked")) {
+                s.execute();
+            }
+            return true;
+        });
+    }
+
+    /**
      * Retrieve GMVs for a particular month.
      *
      * @param month to retrieve.
@@ -823,6 +844,207 @@ public class EmagMirrorDB {
                 GROUP BY CAST(r.date AS date)
                 ORDER BY event_date;
                 """);
+    }
+
+    public record RollingReturnRatePoint(LocalDate date,
+                                         long soldQty,
+                                         long returnedQty,
+                                         Double rawRate,
+                                         double smoothedRate,
+                                         boolean reliable) {
+    }
+
+    /**
+     * Compute a daily cohort-linked rolling return rate for one product and smooth it with a Bayesian prior.
+     * The rolling sums are computed using delta events + cumulative windows for performance.
+     *
+     * @param productCode        product code used by the frontend.
+     * @param rollDays           rolling denominator window size (for example 90).
+     * @param maxReturnDays      maximum allowed return delay from sale date (for example 90).
+     * @param priorStrength      Bayesian prior strength m (for example 100).
+     * @param reliableMinSoldQty reliability threshold flag (for example 20 or 30).
+     * @return list of daily points ordered by date.
+     * @throws SQLException on database errors.
+     */
+    public @NonNull List<RollingReturnRatePoint> getCohortSmoothedRollingReturnRate(@NonNull String productCode,
+                                                                                      int rollDays,
+                                                                                      int maxReturnDays,
+                                                                                      double priorStrength,
+                                                                                      long reliableMinSoldQty) throws SQLException {
+        require(rollDays > 0, () -> "rollDays must be > 0.");
+        require(maxReturnDays > 0, () -> "maxReturnDays must be > 0.");
+        require(priorStrength > 0, () -> "priorStrength must be > 0.");
+        require(reliableMinSoldQty >= 0, () -> "reliableMinSoldQty must be >= 0.");
+
+        var sql = """
+                WITH params AS (
+                  SELECT
+                    ?::int AS roll_days,
+                    ?::int AS max_return_days,
+                    ?::numeric AS m
+                ),
+                product_ids AS (
+                  SELECT DISTINCT pio.product_id
+                  FROM product AS p
+                  JOIN product_in_order AS pio
+                    ON pio.part_number_key = p.emag_pnk
+                  WHERE p.product_code = ?
+                ),
+                all_dates AS (
+                  SELECT sd.sale_d AS d
+                  FROM sales_daily sd
+                  JOIN product_ids pid
+                    ON pid.product_id = sd.product_id
+                  UNION ALL
+                  SELECT rl.sale_d AS d
+                  FROM returns_linked rl
+                  JOIN product_ids pid
+                    ON pid.product_id = rl.product_id
+                  UNION ALL
+                  SELECT rl.return_d AS d
+                  FROM returns_linked rl
+                  JOIN product_ids pid
+                    ON pid.product_id = rl.product_id
+                ),
+                bounds AS (
+                  SELECT MIN(d) AS min_d, MAX(d) AS max_d
+                  FROM all_dates
+                ),
+                calendar AS (
+                  SELECT
+                    pid.product_id,
+                    gs::date AS d
+                  FROM product_ids pid
+                  CROSS JOIN bounds b
+                  CROSS JOIN LATERAL generate_series(b.min_d, b.max_d, interval '1 day') gs
+                  WHERE b.min_d IS NOT NULL
+                    AND b.max_d IS NOT NULL
+                ),
+                sales_events AS (
+                  SELECT sd.product_id, sd.sale_d AS d, sd.sold_qty AS delta
+                  FROM sales_daily sd
+                  JOIN product_ids pid
+                    ON pid.product_id = sd.product_id
+                  UNION ALL
+                  SELECT
+                    sd.product_id,
+                    (sd.sale_d + (SELECT roll_days FROM params))::date AS d,
+                    -sd.sold_qty AS delta
+                  FROM sales_daily sd
+                  JOIN product_ids pid
+                    ON pid.product_id = sd.product_id
+                ),
+                sales_deltas AS (
+                  SELECT product_id, d, SUM(delta)::bigint AS delta
+                  FROM sales_events
+                  GROUP BY product_id, d
+                ),
+                returns_events AS (
+                  SELECT
+                    rl.product_id,
+                    rl.return_d AS d,
+                    rl.returned_qty AS delta
+                  FROM returns_linked rl
+                  JOIN product_ids pid
+                    ON pid.product_id = rl.product_id,
+                  params
+                  WHERE rl.return_d <= rl.sale_d + params.max_return_days
+                    AND rl.return_d <= rl.sale_d + (params.roll_days - 1)
+
+                  UNION ALL
+
+                  SELECT
+                    rl.product_id,
+                    (rl.sale_d + params.roll_days)::date AS d,
+                    -rl.returned_qty AS delta
+                  FROM returns_linked rl
+                  JOIN product_ids pid
+                    ON pid.product_id = rl.product_id,
+                  params
+                  WHERE rl.return_d <= rl.sale_d + params.max_return_days
+                    AND rl.return_d <= rl.sale_d + (params.roll_days - 1)
+                ),
+                returns_deltas AS (
+                  SELECT product_id, d, SUM(delta)::bigint AS delta
+                  FROM returns_events
+                  GROUP BY product_id, d
+                ),
+                series AS (
+                  SELECT
+                    c.product_id,
+                    c.d,
+                    SUM(COALESCE(sd.delta, 0)) OVER (
+                      PARTITION BY c.product_id
+                      ORDER BY c.d
+                      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    )::bigint AS sold_qty,
+                    SUM(COALESCE(rd.delta, 0)) OVER (
+                      PARTITION BY c.product_id
+                      ORDER BY c.d
+                      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                      )::bigint AS returned_qty
+                  FROM calendar c
+                  LEFT JOIN sales_deltas sd
+                    ON sd.product_id = c.product_id
+                   AND sd.d = c.d
+                  LEFT JOIN returns_deltas rd
+                    ON rd.product_id = c.product_id
+                   AND rd.d = c.d
+                ),
+                series_by_day AS (
+                  SELECT
+                    d AS event_date,
+                    SUM(sold_qty)::bigint AS sold_qty,
+                    SUM(returned_qty)::bigint AS returned_qty
+                  FROM series
+                  GROUP BY d
+                ),
+                totals AS (
+                  SELECT
+                    COALESCE(SUM(returned_qty)::numeric / NULLIF(SUM(sold_qty), 0), 0)::numeric AS p0
+                  FROM series_by_day
+                )
+                SELECT
+                  s.event_date,
+                  s.sold_qty,
+                  s.returned_qty,
+                  (s.returned_qty::double precision / NULLIF(s.sold_qty::double precision, 0)) AS raw_rate,
+                  (
+                    (s.returned_qty::numeric + (t.p0 * p.m))
+                    / (s.sold_qty::numeric + p.m)
+                  )::double precision AS smoothed_rate,
+                  (s.sold_qty >= ?) AS reliable
+                FROM series_by_day s
+                CROSS JOIN totals t
+                CROSS JOIN params p
+                ORDER BY s.event_date;
+                """;
+
+        return database.readTX(db -> {
+            var result = new ArrayList<RollingReturnRatePoint>();
+            try (var s = db.prepareStatement(sql)) {
+                s.setInt(1, rollDays);
+                s.setInt(2, maxReturnDays);
+                s.setBigDecimal(3, BigDecimal.valueOf(priorStrength));
+                s.setString(4, productCode);
+                s.setLong(5, reliableMinSoldQty);
+                try (var rs = s.executeQuery()) {
+                    while (rs.next()) {
+                        result.add(
+                                new RollingReturnRatePoint(
+                                        rs.getDate("event_date").toLocalDate(),
+                                        rs.getLong("sold_qty"),
+                                        rs.getLong("returned_qty"),
+                                        rs.getObject("raw_rate", Double.class),
+                                        rs.getDouble("smoothed_rate"),
+                                        rs.getBoolean("reliable")
+                                )
+                        );
+                    }
+                }
+            }
+            return result;
+        });
     }
 
     /**

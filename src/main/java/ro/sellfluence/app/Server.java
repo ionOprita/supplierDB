@@ -336,6 +336,16 @@ public class Server {
             }
         });
 
+        app.get("/app/rrr-smoothed/{id}", ctx -> {
+            String id = ctx.pathParam("id");
+            var rrr = api.getCohortSmoothedRRR(id);
+            if (rrr == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(rrr);
+            }
+        });
+
         app.get("/app/orders/{id}", ctx -> {
             String id = ctx.pathParam("id");
             var orders = api.getOrders(id);
