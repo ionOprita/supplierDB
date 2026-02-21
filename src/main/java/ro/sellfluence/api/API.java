@@ -3,21 +3,26 @@ package ro.sellfluence.api;
 import com.google.gson.Gson;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
-import ro.sellfluence.db.ProductTable;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
 import ro.sellfluence.db.Task;
-import ro.sellfluence.emagapi.Product;
 import ro.sellfluence.support.DoubleWindow;
 
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 import static java.util.logging.Level.SEVERE;
+import static ro.sellfluence.api.API.ProductForFrontend.nameComparator;
+import static ro.sellfluence.db.ProductTable.ProductInfo.nameComparatorString;
 
 /**
  * The API for the frontend.
@@ -34,6 +39,7 @@ public class API {
     }
 
     record ProductForFrontend(String name, String id) {
+        public static final Comparator<ProductForFrontend> nameComparator = Comparator.comparing(ProductForFrontend::name, nameComparatorString);
     }
 
     record CachedDailyAmounts(LocalDateTime lastRead, Map<LocalDate, Integer> cachedData) {
@@ -73,8 +79,9 @@ public class API {
      */
     public String getProducts() {
         try {
-            var productList = mirrorDB.readProducts().stream().sorted(ProductTable.ProductInfo::nameComparator)
+            var productList = mirrorDB.readProducts().stream()
                     .map(it -> new ProductForFrontend(it.name(), it.productCode()))
+                    .sorted(nameComparator)
                     .toList();
             return gson.toJson(productList);
         } catch (SQLException e) {
@@ -322,6 +329,7 @@ public class API {
     public List<ReturnStornoOrderDetail> returnDetails(String pnk, YearMonth month) throws SQLException {
         return mirrorDB.getReturnDetails(pnk, month);
     }
+
     public List<Task> getTasks() throws SQLException {
         return mirrorDB.getAllTasks();
     }
