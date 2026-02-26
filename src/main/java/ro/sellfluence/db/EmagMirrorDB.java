@@ -871,6 +871,7 @@ public class EmagMirrorDB {
                                                                                       int maxReturnDays,
                                                                                       double priorStrength,
                                                                                       long reliableMinSoldQty) throws SQLException {
+        // TODO: Understand if this does the expected thing, as reported values look strange.
         require(rollDays > 0, () -> "rollDays must be > 0.");
         require(maxReturnDays > 0, () -> "maxReturnDays must be > 0.");
         require(priorStrength > 0, () -> "priorStrength must be > 0.");

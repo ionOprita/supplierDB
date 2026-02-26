@@ -39,8 +39,6 @@ let latestLoadSeq = 0;
 
 async function populateProducts() {
   const items = await fetchJSON("/app/products");
-  //items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-
   selectEl.innerHTML = "";
   const placeholder = document.createElement("option");
   placeholder.textContent = "Select a product...";

@@ -21,17 +21,18 @@ class EmagMirrorDBVersion31 {
     private static void createOrdersCanonical(Connection db) throws SQLException {
         executeStatement(db, """
                 CREATE MATERIALIZED VIEW orders_canonical AS
-                SELECT DISTINCT ON (eo.id)
+                SELECT DISTINCT ON (eo.id, eo.vendor_id)
                   eo.id           AS order_id,
                   eo.surrogate_id AS order_surrogate_id,
                   eo.date         AS order_ts,
+                  eo.vendor_id    AS vendor_id,
                   eo.status       AS status
                 FROM emag_order eo
-                ORDER BY eo.id, eo.status DESC;
+                ORDER BY eo.id, eo.vendor_id, eo.status DESC;
                 """);
         executeStatement(db, """
                 CREATE INDEX idx_orders_canonical_order_id
-                    ON orders_canonical (order_id);
+                    ON orders_canonical (order_id, vendor_id);
                 """);
         executeStatement(db, """
                 CREATE INDEX idx_orders_canonical_order_surrogate_id
@@ -47,10 +48,13 @@ class EmagMirrorDBVersion31 {
         executeStatement(db, """
                 CREATE MATERIALIZED VIEW sales_daily AS
                 SELECT
-                  pio.product_id,
+                  p.product_code as product_code,
+                  pio.product_id AS product_id,
                   (oc.order_ts::date) AS sale_d,
                   SUM(pio.quantity)::bigint AS sold_qty
                 FROM product_in_order pio
+                JOIN product p
+                  ON p.emag_pnk = pio.part_number_key
                 JOIN orders_canonical oc
                   ON oc.order_surrogate_id = pio.emag_order_surrogate_id
                 WHERE oc.status IN (4,5)

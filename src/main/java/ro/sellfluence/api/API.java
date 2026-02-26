@@ -117,8 +117,15 @@ public class API {
         return result;
     }
 
+    /**
+     * Return the rolling return rate for a product.
+     *
+     * @param id of the product.
+     * @return The computed RRR both raw and smoothed.
+     */
     public List<SmoothedRateByDate> getCohortSmoothedRRR(String id) {
         try {
+            //TODO: Figure out if the parameters are appropriate.
             return mirrorDB.getCohortSmoothedRollingReturnRate(id, 90, 90, 100, 20).stream()
                     .map(it -> new SmoothedRateByDate(
                             it.date(),
