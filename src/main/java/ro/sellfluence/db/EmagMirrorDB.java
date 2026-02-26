@@ -882,30 +882,37 @@ public class EmagMirrorDB {
                   SELECT
                     ?::int AS roll_days,
                     ?::int AS max_return_days,
-                    ?::numeric AS m
+                    ?::numeric AS m,
+                    ?::varchar AS product_code
                 ),
-                product_ids AS (
-                  SELECT DISTINCT pio.product_id
-                  FROM product AS p
-                  JOIN product_in_order AS pio
-                    ON pio.part_number_key = p.emag_pnk
-                  WHERE p.product_code = ?
+                sales_filtered AS (
+                  SELECT
+                    sd.sale_d,
+                    sd.sold_qty
+                  FROM sales_daily sd
+                  CROSS JOIN params p
+                  WHERE sd.product_code = p.product_code
+                ),
+                returns_filtered AS (
+                  SELECT
+                    rl.sale_d,
+                    rl.return_d,
+                    rl.returned_qty
+                  FROM returns_linked rl
+                  CROSS JOIN params p
+                  WHERE rl.product_code = p.product_code
+                    AND rl.return_d <= rl.sale_d + p.max_return_days
+                    AND rl.return_d <= rl.sale_d + (p.roll_days - 1)
                 ),
                 all_dates AS (
-                  SELECT sd.sale_d AS d
-                  FROM sales_daily sd
-                  JOIN product_ids pid
-                    ON pid.product_id = sd.product_id
+                  SELECT sf.sale_d AS d
+                  FROM sales_filtered sf
                   UNION ALL
-                  SELECT rl.sale_d AS d
-                  FROM returns_linked rl
-                  JOIN product_ids pid
-                    ON pid.product_id = rl.product_id
+                  SELECT rf.sale_d AS d
+                  FROM returns_filtered rf
                   UNION ALL
-                  SELECT rl.return_d AS d
-                  FROM returns_linked rl
-                  JOIN product_ids pid
-                    ON pid.product_id = rl.product_id
+                  SELECT rf.return_d AS d
+                  FROM returns_filtered rf
                 ),
                 bounds AS (
                   SELECT MIN(d) AS min_d, MAX(d) AS max_d
@@ -913,100 +920,66 @@ public class EmagMirrorDB {
                 ),
                 calendar AS (
                   SELECT
-                    pid.product_id,
                     gs::date AS d
-                  FROM product_ids pid
-                  CROSS JOIN bounds b
+                  FROM bounds b
                   CROSS JOIN LATERAL generate_series(b.min_d, b.max_d, interval '1 day') gs
                   WHERE b.min_d IS NOT NULL
                     AND b.max_d IS NOT NULL
                 ),
                 sales_events AS (
-                  SELECT sd.product_id, sd.sale_d AS d, sd.sold_qty AS delta
-                  FROM sales_daily sd
-                  JOIN product_ids pid
-                    ON pid.product_id = sd.product_id
+                  SELECT sf.sale_d AS d, sf.sold_qty AS delta
+                  FROM sales_filtered sf
                   UNION ALL
                   SELECT
-                    sd.product_id,
-                    (sd.sale_d + (SELECT roll_days FROM params))::date AS d,
-                    -sd.sold_qty AS delta
-                  FROM sales_daily sd
-                  JOIN product_ids pid
-                    ON pid.product_id = sd.product_id
+                    (sf.sale_d + p.roll_days)::date AS d,
+                    -sf.sold_qty AS delta
+                  FROM sales_filtered sf
+                  CROSS JOIN params p
                 ),
                 sales_deltas AS (
-                  SELECT product_id, d, SUM(delta)::bigint AS delta
+                  SELECT d, SUM(delta)::bigint AS delta
                   FROM sales_events
-                  GROUP BY product_id, d
+                  GROUP BY d
                 ),
                 returns_events AS (
-                  SELECT
-                    rl.product_id,
-                    rl.return_d AS d,
-                    rl.returned_qty AS delta
-                  FROM returns_linked rl
-                  JOIN product_ids pid
-                    ON pid.product_id = rl.product_id,
-                  params
-                  WHERE rl.return_d <= rl.sale_d + params.max_return_days
-                    AND rl.return_d <= rl.sale_d + (params.roll_days - 1)
-
+                  SELECT rf.return_d AS d, rf.returned_qty AS delta
+                  FROM returns_filtered rf
                   UNION ALL
-
                   SELECT
-                    rl.product_id,
-                    (rl.sale_d + params.roll_days)::date AS d,
-                    -rl.returned_qty AS delta
-                  FROM returns_linked rl
-                  JOIN product_ids pid
-                    ON pid.product_id = rl.product_id,
-                  params
-                  WHERE rl.return_d <= rl.sale_d + params.max_return_days
-                    AND rl.return_d <= rl.sale_d + (params.roll_days - 1)
+                    (rf.sale_d + p.roll_days)::date AS d,
+                    -rf.returned_qty AS delta
+                  FROM returns_filtered rf
+                  CROSS JOIN params p
                 ),
                 returns_deltas AS (
-                  SELECT product_id, d, SUM(delta)::bigint AS delta
+                  SELECT d, SUM(delta)::bigint AS delta
                   FROM returns_events
-                  GROUP BY product_id, d
+                  GROUP BY d
                 ),
                 series AS (
                   SELECT
-                    c.product_id,
                     c.d,
                     SUM(COALESCE(sd.delta, 0)) OVER (
-                      PARTITION BY c.product_id
                       ORDER BY c.d
                       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                     )::bigint AS sold_qty,
                     SUM(COALESCE(rd.delta, 0)) OVER (
-                      PARTITION BY c.product_id
                       ORDER BY c.d
                       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                       )::bigint AS returned_qty
                   FROM calendar c
                   LEFT JOIN sales_deltas sd
-                    ON sd.product_id = c.product_id
-                   AND sd.d = c.d
+                    ON sd.d = c.d
                   LEFT JOIN returns_deltas rd
-                    ON rd.product_id = c.product_id
-                   AND rd.d = c.d
-                ),
-                series_by_day AS (
-                  SELECT
-                    d AS event_date,
-                    SUM(sold_qty)::bigint AS sold_qty,
-                    SUM(returned_qty)::bigint AS returned_qty
-                  FROM series
-                  GROUP BY d
+                    ON rd.d = c.d
                 ),
                 totals AS (
                   SELECT
                     COALESCE(SUM(returned_qty)::numeric / NULLIF(SUM(sold_qty), 0), 0)::numeric AS p0
-                  FROM series_by_day
+                  FROM series
                 )
                 SELECT
-                  s.event_date,
+                  s.d AS event_date,
                   s.sold_qty,
                   s.returned_qty,
                   (s.returned_qty::double precision / NULLIF(s.sold_qty::double precision, 0)) AS raw_rate,
@@ -1015,10 +988,10 @@ public class EmagMirrorDB {
                     / (s.sold_qty::numeric + p.m)
                   )::double precision AS smoothed_rate,
                   (s.sold_qty >= ?) AS reliable
-                FROM series_by_day s
+                FROM series s
                 CROSS JOIN totals t
                 CROSS JOIN params p
-                ORDER BY s.event_date;
+                ORDER BY s.d;
                 """;
 
         return database.readTX(db -> {

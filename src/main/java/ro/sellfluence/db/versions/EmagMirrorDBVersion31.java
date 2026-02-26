@@ -13,9 +13,31 @@ class EmagMirrorDBVersion31 {
      * @throws SQLException all errors are passed back to the caller.
      */
     static void version31(Connection db) throws SQLException {
+        enforceProductPnkUniqueness(db);
+        enforceProductInOrderPnkPresence(db);
         createOrdersCanonical(db);
         createSalesDaily(db);
         createReturnsLinked(db);
+    }
+
+    private static void enforceProductPnkUniqueness(Connection db) throws SQLException {
+        executeStatement(db, """
+                CREATE UNIQUE INDEX idx_product_emag_pnk_non_blank_unique
+                    ON product (emag_pnk)
+                    WHERE btrim(emag_pnk) <> '';
+                """);
+    }
+
+    private static void enforceProductInOrderPnkPresence(Connection db) throws SQLException {
+        executeStatement(db, """
+                ALTER TABLE product_in_order
+                    ALTER COLUMN part_number_key SET NOT NULL;
+                """);
+        executeStatement(db, """
+                ALTER TABLE product_in_order
+                    ADD CONSTRAINT product_in_order_part_number_key_non_blank
+                    CHECK (btrim(part_number_key) <> '');
+                """);
     }
 
     private static void createOrdersCanonical(Connection db) throws SQLException {
@@ -58,7 +80,7 @@ class EmagMirrorDBVersion31 {
                 JOIN orders_canonical oc
                   ON oc.order_surrogate_id = pio.emag_order_surrogate_id
                 WHERE oc.status IN (4,5)
-                GROUP BY 1,2;
+                GROUP BY 1,2,3;
                 """);
         executeStatement(db, """
                 CREATE INDEX idx_sales_daily_product_date
@@ -71,6 +93,7 @@ class EmagMirrorDBVersion31 {
                 CREATE MATERIALIZED VIEW returns_linked AS
                 SELECT
                   erp.product_id,
+                  p.product_code,
                   (oc.order_ts::date) AS sale_d,
                   (rr.date::date)     AS return_d,
                   SUM(erp.quantity)::bigint AS returned_qty
@@ -84,7 +107,9 @@ class EmagMirrorDBVersion31 {
                   ON pio.emag_order_surrogate_id = oc.order_surrogate_id
                  AND pio.product_id = erp.product_id
                  AND pio.mkt_id = erp.product_emag_id
-                GROUP BY 1,2,3;
+                JOIN product p
+                 ON p.emag_pnk = pio.part_number_key
+                GROUP BY 1,2,3,4;
                 """);
         executeStatement(db, """
                 CREATE INDEX idx_returns_linked_product_sale_return
