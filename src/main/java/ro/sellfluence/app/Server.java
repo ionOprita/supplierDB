@@ -469,7 +469,8 @@ public class Server {
         }
         Object userAttribute = ctx.sessionAttribute("user");
         if (userAttribute instanceof User(String username, PassKey.Role role)) {
-            if ("users".equals(page) && role != admin) {
+            boolean adminOnlyPage = "users".equals(page) || "db-explorer".equals(page);
+            if (adminOnlyPage && role != admin) {
                 ctx.status(FORBIDDEN);
                 return;
             }
@@ -571,6 +572,9 @@ public class Server {
     }
 
     private static String toPageTitle(String page) {
+        if ("db-explorer".equals(page)) {
+            return "DB Explorer";
+        }
         var words = page.split("-");
         return Arrays.stream(words)
                 .map(String::trim)

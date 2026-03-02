@@ -33,10 +33,7 @@
 <main style="margin-top: 60px;">
     @if(userRole != null && !userRole.equals("nobody"))
         <nav class="app-menu" aria-label="Main menu">
-            <ul>
-                @if(userRole.equals("admin"))
-                    <li><a href="/admin/users">Administrate Users</a></li>
-                @endif
+            <ul class="menu-row">
                 <li><a href="/private/orders">Order Table</a></li>
                 <li><a href="/private/storno">Storno Table</a></li>
                 <li><a href="/private/returns">Return Table</a></li>
@@ -47,6 +44,12 @@
                 <li><a href="/private/rrr">RRR (Smoothed)</a></li>
                 <li><a href="/private/tasks">Tasks</a></li>
             </ul>
+            @if(userRole.equals("admin"))
+                <ul class="menu-row menu-row-admin">
+                    <li><a href="/admin/users">Administrate Users</a></li>
+                    <li><a href="/admin/db-explorer">DB Explorer</a></li>
+                </ul>
+            @endif
         </nav>
     @endif
     <h1 id="title">${pageTitle}</h1>
