@@ -149,7 +149,7 @@ public record Vendor (UUID id, String name, boolean isFBE, String companyName, S
      */
     static @NonNull List<Vendor> getVendors(Connection db) throws SQLException {
         var vendors = new ArrayList<Vendor>();
-        try (var s = db.prepareStatement("SELECT id, vendor_name, isfbe, company_name, account, last_fetch FROM vendor;")) {
+        try (var s = db.prepareStatement("SELECT id, vendor_name, isfbe, company_name, account, last_fetch FROM vendor ORDER BY vendor_name;")) {
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     vendors.add(
