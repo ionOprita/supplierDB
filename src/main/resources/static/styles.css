@@ -79,6 +79,11 @@ h1 {
   background: var(--surface-alt);
 }
 
+.app-menu a[aria-current="page"] {
+  background: var(--hover);
+  font-weight: 600;
+}
+
 .page-actions {
   display: flex;
   align-items: center;

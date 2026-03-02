@@ -124,6 +124,8 @@ public class Server {
         app.get("/private/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
 
         app.before("/admin/*", ctx -> checkRole(ctx, admin));
+        app.get("/admin/db-explorer", ctx -> ctx.redirect("/admin/db-explorer/products"));
+        app.get("/admin/db-explorer/{subPage}", ctx -> renderDBExplorerSubPage(ctx, mirrorDB, ctx.pathParam("subPage")));
         app.get("/admin/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
         app.post("/admin/users/{userId}/role", ctx -> changeUserRole(ctx, mirrorDB));
         app.post("/admin/users/{userId}/delete", ctx -> deleteUser(ctx, mirrorDB));
@@ -467,10 +469,15 @@ public class Server {
             ctx.status(400).result("Invalid page name");
             return;
         }
+        if ("db-explorer".equals(page) && ctx.path().startsWith("/admin/")) {
+            ctx.redirect("/admin/db-explorer/products");
+            return;
+        }
         Object userAttribute = ctx.sessionAttribute("user");
         if (userAttribute instanceof User(String username, PassKey.Role role)) {
             boolean adminOnlyPage = "users".equals(page) || "db-explorer".equals(page);
-            if (adminOnlyPage && role != admin) {
+            boolean isAdminArea = ctx.path().startsWith("/admin/");
+            if (adminOnlyPage && (role != admin || !isAdminArea)) {
                 ctx.status(FORBIDDEN);
                 return;
             }
@@ -490,6 +497,46 @@ public class Server {
                 model.put("error", ctx.queryParam("error"));
             }
             ctx.render(page + ".jte", model);
+        }
+    }
+
+    private static void renderDBExplorerSubPage(Context ctx, EmagMirrorDB mirrorDB, String subPage) {
+        if (!subPage.matches("[a-zA-Z0-9_-]+")) {
+            ctx.status(400).result("Invalid sub-page name");
+            return;
+        }
+        Object userAttribute = ctx.sessionAttribute("user");
+        if (!(userAttribute instanceof User(String username, PassKey.Role role))) {
+            ctx.redirect("/");
+            return;
+        }
+        if (role != admin) {
+            ctx.status(FORBIDDEN);
+            return;
+        }
+
+        var model = new HashMap<String, Object>();
+        model.put("userName", username);
+        model.put("userRole", role.name());
+        model.put("pageTitle", "DB Explorer");
+
+        try {
+            switch (subPage) {
+                case "products" -> {
+                    model.put("activeSubPage", "products");
+                    model.put("products", mirrorDB.readProducts());
+                    ctx.render("db-explorer-products.jte", model);
+                }
+                case "vendors" -> {
+                    model.put("activeSubPage", "vendors");
+                    model.put("vendors", mirrorDB.getAllVendors());
+                    ctx.render("db-explorer-vendors.jte", model);
+                }
+                default -> ctx.status(404).result("Unknown DB Explorer page.");
+            }
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load DB Explorer page " + subPage + ".", e);
+            ctx.status(500).result("Failed to load DB Explorer page.");
         }
     }
 

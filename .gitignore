@@ -41,3 +41,6 @@ build/
 
 ### Package for local experiments. ###
 /src/main/java/zzz/
+
+### API documentation from emag
+/emag-marketplace-api-documentation-*.*

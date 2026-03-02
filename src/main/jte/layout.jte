@@ -47,7 +47,7 @@
             @if(userRole.equals("admin"))
                 <ul class="menu-row menu-row-admin">
                     <li><a href="/admin/users">Administrate Users</a></li>
-                    <li><a href="/admin/db-explorer">DB Explorer</a></li>
+                    <li><a href="/admin/db-explorer/products">DB Explorer</a></li>
                 </ul>
             @endif
         </nav>
