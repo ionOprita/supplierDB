@@ -10,7 +10,7 @@
     <properties>
         <maven.compiler.release>25</maven.compiler.release>
         <encoding>UTF-8</encoding>
-        <jackson-version>3.0.3</jackson-version>
+        <jackson-version>3.1.0</jackson-version>
         <jte.version>3.2.1</jte.version>
     </properties>
 
