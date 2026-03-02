@@ -5,13 +5,14 @@
 @param String userRole
 @param String pageTitle
 @param String activeSubPage
+@param String activeSort
 @param List<ProductInfo> products
 
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
     <nav class="app-menu" aria-label="DB Explorer menu">
         <ul class="menu-row">
             @if("products".equals(activeSubPage))
-                <li><a href="/admin/db-explorer/products" aria-current="page">Products</a></li>
+                <li><a href="/admin/db-explorer/products?sort=${activeSort}" aria-current="page">Products</a></li>
             @else
                 <li><a href="/admin/db-explorer/products">Products</a></li>
             @endif
@@ -23,13 +24,33 @@
         </ul>
     </nav>
 
+    <nav class="app-menu" aria-label="Products sort">
+        <ul class="menu-row">
+            @if("name".equals(activeSort))
+                <li><a href="/admin/db-explorer/products?sort=name" aria-current="page">Sort: Name</a></li>
+            @else
+                <li><a href="/admin/db-explorer/products?sort=name">Sort: Name</a></li>
+            @endif
+            @if("product_code".equals(activeSort))
+                <li><a href="/admin/db-explorer/products?sort=product_code" aria-current="page">Sort: Product Code</a></li>
+            @else
+                <li><a href="/admin/db-explorer/products?sort=product_code">Sort: Product Code</a></li>
+            @endif
+            @if("emag_pnk".equals(activeSort))
+                <li><a href="/admin/db-explorer/products?sort=emag_pnk" aria-current="page">Sort: eMAG PNK</a></li>
+            @else
+                <li><a href="/admin/db-explorer/products?sort=emag_pnk">Sort: eMAG PNK</a></li>
+            @endif
+        </ul>
+    </nav>
+
     <div class="wrap">
         <table>
             <thead>
             <tr>
-                <th>emag_pnk</th>
-                <th>product_code</th>
                 <th>name</th>
+                <th>product_code</th>
+                <th>emag_pnk</th>
                 <th>vendor</th>
                 <th>continue_to_sell</th>
                 <th>retracted</th>
@@ -47,9 +68,9 @@
             @else
                 @for(var product : products)
                     <tr>
-                        <td>${product.pnk()}</td>
-                        <td>${product.productCode()}</td>
                         <td>${product.name()}</td>
+                        <td>${product.productCode()}</td>
+                        <td>${product.pnk()}</td>
                         <td>${product.vendor() == null ? "" : product.vendor().toString()}</td>
                         <td>${product.continueToSell()}</td>
                         <td>${product.retracted()}</td>

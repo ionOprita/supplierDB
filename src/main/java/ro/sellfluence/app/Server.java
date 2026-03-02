@@ -28,6 +28,7 @@ import ro.sellfluence.apphelper.BackgroundJob;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.PassKey;
 import ro.sellfluence.db.PassKey.User;
+import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 import tools.jackson.databind.ObjectMapper;
@@ -39,7 +40,9 @@ import java.nio.file.Paths;
 import java.sql.SQLException;
 import java.time.YearMonth;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -523,8 +526,10 @@ public class Server {
         try {
             switch (subPage) {
                 case "products" -> {
+                    String sort = normalizeProductSort(ctx.queryParam("sort"));
                     model.put("activeSubPage", "products");
-                    model.put("products", mirrorDB.readProducts());
+                    model.put("activeSort", sort);
+                    model.put("products", sortProducts(mirrorDB.readProducts(), sort));
                     ctx.render("db-explorer-products.jte", model);
                 }
                 case "vendors" -> {
@@ -538,6 +543,29 @@ public class Server {
             logger.log(SEVERE, "Failed to load DB Explorer page " + subPage + ".", e);
             ctx.status(500).result("Failed to load DB Explorer page.");
         }
+    }
+
+    private static String normalizeProductSort(String sort) {
+        if (sort == null) {
+            return "name";
+        }
+        return switch (sort) {
+            case "name", "product_code", "emag_pnk" -> sort;
+            default -> "name";
+        };
+    }
+
+    private static List<ProductInfo> sortProducts(List<ProductInfo> products, String sort) {
+        Comparator<ProductInfo> comparator = switch (sort) {
+            case "product_code" -> Comparator.comparing(ProductInfo::productCode, Comparator.nullsFirst(String::compareTo))
+                    .thenComparing(ProductInfo::name, ProductInfo.nameComparatorString);
+            case "emag_pnk" -> Comparator.comparing(ProductInfo::pnk, Comparator.nullsFirst(String::compareTo))
+                    .thenComparing(ProductInfo::name, ProductInfo.nameComparatorString);
+            case "name" -> Comparator.comparing(ProductInfo::name, ProductInfo.nameComparatorString)
+                    .thenComparing(ProductInfo::productCode, Comparator.nullsFirst(String::compareTo));
+            default -> throw new IllegalArgumentException("Unknown sort option: " + sort);
+        };
+        return products.stream().sorted(comparator).toList();
     }
 
     private static void changeUserRole(Context ctx, EmagMirrorDB mirrorDB) {
