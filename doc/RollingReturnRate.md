@@ -1,5 +1,148 @@
 # Rolling Return Rate computation
 
+## Materialized Views
+
+`EmagMirrorDBVersion31` builds three materialized views that precompute the expensive joins needed by `getCohortSmoothedRollingReturnRate`.
+
+The views are designed as a pipeline:
+- `orders_canonical`: normalize orders to one canonical row per `(order_id, vendor_id)`.
+- `sales_daily`: pre-aggregate sold quantities by product and sale day (denominator input).
+- `returns_linked`: pre-link return quantities to both sale day and return day (numerator input).
+
+### 1. `orders_canonical`
+
+```sql
+CREATE MATERIALIZED VIEW orders_canonical AS
+SELECT DISTINCT ON (eo.id, eo.vendor_id)
+  eo.id           AS order_id,
+  eo.surrogate_id AS order_surrogate_id,
+  eo.date         AS order_ts,
+  eo.vendor_id    AS vendor_id,
+  eo.status       AS status
+FROM emag_order eo
+ORDER BY eo.id, eo.vendor_id, eo.status DESC;
+```
+
+Role:
+- Deduplicates `emag_order` into one canonical row per `(order_id, vendor_id)`.
+- Uses `DISTINCT ON` with `ORDER BY ... status DESC`, so if multiple rows exist for the same order/vendor pair, the row with the highest status is kept.
+
+Output columns:
+- `order_id`: natural order identifier used by RMA data.
+- `order_surrogate_id`: surrogate key used by `product_in_order`.
+- `order_ts`: original order timestamp.
+- `vendor_id`: vendor scope.
+- `status`: chosen canonical status.
+
+Indexes:
+- `(order_id, vendor_id)` for lookups by natural order identity.
+- `(order_surrogate_id)` for joins from `product_in_order`.
+- Expression index on `(order_ts::date)` for date-based access.
+
+Why it exists:
+- `product_in_order` links via `emag_order_surrogate_id`, while returns data links via natural `order_id`.
+- This view provides a stable bridge between those two identities without recomputing deduplication at query time.
+
+### 2. `sales_daily`
+
+```sql
+CREATE MATERIALIZED VIEW sales_daily AS
+SELECT
+  p.product_code as product_code,
+  pio.product_id AS product_id,
+  (oc.order_ts::date) AS sale_d,
+  SUM(pio.quantity)::bigint AS sold_qty
+FROM product_in_order pio
+JOIN product p
+  ON p.emag_pnk = pio.part_number_key
+JOIN orders_canonical oc
+  ON oc.order_surrogate_id = pio.emag_order_surrogate_id
+WHERE oc.status IN (4,5)
+GROUP BY 1,2,3;
+```
+
+Role:
+- Produces daily sold quantities used as the rolling denominator.
+
+Grain:
+- One row per `(product_code, product_id, sale_d)`.
+
+Join/filter logic:
+- Joins line items (`product_in_order`) to product metadata (`product`) using `part_number_key -> emag_pnk`.
+- Joins to canonicalized orders via surrogate id to get sale timestamp and final status.
+- Keeps only orders with status in `(4,5)` (the statuses treated as valid completed sales for this metric).
+
+Output column:
+- `sold_qty`: total sold quantity for that product on that sale date.
+
+Index:
+- `(product_id, sale_d)` to support date-series scans by product.
+
+Why it exists:
+- Avoids repeatedly joining raw line items and orders in analytical queries.
+- Stores the already-aggregated daily denominator, which dramatically reduces runtime work.
+
+### 3. `returns_linked`
+
+```sql
+CREATE MATERIALIZED VIEW returns_linked AS
+SELECT
+  erp.product_id,
+  p.product_code,
+  (oc.order_ts::date) AS sale_d,
+  (rr.date::date)     AS return_d,
+  SUM(erp.quantity)::bigint AS returned_qty
+FROM emag_returned_products erp
+JOIN rma_result rr
+  ON rr.emag_id = erp.emag_id
+ AND rr.request_status = 7
+JOIN orders_canonical oc
+  ON oc.order_id = rr.order_id
+JOIN product_in_order pio
+  ON pio.emag_order_surrogate_id = oc.order_surrogate_id
+ AND pio.product_id = erp.product_id
+ AND pio.mkt_id = erp.product_emag_id
+JOIN product p
+ ON p.emag_pnk = pio.part_number_key
+GROUP BY 1,2,3,4;
+```
+
+Role:
+- Produces return quantities already linked back to the originating sale cohort.
+
+Grain:
+- One row per `(product_id, product_code, sale_d, return_d)`.
+
+Join/filter logic:
+- Starts from returned items (`emag_returned_products`).
+- Joins to RMA records by `emag_id` and keeps only `request_status = 7` (finalized/accepted return records for this metric).
+- Joins to `orders_canonical` on natural `order_id` to recover the original sale timestamp (`sale_d`).
+- Joins to `product_in_order` with three keys:
+  - same order surrogate id,
+  - same internal `product_id`,
+  - same marketplace product id (`mkt_id = product_emag_id`).
+- This triple match ensures return quantities are linked to the correct sold line item.
+
+Output column:
+- `returned_qty`: quantity returned for that product, for that specific sale date and return date.
+
+Index:
+- `(product_id, sale_d, return_d)` to support cohort-window filtering by product and date.
+
+Why it exists:
+- The rolling algorithm needs both `sale_d` and `return_d` per returned quantity to enforce:
+  - maximum return delay,
+  - rolling cohort horizon.
+- Pre-linking returns to sale cohorts eliminates expensive runtime reconciliation across multiple raw tables.
+
+### Practical Impact On Query Runtime
+
+- `getCohortSmoothedRollingReturnRate` reads only `sales_daily` and `returns_linked`, not raw order/line-item/RMA tables.
+- Most heavy joins, deduplication, and aggregation are paid once during materialized-view build/refresh.
+- Runtime SQL can then focus on rolling-window math (delta events + cumulative sums), which is much cheaper.
+
+
+
 ## SQL statement in `getCohortSmoothedRollingReturnRate`
 
 The method computes a per-day rolling return rate for one `product_code`, then applies Bayesian smoothing so low-volume days are less noisy.
