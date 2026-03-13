@@ -7,6 +7,7 @@
         <ul class="menu-row">
             <li><a href="/admin/db-explorer/products">Products</a></li>
             <li><a href="/admin/db-explorer/vendors">Vendors</a></li>
+            <li><a href="/admin/db-explorer/order-counts-by-products">Order counts by products</a></li>
         </ul>
     </nav>
     <p>Select a DB Explorer page.</p>

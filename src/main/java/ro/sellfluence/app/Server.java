@@ -38,7 +38,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -115,7 +118,7 @@ public class Server {
         var rp = WebAuthnServer.create(new MyCredentialRepo(mirrorDB));
 
         // Schedule the job with auto-restart on failure
-        scheduleWithRestart(scheduler, backgroundJob);
+        //scheduleWithRestart(scheduler, backgroundJob);
 
         var app = Javalin.create(config -> configure(config, port, securePort));
 
@@ -529,6 +532,7 @@ public class Server {
                     String sort = normalizeProductSort(ctx.queryParam("sort"));
                     model.put("activeSubPage", "products");
                     model.put("activeSort", sort);
+                    model.put("currentMonth", YearMonth.now().toString());
                     model.put("products", sortProducts(mirrorDB.readProducts(), sort));
                     ctx.render("db-explorer-products.jte", model);
                 }
@@ -537,12 +541,105 @@ public class Server {
                     model.put("vendors", mirrorDB.getAllVendors());
                     ctx.render("db-explorer-vendors.jte", model);
                 }
+                case "order-counts-by-products" -> renderOrderCountsByProductsPage(ctx, mirrorDB, model);
                 default -> ctx.status(404).result("Unknown DB Explorer page.");
             }
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load DB Explorer page " + subPage + ".", e);
             ctx.status(500).result("Failed to load DB Explorer page.");
         }
+    }
+
+    private static void renderOrderCountsByProductsPage(Context ctx,
+                                                        EmagMirrorDB mirrorDB,
+                                                        HashMap<String, Object> model) throws SQLException {
+        var products = sortProducts(mirrorDB.readProducts(), "name");
+        var selectedProduct = resolveSelectedProduct(products, ctx.queryParam("productCode"));
+
+        var availableMonths = mirrorDB.getSalesDailyDateRange()
+                .map(Server::buildSalesDailyMonths)
+                .orElse(List.of());
+
+        var currentMonth = YearMonth.now();
+        var selectedMonth = resolveSelectedMonth(
+                availableMonths,
+                parseYearMonth(ctx.queryParam("month")),
+                currentMonth
+        );
+
+        var soldQtyByDay = new HashMap<LocalDate, Long>();
+        if (selectedProduct != null && selectedProduct.productCode() != null && !selectedProduct.productCode().isBlank()) {
+            soldQtyByDay.putAll(mirrorDB.countSalesByDayForProductAndMonth(selectedProduct.productCode(), selectedMonth));
+        }
+
+        model.put("pageTitle", "Order counts by products");
+        model.put("activeSubPage", "order-counts-by-products");
+        model.put("products", products);
+        model.put("months", availableMonths);
+        model.put("selectedProductCode", selectedProduct == null ? "" : selectedProduct.productCode());
+        model.put("selectedMonth", selectedMonth.toString());
+        model.put("monthDays", buildMonthDays(selectedMonth));
+        model.put("soldQtyByDay", soldQtyByDay);
+        ctx.render("db-explorer-order-counts-by-products.jte", model);
+    }
+
+    private static ProductInfo resolveSelectedProduct(List<ProductInfo> products, String productCode) {
+        var defaultProduct = products.stream()
+                .filter(product -> product.productCode() != null && !product.productCode().isBlank())
+                .findFirst()
+                .orElse(null);
+        if (productCode == null || productCode.isBlank()) {
+            return defaultProduct;
+        }
+        return products.stream()
+                .filter(product -> productCode.equals(product.productCode()))
+                .findFirst()
+                .orElse(defaultProduct);
+    }
+
+    private static YearMonth resolveSelectedMonth(List<YearMonth> availableMonths,
+                                                  YearMonth requestedMonth,
+                                                  YearMonth currentMonth) {
+        var selectedMonth = requestedMonth == null ? currentMonth : requestedMonth;
+        if (availableMonths.isEmpty()) {
+            return selectedMonth;
+        }
+        if (availableMonths.contains(selectedMonth)) {
+            return selectedMonth;
+        }
+        if (availableMonths.contains(currentMonth)) {
+            return currentMonth;
+        }
+        return availableMonths.get(availableMonths.size() - 1);
+    }
+
+    private static YearMonth parseYearMonth(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return YearMonth.parse(text);
+        } catch (DateTimeParseException _) {
+            return null;
+        }
+    }
+
+    private static List<YearMonth> buildSalesDailyMonths(EmagMirrorDB.SalesDailyDateRange range) {
+        var start = YearMonth.from(range.startDate());
+        var end = YearMonth.from(range.endDate());
+        var months = new ArrayList<YearMonth>();
+        for (var month = start; !month.isAfter(end); month = month.plusMonths(1)) {
+            months.add(month);
+        }
+        return months;
+    }
+
+    private static List<LocalDate> buildMonthDays(YearMonth month) {
+        var days = new ArrayList<LocalDate>(month.lengthOfMonth());
+        for (int day = 1; day <= month.lengthOfMonth(); day++) {
+            days.add(month.atDay(day));
+        }
+        return days;
     }
 
     private static String normalizeProductSort(String sort) {

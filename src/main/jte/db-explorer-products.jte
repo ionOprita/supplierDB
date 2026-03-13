@@ -1,4 +1,6 @@
 @import java.util.List
+@import java.net.URLEncoder
+@import java.nio.charset.StandardCharsets
 @import ro.sellfluence.db.ProductTable.ProductInfo
 
 @param String userName
@@ -6,6 +8,7 @@
 @param String pageTitle
 @param String activeSubPage
 @param String activeSort
+@param String currentMonth
 @param List<ProductInfo> products
 
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
@@ -20,6 +23,11 @@
                 <li><a href="/admin/db-explorer/vendors" aria-current="page">Vendors</a></li>
             @else
                 <li><a href="/admin/db-explorer/vendors">Vendors</a></li>
+            @endif
+            @if("order-counts-by-products".equals(activeSubPage))
+                <li><a href="/admin/db-explorer/order-counts-by-products" aria-current="page">Order counts by products</a></li>
+            @else
+                <li><a href="/admin/db-explorer/order-counts-by-products">Order counts by products</a></li>
             @endif
         </ul>
     </nav>
@@ -68,7 +76,13 @@
             @else
                 @for(var product : products)
                     <tr>
-                        <td>${product.name()}</td>
+                        <td>
+                            @if(product.productCode() == null || product.productCode().isBlank())
+                                ${product.name()}
+                            @else
+                                <a href="/admin/db-explorer/order-counts-by-products?productCode=${URLEncoder.encode(product.productCode(), StandardCharsets.UTF_8)}&month=${currentMonth}">${product.name()}</a>
+                            @endif
+                        </td>
                         <td>${product.productCode()}</td>
                         <td>${product.pnk()}</td>
                         <td>${product.vendor() == null ? "" : product.vendor().toString()}</td>

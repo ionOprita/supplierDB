@@ -20,6 +20,11 @@
             @else
                 <li><a href="/admin/db-explorer/vendors">Vendors</a></li>
             @endif
+            @if("order-counts-by-products".equals(activeSubPage))
+                <li><a href="/admin/db-explorer/order-counts-by-products" aria-current="page">Order counts by products</a></li>
+            @else
+                <li><a href="/admin/db-explorer/order-counts-by-products">Order counts by products</a></li>
+            @endif
         </ul>
     </nav>
 

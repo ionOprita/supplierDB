@@ -776,6 +776,73 @@ public class EmagMirrorDB {
         return database.writeTX(EmagMirrorDB::stornoBackfill);
     }
 
+    public record SalesDailyDateRange(LocalDate startDate, LocalDate endDate) {
+    }
+
+    /**
+     * Return the date interval covered by the sales_daily materialized view.
+     *
+     * @return Optional date range; empty when sales_daily has no rows.
+     */
+    public @NonNull Optional<SalesDailyDateRange> getSalesDailyDateRange() throws SQLException {
+        return database.readTX(db -> {
+            try (var s = db.prepareStatement("""
+                    SELECT MIN(sale_d) AS min_sale_date,
+                           MAX(sale_d) AS max_sale_date
+                    FROM sales_daily
+                    """)) {
+                try (var rs = s.executeQuery()) {
+                    if (!rs.next()) {
+                        return Optional.empty();
+                    }
+                    var minDate = rs.getDate("min_sale_date");
+                    var maxDate = rs.getDate("max_sale_date");
+                    if (minDate == null || maxDate == null) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(new SalesDailyDateRange(minDate.toLocalDate(), maxDate.toLocalDate()));
+                }
+            }
+        });
+    }
+
+    /**
+     * Return sold quantity by day for one product and one month using sales_daily.
+     *
+     * @param productCode selected product code.
+     * @param month       selected month.
+     * @return map date -> sold quantity.
+     */
+    public @NonNull Map<LocalDate, Long> countSalesByDayForProductAndMonth(@NonNull String productCode,
+                                                                            @NonNull YearMonth month) throws SQLException {
+        return database.singleReadTX(db -> {
+                    var result = new HashMap<LocalDate, Long>();
+                    try (var s = db.prepareStatement("""
+                            SELECT sale_d AS sale_date,
+                                   SUM(sold_qty)::bigint AS sold_qty
+                            FROM sales_daily
+                            WHERE product_code = ?
+                              AND sale_d >= ?
+                              AND sale_d < ?
+                            GROUP BY sale_d
+                            ORDER BY sale_d
+                            """)) {
+                        s.setString(1, productCode);
+                        s.setTimestamp(2, toTimestamp(month.atDay(1).atStartOfDay()));
+                        s.setTimestamp(3, toTimestamp(month.plusMonths(1).atDay(1).atStartOfDay()));
+                        try (var rs = s.executeQuery()) {
+                            while (rs.next()) {
+                                var date = rs.getDate("sale_date").toLocalDate();
+                                var oldValue = result.put(date, rs.getLong("sold_qty"));
+                                require(oldValue == null, () -> "Unexpected duplicate for date %s".formatted(date));
+                            }
+                        }
+                    }
+                    return result;
+                }
+        );
+    }
+
     /**
      * Return the number of storno for each product in a specific month.
      *
