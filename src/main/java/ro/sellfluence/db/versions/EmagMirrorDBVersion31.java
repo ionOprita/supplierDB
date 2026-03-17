@@ -73,7 +73,7 @@ class EmagMirrorDBVersion31 {
                   p.product_code as product_code,
                   pio.product_id AS product_id,
                   (oc.order_ts::date) AS sale_d,
-                  SUM(pio.quantity)::bigint AS sold_qty
+                  SUM(pio.initial_qty)::bigint AS sold_qty
                 FROM product_in_order pio
                 JOIN product p
                   ON p.emag_pnk = pio.part_number_key
