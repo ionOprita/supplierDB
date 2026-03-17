@@ -13,11 +13,24 @@ class EmagMirrorDBVersion31 {
      * @throws SQLException all errors are passed back to the caller.
      */
     static void version31(Connection db) throws SQLException {
+        fixSerialNumbers(db);
         enforceProductPnkUniqueness(db);
         enforceProductInOrderPnkPresence(db);
         createOrdersCanonical(db);
         createSalesDaily(db);
         createReturnsLinked(db);
+    }
+
+    private static void fixSerialNumbers(Connection db) throws SQLException {
+        executeStatement(db, """
+                UPDATE product_in_order
+                    SET serial_numbers = ''
+                    WHERE serial_numbers IS NULL;
+                """);
+        executeStatement(db, """
+                ALTER TABLE product_in_order
+                    ALTER COLUMN serial_numbers SET NOT NULL;
+                """);
     }
 
     private static void enforceProductPnkUniqueness(Connection db) throws SQLException {

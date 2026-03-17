@@ -23,6 +23,7 @@ import java.util.Objects;
 import java.util.Scanner;
 import java.util.UUID;
 
+import static com.google.common.base.Strings.nullToEmpty;
 import static java.sql.Statement.RETURN_GENERATED_KEYS;
 import static ro.sellfluence.db.CustomerTable.insertOrUpdateCustomer;
 import static ro.sellfluence.db.LockerDetailsTable.insertOrUpdateLockerDetails;
@@ -908,7 +909,7 @@ public class EmagOrder {
             s.setTimestamp(20, toTimestamp(product.modified()));
             s.setString(21, String.join("\n", product.details()));
             s.setString(22, String.join("\n", product.recycle_warranties()));
-            s.setString(23, product.serial_numbers());
+            s.setString(23, nullToEmpty(product.serial_numbers()));
             return s.executeUpdate();
         }
     }
