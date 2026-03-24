@@ -64,6 +64,7 @@
             <version>1.40.0</version>
         </dependency>
 
+        <!-- https://mvnrepository.com/artifact/org.schemaspy/schemaspy -->
         <dependency>
             <groupId>org.schemaspy</groupId>
             <artifactId>schemaspy</artifactId>

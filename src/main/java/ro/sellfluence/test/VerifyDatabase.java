@@ -8,6 +8,7 @@ import ro.sellfluence.support.Arguments;
 
 import java.io.IOException;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -51,7 +52,7 @@ public class VerifyDatabase {
      * @throws SQLException if an error occurs while accessing the database.
      * @throws IOException if an error occurs while reading the database.
      */
-    public static void main(String[] args) throws SQLException, IOException {
+    static void main(String[] args) throws SQLException, IOException {
         var allOrders = readAllOrdersFromDB(args);
         var statusCombinations = new HashMap<String, Integer>();
         for (var order : allOrders.entrySet()) {
@@ -80,7 +81,7 @@ public class VerifyDatabase {
             }
         }
         var mapOrderToVendor = new HashMap<String, String>();
-        System.out.printf("Summary:");
+        System.out.print("Summary:");
         collectOrderNumber.forEach((vendor, orderList) -> {
                     System.out.printf("Vendor %s has a missing product in the finalised order in orders: %s.%n", vendor, orderList);
                     for (String orderId : orderList) {
@@ -118,8 +119,9 @@ public class VerifyDatabase {
         var entriesByStatus = productsByStatus.entrySet()
                 .stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().size()));
         var sizeSet = new HashSet<>(entriesByStatus.values());
-        var orderId = getString(ordersByStatus, orderResult -> orderResult.order().id());
-        var vendorName = getString(ordersByStatus, orderResult -> orderResult.order().vendor_name());
+        var orderId = getObject(ordersByStatus, orderResult -> orderResult.order().id());
+        var date = getObject(ordersByStatus, orderResult -> orderResult.order().created().toLocalDate());
+        var vendorName = getObject(ordersByStatus, orderResult -> orderResult.order().vendor_name());
         if (sizeSet.size() > 1) {
             if (set145.equals(entriesByStatus)) {
                 collectOrderNumber
@@ -132,9 +134,9 @@ public class VerifyDatabase {
                 var order = order4.getFirst();
                 var sql = "delete from emag_order where id = '%s' and vendor_id = '%s' and status = 4 and surrogate_id = %d;".formatted(order.order().id(), order.vendorId(), order.surrogateId());
                 sqlDeletes.add(sql);
-                System.out.printf("Order %s by %s has inconsistent product sizes in the order, 1 in status 1 and 5, 0 in status 4:%n%s.%n%n", orderId, vendorName, format(ordersByStatus));
+                System.out.printf("Order %s (%s) by %s has inconsistent product sizes in the order, 1 in status 1 and 5, 0 in status 4:%n%s.%n%n", orderId, date, vendorName, format(ordersByStatus));
             } else {
-                System.out.printf("Order %s by %s has inconsistent product sizes in the order: %s.%n", orderId, vendorName, entriesByStatus);
+                System.out.printf("Order %s (%s) by %s has inconsistent product sizes in the order: %s.%n", orderId, date, vendorName, entriesByStatus);
             }
         } else {
             var products = productsByStatus.entrySet().stream().toList();
@@ -143,7 +145,7 @@ public class VerifyDatabase {
                 var status2 = products.get(i).getKey();
                 var products1 = products.get(i - 1).getValue();
                 var products2 = products.get(i).getValue();
-                compareProducts(orderId, vendorName, status1, products1, status2, products2);
+                compareProducts(orderId, date, vendorName, status1, products1, status2, products2);
             }
         }
     }
@@ -169,7 +171,7 @@ public class VerifyDatabase {
                 .collect(Collectors.joining("\n"));
     }
 
-    private static String getString(Map<Integer, List<ExtendedOrder>> ordersByStatus, final Function<ExtendedOrder, String> fieldExtractor) {
+    private static <T> T getObject(Map<Integer, List<ExtendedOrder>> ordersByStatus, final Function<ExtendedOrder, T> fieldExtractor) {
         var orderIdSet = ordersByStatus.entrySet().stream()
                 .flatMap(e -> e.getValue().stream().map(fieldExtractor))
                 .collect(Collectors.toSet());
@@ -210,24 +212,63 @@ public class VerifyDatabase {
     }
 
 
-    private static void compareProducts(String orderId, String vendorName, int status1, List<Product> products1, int status2, List<Product> products2) {
+    private static void compareProducts(String orderId, LocalDate date, String vendorName, int status1, List<Product> products1, int status2, List<Product> products2) {
         if (status1 == status2) {
             throw new IllegalStateException("status1==status2");
         }
         if (products1.size() != products2.size()) {
-            System.out.printf("Order %s by %s has inconsistent product sizes: status %d has %d products, status %d has %d products.%n", orderId, vendorName, status1, products1.size(), status2, products2.size());
+            System.out.printf("Order %s (%s) by %s has inconsistent product sizes: status %d has %d products, status %d has %d products.%n", orderId, date, vendorName, status1, products1.size(), status2, products2.size());
         } else {
             for (int i = 0; i < products1.size(); i++) {
                 var product1 = products1.get(i);
                 var product2 = products2.get(i);
-                if (!normalize(status1, product1).equals(normalize(status2, product2))) {
-                    System.out.printf("Order %s by %s has inconsistent products:%n status %d has %s,%n status %d has %s.%n%n", orderId, vendorName, status1, product1, status2, product2);
+                if (!normalize(product1).equals(normalize(product2))) {
+                    if (withoutPrice(product1).equals(withoutPrice(product2)))
+                        System.out.printf("Order %s (%s) differs, but only in VAT.%n", orderId, date);
+                    else
+                        System.out.printf("Order %s (%s) by %s has inconsistent products:%n status %d has %s,%n status %d has %s.%n%n", orderId, date, vendorName, status1, product1, status2, product2);
                 }
             }
         }
     }
 
-    private static Product normalize(int status, Product p) {
+    private static Product withoutPrice(Product p) {
+        return new Product(
+                p.id(),
+                p.product_id(),
+                p.mkt_id(),
+                p.name(),
+                p.product_voucher_split() == null
+                        ? new ArrayList<>()
+                        : new ArrayList<>(p.product_voucher_split()),
+                p.status(),
+                p.ext_part_number(),
+                null, //p.part_number(),
+                p.part_number_key(),
+                p.currency(),
+                null, // p.vat(),
+                p.retained_amount(),
+                p.quantity() + p.storno_qty(),
+                p.initial_qty(),
+                0,
+                p.reversible_vat_charging(),
+                null, // p.sale_price(),
+                p.original_price(),
+                p.created(),
+                null, //p.modified(),
+                p.details() == null
+                        ? new ArrayList<>()
+                        : new ArrayList<>(p.details()),
+                p.recycle_warranties() == null
+                        ? new ArrayList<>()
+                        : new ArrayList<>(p.recycle_warranties()),
+                p.attachments() == null
+                        ? new ArrayList<>()
+                        : new ArrayList<>(p.attachments()),
+                p.serial_numbers() == null ? "" : p.serial_numbers()
+        );
+    }
+    private static Product normalize(Product p) {
         return new Product(
                 p.id(),
                 p.product_id(),
