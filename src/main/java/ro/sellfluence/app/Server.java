@@ -55,6 +55,7 @@ import java.util.stream.Collectors;
 import static io.javalin.http.HttpStatus.FORBIDDEN;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
+import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.db.PassKey.Role.admin;
@@ -67,6 +68,8 @@ import static ro.sellfluence.db.PassKey.Role.user;
 public class Server {
     private static final Path certsDir = Paths.get(System.getProperty("user.home")).resolve("Secrets").resolve("Certs");
     private static final ObjectMapper mapper = (new ObjectMapper());
+    private static final User unsafeUser = new User("unsafe-without-authentication", admin);
+    private static final boolean withoutAuthenticationAndTotalyUnsafe = true;
 
     private static void configure(JavalinConfig config, int port, int securePort) {
         SslPlugin sslPlugin = new SslPlugin(ssl -> {
@@ -121,6 +124,12 @@ public class Server {
         //scheduleWithRestart(scheduler, backgroundJob);
 
         var app = Javalin.create(config -> configure(config, port, securePort));
+
+        if (withoutAuthenticationAndTotalyUnsafe) {
+            logger.log(WARNING, "withoutAuthenticationAndTotalyUnsafe=true. Authentication and role checks are disabled.");
+            app.get("/", ctx -> ctx.redirect("/private/overview"));
+            app.get("/index.html", ctx -> ctx.redirect("/private/overview"));
+        }
 
         configureAPI(app, api);
 
@@ -479,31 +488,35 @@ public class Server {
             ctx.redirect("/admin/db-explorer/products");
             return;
         }
-        Object userAttribute = ctx.sessionAttribute("user");
-        if (userAttribute instanceof User(String username, PassKey.Role role)) {
-            boolean adminOnlyPage = "users".equals(page) || "db-explorer".equals(page);
-            boolean isAdminArea = ctx.path().startsWith("/admin/");
-            if (adminOnlyPage && (role != admin || !isAdminArea)) {
-                ctx.status(FORBIDDEN);
+        var currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null) {
+            return;
+        }
+        String username = currentUser.username();
+        PassKey.Role role = currentUser.role();
+
+        boolean adminOnlyPage = "users".equals(page) || "db-explorer".equals(page);
+        boolean isAdminArea = ctx.path().startsWith("/admin/");
+        if (adminOnlyPage && (role != admin || !isAdminArea)) {
+            ctx.status(FORBIDDEN);
+            return;
+        }
+        var model = new HashMap<String, Object>();
+        model.put("userName", username);
+        model.put("userRole", role.name());
+        model.put("pageTitle", toPageTitle(page));
+        if ("users".equals(page)) {
+            try {
+                model.put("users", mirrorDB.listUsers());
+            } catch (SQLException e) {
+                logger.log(SEVERE, "Failed to load users page.", e);
+                ctx.status(500).result("Failed to load users.");
                 return;
             }
-            var model = new HashMap<String, Object>();
-            model.put("userName", username);
-            model.put("userRole", role.name());
-            model.put("pageTitle", toPageTitle(page));
-            if ("users".equals(page)) {
-                try {
-                    model.put("users", mirrorDB.listUsers());
-                } catch (SQLException e) {
-                    logger.log(SEVERE, "Failed to load users page.", e);
-                    ctx.status(500).result("Failed to load users.");
-                    return;
-                }
-                model.put("message", ctx.queryParam("message"));
-                model.put("error", ctx.queryParam("error"));
-            }
-            ctx.render(page + ".jte", model);
+            model.put("message", ctx.queryParam("message"));
+            model.put("error", ctx.queryParam("error"));
         }
+        ctx.render(page + ".jte", model);
     }
 
     private static void renderDBExplorerSubPage(Context ctx, EmagMirrorDB mirrorDB, String subPage) {
@@ -511,11 +524,13 @@ public class Server {
             ctx.status(400).result("Invalid sub-page name");
             return;
         }
-        Object userAttribute = ctx.sessionAttribute("user");
-        if (!(userAttribute instanceof User(String username, PassKey.Role role))) {
+        var currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null) {
             ctx.redirect("/");
             return;
         }
+        String username = currentUser.username();
+        PassKey.Role role = currentUser.role();
         if (role != admin) {
             ctx.status(FORBIDDEN);
             return;
@@ -687,15 +702,17 @@ public class Server {
         }
 
         try {
-            Object sessionUser = ctx.sessionAttribute("user");
-            if (!(sessionUser instanceof User(String currentUsername, PassKey.Role _))) {
-                ctx.status(FORBIDDEN);
-                return;
-            }
-            var currentUserId = mirrorDB.findUserIdByUsername(currentUsername);
-            if (currentUserId.isPresent() && currentUserId.get() == userId) {
-                ctx.redirect("/admin/users?error=You+cannot+change+your+own+role");
-                return;
+            if (!withoutAuthenticationAndTotalyUnsafe) {
+                Object sessionUser = ctx.sessionAttribute("user");
+                if (!(sessionUser instanceof User(String currentUsername, PassKey.Role _))) {
+                    ctx.status(FORBIDDEN);
+                    return;
+                }
+                var currentUserId = mirrorDB.findUserIdByUsername(currentUsername);
+                if (currentUserId.isPresent() && currentUserId.get() == userId) {
+                    ctx.redirect("/admin/users?error=You+cannot+change+your+own+role");
+                    return;
+                }
             }
 
             int updated = mirrorDB.updateUserRole(userId, newRole);
@@ -720,15 +737,17 @@ public class Server {
         }
 
         try {
-            Object sessionUser = ctx.sessionAttribute("user");
-            if (!(sessionUser instanceof User(String currentUsername, PassKey.Role _))) {
-                ctx.status(FORBIDDEN);
-                return;
-            }
-            var currentUserId = mirrorDB.findUserIdByUsername(currentUsername);
-            if (currentUserId.isPresent() && currentUserId.get() == userId) {
-                ctx.redirect("/admin/users?error=You+cannot+delete+your+own+account");
-                return;
+            if (!withoutAuthenticationAndTotalyUnsafe) {
+                Object sessionUser = ctx.sessionAttribute("user");
+                if (!(sessionUser instanceof User(String currentUsername, PassKey.Role _))) {
+                    ctx.status(FORBIDDEN);
+                    return;
+                }
+                var currentUserId = mirrorDB.findUserIdByUsername(currentUsername);
+                if (currentUserId.isPresent() && currentUserId.get() == userId) {
+                    ctx.redirect("/admin/users?error=You+cannot+delete+your+own+account");
+                    return;
+                }
             }
 
             int deleted = mirrorDB.deleteUser(userId);
@@ -754,7 +773,21 @@ public class Server {
                 .collect(Collectors.joining(" "));
     }
 
+    private static User resolveCurrentUser(Context ctx) {
+        Object userAttribute = ctx.sessionAttribute("user");
+        if (userAttribute instanceof User appUser) {
+            return appUser;
+        }
+        if (withoutAuthenticationAndTotalyUnsafe) {
+            return unsafeUser;
+        }
+        return null;
+    }
+
     private static void checkRole(Context ctx, PassKey.Role minimalRole) {
+        if (withoutAuthenticationAndTotalyUnsafe) {
+            return;
+        }
         var session = ctx.req().getSession(false);
         if (minimalRole != null) {  // No checks if no role is required.
             if (session == null) {
