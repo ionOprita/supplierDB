@@ -20,6 +20,7 @@ import io.javalin.community.ssl.SslPlugin;
 import io.javalin.config.JavalinConfig;
 import io.javalin.http.Context;
 import io.javalin.rendering.template.JavalinJte;
+import io.javalin.router.JavalinDefaultRoutingApi;
 import io.javalin.validation.Validator;
 import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
@@ -69,7 +70,7 @@ public class Server {
     private static final Path certsDir = Paths.get(System.getProperty("user.home")).resolve("Secrets").resolve("Certs");
     private static final ObjectMapper mapper = (new ObjectMapper());
     private static final User unsafeUser = new User("unsafe-without-authentication", admin);
-    private static final boolean withoutAuthenticationAndTotalyUnsafe = true;
+    private static final boolean withoutAuthenticationAndTotalyUnsafe = false;
 
     private static void configure(JavalinConfig config, int port, int securePort) {
         SslPlugin sslPlugin = new SslPlugin(ssl -> {
@@ -94,6 +95,40 @@ public class Server {
         config.validation.register(YearMonth.class, YearMonth::parse);
     }
 
+    private static void configureRoutes(JavalinDefaultRoutingApi app,
+                                        EmagMirrorDB mirrorDB,
+                                        API api,
+                                        RelyingParty rp) {
+        if (withoutAuthenticationAndTotalyUnsafe) {
+            logger.log(WARNING, "withoutAuthenticationAndTotalyUnsafe=true. Authentication and role checks are disabled.");
+            app.get("/", ctx -> ctx.redirect("/private/overview"));
+            app.get("/index.html", ctx -> ctx.redirect("/private/overview"));
+        }
+
+        configureAPI(app, api);
+        configurePasskey(app, mirrorDB, rp);
+
+        app.before("/private/*", ctx -> checkRole(ctx, user));
+        app.get("/private/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
+
+        app.before("/admin/*", ctx -> checkRole(ctx, admin));
+        app.get("/admin/db-explorer", ctx -> ctx.redirect("/admin/db-explorer/products"));
+        app.get("/admin/db-explorer/{subPage}", ctx -> renderDBExplorerSubPage(ctx, mirrorDB, ctx.pathParam("subPage")));
+        app.get("/admin/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
+        app.post("/admin/users/{userId}/role", ctx -> changeUserRole(ctx, mirrorDB));
+        app.post("/admin/users/{userId}/delete", ctx -> deleteUser(ctx, mirrorDB));
+
+        app.before("/public/*", ctx -> checkRole(ctx, nobody));
+        app.before("/static/*", ctx -> checkRole(ctx, null));
+
+        app.get("/welcome.html", ctx -> renderPage(ctx, mirrorDB, "welcome"));
+        app.get("/health", ctx -> ctx.result("ok"));
+        app.post("/logout", ctx -> {
+            ctx.req().getSession().invalidate();
+            ctx.redirect("/");
+        });
+    }
+
     private static final Logger logger = Logs.getFileLogger("Server", INFO, 10, 1_000_000);
 
     static void main(String[] args) throws Exception {
@@ -107,7 +142,7 @@ public class Server {
         String configNameSecurePort = "PORT_SECURE";
         int port = Integer.parseInt(System.getProperty(configNamePort,
                 System.getenv().getOrDefault(configNamePort, arguments.getOption("port", "8080"))));
-        int securePort = Integer.parseInt(System.getProperty(configNamePort,
+        int securePort = Integer.parseInt(System.getProperty(configNameSecurePort,
                 System.getenv().getOrDefault(configNameSecurePort, arguments.getOption("secport", "8443"))));
 
         // Setup background job
@@ -123,40 +158,9 @@ public class Server {
         // Schedule the job with auto-restart on failure
         //scheduleWithRestart(scheduler, backgroundJob);
 
-        var app = Javalin.create(config -> configure(config, port, securePort));
-
-        if (withoutAuthenticationAndTotalyUnsafe) {
-            logger.log(WARNING, "withoutAuthenticationAndTotalyUnsafe=true. Authentication and role checks are disabled.");
-            app.get("/", ctx -> ctx.redirect("/private/overview"));
-            app.get("/index.html", ctx -> ctx.redirect("/private/overview"));
-        }
-
-        configureAPI(app, api);
-
-        configurePasskey(app, mirrorDB, rp);
-
-        app.before("/private/*", ctx -> checkRole(ctx, user));
-        app.get("/private/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
-
-        app.before("/admin/*", ctx -> checkRole(ctx, admin));
-        app.get("/admin/db-explorer", ctx -> ctx.redirect("/admin/db-explorer/products"));
-        app.get("/admin/db-explorer/{subPage}", ctx -> renderDBExplorerSubPage(ctx, mirrorDB, ctx.pathParam("subPage")));
-        app.get("/admin/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
-        app.post("/admin/users/{userId}/role", ctx -> changeUserRole(ctx, mirrorDB));
-        app.post("/admin/users/{userId}/delete", ctx -> deleteUser(ctx, mirrorDB));
-
-        app.before("/public/*", ctx -> checkRole(ctx, nobody));
-
-        app.before("/static/*", ctx -> checkRole(ctx, null));
-
-        app.get("/welcome.html", ctx -> renderPage(ctx, mirrorDB, "welcome"));
-
-        // Health check (handy)
-        app.get("/health", ctx -> ctx.result("ok"));
-
-        app.post("/logout", ctx -> {
-            ctx.req().getSession().invalidate();
-            ctx.redirect("/");
+        var app = Javalin.create(config -> {
+            configure(config, port, securePort);
+            configureRoutes(config.routes, mirrorDB, api, rp);
         });
 
         app.start();
@@ -177,7 +181,7 @@ public class Server {
         }));
     }
 
-    private static void configurePasskey(Javalin app, EmagMirrorDB mirrorDB, RelyingParty rp) {
+    private static void configurePasskey(JavalinDefaultRoutingApi app, EmagMirrorDB mirrorDB, RelyingParty rp) {
         app.post("/webauthn/register/options", ctx -> {
             String username = ctx.queryParam("username");
             if (username==null || !username.matches("\\w+")) {
@@ -331,7 +335,7 @@ public class Server {
         });
     }
 
-    private static void configureAPI(Javalin app, API api) {
+    private static void configureAPI(JavalinDefaultRoutingApi app, API api) {
         app.before("/app/*", ctx -> checkRole(ctx, user)); // TODO: Need to protect admin calls
         app.get("/app/products", ctx -> {
             String json = api.getProducts();
