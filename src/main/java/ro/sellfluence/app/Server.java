@@ -70,7 +70,7 @@ public class Server {
     private static final Path certsDir = Paths.get(System.getProperty("user.home")).resolve("Secrets").resolve("Certs");
     private static final ObjectMapper mapper = (new ObjectMapper());
     private static final User unsafeUser = new User("unsafe-without-authentication", admin);
-    private static final boolean withoutAuthenticationAndTotalyUnsafe = false;
+    private static final boolean withoutAuthenticationAndTotalyUnsafe = true;
 
     private static void configure(JavalinConfig config, int port, int securePort) {
         SslPlugin sslPlugin = new SslPlugin(ssl -> {
