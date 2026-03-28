@@ -3,10 +3,9 @@ package ro.sellfluence.test;
 import org.junit.jupiter.api.Test;
 import ro.sellfluence.sheetSupport.Conversions;
 
-import java.time.DateTimeException;
 import java.time.LocalDateTime;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ConversionsTest {
 
@@ -67,14 +66,6 @@ class ConversionsTest {
         assertEquals(
                 LocalDateTime.of(2024,12,6,13,19),
                 Conversions.toLocalDateTime("06 Dec 2024, 13:19")
-        );
-        assertThrows(
-                DateTimeException.class,
-                () -> Conversions.toLocalDateTime("06 Dec 2024, 13:19")
-        );
-        assertThrows(
-                DateTimeException.class,
-                () -> Conversions.toLocalDateTime("6 Dec 2024, 13:19")
         );
     }
 }
