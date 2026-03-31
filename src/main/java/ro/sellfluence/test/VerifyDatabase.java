@@ -130,6 +130,17 @@ public class VerifyDatabase {
             orderList.stream().filter(order -> order.order().date() == null).map(order -> order.order().id()).forEach(IO::println);
             IO.println("-----");
         }
+        if (orderList.stream().anyMatch(order -> order.order().finalization_date() == null)) {
+            var finalOrdersWithoutFinalizationDate = orderList.stream()
+                    .filter(order -> order.order().finalization_date() == null && (order.order().status() == 4 || order.order().status() == 5))
+                    .toList();
+            IO.println("These are orders where finalization_date IS null: (%d)".formatted(finalOrdersWithoutFinalizationDate.size()));
+            finalOrdersWithoutFinalizationDate.stream()
+                    .sorted(Comparator.comparing(order -> order.order().id()))
+                    .map(order -> "%s %d %s by %s".formatted(order.order().id(), order.order().status(), order.order().date(), order.order().vendor_name()))
+                    .forEach(IO::println);
+            IO.println("-----");
+        }
         var modifiedBeforeDate = orderList.stream().filter(order -> {
             var o = order.order();
             return o.date() != null && o.modified() != null && o.modified().isBefore(o.date());
