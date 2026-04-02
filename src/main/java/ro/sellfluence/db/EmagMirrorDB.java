@@ -926,10 +926,10 @@ public class EmagMirrorDB {
      * The rolling sums are computed using delta events + cumulative windows for performance.
      *
      * @param productCode        product code used by the frontend.
-     * @param rollDays           rolling denominator window size (for example 90).
-     * @param maxReturnDays      maximum allowed return delay from sale date (for example 90).
-     * @param priorStrength      Bayesian prior strength m (for example 100).
-     * @param reliableMinSoldQty reliability threshold flag (for example 20 or 30).
+     * @param rollDays           rolling denominator window size (for example, 90).
+     * @param maxReturnDays      maximum allowed return delay from sale date (for example, 90).
+     * @param priorStrength      Bayesian prior strength m (for example, 100).
+     * @param reliableMinSoldQty reliability threshold flag (for example, 20 or 30).
      * @return list of daily points ordered by date.
      * @throws SQLException on database errors.
      */
@@ -1089,10 +1089,10 @@ public class EmagMirrorDB {
     }
 
     /**
-     * Return the number of storno for each product in a specific month.
+     * Return the number of orders for each product in a specific month.
      *
-     * @param month for which to return the number of storno.
-     * @return map from PNK to number of storno.
+     * @param month for which to return the number of orders.
+     * @return map from PNK to number of orders.
      */
     public @NonNull Map<String, Integer> countOrdersByMonth(@NonNull YearMonth month) throws SQLException {
         return countByMonth(month, """
@@ -1119,6 +1119,40 @@ public class EmagMirrorDB {
     }
 
     /**
+     * Return the number of orders for each product and month in a month interval.
+     *
+     * @param startMonth first month to return (inclusive).
+     * @param endMonth   last month to return (exclusive).
+     * @return map from PNK to map of month to number of orders.
+     */
+    public @NonNull Map<String, Map<YearMonth, Integer>> countOrdersByMonth(@NonNull YearMonth startMonth,
+                                                                             @NonNull YearMonth endMonth) throws SQLException {
+        return countByMonthRange(startMonth, endMonth, """
+                WITH picked AS (
+                  SELECT DISTINCT ON (o.id, pio.part_number_key, DATE_TRUNC('month', o.date)::date)
+                         CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS picked_qty,
+                         pio.part_number_key AS pnk,
+                         DATE_TRUNC('month', o.date)::date AS month_start
+                  FROM emag_order AS o
+                  JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                  WHERE o.status IN (4,5)
+                    AND o.date >= ?
+                    AND o.date < ?
+                  ORDER BY
+                    o.id,
+                    pio.part_number_key,
+                    DATE_TRUNC('month', o.date)::date,
+                    o.status,          -- prefer status 4; fallback to 5
+                    o.surrogate_id DESC
+                )
+                SELECT pnk, month_start, SUM(picked_qty) AS quantity
+                FROM picked
+                GROUP BY pnk, month_start
+                ORDER BY pnk, month_start;
+                """);
+    }
+
+    /**
      * Return the number of storno for each product in a specific month.
      *
      * @param month for which to return the number of storno.
@@ -1138,10 +1172,35 @@ public class EmagMirrorDB {
     }
 
     /**
+     * Return the number of storno for each product and month in a month interval.
+     *
+     * @param startMonth first month to return (inclusive).
+     * @param endMonth   last month to return (exclusive).
+     * @return map from PNK to map of month to number of storno.
+     */
+    public @NonNull Map<String, Map<YearMonth, Integer>> countStornoByMonth(@NonNull YearMonth startMonth,
+                                                                             @NonNull YearMonth endMonth) throws SQLException {
+        return countByMonthRange(startMonth, endMonth, """
+                SELECT
+                  p.part_number_key AS pnk,
+                  DATE_TRUNC('month', s.storno_date)::date AS month_start,
+                  SUM(s.quantity) AS quantity
+                FROM storno AS s
+                JOIN emag_order AS o ON o.id = s.order_id
+                JOIN product_in_order AS p ON p.id = s.product_id AND p.emag_order_surrogate_id = o.surrogate_id
+                WHERE o.status = 5
+                  AND s.storno_date >= ?
+                  AND s.storno_date < ?
+                GROUP BY p.part_number_key, month_start
+                ORDER BY p.part_number_key, month_start;
+                """);
+    }
+
+    /**
      * Return the number of returns for each product in a specific month.
      *
-     * @param month for which to return the number of storno.
-     * @return map from PNK to number of storno.
+     * @param month for which to return the number of returns.
+     * @return map from PNK to the number of returns.
      */
     public @NonNull Map<String, Integer> countReturnByMonth(@NonNull YearMonth month) throws SQLException {
         return countByMonth(month, """
@@ -1160,12 +1219,44 @@ public class EmagMirrorDB {
     }
 
     /**
-     * Return storno percentage by product and month where the percentage for month M is
+     * Return the number of returns for each product and month in a month interval.
+     *
+     * @param startMonth first month to return (inclusive).
+     * @param endMonth   last month to return (exclusive).
+     * @return map from PNK to map of month to number of returns.
+     */
+    public @NonNull Map<String, Map<YearMonth, Integer>> countReturnByMonth(@NonNull YearMonth startMonth,
+                                                                             @NonNull YearMonth endMonth) throws SQLException {
+        return countByMonthRange(startMonth, endMonth, """
+                SELECT
+                  pio.part_number_key AS pnk,
+                  DATE_TRUNC('month', r.date)::date AS month_start,
+                  SUM(rp.quantity) AS quantity
+                FROM rma_result AS r
+                INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                    INNER JOIN (
+                        SELECT DISTINCT ON (id) id, surrogate_id, vendor_id
+                        FROM emag_order
+                        ORDER BY id, status DESC
+                    ) AS o ON r.order_id = o.id
+                INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                WHERE r.request_status = 7
+                  AND rp.product_id = pio.product_id
+                  AND rp.product_emag_id = pio.mkt_id
+                  AND r.date >= ?
+                  AND r.date < ?
+                GROUP BY pnk, month_start
+                ORDER BY pnk, month_start
+                """);
+    }
+
+    /**
+     * Return storno percentage by product and month with the percentage for month M is
      * avg(storno in M-3..M-1) / avg(orders in M-3..M-1).
      *
      * @param startMonth first month to return (inclusive).
      * @param endMonth   last month to return (exclusive).
-     * @return map from PNK to map of month to storno ratio.
+     * @return map from PNK to map of the month to storno ratio.
      * @throws SQLException on database error.
      */
     public @NonNull Map<String, Map<YearMonth, Double>> getStornoRateByProductAndMonth(@NonNull YearMonth startMonth,
@@ -1186,12 +1277,12 @@ public class EmagMirrorDB {
     }
 
     /**
-     * Return return percentage by product and month where the percentage for month M is
+     * Return the return percentage by product and month with the percentage for month M is
      * avg(returns in M-3..M-1) / avg(orders in M-3..M-1).
      *
      * @param startMonth first month to return (inclusive).
      * @param endMonth   last month to return (exclusive).
-     * @return map from PNK to map of month to return ratio.
+     * @return map from PNK to map of the month to return ratio.
      * @throws SQLException on database error.
      */
     public @NonNull Map<String, Map<YearMonth, Double>> getReturnRateByProductAndMonth(@NonNull YearMonth startMonth,
@@ -1327,6 +1418,29 @@ public class EmagMirrorDB {
                                 var pnk = rs.getString("pnk");
                                 var oldValue = result.put(pnk, rs.getInt("quantity"));
                                 require(oldValue == null, () -> "Unexpected duplicate for PNK %s".formatted(pnk));
+                            }
+                        }
+                    }
+                    return result;
+                }
+        );
+    }
+
+    private @NonNull HashMap<String, Map<YearMonth, Integer>> countByMonthRange(@NonNull final YearMonth startMonth,
+                                                                                  @NonNull final YearMonth endMonth,
+                                                                                  @NonNull final String sql) throws SQLException {
+        require(startMonth.isBefore(endMonth), () -> "Invalid month interval: [%s, %s).".formatted(startMonth, endMonth));
+        return database.singleReadTX(db -> {
+                    var result = new HashMap<String, Map<YearMonth, Integer>>();
+                    try (var s = db.prepareStatement(sql)) {
+                        s.setTimestamp(1, toTimestamp(startMonth.atDay(1).atStartOfDay()));
+                        s.setTimestamp(2, toTimestamp(endMonth.atDay(1).atStartOfDay()));
+                        try (var rs = s.executeQuery()) {
+                            while (rs.next()) {
+                                var pnk = rs.getString("pnk");
+                                var month = toYearMonth(rs.getDate("month_start"));
+                                var oldValue = result.computeIfAbsent(pnk, _ -> new HashMap<>()).put(month, rs.getInt("quantity"));
+                                require(oldValue == null, () -> "Unexpected duplicate for PNK %s in month %s".formatted(pnk, month));
                             }
                         }
                     }

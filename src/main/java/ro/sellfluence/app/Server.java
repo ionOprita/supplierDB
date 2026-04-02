@@ -184,7 +184,7 @@ public class Server {
     private static void configurePasskey(JavalinDefaultRoutingApi app, EmagMirrorDB mirrorDB, RelyingParty rp) {
         app.post("/webauthn/register/options", ctx -> {
             String username = ctx.queryParam("username");
-            if (username==null || !username.matches("\\w+")) {
+            if (username == null || !username.matches("\\w+")) {
                 ctx.status(400)
                         .result("Invalid username. Use letters, numbers and underscores only.");
                 return;
@@ -456,6 +456,17 @@ public class Server {
                 ctx.json(returns);
             }
         });
+        app.get("/app/monthStats", ctx -> {
+            var aggregateMonths = ctx.queryParamAsClass("aggregateMonths", Integer.class);
+            var startMonth = ctx.queryParamAsClass("startMonth", YearMonth.class);
+            var endMonth = ctx.queryParamAsClass("endMonth", YearMonth.class);
+            var returns = api.getMonthStats(startMonth.get(), endMonth.get(), aggregateMonths.get());
+            if (returns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(returns);
+            }
+        });
         app.get("/app/currentRatesTable", ctx -> {
             var returns = api.getCurrentMonthRatesTable();
             if (returns == null) {
@@ -673,8 +684,9 @@ public class Server {
 
     private static List<ProductInfo> sortProducts(List<ProductInfo> products, String sort) {
         Comparator<ProductInfo> comparator = switch (sort) {
-            case "product_code" -> Comparator.comparing(ProductInfo::productCode, Comparator.nullsFirst(String::compareTo))
-                    .thenComparing(ProductInfo::name, ProductInfo.nameComparatorString);
+            case "product_code" ->
+                    Comparator.comparing(ProductInfo::productCode, Comparator.nullsFirst(String::compareTo))
+                            .thenComparing(ProductInfo::name, ProductInfo.nameComparatorString);
             case "emag_pnk" -> Comparator.comparing(ProductInfo::pnk, Comparator.nullsFirst(String::compareTo))
                     .thenComparing(ProductInfo::name, ProductInfo.nameComparatorString);
             case "name" -> Comparator.comparing(ProductInfo::name, ProductInfo.nameComparatorString)

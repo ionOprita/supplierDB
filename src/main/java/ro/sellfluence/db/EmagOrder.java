@@ -548,6 +548,16 @@ public class EmagOrder {
 
     }
 
+    /**
+     * Read all orders converting but also keeping vendor ID to vendor name and adding the surrogate id.
+     * Adds also the list of products to the order.
+     *
+     * @param db database to use.
+     * @param allProducts list of all products in orders by surrogate id.
+     * @param allVendors list of all vendor names by vendor id.
+     * @return map from order id to orders matching the id. They might differ in status and maybe also in vendor.
+     * @throws SQLException on database error.
+     */
     public static HashMap<String, List<ExtendedOrder>> selectAllOrders(Connection db, Map<Integer, List<Product>> allProducts, Map<UUID, String> allVendors) throws SQLException {
         var orders = new HashMap<String, List<ExtendedOrder>>();
         try (var s = db.prepareStatement("SELECT * FROM emag_order")) {
@@ -608,6 +618,22 @@ public class EmagOrder {
         return orders;
     }
 
+    /**
+     * Select an order based on the surrogate id.
+     *
+     * @param db database to read from.
+     * @param surrogateId used to look up the order.
+     * @param vendorName to insert into the resulting order.
+     * @param customer to insert into the resulting order.
+     * @param shipping_tax_voucher_split to insert into the resulting order.
+     * @param products to insert into the resulting order.
+     * @param attachments to insert into the resulting order.
+     * @param vouchers to insert into the resulting order.
+     * @param enforcedVendorCourierAccounts to insert into the resulting order.
+     * @param flags to insert into the resulting order.
+     * @return reconstructed order.
+     * @throws SQLException on database problems.
+     */
     private static OrderResult selectOrder(Connection db,
                                            int surrogateId,
                                            String vendorName,

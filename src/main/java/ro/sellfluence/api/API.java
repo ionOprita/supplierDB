@@ -6,6 +6,8 @@ import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
 import ro.sellfluence.db.Task;
 import ro.sellfluence.support.DoubleWindow;
+import ro.sellfluence.support.Statistics;
+import ro.sellfluence.support.Statistics.Estimate;
 
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -199,6 +201,57 @@ public class API {
         return result;
     }
 
+    public record MonthStats(int orderCount, int returnCount, int stornoCount, int relCount, Estimate returnRate,
+                             Estimate stornoRate, Estimate relRate) {
+    }
+
+    /**
+     * Get statistics aggregating over a specified number of months.
+     *
+     * @param aggregateMonths number of months over which to average the sale values.
+     * @param startMonth start month.
+     * @param endMonth end month.
+     * @return map from product to map of month to the monthly statistics.
+     * @throws SQLException on database error.
+     */
+    public Map<ProductWithVendor, Map<YearMonth, MonthStats>> getMonthStats(YearMonth startMonth, YearMonth endMonth, int aggregateMonths) throws SQLException {
+        var result = new LinkedHashMap<ProductWithVendor, Map<YearMonth, MonthStats>>();
+        var products = mirrorDB.readProductsWithVendor().stream()
+                .sorted(ProductWithVendor.nameComparator)
+                .toList();
+        var ordersByMonth = mirrorDB.countOrdersByMonth(startMonth, endMonth);
+        var returns = mirrorDB.countReturnByMonth(startMonth, endMonth);
+        var storno = mirrorDB.countStornoByMonth(startMonth, endMonth);
+        var month = startMonth.plusMonths(aggregateMonths);
+        while (month.isBefore(endMonth)) {
+            var aggregateStart = month.minusMonths(aggregateMonths);
+            var aggregateEnd = month.minusMonths(1);
+            for (ProductWithVendor product : products) {
+                var map = result.computeIfAbsent(product, _ -> new HashMap<>());
+                var ordersLastNMonths = sumOver(aggregateStart, aggregateEnd, ordersByMonth.get(product.pnk()));
+                var returnsLastNMonths = sumOver(aggregateStart, aggregateEnd, returns.get(product.pnk()));
+                var stornoLastNMonths = sumOver(aggregateStart, aggregateEnd, storno.get(product.pnk()));
+                var relLastNMonths = stornoLastNMonths - returnsLastNMonths;
+                var returnsRate = Statistics.estimateRate(returnsLastNMonths, ordersLastNMonths, 0.95);
+                var stornoRate =  Statistics.estimateRate(stornoLastNMonths, ordersLastNMonths, 0.95);
+                var relRate =  Statistics.estimateRate(relLastNMonths, ordersLastNMonths, 0.95);
+                map.put(month, new MonthStats(ordersLastNMonths, returnsLastNMonths, stornoLastNMonths, relLastNMonths, returnsRate, stornoRate, relRate));
+            }
+            month = month.plusMonths(1);
+        }
+        return result;
+    }
+
+    private int sumOver(YearMonth rangeStart, YearMonth rangeEnd, Map<YearMonth, Integer> ordersByMonth) {
+        var result = 0;
+        var month = rangeStart;
+        while (month.isBefore(rangeEnd)) {
+            result += ordersByMonth.getOrDefault(month, 0);
+            month = month.plusMonths(1);
+        }
+        return result;
+    }
+
     public List<ReturnStornoOrderDetail> orderDetails(String pnk, YearMonth month) throws SQLException {
         return mirrorDB.getOrderDetails(pnk, month);
     }
@@ -313,7 +366,7 @@ public class API {
      * Retrieves a compact table of current-month percentages for all products.
      * The value for the current month M is computed as avg(M-3..M-1) numerator / avg(M-3..M-1) orders.
      *
-     * @return list of rows with product name, PNK, return percentage and storno percentage.
+     * @return list of rows with product name, PNK, return-percentage, and storno-percentage.
      * @throws SQLException on database error.
      */
     public List<CurrentMonthRatesRow> getCurrentMonthRatesTable() throws SQLException {
@@ -346,7 +399,7 @@ public class API {
      * The result is returned as a JSON string containing a list of date-count pairs.
      *
      * @param id        the identifier for which the counts are to be retrieved
-     * @param cache     the cache holding previously retrieved counts to minimise database calls
+     * @param cache     the cache holding previously retrieved counts to minimize database calls
      * @param retriever a retriever function to fetch counts from the database if not in the cache.
      * @return a JSON string representation of counts by date
      */
@@ -371,7 +424,7 @@ public class API {
      * Fetches a map of item counts by date from the cache or retrieves the data from the database if
      * the cached data is outdated or missing. If retrieved from the database, the cache is updated.
      *
-     * @param cache     the cache holding previously retrieved counts to minimise database calls.
+     * @param cache     the cache holding previously retrieved counts to minimize database calls.
      * @param id        the identifier for which the counts are to be retrieved.
      * @param retriever the retriever function that fetches counts from the database if not present in the cache.
      * @return a map where the keys are dates and the values are item counts for the specified ID.
