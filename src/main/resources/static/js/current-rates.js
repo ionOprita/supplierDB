@@ -42,9 +42,12 @@ function formatPercent(value) {
   return Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : '';
 }
 
-function formatEstimate(estimate) {
+function formatEstimate(estimate, partCount, totalCount) {
+  const hasCounts = Number.isFinite(partCount) && Number.isFinite(totalCount);
+  const countsText = hasCounts ? ` (${partCount}/${totalCount})` : '';
+
   if (!estimate || !Number.isFinite(estimate.rate)) {
-    return '';
+    return countsText.trimStart();
   }
 
   const rate = formatPercent(estimate.rate);
@@ -52,10 +55,10 @@ function formatEstimate(estimate) {
   const upperBound = formatPercent(estimate.upperBound);
 
   if (!lowerBound || !upperBound) {
-    return rate;
+    return `${rate}${countsText}`;
   }
 
-  return `${rate} [${lowerBound} - ${upperBound}]`;
+  return `${rate} [${lowerBound} - ${upperBound}]${countsText}`;
 }
 
 function renderHeader() {
@@ -84,15 +87,15 @@ function renderBody(rows) {
     tr.appendChild(tdPnk);
 
     const tdReturn = document.createElement('td');
-    tdReturn.textContent = formatEstimate(row.returnRate);
+    tdReturn.textContent = formatEstimate(row.returnRate, row.returnCount, row.orderCount);
     tr.appendChild(tdReturn);
 
     const tdStorno = document.createElement('td');
-    tdStorno.textContent = formatEstimate(row.stornoRate);
+    tdStorno.textContent = formatEstimate(row.stornoRate, row.stornoCount, row.orderCount);
     tr.appendChild(tdStorno);
 
     const tdRel = document.createElement('td');
-    tdRel.textContent = formatEstimate(row.relRate);
+    tdRel.textContent = formatEstimate(row.relRate, row.relCount, row.orderCount);
     tr.appendChild(tdRel);
 
     frag.appendChild(tr);
@@ -106,6 +109,10 @@ function toCurrentRateRows(data, selectedMonth) {
     return {
       name: row.name,
       pnk: row.pnk,
+      orderCount: stats.orderCount ?? null,
+      returnCount: stats.returnCount ?? null,
+      stornoCount: stats.stornoCount ?? null,
+      relCount: stats.relCount ?? null,
       returnRate: stats.returnRate ?? null,
       stornoRate: stats.stornoRate ?? null,
       relRate: stats.relRate ?? null
