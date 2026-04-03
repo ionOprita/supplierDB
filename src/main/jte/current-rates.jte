@@ -3,7 +3,19 @@
 @param String pageTitle
 
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
-    <div class="page-actions">
+    <div class="page-actions current-rates-actions">
+        <div class="current-rates-filter-controls">
+            <span>Show the rate over the last</span>
+            <select id="currentRatesWindowMonthsSelect" aria-label="Number of months">
+                <option value="3" selected>3</option>
+                <option value="6">6</option>
+                <option value="9">9</option>
+                <option value="12">12</option>
+            </select>
+            <span>months before</span>
+            <select id="currentRatesBeforeMonthSelect" aria-label="Month"></select>
+            <button id="currentRatesUpdateBtn" type="button">Update</button>
+        </div>
         <button id="downloadCsvBtn" type="button">Download CSV</button>
     </div>
     <div class="wrap">
