@@ -14,6 +14,14 @@
             </select>
             <span>months before</span>
             <select id="currentRatesBeforeMonthSelect" aria-label="Month"></select>
+            <span>and show range with confidence level</span>
+            <select id="currentRatesConfidenceLevelSelect" aria-label="Confidence Level">
+                <option value="0.95" selected>95 %</option>
+                <option value="0.9">90 %</option>
+                <option value="0.8">80 %</option>
+                <option value="0.67">67 %</option>
+                <option value="0.5">50 %</option>
+            </select>
             <button id="currentRatesUpdateBtn" type="button">Update</button>
         </div>
         <button id="downloadCsvBtn" type="button">Download CSV</button>

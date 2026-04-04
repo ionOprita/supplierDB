@@ -209,12 +209,13 @@ public class API {
      * Get statistics for each month in [startMonth, endMonth), aggregating over the preceding {@code aggregateMonths}.
      *
      * @param aggregateMonths number of months over which to aggregate the sale values.
+     * @param confidenceLevel
      * @param startMonth first month for which to return an aggregated statistic.
      * @param endMonth first month after the returned range.
      * @return map from product to map of month to the monthly statistics.
      * @throws SQLException on database error.
      */
-    public Map<ProductWithVendor, Map<YearMonth, MonthStats>> getMonthStats(YearMonth startMonth, YearMonth endMonth, int aggregateMonths) throws SQLException {
+    public Map<ProductWithVendor, Map<YearMonth, MonthStats>> getMonthStats(YearMonth startMonth, YearMonth endMonth, int aggregateMonths, double confidenceLevel) throws SQLException {
         var result = new LinkedHashMap<ProductWithVendor, Map<YearMonth, MonthStats>>();
         if (aggregateMonths <= 0) {
             throw new IllegalArgumentException("aggregateMonths must be > 0");
@@ -235,9 +236,9 @@ public class API {
                 var returnsLastNMonths = sumOver(aggregateStart, month, returns.get(product.pnk()));
                 var stornoLastNMonths = sumOver(aggregateStart, month, storno.get(product.pnk()));
                 var relLastNMonths = stornoLastNMonths - returnsLastNMonths;
-                var returnsRate = estimateRateOrNull(returnsLastNMonths, ordersLastNMonths);
-                var stornoRate = estimateRateOrNull(stornoLastNMonths, ordersLastNMonths);
-                var relRate = estimateRateOrNull(relLastNMonths, ordersLastNMonths);
+                var returnsRate = estimateRateOrNull(returnsLastNMonths, ordersLastNMonths, confidenceLevel);
+                var stornoRate = estimateRateOrNull(stornoLastNMonths, ordersLastNMonths, confidenceLevel);
+                var relRate = estimateRateOrNull(relLastNMonths, ordersLastNMonths, confidenceLevel);
                 map.put(month, new MonthStats(ordersLastNMonths, returnsLastNMonths, stornoLastNMonths, relLastNMonths, returnsRate, stornoRate, relRate));
             }
             month = month.plusMonths(1);
@@ -245,11 +246,11 @@ public class API {
         return result;
     }
 
-    private Estimate estimateRateOrNull(long part, long total) {
+    private Estimate estimateRateOrNull(long part, long total, double confidenceLevel) {
         if (total <= 0 || part < 0 || part > total) {
             return null;
         }
-        return Statistics.estimateRate(part, total, 0.95);
+        return Statistics.estimateRate(part, total, confidenceLevel);
     }
 
     private int sumOver(YearMonth rangeStart, YearMonth rangeEnd, Map<YearMonth, Integer> ordersByMonth) {

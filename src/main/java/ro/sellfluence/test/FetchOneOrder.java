@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 import static java.util.logging.Level.FINE;
+import static java.util.logging.Level.FINEST;
 
 public class FetchOneOrder {
 
@@ -37,10 +38,10 @@ public class FetchOneOrder {
     427037619
  */
     public static void main(String[] args) throws Exception {
-        EmagApi.setAPILogLevel(FINE);
+        EmagApi.setAPILogLevel(FINEST);
     //    emagAccounts.forEach(account -> fetchOrder(account,"407649385"));
         //fetchOrder("sellfusion","427037619");
-        fetchOrder("sellfusion", "421390915");
+        fetchOrder("zoopieconcept", "226552373");
     }
 
     private static void fetchOrder(String vendor, String orderId) {

@@ -4,6 +4,7 @@ import { bindTableCsvDownload, toRows } from './table-common.js';
 const HEAD = document.getElementById('currentRatesHead');
 const BODY = document.getElementById('currentRatesBody');
 const WINDOW_MONTHS_SELECT = document.getElementById('currentRatesWindowMonthsSelect');
+const CONFIDENCE_LEVEL_SELECT = document.getElementById('currentRatesConfidenceLevelSelect');
 const BEFORE_MONTH_SELECT = document.getElementById('currentRatesBeforeMonthSelect');
 const UPDATE_BUTTON = document.getElementById('currentRatesUpdateBtn');
 
@@ -43,7 +44,7 @@ function formatPercent(value) {
 }
 
 function formatEstimate(estimate, partCount, totalCount) {
-  const hasCounts = Number.isFinite(partCount) && Number.isFinite(totalCount);
+  const hasCounts = Number.isFinite(partCount) && Number.isFinite(totalCount) && totalCount > 0;
   const countsText = hasCounts ? ` (${partCount}/${totalCount})` : '';
 
   if (!estimate || !Number.isFinite(estimate.rate)) {
@@ -123,14 +124,17 @@ function toCurrentRateRows(data, selectedMonth) {
 async function loadTable() {
   const selectedMonth = BEFORE_MONTH_SELECT?.value;
   const aggregateMonths = WINDOW_MONTHS_SELECT?.value;
-  if (!selectedMonth || !aggregateMonths) {
+  const confidenceLevel = CONFIDENCE_LEVEL_SELECT?.value;
+
+    if (!selectedMonth || !aggregateMonths ||!confidenceLevel) {
     return;
   }
 
   const params = new URLSearchParams({
     startMonth: selectedMonth,
     endMonth: addMonths(selectedMonth, 1),
-    aggregateMonths
+    aggregateMonths,
+    confidenceLevel
   });
 
   const data = await fetchJSON(`/app/monthStats?${params.toString()}`);
