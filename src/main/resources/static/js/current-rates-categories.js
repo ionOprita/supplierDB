@@ -1,0 +1,161 @@
+import { fetchJSON } from './common.js';
+import { bindTableCsvDownload } from './table-common.js';
+
+const HEAD = document.getElementById('currentRatesCategoriesHead');
+const BODY = document.getElementById('currentRatesCategoriesBody');
+const WINDOW_MONTHS_SELECT = document.getElementById('currentRatesCategoriesWindowMonthsSelect');
+const CONFIDENCE_LEVEL_SELECT = document.getElementById('currentRatesCategoriesConfidenceLevelSelect');
+const BEFORE_MONTH_SELECT = document.getElementById('currentRatesCategoriesBeforeMonthSelect');
+const UPDATE_BUTTON = document.getElementById('currentRatesCategoriesUpdateBtn');
+
+function formatYearMonth(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+function addMonths(yearMonth, delta) {
+  const [year, month] = String(yearMonth).split('-').map(Number);
+  const date = new Date(year, (month - 1) + delta, 1);
+  return formatYearMonth(date);
+}
+
+function populateBeforeMonthSelect() {
+  if (!BEFORE_MONTH_SELECT) {
+    return;
+  }
+
+  BEFORE_MONTH_SELECT.innerHTML = '';
+  const cursor = new Date();
+  cursor.setDate(1);
+
+  for (let i = 0; i < 12; i += 1) {
+    const option = document.createElement('option');
+    const yearMonth = formatYearMonth(cursor);
+    option.value = yearMonth;
+    option.textContent = yearMonth;
+    BEFORE_MONTH_SELECT.appendChild(option);
+    cursor.setMonth(cursor.getMonth() - 1);
+  }
+}
+
+function formatPercent(value) {
+  return Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : '';
+}
+
+function formatEstimate(estimate, partCount, totalCount) {
+  const hasCounts = Number.isFinite(partCount) && Number.isFinite(totalCount) && totalCount > 0;
+  const countsText = hasCounts ? ` (${partCount}/${totalCount})` : '';
+
+  if (!estimate || !Number.isFinite(estimate.rate)) {
+    return countsText.trimStart();
+  }
+
+  const rate = formatPercent(estimate.rate);
+  const lowerBound = formatPercent(estimate.lowerBound);
+  const upperBound = formatPercent(estimate.upperBound);
+
+  if (!lowerBound || !upperBound) {
+    return `${rate}${countsText}`;
+  }
+
+  return `${rate} [${lowerBound} - ${upperBound}]${countsText}`;
+}
+
+function renderHeader() {
+  const tr = document.createElement('tr');
+  for (const label of ['Category', 'Return %', 'Storno %', 'Refused %']) {
+    const th = document.createElement('th');
+    th.textContent = label;
+    tr.appendChild(th);
+  }
+  HEAD.innerHTML = '';
+  HEAD.appendChild(tr);
+}
+
+function renderBody(rows) {
+  BODY.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  for (const row of rows) {
+    const tr = document.createElement('tr');
+
+    const tdCategory = document.createElement('td');
+    tdCategory.textContent = row.category ?? '';
+    tr.appendChild(tdCategory);
+
+    const tdReturn = document.createElement('td');
+    tdReturn.textContent = formatEstimate(row.returnRate, row.returnCount, row.orderCount);
+    tr.appendChild(tdReturn);
+
+    const tdStorno = document.createElement('td');
+    tdStorno.textContent = formatEstimate(row.stornoRate, row.stornoCount, row.orderCount);
+    tr.appendChild(tdStorno);
+
+    const tdRefused = document.createElement('td');
+    tdRefused.textContent = formatEstimate(row.refusedRate, row.refusedCount, row.orderCount);
+    tr.appendChild(tdRefused);
+
+    frag.appendChild(tr);
+  }
+  BODY.appendChild(frag);
+}
+
+function toCurrentRateRows(data, selectedMonth) {
+  return Object.entries(data).map(([category, months]) => {
+    const stats = months?.[selectedMonth] ?? {};
+    return {
+      category,
+      orderCount: stats.orderCount ?? null,
+      returnCount: stats.returnCount ?? null,
+      stornoCount: stats.stornoCount ?? null,
+      refusedCount: stats.refusedCount ?? null,
+      returnRate: stats.returnRate ?? null,
+      stornoRate: stats.stornoRate ?? null,
+      refusedRate: stats.refusedRate ?? null
+    };
+  });
+}
+
+async function loadTable() {
+  const selectedMonth = BEFORE_MONTH_SELECT?.value;
+  const aggregateMonths = WINDOW_MONTHS_SELECT?.value;
+  const confidenceLevel = CONFIDENCE_LEVEL_SELECT?.value;
+
+  if (!selectedMonth || !aggregateMonths || !confidenceLevel) {
+    return;
+  }
+
+  const params = new URLSearchParams({
+    startMonth: selectedMonth,
+    endMonth: addMonths(selectedMonth, 1),
+    aggregateMonths,
+    confidenceLevel
+  });
+
+  const data = await fetchJSON(`/app/monthStatsByCategory?${params.toString()}`);
+  renderHeader();
+  renderBody(toCurrentRateRows(data, selectedMonth));
+}
+
+(async function init() {
+  try {
+    populateBeforeMonthSelect();
+    UPDATE_BUTTON?.addEventListener('click', () => {
+      loadTable().catch((e) => {
+        HEAD.innerHTML = '';
+        BODY.innerHTML = '<tr><td>Failed to load data</td></tr>';
+        console.error(e);
+      });
+    });
+    await loadTable();
+    bindTableCsvDownload({
+      buttonId: 'downloadCurrentRatesCategoriesCsvBtn',
+      tableId: 'currentRatesCategoriesTable',
+      filePrefix: 'current-rates-categories-table'
+    });
+  } catch (e) {
+    HEAD.innerHTML = '';
+    BODY.innerHTML = '<tr><td>Failed to load data</td></tr>';
+    console.error(e);
+  }
+})();

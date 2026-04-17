@@ -40,6 +40,7 @@
                 <li><a href="/private/storno-rate">Storno % Table</a></li>
                 <li><a href="/private/return-rate">Return % Table</a></li>
                 <li><a href="/private/current-rates">Current Rates</a></li>
+                <li><a href="/private/current-rates-categories">Current Rates by Category</a></li>
                 <li><a href="/private/returnCharts">Return Charts</a></li>
                 <li><a href="/private/rrr">RRR (Smoothed)</a></li>
                 <li><a href="/private/tasks">Tasks</a></li>

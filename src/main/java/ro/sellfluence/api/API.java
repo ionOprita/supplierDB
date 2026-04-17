@@ -3,6 +3,7 @@ package ro.sellfluence.api;
 import com.google.gson.Gson;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
+import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
 import ro.sellfluence.db.Task;
 import ro.sellfluence.support.DoubleWindow;
@@ -20,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static java.util.logging.Level.SEVERE;
@@ -205,6 +207,13 @@ public class API {
                              Estimate stornoRate, Estimate refusedRate) {
     }
 
+    private record MonthCountMaps(
+            Map<String, Map<YearMonth, Integer>> ordersByKey,
+            Map<String, Map<YearMonth, Integer>> returnsByKey,
+            Map<String, Map<YearMonth, Integer>> stornoByKey
+    ) {
+    }
+
     /**
      * Get statistics for each month in [startMonth, endMonth), aggregating over the preceding {@code aggregateMonths}.
      *
@@ -216,7 +225,6 @@ public class API {
      * @throws SQLException on database error.
      */
     public Map<ProductWithVendor, Map<YearMonth, MonthStats>> getMonthStats(YearMonth startMonth, YearMonth endMonth, int aggregateMonths, double confidenceLevel) throws SQLException {
-        var result = new LinkedHashMap<ProductWithVendor, Map<YearMonth, MonthStats>>();
         if (aggregateMonths <= 0) {
             throw new IllegalArgumentException("aggregateMonths must be > 0");
         }
@@ -224,26 +232,48 @@ public class API {
                 .sorted(ProductWithVendor.nameComparator)
                 .toList();
         var aggregateStartMonth = startMonth.minusMonths(aggregateMonths);
-        var ordersByMonth = mirrorDB.countOrdersByMonth(aggregateStartMonth, endMonth);
-        var returns = mirrorDB.countReturnByMonth(aggregateStartMonth, endMonth);
-        var storno = mirrorDB.countStornoByMonth(aggregateStartMonth, endMonth);
-        var month = startMonth;
-        while (month.isBefore(endMonth)) {
-            var aggregateStart = month.minusMonths(aggregateMonths);
-            for (ProductWithVendor product : products) {
-                var map = result.computeIfAbsent(product, _ -> new HashMap<>());
-                var ordersLastNMonths = Statistics.sumOver(aggregateStart, month, ordersByMonth.get(product.pnk()));
-                var returnsLastNMonths = Statistics.sumOver(aggregateStart, month, returns.get(product.pnk()));
-                var stornoLastNMonths = Statistics.sumOver(aggregateStart, month, storno.get(product.pnk()));
-                var refusedLastNMonths = stornoLastNMonths - returnsLastNMonths;
-                var returnsRate = Statistics.estimateRateOrNull(returnsLastNMonths, ordersLastNMonths, confidenceLevel);
-                var stornoRate = Statistics.estimateRateOrNull(stornoLastNMonths, ordersLastNMonths, confidenceLevel);
-                var refusedRate = Statistics.estimateRateOrNull(refusedLastNMonths, ordersLastNMonths, confidenceLevel);
-                map.put(month, new MonthStats(ordersLastNMonths, returnsLastNMonths, stornoLastNMonths, refusedLastNMonths, returnsRate, stornoRate, refusedRate));
-            }
-            month = month.plusMonths(1);
+        return buildMonthStats(
+                products,
+                ProductWithVendor::pnk,
+                getMonthCountMaps(aggregateStartMonth, endMonth),
+                startMonth,
+                endMonth,
+                aggregateMonths,
+                confidenceLevel
+        );
+    }
+
+    public Map<String, Map<YearMonth, MonthStats>> getMonthStatsByCategory(YearMonth startMonth,
+                                                                            YearMonth endMonth,
+                                                                            int aggregateMonths,
+                                                                            double confidenceLevel) throws SQLException {
+        if (aggregateMonths <= 0) {
+            throw new IllegalArgumentException("aggregateMonths must be > 0");
         }
-        return result;
+        var products = mirrorDB.readProducts().stream()
+                .sorted(ProductInfo.nameComparator)
+                .toList();
+        var aggregateStartMonth = startMonth.minusMonths(aggregateMonths);
+        var countsByProduct = getMonthCountMaps(aggregateStartMonth, endMonth);
+        var countsByCategory = new MonthCountMaps(
+                aggregateCountsByCategory(products, countsByProduct.ordersByKey()),
+                aggregateCountsByCategory(products, countsByProduct.returnsByKey()),
+                aggregateCountsByCategory(products, countsByProduct.stornoByKey())
+        );
+        var categories = products.stream()
+                .map(product -> normalizeCategory(product.category()))
+                .distinct()
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList();
+        return buildMonthStats(
+                categories,
+                Function.identity(),
+                countsByCategory,
+                startMonth,
+                endMonth,
+                aggregateMonths,
+                confidenceLevel
+        );
     }
 
     public List<ReturnStornoOrderDetail> orderDetails(String pnk, YearMonth month) throws SQLException {
@@ -378,6 +408,63 @@ public class API {
             result.add(new CurrentMonthRatesRow(product.name(), product.pnk(), returnRate, stornoRate));
         }
         return result;
+    }
+
+    private MonthCountMaps getMonthCountMaps(YearMonth startMonth, YearMonth endMonth) throws SQLException {
+        return new MonthCountMaps(
+                mirrorDB.countOrdersByMonth(startMonth, endMonth),
+                mirrorDB.countReturnByMonth(startMonth, endMonth),
+                mirrorDB.countStornoByMonth(startMonth, endMonth)
+        );
+    }
+
+    private Map<String, Map<YearMonth, Integer>> aggregateCountsByCategory(List<ProductInfo> products,
+                                                                           Map<String, Map<YearMonth, Integer>> countsByProduct) {
+        var result = new HashMap<String, Map<YearMonth, Integer>>();
+        for (ProductInfo product : products) {
+            var category = normalizeCategory(product.category());
+            var counts = countsByProduct.get(product.pnk());
+            if (counts == null) {
+                continue;
+            }
+            var categoryCounts = result.computeIfAbsent(category, _ -> new HashMap<>());
+            for (var entry : counts.entrySet()) {
+                categoryCounts.merge(entry.getKey(), entry.getValue(), Integer::sum);
+            }
+        }
+        return result;
+    }
+
+    private <T> Map<T, Map<YearMonth, MonthStats>> buildMonthStats(List<T> rows,
+                                                                   Function<T, String> keyExtractor,
+                                                                   MonthCountMaps counts,
+                                                                   YearMonth startMonth,
+                                                                   YearMonth endMonth,
+                                                                   int aggregateMonths,
+                                                                   double confidenceLevel) {
+        var result = new LinkedHashMap<T, Map<YearMonth, MonthStats>>();
+        var month = startMonth;
+        while (month.isBefore(endMonth)) {
+            var aggregateStart = month.minusMonths(aggregateMonths);
+            for (T row : rows) {
+                var key = keyExtractor.apply(row);
+                var map = result.computeIfAbsent(row, _ -> new HashMap<>());
+                var ordersLastNMonths = Statistics.sumOver(aggregateStart, month, counts.ordersByKey().get(key));
+                var returnsLastNMonths = Statistics.sumOver(aggregateStart, month, counts.returnsByKey().get(key));
+                var stornoLastNMonths = Statistics.sumOver(aggregateStart, month, counts.stornoByKey().get(key));
+                var refusedLastNMonths = stornoLastNMonths - returnsLastNMonths;
+                var returnsRate = Statistics.estimateRateOrNull(returnsLastNMonths, ordersLastNMonths, confidenceLevel);
+                var stornoRate = Statistics.estimateRateOrNull(stornoLastNMonths, ordersLastNMonths, confidenceLevel);
+                var refusedRate = Statistics.estimateRateOrNull(refusedLastNMonths, ordersLastNMonths, confidenceLevel);
+                map.put(month, new MonthStats(ordersLastNMonths, returnsLastNMonths, stornoLastNMonths, refusedLastNMonths, returnsRate, stornoRate, refusedRate));
+            }
+            month = month.plusMonths(1);
+        }
+        return result;
+    }
+
+    private static String normalizeCategory(String category) {
+        return category == null ? "" : category.trim();
     }
 
     public List<ReturnStornoOrderDetail> returnDetails(String pnk, YearMonth month) throws SQLException {

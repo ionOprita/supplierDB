@@ -468,6 +468,18 @@ public class Server {
                 ctx.json(returns);
             }
         });
+        app.get("/app/monthStatsByCategory", ctx -> {
+            var aggregateMonths = ctx.queryParamAsClass("aggregateMonths", Integer.class);
+            var confidenceLevel = ctx.queryParamAsClass("confidenceLevel", Double.class);
+            var startMonth = ctx.queryParamAsClass("startMonth", YearMonth.class);
+            var endMonth = ctx.queryParamAsClass("endMonth", YearMonth.class);
+            var returns = api.getMonthStatsByCategory(startMonth.get(), endMonth.get(), aggregateMonths.get(), confidenceLevel.get());
+            if (returns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(returns);
+            }
+        });
         app.get("/app/currentRatesTable", ctx -> {
             var returns = api.getCurrentMonthRatesTable();
             if (returns == null) {
