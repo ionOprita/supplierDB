@@ -2,7 +2,30 @@ package ro.sellfluence.support;
 
 import org.apache.commons.statistics.distribution.NormalDistribution;
 
+import java.time.YearMonth;
+import java.util.Map;
+
 public class Statistics {
+    public static Estimate estimateRateOrNull(long part, long total, double confidenceLevel) {
+        if (total <= 0 || part < 0 || part > total) {
+            return null;
+        }
+        return estimateRate(part, total, confidenceLevel);
+    }
+
+    public static int sumOver(YearMonth rangeStart, YearMonth rangeEnd, Map<YearMonth, Integer> ordersByMonth) {
+        if (ordersByMonth == null) {
+            return 0;
+        }
+        var result = 0;
+        var month = rangeStart;
+        while (month.isBefore(rangeEnd)) {
+            result += ordersByMonth.getOrDefault(month, 0);
+            month = month.plusMonths(1);
+        }
+        return result;
+    }
+
     public record Estimate(
             double rate,
             double lowerBound,

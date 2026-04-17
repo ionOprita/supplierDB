@@ -201,8 +201,8 @@ public class API {
         return result;
     }
 
-    public record MonthStats(int orderCount, int returnCount, int stornoCount, int relCount, Estimate returnRate,
-                             Estimate stornoRate, Estimate relRate) {
+    public record MonthStats(int orderCount, int returnCount, int stornoCount, int refusedCount, Estimate returnRate,
+                             Estimate stornoRate, Estimate refusedRate) {
     }
 
     /**
@@ -232,35 +232,15 @@ public class API {
             var aggregateStart = month.minusMonths(aggregateMonths);
             for (ProductWithVendor product : products) {
                 var map = result.computeIfAbsent(product, _ -> new HashMap<>());
-                var ordersLastNMonths = sumOver(aggregateStart, month, ordersByMonth.get(product.pnk()));
-                var returnsLastNMonths = sumOver(aggregateStart, month, returns.get(product.pnk()));
-                var stornoLastNMonths = sumOver(aggregateStart, month, storno.get(product.pnk()));
-                var relLastNMonths = stornoLastNMonths - returnsLastNMonths;
-                var returnsRate = estimateRateOrNull(returnsLastNMonths, ordersLastNMonths, confidenceLevel);
-                var stornoRate = estimateRateOrNull(stornoLastNMonths, ordersLastNMonths, confidenceLevel);
-                var relRate = estimateRateOrNull(relLastNMonths, ordersLastNMonths, confidenceLevel);
-                map.put(month, new MonthStats(ordersLastNMonths, returnsLastNMonths, stornoLastNMonths, relLastNMonths, returnsRate, stornoRate, relRate));
+                var ordersLastNMonths = Statistics.sumOver(aggregateStart, month, ordersByMonth.get(product.pnk()));
+                var returnsLastNMonths = Statistics.sumOver(aggregateStart, month, returns.get(product.pnk()));
+                var stornoLastNMonths = Statistics.sumOver(aggregateStart, month, storno.get(product.pnk()));
+                var refusedLastNMonths = stornoLastNMonths - returnsLastNMonths;
+                var returnsRate = Statistics.estimateRateOrNull(returnsLastNMonths, ordersLastNMonths, confidenceLevel);
+                var stornoRate = Statistics.estimateRateOrNull(stornoLastNMonths, ordersLastNMonths, confidenceLevel);
+                var refusedRate = Statistics.estimateRateOrNull(refusedLastNMonths, ordersLastNMonths, confidenceLevel);
+                map.put(month, new MonthStats(ordersLastNMonths, returnsLastNMonths, stornoLastNMonths, refusedLastNMonths, returnsRate, stornoRate, refusedRate));
             }
-            month = month.plusMonths(1);
-        }
-        return result;
-    }
-
-    private Estimate estimateRateOrNull(long part, long total, double confidenceLevel) {
-        if (total <= 0 || part < 0 || part > total) {
-            return null;
-        }
-        return Statistics.estimateRate(part, total, confidenceLevel);
-    }
-
-    private int sumOver(YearMonth rangeStart, YearMonth rangeEnd, Map<YearMonth, Integer> ordersByMonth) {
-        if (ordersByMonth == null) {
-            return 0;
-        }
-        var result = 0;
-        var month = rangeStart;
-        while (month.isBefore(rangeEnd)) {
-            result += ordersByMonth.getOrDefault(month, 0);
             month = month.plusMonths(1);
         }
         return result;

@@ -64,7 +64,7 @@ function formatEstimate(estimate, partCount, totalCount) {
 
 function renderHeader() {
   const tr = document.createElement('tr');
-  for (const label of ['Product', 'PNK', 'Return %', 'Storno %', 'Rel %']) {
+  for (const label of ['Product', 'PNK', 'Return %', 'Storno %', 'Refused %']) {
     const th = document.createElement('th');
     th.textContent = label;
     tr.appendChild(th);
@@ -95,9 +95,9 @@ function renderBody(rows) {
     tdStorno.textContent = formatEstimate(row.stornoRate, row.stornoCount, row.orderCount);
     tr.appendChild(tdStorno);
 
-    const tdRel = document.createElement('td');
-    tdRel.textContent = formatEstimate(row.relRate, row.relCount, row.orderCount);
-    tr.appendChild(tdRel);
+    const tdRefused = document.createElement('td');
+    tdRefused.textContent = formatEstimate(row.refusedRate, row.refusedCount, row.orderCount);
+    tr.appendChild(tdRefused);
 
     frag.appendChild(tr);
   }
@@ -113,10 +113,10 @@ function toCurrentRateRows(data, selectedMonth) {
       orderCount: stats.orderCount ?? null,
       returnCount: stats.returnCount ?? null,
       stornoCount: stats.stornoCount ?? null,
-      relCount: stats.relCount ?? null,
+      refusedCount: stats.refusedCount ?? null,
       returnRate: stats.returnRate ?? null,
       stornoRate: stats.stornoRate ?? null,
-      relRate: stats.relRate ?? null
+      refusedRate: stats.refusedRate ?? null
     };
   });
 }

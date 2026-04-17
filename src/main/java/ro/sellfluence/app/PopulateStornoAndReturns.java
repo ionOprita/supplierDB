@@ -6,6 +6,7 @@ import ro.sellfluence.db.ProductTable;
 import ro.sellfluence.googleapi.SheetsAPI;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
+import ro.sellfluence.support.Statistics;
 
 import java.io.IOException;
 import java.sql.SQLException;
@@ -23,7 +24,6 @@ import static java.util.logging.Level.INFO;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
-import static ro.sellfluence.support.UsefulMethods.findColumnMatchingMonth;
 import static ro.sellfluence.support.UsefulMethods.toColumnName;
 
 public class PopulateStornoAndReturns {
@@ -33,6 +33,7 @@ public class PopulateStornoAndReturns {
     private static final String returnsSheetName = "(GLB) Ret./M.";
     private static final String percentStornoSheetName = "(GLB) Prod. Sto./M. (%)";
     private static final String percentReturnSheetName = "(GLB) Prod. Ret./M. (%)";
+    private static final String overviewsSheetName = "(GLB) Cent. Prod. (%)";
 
     private static final int monthRow = 2;
     private static final int firstDataRow = 8;
@@ -40,7 +41,56 @@ public class PopulateStornoAndReturns {
     static void main(String[] args) throws SQLException, IOException {
         var arguments = new Arguments(args);
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
-        updateSpreadsheets(mirrorDB);
+        //updateSpreadsheets(mirrorDB);
+        updateOverviewSheet(mirrorDB);
+    }
+
+    private static void updateOverviewSheet(EmagMirrorDB mirrorDB) throws SQLException {
+        var sheet = SheetsAPI.getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
+        if (sheet == null) {
+            throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
+        }
+        var vendors = mirrorDB.readVendorCompanies();
+        var products = mirrorDB.readProducts().stream().sorted(ProductTable.ProductInfo.nameComparator).toList();
+        YearMonth month = YearMonth.now();
+        var aggregateMonths = 3;
+        var confidenceLevel = 0.95;
+        var aggregateStart = month.minusMonths(aggregateMonths);
+        var ordersByMonth = mirrorDB.countOrdersByMonth(aggregateStart, month);
+        var returns = mirrorDB.countReturnByMonth(aggregateStart, month);
+        var storno = mirrorDB.countStornoByMonth(aggregateStart, month);
+        int lineCount = 0;
+        var rows = new ArrayList<List<Object>>();
+        for (var product : products) {
+            var ordersLastNMonths = Statistics.sumOver(aggregateStart, month, ordersByMonth.get(product.pnk()));
+            var returnsLastNMonths = Statistics.sumOver(aggregateStart, month, returns.get(product.pnk()));
+            var stornoLastNMonths = Statistics.sumOver(aggregateStart, month, storno.get(product.pnk()));
+            var refusedLastNMonths = stornoLastNMonths - returnsLastNMonths;
+            var returnsRate = Statistics.estimateRateOrNull(returnsLastNMonths, ordersLastNMonths, confidenceLevel);
+            var stornoRate = Statistics.estimateRateOrNull(stornoLastNMonths, ordersLastNMonths, confidenceLevel);
+            var refusedRate = Statistics.estimateRateOrNull(refusedLastNMonths, ordersLastNMonths, confidenceLevel);
+            lineCount++;
+            var row = List.<Object>of(
+                    lineCount,
+                    product.name(),
+                    nullToEmpty(vendors.get(product.vendor())),
+                    nullToEmpty(product.pnk()),
+                    nullToEmpty(product.category()),
+                    product.retracted(),
+                    toString(returnsRate),
+                    toString(stornoRate),
+                    toString(refusedRate)
+            );
+            rows.add(row);
+        }
+        sheet.updateRange("'%s'!%s%d:%s%d".formatted(overviewsSheetName, "A", firstDataRow, "I", firstDataRow + rows.size() - 1), rows);
+    }
+
+    private static String toString(Statistics.Estimate estimate) {
+        if (estimate == null) {
+            return "";
+        }
+        return "%.2f%%".formatted(estimate.ratePercent());
     }
 
     public static void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
@@ -62,7 +112,7 @@ public class PopulateStornoAndReturns {
             Map<String, Double> percentStornoByPNK = computePercent(stornoByPNK, orderByPNK);
             Map<String, Double> percentReturnByPNK = computePercent(returnByPNK, orderByPNK);
             logger.log(INFO, "--- Update Percentage Storno for month %s ------------------------".formatted(month));
-            updateSheet(sheet, percentStornoSheetName, month, products,percentStornoByPNK);
+            updateSheet(sheet, percentStornoSheetName, month, products, percentStornoByPNK);
             logger.log(INFO, "--- Update Percentage Returns for month %s ------------------------".formatted(month));
             updateSheet(sheet, percentReturnSheetName, month, products, percentReturnByPNK);
             logger.log(INFO, "--- Update Storno for month %s --------------------------".formatted(month));
@@ -78,7 +128,7 @@ public class PopulateStornoAndReturns {
         for (var entry : totalByPNK.entrySet()) {
             var pnk = entry.getKey();
             var total = entry.getValue();
-            var part = (double)partByPNK.getOrDefault(pnk, 0);
+            var part = (double) partByPNK.getOrDefault(pnk, 0);
             result.put(pnk, total == 0 ? 0.0 : part / total);
         }
         return result;
@@ -102,7 +152,7 @@ public class PopulateStornoAndReturns {
     }
 
     private static <T> void updateSheet(SheetsAPI sheet, final String sheetName, YearMonth month, @NonNull List<ProductTable.ProductInfo> products, @NonNull final Map<String, T> valuesByPNK) {
-        var columnIdentifier = toColumnName((int)YearMonth.of(2023,7).until(month, ChronoUnit.MONTHS));
+        var columnIdentifier = toColumnName((int) YearMonth.of(2023, 7).until(month, ChronoUnit.MONTHS));
         var columnData = new ArrayList<T>();
         for (var product : products) {
             var pnk = product.pnk();
