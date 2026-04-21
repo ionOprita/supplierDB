@@ -51,24 +51,51 @@ public class PopulateStornoAndReturns {
             throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
         }
         var vendors = mirrorDB.readVendorCompanies();
-        var products = mirrorDB.readProducts().stream().sorted(ProductTable.ProductInfo.nameComparator).toList();
+        var products = mirrorDB.readProducts().stream().filter(prod -> !prod.pnk().isBlank()).sorted(ProductTable.ProductInfo.nameComparator).toList();
+        var replaceData = readReplacements(products, sheet);
         YearMonth month = YearMonth.now();
-        var aggregateMonths = 3;
+        var aggregateMonthsList = List.of(6, 12);
         var confidenceLevel = 0.95;
-        var aggregateStart = month.minusMonths(aggregateMonths);
-        var ordersByMonth = mirrorDB.countOrdersByMonth(aggregateStart, month);
-        var returns = mirrorDB.countReturnByMonth(aggregateStart, month);
-        var storno = mirrorDB.countStornoByMonth(aggregateStart, month);
+        var ordersByMonth = new HashMap<Integer, Map<String, Map<YearMonth, Integer>>>();
+        for (var aggregateMonth : aggregateMonthsList) {
+            var aggregateStart = month.minusMonths(aggregateMonth);
+            ordersByMonth.put(aggregateMonth, mirrorDB.countOrdersByMonth(aggregateStart, month));
+        }
+        var returns = new HashMap<Integer, Map<String, Map<YearMonth, Integer>>>();
+        for (var aggregateMonth : aggregateMonthsList) {
+            var aggregateStart = month.minusMonths(aggregateMonth);
+            returns.put(aggregateMonth, mirrorDB.countReturnByMonth(aggregateStart, month));
+        }
+        var storno = new HashMap<Integer, Map<String, Map<YearMonth, Integer>>>();
+        for (var aggregateMonth : aggregateMonthsList) {
+            var aggregateStart = month.minusMonths(aggregateMonth);
+            storno.put(aggregateMonth, mirrorDB.countStornoByMonth(aggregateStart, month));
+        }
         int lineCount = 0;
         var rows = new ArrayList<List<Object>>();
         for (var product : products) {
-            var ordersLastNMonths = Statistics.sumOver(aggregateStart, month, ordersByMonth.get(product.pnk()));
-            var returnsLastNMonths = Statistics.sumOver(aggregateStart, month, returns.get(product.pnk()));
-            var stornoLastNMonths = Statistics.sumOver(aggregateStart, month, storno.get(product.pnk()));
-            var refusedLastNMonths = stornoLastNMonths - returnsLastNMonths;
-            var returnsRate = Statistics.estimateRateOrNull(returnsLastNMonths, ordersLastNMonths, confidenceLevel);
-            var stornoRate = Statistics.estimateRateOrNull(stornoLastNMonths, ordersLastNMonths, confidenceLevel);
-            var refusedRate = Statistics.estimateRateOrNull(refusedLastNMonths, ordersLastNMonths, confidenceLevel);
+            var i = 0;
+            Statistics.Estimate returnsRate;
+            Statistics.Estimate stornoRate;
+            Statistics.Estimate refusedRate;
+            boolean overflow;
+            do {
+                var aggregateMonth = aggregateMonthsList.get(i);
+                var aggregateStart = month.minusMonths(aggregateMonth);
+                var ordersLastNMonths = Statistics.sumOver(aggregateStart, month, ordersByMonth.get(aggregateMonth).get(product.pnk()));
+                var returnsLastNMonths = Statistics.sumOver(aggregateStart, month, returns.get(aggregateMonth).get(product.pnk()));
+                var stornoLastNMonths = Statistics.sumOver(aggregateStart, month, storno.get(aggregateMonth).get(product.pnk()));
+                var refusedLastNMonths = stornoLastNMonths - returnsLastNMonths;
+                returnsRate = Statistics.estimateRateOrNull(returnsLastNMonths, ordersLastNMonths, confidenceLevel);
+                stornoRate = Statistics.estimateRateOrNull(stornoLastNMonths, ordersLastNMonths, confidenceLevel);
+                refusedRate = Statistics.estimateRateOrNull(refusedLastNMonths, ordersLastNMonths, confidenceLevel);
+                var stornoOverflow = stornoRate != null && stornoRate.rate() > 0.25;
+                var returnOverflow = returnsRate != null && returnsRate.rate() > 0.25;
+                var refusedOverflow = refusedRate != null && refusedRate.rate() > 0.25;
+                overflow = stornoOverflow || returnOverflow || refusedOverflow;
+                i++;
+            } while (i < aggregateMonthsList.size() && overflow);
+            var swappedRate = replaceData.getOrDefault(product, null);
             lineCount++;
             var row = List.<Object>of(
                     lineCount,
@@ -77,13 +104,35 @@ public class PopulateStornoAndReturns {
                     nullToEmpty(product.pnk()),
                     nullToEmpty(product.category()),
                     product.retracted(),
-                    toString(returnsRate),
                     toString(stornoRate),
-                    toString(refusedRate)
+                    toString(returnsRate),
+                    toString(refusedRate),
+                    toString(swappedRate)
             );
             rows.add(row);
         }
-        sheet.updateRange("'%s'!%s%d:%s%d".formatted(overviewsSheetName, "A", firstDataRow, "I", firstDataRow + rows.size() - 1), rows);
+//        sheet.updateRange("'%s'!%s%d:%s%d".formatted(overviewsSheetName, "A", firstDataRow, "J", firstDataRow + rows.size() - 1), rows);
+    }
+
+    private static Map<ProductTable.ProductInfo, Double> readReplacements(List<ProductTable.ProductInfo> products, SheetsAPI sheet) {
+        var rows = sheet.getMultipleColumns(overviewsSheetName, "A", "B", "D", "J");
+        Map<ProductTable.ProductInfo, Double> result = new HashMap<>();
+        for (var row : rows) {
+            var pnk = row.get(2).toString();
+            var replacementRate = row.get(3).toString();
+            if (pnk.isBlank()) {
+                continue;
+            }
+            if (replacementRate.isBlank()) {
+                continue;
+            }
+            var product = products.stream().filter(it -> it.pnk().equals(pnk)).findFirst();
+            if (product.isEmpty()) {
+                continue;
+            }
+            result.put(product.get(), Double.parseDouble(replacementRate));
+        }
+        return result;
     }
 
     private static String toString(Statistics.Estimate estimate) {
@@ -91,6 +140,13 @@ public class PopulateStornoAndReturns {
             return "";
         }
         return "%.2f%%".formatted(estimate.ratePercent());
+    }
+
+    private static String toString(Double value) {
+        if (value == null) {
+            return "";
+        }
+        return "%.2f%%".formatted(value*100.0);
     }
 
     public static void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
