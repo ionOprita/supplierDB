@@ -32,6 +32,12 @@ public class Conversions {
     private static final DateTimeFormatter rfc1123_2digit_year;
 
     /**
+     * Formatter, which is similar to {@link DateTimeFormatter#RFC_1123_DATE_TIME}
+     * but doesn't need a time zone.
+     */
+    private static final DateTimeFormatter rfc1123_no_timezone;
+
+    /**
      * Formatter for parsing the date as seen in request_history date field.
      */
     public static final DateTimeFormatter requestHistoryFormat;
@@ -80,12 +86,57 @@ public class Conversions {
         monthOfYearEN.put(10L, "Oct");
         monthOfYearEN.put(11L, "Nov");
         monthOfYearEN.put(12L, "Dec");
-        rfc1123_2digit_year = new DateTimeFormatterBuilder().parseCaseInsensitive().parseLenient().optionalStart().appendText(DAY_OF_WEEK, dayOfWeekEN).appendLiteral(", ").optionalEnd().appendValue(DAY_OF_MONTH, 1, 2, SignStyle.NOT_NEGATIVE).appendLiteral(' ').appendText(MONTH_OF_YEAR, monthOfYearEN).appendLiteral(' ').appendValueReduced(YEAR, 2, 2, LocalDate.of(1970, 1, 1)).appendLiteral(", ").appendValue(HOUR_OF_DAY, 2).appendLiteral(':').appendValue(MINUTE_OF_HOUR, 2).appendLiteral(':').appendValue(SECOND_OF_MINUTE, 2).toFormatter(Locale.ENGLISH);
+        rfc1123_2digit_year = new DateTimeFormatterBuilder()
+                .parseCaseInsensitive()
+                .parseLenient()
+                .optionalStart()
+                .appendText(DAY_OF_WEEK, dayOfWeekEN).appendLiteral(", ")
+                .optionalEnd()
+                .appendValue(DAY_OF_MONTH, 1, 2, SignStyle.NOT_NEGATIVE)
+                .appendLiteral(' ')
+                .appendText(MONTH_OF_YEAR, monthOfYearEN)
+                .appendLiteral(' ')
+                .appendValueReduced(YEAR, 2, 2, LocalDate.of(1970, 1, 1))
+                .appendLiteral(' ')
+                .appendValue(HOUR_OF_DAY, 2)
+                .appendLiteral(':')
+                .appendValue(MINUTE_OF_HOUR, 2)
+                .optionalStart()
+                .appendLiteral(':')
+                .appendValue(SECOND_OF_MINUTE, 2)
+                .optionalEnd()
+                .toFormatter(Locale.ENGLISH);
+        rfc1123_no_timezone = new DateTimeFormatterBuilder()
+                .parseCaseInsensitive()
+                .parseLenient()
+                .optionalStart()
+                .appendText(DAY_OF_WEEK, dayOfWeekEN)
+                .appendLiteral(", ")
+                .optionalEnd()
+                .appendValue(DAY_OF_MONTH, 1, 2, SignStyle.NOT_NEGATIVE)
+                .appendLiteral(' ')
+                .appendText(MONTH_OF_YEAR, monthOfYearEN)
+                .appendLiteral(' ')
+                .appendValue(YEAR, 4)
+                .appendLiteral(' ')
+                .appendValue(HOUR_OF_DAY, 2)
+                .appendLiteral(':')
+                .appendValue(MINUTE_OF_HOUR, 2)
+                .optionalStart()
+                .appendLiteral(':')
+                .appendValue(SECOND_OF_MINUTE, 2)
+                .optionalEnd()
+                .toFormatter(Locale.ENGLISH);
         requestHistoryFormat = new DateTimeFormatterBuilder().parseCaseInsensitive().parseLenient().optionalStart()
-                .appendValue(DAY_OF_MONTH, 1, 2, SignStyle.NOT_NEGATIVE).appendLiteral(' ')
-                .appendText(MONTH_OF_YEAR, monthOfYearEN).appendLiteral(' ')
-                .appendValue(YEAR).appendLiteral(", ")
-                .appendValue(HOUR_OF_DAY, 2).appendLiteral(':').appendValue(MINUTE_OF_HOUR, 2)
+                .appendValue(DAY_OF_MONTH, 1, 2, SignStyle.NOT_NEGATIVE)
+                .appendLiteral(' ')
+                .appendText(MONTH_OF_YEAR, monthOfYearEN)
+                .appendLiteral(' ')
+                .appendValue(YEAR)
+                .appendLiteral(", ")
+                .appendValue(HOUR_OF_DAY, 2)
+                .appendLiteral(':')
+                .appendValue(MINUTE_OF_HOUR, 2)
                 .toFormatter(Locale.ENGLISH);
     }
 
@@ -102,6 +153,7 @@ public class Conversions {
     /**
      * Convert a date as found in the spreadsheets to {@link LocalDateTime}.
      * It tries up to four different formats before giving up.
+     *
      * @param s date as string.
      * @return parsed date.
      */
@@ -109,17 +161,21 @@ public class Conversions {
         LocalDateTime date;
         try {
             date = LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-        } catch (Exception e) {
+        } catch (Exception _) {
             try {
                 date = LocalDateTime.parse(s, DateTimeFormatter.RFC_1123_DATE_TIME);
-            } catch (Exception ex) {
+            } catch (Exception _) {
                 try {
                     date = LocalDateTime.parse(s, rfc1123_2digit_year);
-                } catch (Exception exc) {
+                } catch (Exception _) {
                     try {
-                        date = LocalDateTime.parse(s, isoLikeLocalDateTime);
-                    } catch (Exception exception) {
-                        date = LocalDateTime.parse(s, requestHistoryFormat);
+                        date = LocalDateTime.parse(s, rfc1123_no_timezone);
+                    } catch (Exception _) {
+                        try {
+                            date = LocalDateTime.parse(s, isoLikeLocalDateTime);
+                        } catch (Exception _) {
+                            date = LocalDateTime.parse(s, requestHistoryFormat);
+                        }
                     }
                 }
             }

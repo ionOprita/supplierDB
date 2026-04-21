@@ -1,6 +1,9 @@
 package ro.sellfluence.db;
 
 import ch.claudio.db.DB;
+import com.yubico.webauthn.RegisteredCredential;
+import com.yubico.webauthn.data.ByteArray;
+import com.yubico.webauthn.data.PublicKeyCredentialDescriptor;
 import org.jspecify.annotations.NonNull;
 import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.db.EmagFetchLog.EmagFetchHistogram;
@@ -20,6 +23,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -30,6 +34,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -59,6 +64,7 @@ import static ro.sellfluence.support.UsefulMethods.require;
 import static ro.sellfluence.support.UsefulMethods.toLocalDate;
 import static ro.sellfluence.support.UsefulMethods.toLocalDateTime;
 import static ro.sellfluence.support.UsefulMethods.toTimestamp;
+import static ro.sellfluence.support.UsefulMethods.toYearMonth;
 
 /**
  * EmagMirrorDB provides a mechanism for managing and interacting with the eMAG mirrored database system.
@@ -66,7 +72,7 @@ import static ro.sellfluence.support.UsefulMethods.toTimestamp;
  * vendor details, GMV data, and other related database functionalities. This class ensures database
  * interaction is streamlined, encapsulated, and accessible through its defined public methods.
  *
- * <p>This module delegates all operations, which touch only a single table to the repective class
+ * <p>This module delegates all operations, which touch only a single table to the respective class
  * while it handles operations that need multiple tables itself.</p>
  */
 public class EmagMirrorDB {
@@ -146,7 +152,32 @@ public class EmagMirrorDB {
         });
     }
 
-    public record ReturnStornoOrderDetail(LocalDateTime time, String orderId, String vendor, String pnk, String name, int quantity) {
+    public int resetTasks() throws SQLException {
+        return database.writeTX(Task::resetState);
+    }
+
+    public int startTask(String name) throws SQLException {
+        return database.writeTX(db -> Task.startTask(db, name));
+    }
+
+    public int endTask(String name, String error) throws SQLException {
+        return database.writeTX(db -> Task.endTask(db, name, error));
+    }
+
+    public int endTask(String name, Throwable e) throws SQLException {
+        return database.writeTX(db -> Task.endTask(db, name, e));
+    }
+
+    public boolean isRunning(String name) throws SQLException {
+        return database.readTX((Connection db) -> Task.isRunning(db, name));
+    }
+
+    public List<Task> getAllTasks() throws SQLException {
+        return database.readTX(Task::getAllTasks);
+    }
+
+    public record ReturnStornoOrderDetail(LocalDateTime time, String orderId, String vendor, String pnk, String name,
+                                          int quantity) {
     }
 
     /**
@@ -154,12 +185,12 @@ public class EmagMirrorDB {
      * The storno details include information about the storno date, associated order, vendor,
      * product, and quantity.
      *
-     * @param pnk the part number key (PNK) which uniquely identifies the product.
+     * @param pnk   the part number key (PNK) which uniquely identifies the product.
      * @param month the YearMonth object representing the month for which the storno details should be fetched.
      *              Details are retrieved for the entire month starting from the first day and ending before
      *              the first day of the next month.
      * @return a list of StronoInfo objects containing the storno details. Each entry in the list represents
-     *         a storno record with corresponding metadata.
+     * a storno record with corresponding metadata.
      * @throws SQLException if any database access error occurs while retrieving the storno details.
      */
     public List<ReturnStornoOrderDetail> getOrderDetails(String pnk, YearMonth month) throws SQLException {
@@ -201,12 +232,12 @@ public class EmagMirrorDB {
      * The storno details include information about the storno date, associated order, vendor,
      * product, and quantity.
      *
-     * @param pnk the part number key (PNK) which uniquely identifies the product.
+     * @param pnk   the part number key (PNK) which uniquely identifies the product.
      * @param month the YearMonth object representing the month for which the storno details should be fetched.
      *              Details are retrieved for the entire month starting from the first day and ending before
      *              the first day of the next month.
      * @return a list of StronoInfo objects containing the storno details. Each entry in the list represents
-     *         a storno record with corresponding metadata.
+     * a storno record with corresponding metadata.
      * @throws SQLException if any database access error occurs while retrieving the storno details.
      */
     public List<ReturnStornoOrderDetail> getStornoDetails(String pnk, YearMonth month) throws SQLException {
@@ -247,20 +278,20 @@ public class EmagMirrorDB {
         return database.readTX(db -> {
             var result = new ArrayList<ReturnStornoOrderDetail>();
             try (var s = db.prepareStatement("""
-                    SELECT r.date, r.order_id, v.vendor_name, pio.part_number_key, p.name, rp.quantity
-                    FROM rma_result AS r
-                    INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
-                    INNER JOIN (
-                        SELECT DISTINCT ON (id) id, surrogate_id, vendor_id
-                        FROM emag_order
-                        ORDER BY id, status DESC
-                    ) AS o ON r.order_id = o.id
-                    INNER JOIN vendor AS v ON v.id = o.vendor_id
-                    INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
-                    INNER JOIN product AS p ON pio.part_number_key = p.emag_pnk
-                    WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ? AND pio.part_number_key = ?
-                    ORDER BY r.date, r.order_id;
-            """)) {
+                            SELECT r.date, r.order_id, v.vendor_name, pio.part_number_key, p.name, rp.quantity
+                            FROM rma_result AS r
+                            INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                            INNER JOIN (
+                                SELECT DISTINCT ON (id) id, surrogate_id, vendor_id
+                                FROM emag_order
+                                ORDER BY id, status DESC
+                            ) AS o ON r.order_id = o.id
+                            INNER JOIN vendor AS v ON v.id = o.vendor_id
+                            INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                            INNER JOIN product AS p ON pio.part_number_key = p.emag_pnk
+                            WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ? AND pio.part_number_key = ?
+                            ORDER BY r.date, r.order_id;
+                    """)) {
                 s.setTimestamp(1, toTimestamp(month.atDay(1)));
                 s.setTimestamp(2, toTimestamp(month.plusMonths(1).atDay(1)));
                 s.setString(3, pnk);
@@ -380,10 +411,31 @@ public class EmagMirrorDB {
     }
 
     /**
+     * Refresh materialized views used by the cohort-based rolling return rate chart.
+     * Refresh order matters because downstream views depend on upstream ones.
+     *
+     * @throws SQLException on database errors.
+     */
+    public void refreshReturnRateMaterializedViews() throws SQLException {
+        database.writeTX(db -> {
+            try (var s = db.prepareStatement("REFRESH MATERIALIZED VIEW orders_canonical")) {
+                s.execute();
+            }
+            try (var s = db.prepareStatement("REFRESH MATERIALIZED VIEW sales_daily")) {
+                s.execute();
+            }
+            try (var s = db.prepareStatement("REFRESH MATERIALIZED VIEW returns_linked")) {
+                s.execute();
+            }
+            return true;
+        });
+    }
+
+    /**
      * Retrieve GMVs for a particular month.
      *
      * @param month to retrieve.
-     * @return map with the product name as the key and the GMV as the value.
+     * @return map having the product name as the key and the GMV as the value.
      * @throws SQLException on database error.
      */
     public Map<String, BigDecimal> readGMVByMonth(YearMonth month) throws SQLException {
@@ -414,7 +466,7 @@ public class EmagMirrorDB {
 
     /**
      * Read database information and prepare them for inclusion in the spreadsheet.
-     * Only orders with status finalised or returned matching the year are provided.
+     * Only orders with status finalized or returned matching the year are provided.
      *
      * @param year Return only orders where the date has this as its year value.
      * @return list of rows containing a list of cell groups. Each cell group is a list of cells.
@@ -724,6 +776,73 @@ public class EmagMirrorDB {
         return database.writeTX(EmagMirrorDB::stornoBackfill);
     }
 
+    public record SalesDailyDateRange(LocalDate startDate, LocalDate endDate) {
+    }
+
+    /**
+     * Return the date interval covered by the sales_daily materialized view.
+     *
+     * @return Optional date range; empty when sales_daily has no rows.
+     */
+    public @NonNull Optional<SalesDailyDateRange> getSalesDailyDateRange() throws SQLException {
+        return database.readTX(db -> {
+            try (var s = db.prepareStatement("""
+                    SELECT MIN(sale_d) AS min_sale_date,
+                           MAX(sale_d) AS max_sale_date
+                    FROM sales_daily
+                    """)) {
+                try (var rs = s.executeQuery()) {
+                    if (!rs.next()) {
+                        return Optional.empty();
+                    }
+                    var minDate = rs.getDate("min_sale_date");
+                    var maxDate = rs.getDate("max_sale_date");
+                    if (minDate == null || maxDate == null) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(new SalesDailyDateRange(minDate.toLocalDate(), maxDate.toLocalDate()));
+                }
+            }
+        });
+    }
+
+    /**
+     * Return sold quantity by day for one product and one month using sales_daily.
+     *
+     * @param productCode selected product code.
+     * @param month       selected month.
+     * @return map date -> sold quantity.
+     */
+    public @NonNull Map<LocalDate, Long> countSalesByDayForProductAndMonth(@NonNull String productCode,
+                                                                            @NonNull YearMonth month) throws SQLException {
+        return database.singleReadTX(db -> {
+                    var result = new HashMap<LocalDate, Long>();
+                    try (var s = db.prepareStatement("""
+                            SELECT sale_d AS sale_date,
+                                   SUM(sold_qty)::bigint AS sold_qty
+                            FROM sales_daily
+                            WHERE product_code = ?
+                              AND sale_d >= ?
+                              AND sale_d < ?
+                            GROUP BY sale_d
+                            ORDER BY sale_d
+                            """)) {
+                        s.setString(1, productCode);
+                        s.setTimestamp(2, toTimestamp(month.atDay(1).atStartOfDay()));
+                        s.setTimestamp(3, toTimestamp(month.plusMonths(1).atDay(1).atStartOfDay()));
+                        try (var rs = s.executeQuery()) {
+                            while (rs.next()) {
+                                var date = rs.getDate("sale_date").toLocalDate();
+                                var oldValue = result.put(date, rs.getLong("sold_qty"));
+                                require(oldValue == null, () -> "Unexpected duplicate for date %s".formatted(date));
+                            }
+                        }
+                    }
+                    return result;
+                }
+        );
+    }
+
     /**
      * Return the number of storno for each product in a specific month.
      *
@@ -794,11 +913,186 @@ public class EmagMirrorDB {
                 """);
     }
 
+    public record RollingReturnRatePoint(LocalDate date,
+                                         long soldQty,
+                                         long returnedQty,
+                                         Double rawRate,
+                                         double smoothedRate,
+                                         boolean reliable) {
+    }
+
     /**
-     * Return the number of storno for each product in a specific month.
+     * Compute a daily cohort-linked rolling return rate for one product and smooth it with a Bayesian prior.
+     * The rolling sums are computed using delta events + cumulative windows for performance.
      *
-     * @param month for which to return the number of storno.
-     * @return map from PNK to number of storno.
+     * @param productCode        product code used by the frontend.
+     * @param rollDays           rolling denominator window size (for example, 90).
+     * @param maxReturnDays      maximum allowed return delay from sale date (for example, 90).
+     * @param priorStrength      Bayesian prior strength m (for example, 100).
+     * @param reliableMinSoldQty reliability threshold flag (for example, 20 or 30).
+     * @return list of daily points ordered by date.
+     * @throws SQLException on database errors.
+     */
+    public @NonNull List<RollingReturnRatePoint> getCohortSmoothedRollingReturnRate(@NonNull String productCode,
+                                                                                      int rollDays,
+                                                                                      int maxReturnDays,
+                                                                                      double priorStrength,
+                                                                                      long reliableMinSoldQty) throws SQLException {
+        // TODO: Understand if this does the expected thing, as reported values look strange.
+        require(rollDays > 0, () -> "rollDays must be > 0.");
+        require(maxReturnDays > 0, () -> "maxReturnDays must be > 0.");
+        require(priorStrength > 0, () -> "priorStrength must be > 0.");
+        require(reliableMinSoldQty >= 0, () -> "reliableMinSoldQty must be >= 0.");
+
+        var sql = """
+                WITH params AS (
+                  SELECT
+                    ?::int AS roll_days,
+                    ?::int AS max_return_days,
+                    ?::numeric AS m,
+                    ?::varchar AS product_code
+                ),
+                sales_filtered AS (
+                  SELECT
+                    sd.sale_d,
+                    sd.sold_qty
+                  FROM sales_daily sd
+                  CROSS JOIN params p
+                  WHERE sd.product_code = p.product_code
+                ),
+                returns_filtered AS (
+                  SELECT
+                    rl.sale_d,
+                    rl.return_d,
+                    rl.returned_qty
+                  FROM returns_linked rl
+                  CROSS JOIN params p
+                  WHERE rl.product_code = p.product_code
+                    AND rl.return_d <= rl.sale_d + p.max_return_days
+                    AND rl.return_d <= rl.sale_d + (p.roll_days - 1)
+                ),
+                all_dates AS (
+                  SELECT sf.sale_d AS d
+                  FROM sales_filtered sf
+                  UNION ALL
+                  SELECT rf.sale_d AS d
+                  FROM returns_filtered rf
+                  UNION ALL
+                  SELECT rf.return_d AS d
+                  FROM returns_filtered rf
+                ),
+                bounds AS (
+                  SELECT MIN(d) AS min_d, MAX(d) AS max_d
+                  FROM all_dates
+                ),
+                calendar AS (
+                  SELECT
+                    gs::date AS d
+                  FROM bounds b
+                  CROSS JOIN LATERAL generate_series(b.min_d, b.max_d, interval '1 day') gs
+                  WHERE b.min_d IS NOT NULL
+                    AND b.max_d IS NOT NULL
+                ),
+                sales_events AS (
+                  SELECT sf.sale_d AS d, sf.sold_qty AS delta
+                  FROM sales_filtered sf
+                  UNION ALL
+                  SELECT
+                    (sf.sale_d + p.roll_days)::date AS d,
+                    -sf.sold_qty AS delta
+                  FROM sales_filtered sf
+                  CROSS JOIN params p
+                ),
+                sales_deltas AS (
+                  SELECT d, SUM(delta)::bigint AS delta
+                  FROM sales_events
+                  GROUP BY d
+                ),
+                returns_events AS (
+                  SELECT rf.return_d AS d, rf.returned_qty AS delta
+                  FROM returns_filtered rf
+                  UNION ALL
+                  SELECT
+                    (rf.sale_d + p.roll_days)::date AS d,
+                    -rf.returned_qty AS delta
+                  FROM returns_filtered rf
+                  CROSS JOIN params p
+                ),
+                returns_deltas AS (
+                  SELECT d, SUM(delta)::bigint AS delta
+                  FROM returns_events
+                  GROUP BY d
+                ),
+                series AS (
+                  SELECT
+                    c.d,
+                    SUM(COALESCE(sd.delta, 0)) OVER (
+                      ORDER BY c.d
+                      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    )::bigint AS sold_qty,
+                    SUM(COALESCE(rd.delta, 0)) OVER (
+                      ORDER BY c.d
+                      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                      )::bigint AS returned_qty
+                  FROM calendar c
+                  LEFT JOIN sales_deltas sd
+                    ON sd.d = c.d
+                  LEFT JOIN returns_deltas rd
+                    ON rd.d = c.d
+                ),
+                totals AS (
+                  SELECT
+                    COALESCE(SUM(returned_qty)::numeric / NULLIF(SUM(sold_qty), 0), 0)::numeric AS p0
+                  FROM series
+                )
+                SELECT
+                  s.d AS event_date,
+                  s.sold_qty,
+                  s.returned_qty,
+                  (s.returned_qty::double precision / NULLIF(s.sold_qty::double precision, 0)) AS raw_rate,
+                  (
+                    (s.returned_qty::numeric + (t.p0 * p.m))
+                    / (s.sold_qty::numeric + p.m)
+                  )::double precision AS smoothed_rate,
+                  (s.sold_qty >= ?) AS reliable
+                FROM series s
+                CROSS JOIN totals t
+                CROSS JOIN params p
+                ORDER BY s.d;
+                """;
+
+        return database.readTX(db -> {
+            var result = new ArrayList<RollingReturnRatePoint>();
+            try (var s = db.prepareStatement(sql)) {
+                s.setInt(1, rollDays);
+                s.setInt(2, maxReturnDays);
+                s.setBigDecimal(3, BigDecimal.valueOf(priorStrength));
+                s.setString(4, productCode);
+                s.setLong(5, reliableMinSoldQty);
+                try (var rs = s.executeQuery()) {
+                    while (rs.next()) {
+                        result.add(
+                                new RollingReturnRatePoint(
+                                        rs.getDate("event_date").toLocalDate(),
+                                        rs.getLong("sold_qty"),
+                                        rs.getLong("returned_qty"),
+                                        rs.getObject("raw_rate", Double.class),
+                                        rs.getDouble("smoothed_rate"),
+                                        rs.getBoolean("reliable")
+                                )
+                        );
+                    }
+                }
+            }
+            return result;
+        });
+    }
+
+    /**
+     * Return the number of orders for each product in a specific month.
+     *
+     * @param month for which to return the number of orders.
+     * @return map from PNK to number of orders.
      */
     public @NonNull Map<String, Integer> countOrdersByMonth(@NonNull YearMonth month) throws SQLException {
         return countByMonth(month, """
@@ -825,6 +1119,40 @@ public class EmagMirrorDB {
     }
 
     /**
+     * Return the number of orders for each product and month in a month interval.
+     *
+     * @param startMonth first month to return (inclusive).
+     * @param endMonth   last month to return (exclusive).
+     * @return map from PNK to map of month to number of orders.
+     */
+    public @NonNull Map<String, Map<YearMonth, Integer>> countOrdersByMonth(@NonNull YearMonth startMonth,
+                                                                             @NonNull YearMonth endMonth) throws SQLException {
+        return countByMonthRange(startMonth, endMonth, """
+                WITH picked AS (
+                  SELECT DISTINCT ON (o.id, pio.part_number_key, DATE_TRUNC('month', o.date)::date)
+                         CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS picked_qty,
+                         pio.part_number_key AS pnk,
+                         DATE_TRUNC('month', o.date)::date AS month_start
+                  FROM emag_order AS o
+                  JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                  WHERE o.status IN (4,5)
+                    AND o.date >= ?
+                    AND o.date < ?
+                  ORDER BY
+                    o.id,
+                    pio.part_number_key,
+                    DATE_TRUNC('month', o.date)::date,
+                    o.status,          -- prefer status 4; fallback to 5
+                    o.surrogate_id DESC
+                )
+                SELECT pnk, month_start, SUM(picked_qty) AS quantity
+                FROM picked
+                GROUP BY pnk, month_start
+                ORDER BY pnk, month_start;
+                """);
+    }
+
+    /**
      * Return the number of storno for each product in a specific month.
      *
      * @param month for which to return the number of storno.
@@ -844,10 +1172,35 @@ public class EmagMirrorDB {
     }
 
     /**
+     * Return the number of storno for each product and month in a month interval.
+     *
+     * @param startMonth first month to return (inclusive).
+     * @param endMonth   last month to return (exclusive).
+     * @return map from PNK to map of month to number of storno.
+     */
+    public @NonNull Map<String, Map<YearMonth, Integer>> countStornoByMonth(@NonNull YearMonth startMonth,
+                                                                             @NonNull YearMonth endMonth) throws SQLException {
+        return countByMonthRange(startMonth, endMonth, """
+                SELECT
+                  p.part_number_key AS pnk,
+                  DATE_TRUNC('month', s.storno_date)::date AS month_start,
+                  SUM(s.quantity) AS quantity
+                FROM storno AS s
+                JOIN emag_order AS o ON o.id = s.order_id
+                JOIN product_in_order AS p ON p.id = s.product_id AND p.emag_order_surrogate_id = o.surrogate_id
+                WHERE o.status = 5
+                  AND s.storno_date >= ?
+                  AND s.storno_date < ?
+                GROUP BY p.part_number_key, month_start
+                ORDER BY p.part_number_key, month_start;
+                """);
+    }
+
+    /**
      * Return the number of returns for each product in a specific month.
      *
-     * @param month for which to return the number of storno.
-     * @return map from PNK to number of storno.
+     * @param month for which to return the number of returns.
+     * @return map from PNK to the number of returns.
      */
     public @NonNull Map<String, Integer> countReturnByMonth(@NonNull YearMonth month) throws SQLException {
         return countByMonth(month, """
@@ -863,6 +1216,177 @@ public class EmagMirrorDB {
                 WHERE r.request_status = 7 AND rp.product_id = pio.product_id AND rp.product_emag_id = pio.mkt_id AND r.date >= ? AND r.date < ?
                 GROUP BY pnk
                 """);
+    }
+
+    /**
+     * Return the number of returns for each product and month in a month interval.
+     *
+     * @param startMonth first month to return (inclusive).
+     * @param endMonth   last month to return (exclusive).
+     * @return map from PNK to map of month to number of returns.
+     */
+    public @NonNull Map<String, Map<YearMonth, Integer>> countReturnByMonth(@NonNull YearMonth startMonth,
+                                                                             @NonNull YearMonth endMonth) throws SQLException {
+        return countByMonthRange(startMonth, endMonth, """
+                SELECT
+                  pio.part_number_key AS pnk,
+                  DATE_TRUNC('month', r.date)::date AS month_start,
+                  SUM(rp.quantity) AS quantity
+                FROM rma_result AS r
+                INNER JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                    INNER JOIN (
+                        SELECT DISTINCT ON (id) id, surrogate_id, vendor_id
+                        FROM emag_order
+                        ORDER BY id, status DESC
+                    ) AS o ON r.order_id = o.id
+                INNER JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                WHERE r.request_status = 7
+                  AND rp.product_id = pio.product_id
+                  AND rp.product_emag_id = pio.mkt_id
+                  AND r.date >= ?
+                  AND r.date < ?
+                GROUP BY pnk, month_start
+                ORDER BY pnk, month_start
+                """);
+    }
+
+    /**
+     * Return storno percentage by product and month with the percentage for month M is
+     * avg(storno in M-3..M-1) / avg(orders in M-3..M-1).
+     *
+     * @param startMonth first month to return (inclusive).
+     * @param endMonth   last month to return (exclusive).
+     * @return map from PNK to map of the month to storno ratio.
+     * @throws SQLException on database error.
+     */
+    public @NonNull Map<String, Map<YearMonth, Double>> getStornoRateByProductAndMonth(@NonNull YearMonth startMonth,
+                                                                                          @NonNull YearMonth endMonth) throws SQLException {
+        return getRateByProductAndMonth(startMonth, endMonth, """
+                SELECT
+                  p.part_number_key AS pnk,
+                  DATE_TRUNC('month', s.storno_date)::date AS month_start,
+                  SUM(s.quantity)::double precision AS quantity
+                FROM storno AS s
+                JOIN emag_order AS o ON o.id = s.order_id
+                JOIN product_in_order AS p ON p.id = s.product_id AND p.emag_order_surrogate_id = o.surrogate_id
+                WHERE o.status = 5
+                  AND s.storno_date >= (SELECT start_month - INTERVAL '3 month' FROM params)
+                  AND s.storno_date < (SELECT end_month FROM params)
+                GROUP BY p.part_number_key, month_start
+                """);
+    }
+
+    /**
+     * Return the return percentage by product and month with the percentage for month M is
+     * avg(returns in M-3..M-1) / avg(orders in M-3..M-1).
+     *
+     * @param startMonth first month to return (inclusive).
+     * @param endMonth   last month to return (exclusive).
+     * @return map from PNK to map of the month to return ratio.
+     * @throws SQLException on database error.
+     */
+    public @NonNull Map<String, Map<YearMonth, Double>> getReturnRateByProductAndMonth(@NonNull YearMonth startMonth,
+                                                                                          @NonNull YearMonth endMonth) throws SQLException {
+        return getRateByProductAndMonth(startMonth, endMonth, """
+                SELECT
+                  pio.part_number_key AS pnk,
+                  DATE_TRUNC('month', r.date)::date AS month_start,
+                  SUM(rp.quantity)::double precision AS quantity
+                FROM rma_result AS r
+                JOIN emag_returned_products AS rp ON r.emag_id = rp.emag_id
+                JOIN (
+                    SELECT DISTINCT ON (id) id, surrogate_id
+                    FROM emag_order
+                    ORDER BY id, status DESC
+                ) AS o ON r.order_id = o.id
+                JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                WHERE r.request_status = 7
+                  AND rp.product_id = pio.product_id
+                  AND rp.product_emag_id = pio.mkt_id
+                  AND r.date >= (SELECT start_month - INTERVAL '3 month' FROM params)
+                  AND r.date < (SELECT end_month FROM params)
+                GROUP BY pio.part_number_key, month_start
+                """);
+    }
+
+    public Set<PublicKeyCredentialDescriptor> getCredentialIdsForUsername(String username) throws SQLException {
+        return database.readTX(db -> PassKey.getCredentialIdsForUsername(db, username));
+    }
+
+    public Optional<ByteArray> getUserHandleForUsername(String username) throws SQLException {
+        return database.readTX(db -> PassKey.getUserHandleForUsername(db, username));
+    }
+
+    public Optional<String> getUsernameForUserHandle(ByteArray userHandle) throws SQLException {
+        return database.readTX(db -> PassKey.getUsernameForUserHandle(db, userHandle));
+    }
+
+    public Optional<PassKey.User> getUserForUserHandle(ByteArray userHandle) throws SQLException {
+        return database.readTX(db -> PassKey.getUserForUserHandle(db, userHandle));
+    }
+
+    public List<PassKey.AdminUser> listUsers() throws SQLException {
+        return database.readTX(PassKey::listUsers);
+    }
+
+    public int updateUserRole(long userId, PassKey.Role role) throws SQLException {
+        return database.writeTX(db -> PassKey.updateUserRole(db, userId, role));
+    }
+
+    public int deleteUser(long userId) throws SQLException {
+        return database.writeTX(db -> PassKey.deleteUser(db, userId));
+    }
+
+    public Optional<RegisteredCredential> lookup(ByteArray credentialId, ByteArray userHandle) throws SQLException {
+        return database.readTX(db -> PassKey.lookup(db, credentialId, userHandle));
+    }
+
+    public Set<RegisteredCredential> lookupAll(ByteArray credentialId) throws SQLException {
+        return database.readTX(db -> PassKey.lookupAll(db, credentialId));
+    }
+
+    public int insertCredential(long userId,
+                                ByteArray credentialId,
+                                ByteArray publicKeyCose,
+                                long signCount,
+                                String label) throws SQLException {
+        return database.writeTX(db -> PassKey.insertCredential(db, userId, credentialId, publicKeyCose, signCount, label));
+    }
+
+    public int updateSignCountAndLastUsed(ByteArray credentialId, long newSignCount) throws SQLException {
+        return database.writeTX(db -> PassKey.updateSignCountAndLastUsed(db, credentialId, newSignCount));
+    }
+
+    public Optional<String> findOptionsJson(long id, String flow) throws SQLException {
+        return database.readTX(db -> PassKey.findOptionsJson(db, id, flow));
+    }
+
+    public Optional<Long> findUserIdByUsername(String username) throws SQLException {
+        return database.readTX(db -> PassKey.findUserIdByUsername(db, username));
+    }
+
+    public Optional<Long> insertUser(String username) throws SQLException {
+        return database.writeTX(db -> PassKey.insertUser(db, username));
+    }
+
+    public long findUser(long challengeId) throws SQLException {
+        return database.readTX(db -> PassKey.findUser(db, challengeId));
+    }
+
+    public byte[] findUserHandleByUserID(long userID) throws SQLException {
+        return database.readTX(db -> PassKey.findUserHandleByUserID(db, userID));
+    }
+
+    public int markUsed(long id) throws SQLException {
+        return database.writeTX(db -> PassKey.markUsed(db, id));
+    }
+
+    public long insertAssertionRequest(Long userIdNullable, String rpId, String origin, String requestJson, Instant expiresAt) throws SQLException {
+        return database.writeTX(db -> PassKey.insertAssertionRequest(db, userIdNullable, rpId, origin, requestJson, expiresAt));
+    }
+
+    public long insertRegistrationOptions(long userId, String rpId, String origin, String optionsJson, Instant expiresAt) throws SQLException {
+        return database.writeTX(db -> PassKey.insertRegistrationOptions(db, userId, rpId, origin, optionsJson, expiresAt));
     }
 
     private @NonNull HashMap<LocalDate, Integer> countByDayForProduct(@NonNull final String productCode, @NonNull final String sql) throws SQLException {
@@ -900,6 +1424,126 @@ public class EmagMirrorDB {
                     return result;
                 }
         );
+    }
+
+    private @NonNull HashMap<String, Map<YearMonth, Integer>> countByMonthRange(@NonNull final YearMonth startMonth,
+                                                                                  @NonNull final YearMonth endMonth,
+                                                                                  @NonNull final String sql) throws SQLException {
+        require(startMonth.isBefore(endMonth), () -> "Invalid month interval: [%s, %s).".formatted(startMonth, endMonth));
+        return database.singleReadTX(db -> {
+                    var result = new HashMap<String, Map<YearMonth, Integer>>();
+                    try (var s = db.prepareStatement(sql)) {
+                        s.setTimestamp(1, toTimestamp(startMonth.atDay(1).atStartOfDay()));
+                        s.setTimestamp(2, toTimestamp(endMonth.atDay(1).atStartOfDay()));
+                        try (var rs = s.executeQuery()) {
+                            while (rs.next()) {
+                                var pnk = rs.getString("pnk");
+                                var month = toYearMonth(rs.getDate("month_start"));
+                                var oldValue = result.computeIfAbsent(pnk, _ -> new HashMap<>()).put(month, rs.getInt("quantity"));
+                                require(oldValue == null, () -> "Unexpected duplicate for PNK %s in month %s".formatted(pnk, month));
+                            }
+                        }
+                    }
+                    return result;
+                }
+        );
+    }
+
+    private @NonNull HashMap<String, Map<YearMonth, Double>> getRateByProductAndMonth(@NonNull final YearMonth startMonth,
+                                                                                        @NonNull final YearMonth endMonth,
+                                                                                        @NonNull final String numeratorAggregationSQL) throws SQLException {
+        require(startMonth.isBefore(endMonth), () -> "Invalid month interval: [%s, %s).".formatted(startMonth, endMonth));
+        var sql = """
+                WITH params AS (
+                    SELECT ?::timestamp AS start_month,
+                           ?::timestamp AS end_month
+                ),
+                months AS (
+                    SELECT generate_series(
+                        (SELECT (start_month - INTERVAL '3 month')::date FROM params),
+                        (SELECT (end_month - INTERVAL '1 month')::date FROM params),
+                        INTERVAL '1 month'
+                    )::date AS month_start
+                ),
+                products AS (
+                    SELECT p.emag_pnk AS pnk
+                    FROM product AS p
+                ),
+                orders_agg AS (
+                    WITH picked AS (
+                        SELECT DISTINCT ON (o.id, pio.part_number_key)
+                            CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS picked_qty,
+                            pio.part_number_key AS pnk,
+                            DATE_TRUNC('month', o.date)::date AS month_start
+                        FROM emag_order AS o
+                        JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
+                        WHERE o.status IN (4,5)
+                          AND o.date >= (SELECT start_month - INTERVAL '3 month' FROM params)
+                          AND o.date < (SELECT end_month FROM params)
+                        ORDER BY o.id, pio.part_number_key, o.status, o.surrogate_id DESC
+                    )
+                    SELECT pnk, month_start, SUM(picked_qty)::double precision AS quantity
+                    FROM picked
+                    GROUP BY pnk, month_start
+                ),
+                numerator_agg AS (
+                    %s
+                ),
+                base AS (
+                    SELECT
+                        p.pnk,
+                        m.month_start,
+                        COALESCE(n.quantity, 0) AS numerator_quantity,
+                        COALESCE(o.quantity, 0) AS orders_quantity
+                    FROM products AS p
+                    CROSS JOIN months AS m
+                    LEFT JOIN numerator_agg AS n ON n.pnk = p.pnk AND n.month_start = m.month_start
+                    LEFT JOIN orders_agg AS o ON o.pnk = p.pnk AND o.month_start = m.month_start
+                ),
+                with_window AS (
+                    SELECT
+                        pnk,
+                        month_start,
+                        AVG(numerator_quantity) OVER (
+                            PARTITION BY pnk
+                            ORDER BY month_start
+                            ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING
+                        ) AS numerator_avg,
+                        AVG(orders_quantity) OVER (
+                            PARTITION BY pnk
+                            ORDER BY month_start
+                            ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING
+                        ) AS orders_avg
+                    FROM base
+                )
+                SELECT
+                    pnk,
+                    month_start,
+                    CASE
+                        WHEN orders_avg IS NULL OR orders_avg = 0 THEN NULL
+                        ELSE numerator_avg / orders_avg
+                    END AS ratio
+                FROM with_window
+                WHERE month_start >= (SELECT start_month::date FROM params)
+                ORDER BY pnk, month_start;
+                """.formatted(numeratorAggregationSQL);
+
+        return database.singleReadTX(db -> {
+            var result = new HashMap<String, Map<YearMonth, Double>>();
+            try (var s = db.prepareStatement(sql)) {
+                s.setTimestamp(1, toTimestamp(startMonth.atDay(1).atStartOfDay()));
+                s.setTimestamp(2, toTimestamp(endMonth.atDay(1).atStartOfDay()));
+                try (var rs = s.executeQuery()) {
+                    while (rs.next()) {
+                        var pnk = rs.getString("pnk");
+                        var month = toYearMonth(rs.getDate("month_start"));
+                        var ratio = rs.getObject("ratio", Double.class);
+                        result.computeIfAbsent(pnk, _ -> new HashMap<>()).put(month, ratio);
+                    }
+                }
+            }
+            return result;
+        });
     }
 
     /**

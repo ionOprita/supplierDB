@@ -235,7 +235,7 @@ public class RMA {
             s.setString(7, returnedProduct.observations());
             s.setString(8, returnedProduct.diagnostic());
             s.setObject(9, returnedProduct.reject_reason());
-            s.setInt(10, returnedProduct.retained_amount());
+            s.setObject(10, returnedProduct.retained_amount());
             s.setInt(11, emagId);
             return s.executeUpdate();
         }
@@ -266,7 +266,7 @@ public class RMA {
             s.setString(6, returnedProduct.observations());
             s.setString(7, returnedProduct.diagnostic());
             s.setObject(8, returnedProduct.reject_reason());
-            s.setInt(9, returnedProduct.retained_amount());
+            s.setObject(9, returnedProduct.retained_amount());
             s.setInt(10, emagId);
 
             // WHERE id = ?
@@ -340,7 +340,7 @@ public class RMA {
             s.setString(13, rmaResult.pickup_city());
             s.setString(14, rmaResult.pickup_address());
             s.setString(15, rmaResult.pickup_zipcode());
-            s.setInt(16, rmaResult.pickup_locality_id());
+            s.setObject(16, rmaResult.pickup_locality_id());
             s.setInt(17, rmaResult.pickup_method());
             s.setString(18, rmaResult.customer_account_iban());
             s.setString(19, rmaResult.customer_account_bank());
@@ -435,7 +435,7 @@ public class RMA {
             s.setString(12, rmaResult.pickup_city());
             s.setString(13, rmaResult.pickup_address());
             s.setString(14, rmaResult.pickup_zipcode());
-            s.setInt(15, rmaResult.pickup_locality_id());
+            s.setObject(15, rmaResult.pickup_locality_id());
             s.setInt(16, rmaResult.pickup_method());
             s.setString(17, rmaResult.customer_account_iban());
             s.setString(18, rmaResult.customer_account_bank());

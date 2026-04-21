@@ -23,6 +23,7 @@ import java.util.Objects;
 import java.util.Scanner;
 import java.util.UUID;
 
+import static com.google.common.base.Strings.nullToEmpty;
 import static java.sql.Statement.RETURN_GENERATED_KEYS;
 import static ro.sellfluence.db.CustomerTable.insertOrUpdateCustomer;
 import static ro.sellfluence.db.LockerDetailsTable.insertOrUpdateLockerDetails;
@@ -118,7 +119,7 @@ public class EmagOrder {
                 updateString(db, orderInserted.surrogateId, "payment_mode", order.payment_mode());
             }
             if (!Objects.equals(oldOrder.payment_mode_id(), order.payment_mode_id())) {
-                updateInt(db, orderInserted.surrogateId, "payment_mode_id", order.payment_mode_id());
+                updateInteger(db, orderInserted.surrogateId, "payment_mode_id", order.payment_mode_id());
             }
             if (!Objects.equals(oldOrder.detailed_payment_method(), order.detailed_payment_method())) {
                 updateString(db, orderInserted.surrogateId, "detailed_payment_method", order.detailed_payment_method());
@@ -182,7 +183,7 @@ public class EmagOrder {
             s.setInt(4, or.is_complete());
             s.setInt(5, or.type());
             s.setString(6, or.payment_mode());
-            s.setInt(7, or.payment_mode_id());
+            s.setObject(7, or.payment_mode_id());
             s.setString(8, or.delivery_payment_mode());
             s.setString(9, or.delivery_mode());
             s.setString(10, or.observation());
@@ -193,7 +194,7 @@ public class EmagOrder {
             s.setBigDecimal(15, or.cashed_cod());
             s.setBigDecimal(16, or.shipping_tax());
             s.setObject(17, or.customer() != null ? or.customer().id() : null);
-            s.setBoolean(18, or.is_storno());
+            s.setBoolean(18, Boolean.TRUE.equals(or.is_storno()));
             s.setObject(19, or.reason_cancellation() == null ? null : or.reason_cancellation().id());
             s.setBigDecimal(20, or.refunded_amount());
             s.setString(21, or.refund_status());
@@ -533,7 +534,7 @@ public class EmagOrder {
                     productsBySurrogate
                             .computeIfAbsent(
                                     rs.getInt("emag_order_surrogate_id"),
-                                    k -> new ArrayList<>()
+                                    _ -> new ArrayList<>()
                             )
                             .add(product);
 
@@ -547,6 +548,16 @@ public class EmagOrder {
 
     }
 
+    /**
+     * Read all orders converting but also keeping vendor ID to vendor name and adding the surrogate id.
+     * Adds also the list of products to the order.
+     *
+     * @param db database to use.
+     * @param allProducts list of all products in orders by surrogate id.
+     * @param allVendors list of all vendor names by vendor id.
+     * @return map from order id to orders matching the id. They might differ in status and maybe also in vendor.
+     * @throws SQLException on database error.
+     */
     public static HashMap<String, List<ExtendedOrder>> selectAllOrders(Connection db, Map<Integer, List<Product>> allProducts, Map<UUID, String> allVendors) throws SQLException {
         var orders = new HashMap<String, List<ExtendedOrder>>();
         try (var s = db.prepareStatement("SELECT * FROM emag_order")) {
@@ -598,7 +609,7 @@ public class EmagOrder {
                     orders
                             .computeIfAbsent(
                                     order.id(),
-                                    k -> new ArrayList<>()
+                                    _ -> new ArrayList<>()
                             )
                             .add(new ExtendedOrder(order, vendorId, surrogateId));
                 }
@@ -607,6 +618,22 @@ public class EmagOrder {
         return orders;
     }
 
+    /**
+     * Select an order based on the surrogate id.
+     *
+     * @param db database to read from.
+     * @param surrogateId used to look up the order.
+     * @param vendorName to insert into the resulting order.
+     * @param customer to insert into the resulting order.
+     * @param shipping_tax_voucher_split to insert into the resulting order.
+     * @param products to insert into the resulting order.
+     * @param attachments to insert into the resulting order.
+     * @param vouchers to insert into the resulting order.
+     * @param enforcedVendorCourierAccounts to insert into the resulting order.
+     * @param flags to insert into the resulting order.
+     * @return reconstructed order.
+     * @throws SQLException on database problems.
+     */
     private static OrderResult selectOrder(Connection db,
                                            int surrogateId,
                                            String vendorName,
@@ -733,6 +760,24 @@ public class EmagOrder {
     }
 
     /**
+     * Update an integer field in the emag_order table.
+     *
+     * @param db database connection.
+     * @param surrogateId row id.
+     * @param field name of the field.
+     * @param newValue value to store.
+     * @return 1 if the row was updated or 0 if no row matched the surrogateId.
+     * @throws SQLException on database errors.
+     */
+    private static int updateInteger(Connection db, int surrogateId, final String field, Integer newValue) throws SQLException {
+        try (var s = db.prepareStatement("UPDATE emag_order SET " + field + " =? WHERE surrogate_id= ?")) {
+            s.setObject(1, newValue);
+            s.setInt(2, surrogateId);
+            return s.executeUpdate();
+        }
+    }
+
+    /**
      * Update a string field in the emag_order table.
      *
      * @param db database connection.
@@ -788,7 +833,7 @@ public class EmagOrder {
     }
 
     /**
-     * Update order products, flags, attachments and vouchers.
+     * Update order products, flags, attachments, and vouchers.
      *
      * @param db database connection.
      * @param order order with the up-to-date values.
@@ -832,7 +877,7 @@ public class EmagOrder {
     }
 
     private static int insertEnforcedVendorCourierAccount(Connection db, String enforcedVendorCourierAccount, int surrogateId) throws SQLException {
-        try (var s = db.prepareStatement("INSERT INTO enforced_vendor_courier_account (emag_order_surrogate_id, courier) VALUES (?, ?) ON CONFLICT(emag_order_surrogate_id, courier)")) {
+        try (var s = db.prepareStatement("INSERT INTO enforced_vendor_courier_account (emag_order_surrogate_id, courier) VALUES (?, ?) ON CONFLICT(emag_order_surrogate_id, courier) DO NOTHING")) {
             s.setInt(1, surrogateId);
             s.setString(2, enforcedVendorCourierAccount);
             return s.executeUpdate();
@@ -890,7 +935,7 @@ public class EmagOrder {
             s.setTimestamp(20, toTimestamp(product.modified()));
             s.setString(21, String.join("\n", product.details()));
             s.setString(22, String.join("\n", product.recycle_warranties()));
-            s.setString(23, product.serial_numbers());
+            s.setString(23, nullToEmpty(product.serial_numbers()));
             return s.executeUpdate();
         }
     }

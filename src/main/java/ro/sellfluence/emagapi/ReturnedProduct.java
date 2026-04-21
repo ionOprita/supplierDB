@@ -10,5 +10,5 @@ public record ReturnedProduct(
         String observations,
         String diagnostic,
         Integer reject_reason,
-        int retained_amount
+        Integer retained_amount
 ) {}
