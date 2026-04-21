@@ -28,7 +28,7 @@ public class ProductTable {
             ParsedName n2 = parse(name2);
 
             // Compare letter rank first
-            int cmp = Integer.compare(rank(n1.letter), rank(n2.letter));
+            int cmp = Integer.compare(vendorGroup(n1.letter), vendorGroup(n2.letter));
             if (cmp != 0) return cmp;
 
             // Compare letter first
@@ -45,16 +45,21 @@ public class ProductTable {
 
         public static final Comparator<ProductInfo> nameComparator =  Comparator.comparing(ProductInfo::name, nameComparatorString);
 
-        private static int rank(char letter) {
+        public int vendorGroup() {
+            return vendorGroup(name().charAt(0));
+        }
+
+        public static int vendorGroupNumber = 4;
+
+        private static int vendorGroup(char letter) {
             return switch (Character.toUpperCase(letter)) {
                 case 'Z' -> 0;
                 case 'J' -> 1;
                 case 'S' -> 2;
                 case 'K' -> 3;
-                default -> 4; // others after the special ones
+                default -> throw new IllegalArgumentException("Invalid vendor letter: " + letter);
             };
         }
-
 
         private static final Pattern namePattern = Pattern.compile("^([A-Z])\\.\\s*(\\d+)\\s*-\\s*(.*)$");
 

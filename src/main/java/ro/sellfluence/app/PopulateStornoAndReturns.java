@@ -24,6 +24,7 @@ import static java.util.logging.Level.INFO;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
+import static ro.sellfluence.db.ProductTable.ProductInfo.vendorGroupNumber;
 import static ro.sellfluence.support.UsefulMethods.toColumnName;
 
 public class PopulateStornoAndReturns {
@@ -73,6 +74,12 @@ public class PopulateStornoAndReturns {
         }
         int lineCount = 0;
         var rows = new ArrayList<List<Object>>();
+        var stornoCountByVendorGroup = new int[vendorGroupNumber];
+        var returnsCountByVendorGroup = new int[vendorGroupNumber];
+        var orderCountByVendorGroup = new int[vendorGroupNumber];
+        var totalOrders = 0;
+        var totalStorno = 0;
+        var totalReturns = 0;
         for (var product : products) {
             var i = 0;
             Statistics.Estimate returnsRate;
@@ -86,6 +93,13 @@ public class PopulateStornoAndReturns {
                 var returnsLastNMonths = Statistics.sumOver(aggregateStart, month, returns.get(aggregateMonth).get(product.pnk()));
                 var stornoLastNMonths = Statistics.sumOver(aggregateStart, month, storno.get(aggregateMonth).get(product.pnk()));
                 var refusedLastNMonths = stornoLastNMonths - returnsLastNMonths;
+                var vendorGroup = product.vendorGroup();
+                totalOrders += ordersLastNMonths;
+                totalStorno += stornoLastNMonths;
+                totalReturns += returnsLastNMonths;
+                orderCountByVendorGroup[vendorGroup] = orderCountByVendorGroup[vendorGroup] + ordersLastNMonths;
+                stornoCountByVendorGroup[vendorGroup] = stornoCountByVendorGroup[vendorGroup] + stornoLastNMonths;
+                returnsCountByVendorGroup[vendorGroup] = returnsCountByVendorGroup[vendorGroup] + returnsLastNMonths;
                 returnsRate = Statistics.estimateRateOrNull(returnsLastNMonths, ordersLastNMonths, confidenceLevel);
                 stornoRate = Statistics.estimateRateOrNull(stornoLastNMonths, ordersLastNMonths, confidenceLevel);
                 refusedRate = Statistics.estimateRateOrNull(refusedLastNMonths, ordersLastNMonths, confidenceLevel);
@@ -111,7 +125,30 @@ public class PopulateStornoAndReturns {
             );
             rows.add(row);
         }
-//        sheet.updateRange("'%s'!%s%d:%s%d".formatted(overviewsSheetName, "A", firstDataRow, "J", firstDataRow + rows.size() - 1), rows);
+
+        sheet.updateRange("'%s'!%s%d:%s%d".formatted(overviewsSheetName, "A", firstDataRow, "J", firstDataRow + rows.size() - 1), rows);
+        var headerRows = new ArrayList<List<Object>>();
+        for (var i = 0; i < orderCountByVendorGroup.length; i++) {
+            var orders = (double) orderCountByVendorGroup[i];
+            var stornoRate = 100.0 * stornoCountByVendorGroup[i] / orders;
+            var returnsRate = 100.0 * returnsCountByVendorGroup[i] / orders;
+            var refusedRate = 100.0 * (stornoCountByVendorGroup[i] - returnsCountByVendorGroup[i]) / orders;
+            var row = List.<Object>of(
+                    "%.2f%%".formatted(stornoRate),
+                    "%.2f%%".formatted(returnsRate),
+                    "%.2f%%".formatted(refusedRate)
+            );
+            headerRows.add(row);
+        }
+        var row = List.<Object>of(
+                "%.2f%%".formatted(100.0 * totalStorno / totalOrders),
+                "%.2f%%".formatted(100.0 * totalReturns / totalOrders),
+                "%.2f%%".formatted(100.0 * (totalStorno - totalReturns) / totalOrders)
+        );
+        headerRows.add(row);
+        var firstHeaderRow = 3;
+        sheet.updateRange("'%s'!%s%d:%s%d".formatted(overviewsSheetName, "G", firstHeaderRow, "I", firstHeaderRow + orderCountByVendorGroup.length), headerRows);
+
     }
 
     private static Map<ProductTable.ProductInfo, Double> readReplacements(List<ProductTable.ProductInfo> products, SheetsAPI sheet) {
@@ -146,7 +183,7 @@ public class PopulateStornoAndReturns {
         if (value == null) {
             return "";
         }
-        return "%.2f%%".formatted(value*100.0);
+        return "%.2f%%".formatted(value * 100.0);
     }
 
     public static void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
