@@ -46,7 +46,7 @@ public class PopulateStornoAndReturns {
         updateOverviewSheet(mirrorDB);
     }
 
-    private static void updateOverviewSheet(EmagMirrorDB mirrorDB) throws SQLException {
+    public static void updateOverviewSheet(EmagMirrorDB mirrorDB) throws SQLException {
         var sheet = SheetsAPI.getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
         if (sheet == null) {
             throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
