@@ -167,9 +167,17 @@ public class PopulateStornoAndReturns {
             if (product.isEmpty()) {
                 continue;
             }
-            result.put(product.get(), Double.parseDouble(replacementRate));
+            result.put(product.get(), parseDouble(replacementRate));
         }
         return result;
+    }
+
+    private static Double parseDouble(String s) {
+        if (s == null || s.isBlank()) {
+            return null;
+        }
+        var t = s.replace("%", "").replace(",", ".").trim();
+        return Double.parseDouble(t);
     }
 
     private static String toString(Statistics.Estimate estimate) {
