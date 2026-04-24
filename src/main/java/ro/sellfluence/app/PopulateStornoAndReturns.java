@@ -9,13 +9,13 @@ import ro.sellfluence.support.Logs;
 import ro.sellfluence.support.Statistics;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -122,7 +122,7 @@ public class PopulateStornoAndReturns {
                     toString(stornoRate),
                     toString(returnsRate),
                     toString(refusedRate),
-                    toString(swappedRate)
+                    swappedRate != null ? swappedRate : ""
             );
             rows.add(row);
         }
@@ -152,23 +152,26 @@ public class PopulateStornoAndReturns {
 
     }
 
-    private static Map<ProductTable.ProductInfo, Double> readReplacements(List<ProductTable.ProductInfo> products, SheetsAPI sheet) {
+    private static Map<ProductTable.ProductInfo, BigDecimal> readReplacements(List<ProductTable.ProductInfo> products, SheetsAPI sheet) {
         var rows = sheet.getMultipleColumns(overviewsSheetName, "A", "B", "D", "J");
-        Map<ProductTable.ProductInfo, Double> result = new HashMap<>();
+        Map<ProductTable.ProductInfo, BigDecimal> result = new HashMap<>();
         for (var row : rows) {
             var pnk = row.get(2).toString();
-            var replacementRate = row.get(3).toString();
             if (pnk.isBlank()) {
                 continue;
             }
-            if (replacementRate.isBlank()) {
+            Object col3 = row.get(3);
+            BigDecimal replacementRate;
+            if (col3 instanceof BigDecimal) {
+                replacementRate = (BigDecimal) col3;
+            } else {
                 continue;
             }
             var product = products.stream().filter(it -> it.pnk().equals(pnk)).findFirst();
             if (product.isEmpty()) {
                 continue;
             }
-            result.put(product.get(), parseDouble(replacementRate));
+            result.put(product.get(), replacementRate);
         }
         return result;
     }
@@ -185,14 +188,7 @@ public class PopulateStornoAndReturns {
         if (estimate == null) {
             return "";
         }
-        return String.format(Locale.US, "%.2f%%", estimate.ratePercent());
-    }
-
-    private static String toString(Double value) {
-        if (value == null) {
-            return "";
-        }
-        return String.format(Locale.US, "%.2f%%",value * 100.0);
+        return "%.2f%%".formatted(estimate.ratePercent());
     }
 
     public static void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
