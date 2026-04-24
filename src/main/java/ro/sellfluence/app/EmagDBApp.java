@@ -40,8 +40,8 @@ public class EmagDBApp {
             "koppel",
             "koppelfbe",
 //            "sellfluence",
-            "zoopieconcept",
-            "zoopieinvest",
+//            "zoopieconcept",
+//            "zoopieinvest",
             "zoopiesolutions",
             "judios",
             "sellfusion"
