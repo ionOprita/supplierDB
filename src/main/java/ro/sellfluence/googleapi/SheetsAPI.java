@@ -451,6 +451,50 @@ public class SheetsAPI {
         );
     }
 
+    public BatchUpdateSpreadsheetResponse formatPercentage(String spreadSheetId, int startColumn, int endColumn, int startRow, int endRow) {
+        // Create the number format object
+        NumberFormat numberFormat = new NumberFormat()
+                .setType("PERCENT")
+                .setPattern("0.00%");
+
+        // Create the cell format object
+        CellFormat cellFormat = new CellFormat()
+                .setNumberFormat(numberFormat);
+
+        var range = new GridRange()
+                .setSheetId(getSheetId(spreadSheetId))
+                .setStartColumnIndex(startColumn)
+                .setEndColumnIndex(endColumn)
+                .setStartRowIndex(startRow)
+                .setEndRowIndex(endRow);
+
+        // Create a repeat cell request
+        RepeatCellRequest repeatCellRequest = new RepeatCellRequest()
+                .setCell(new CellData().setUserEnteredFormat(cellFormat))
+                .setRange(range)
+                .setFields("userEnteredFormat.numberFormat");
+
+        // Create a request to update the spreadsheet
+        Request request = new Request().setRepeatCell(repeatCellRequest);
+        var updateList = new ArrayList<Request>();
+        updateList.add(request);
+
+        var body = new BatchUpdateSpreadsheetRequest()
+                .setRequests(updateList);
+
+        // Execute the request
+        var spreadsheets = getSheetsService().spreadsheets();
+        var batchUpdate = repeatCellRequest(
+                4,
+                "batchUpdate(%s,%s)".formatted(spreadSheetId, body),
+                () -> spreadsheets.batchUpdate(spreadSheetId, body)
+        );
+        return repeatCellRequest(
+                5,
+                "formatPercentage(%s,%d,%d,%d,%d)".formatted(spreadSheetId, startColumn, endColumn, startRow, endRow),
+                batchUpdate::execute
+        );
+    }
 
     public BatchUpdateSpreadsheetResponse formatAsCheckboxes(String spreadSheetId, int startColumn, int endColumn, int startRow, int endRow) {
         // Create a data validation rule

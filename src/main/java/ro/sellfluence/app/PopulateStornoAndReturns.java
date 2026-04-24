@@ -127,7 +127,8 @@ public class PopulateStornoAndReturns {
             rows.add(row);
         }
 
-        sheet.updateRange("'%s'!%s%d:%s%d".formatted(overviewsSheetName, "A", firstDataRow, "J", firstDataRow + rows.size() - 1), rows);
+        int lastRow = firstDataRow + rows.size() - 1;
+        sheet.updateRange("'%s'!%s%d:%s%d".formatted(overviewsSheetName, "A", firstDataRow, "J", lastRow), rows);
         var headerRows = new ArrayList<List<Object>>();
         for (var i = 0; i < orderCountByVendorGroup.length; i++) {
             var orders = (double) orderCountByVendorGroup[i];
@@ -149,7 +150,7 @@ public class PopulateStornoAndReturns {
         headerRows.add(row);
         var firstHeaderRow = 3;
         sheet.updateRange("'%s'!%s%d:%s%d".formatted(overviewsSheetName, "G", firstHeaderRow, "I", firstHeaderRow + orderCountByVendorGroup.length), headerRows);
-
+        sheet.formatPercentage(overviewsSheetName, 6, 10, 3, lastRow+1);
     }
 
     private static Map<ProductTable.ProductInfo, BigDecimal> readReplacements(List<ProductTable.ProductInfo> products, SheetsAPI sheet) {
