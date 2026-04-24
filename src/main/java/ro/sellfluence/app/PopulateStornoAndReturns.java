@@ -15,6 +15,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -184,14 +185,14 @@ public class PopulateStornoAndReturns {
         if (estimate == null) {
             return "";
         }
-        return "%.2f%%".formatted(estimate.ratePercent());
+        return String.format(Locale.US, "%.2f%%", estimate.ratePercent());
     }
 
     private static String toString(Double value) {
         if (value == null) {
             return "";
         }
-        return "%.2f%%".formatted(value * 100.0);
+        return String.format(Locale.US, "%.2f%%",value * 100.0);
     }
 
     public static void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
