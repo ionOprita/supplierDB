@@ -150,7 +150,7 @@ public class PopulateStornoAndReturns {
         headerRows.add(row);
         var firstHeaderRow = 3;
         sheet.updateRange("'%s'!%s%d:%s%d".formatted(overviewsSheetName, "G", firstHeaderRow, "I", firstHeaderRow + orderCountByVendorGroup.length), headerRows);
-        sheet.formatPercentage(overviewsSheetName, 6, 10, 3, lastRow+1);
+        sheet.formatPercentage(overviewsSheetName, 6, 10, 2, lastRow+1);
     }
 
     private static Map<ProductTable.ProductInfo, BigDecimal> readReplacements(List<ProductTable.ProductInfo> products, SheetsAPI sheet) {

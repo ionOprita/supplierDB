@@ -191,6 +191,12 @@ public class SheetsAPI {
         return sheetMetaData;
     }
 
+    /**
+     * Convert from the name of a single tab to its id.
+     *
+     * @param name name of the tab.
+     * @return id of the tab.
+     */
     public Integer getSheetId(String name) {
         requireNonNull(name);
         var matchingIds = getSheetProperties().stream().filter(metaData -> name.equals(metaData.title)).toList();
@@ -451,7 +457,7 @@ public class SheetsAPI {
         );
     }
 
-    public BatchUpdateSpreadsheetResponse formatPercentage(String spreadSheetId, int startColumn, int endColumn, int startRow, int endRow) {
+    public BatchUpdateSpreadsheetResponse formatPercentage(String tabName, int startColumn, int endColumn, int startRow, int endRow) {
         // Create the number format object
         NumberFormat numberFormat = new NumberFormat()
                 .setType("PERCENT")
@@ -462,7 +468,7 @@ public class SheetsAPI {
                 .setNumberFormat(numberFormat);
 
         var range = new GridRange()
-                .setSheetId(getSheetId(spreadSheetId))
+                .setSheetId(getSheetId(tabName))
                 .setStartColumnIndex(startColumn)
                 .setEndColumnIndex(endColumn)
                 .setStartRowIndex(startRow)
@@ -486,12 +492,12 @@ public class SheetsAPI {
         var spreadsheets = getSheetsService().spreadsheets();
         var batchUpdate = repeatCellRequest(
                 4,
-                "batchUpdate(%s,%s)".formatted(spreadSheetId, body),
+                "batchUpdate(%s,%s)".formatted(tabName, body),
                 () -> spreadsheets.batchUpdate(spreadSheetId, body)
         );
         return repeatCellRequest(
                 5,
-                "formatPercentage(%s,%d,%d,%d,%d)".formatted(spreadSheetId, startColumn, endColumn, startRow, endRow),
+                "formatPercentage(%s,%d,%d,%d,%d)".formatted(tabName, startColumn, endColumn, startRow, endRow),
                 batchUpdate::execute
         );
     }
