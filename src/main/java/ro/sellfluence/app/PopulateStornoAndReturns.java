@@ -119,9 +119,9 @@ public class PopulateStornoAndReturns {
                     nullToEmpty(product.pnk()),
                     nullToEmpty(product.category()),
                     product.retracted(),
-                    toString(stornoRate),
-                    toString(returnsRate),
-                    toString(refusedRate),
+                    toBigDecimalOrEmptyString(stornoRate),
+                    toBigDecimalOrEmptyString(returnsRate),
+                    toBigDecimalOrEmptyString(refusedRate),
                     swappedRate != null ? swappedRate : ""
             );
             rows.add(row);
@@ -131,20 +131,20 @@ public class PopulateStornoAndReturns {
         var headerRows = new ArrayList<List<Object>>();
         for (var i = 0; i < orderCountByVendorGroup.length; i++) {
             var orders = (double) orderCountByVendorGroup[i];
-            var stornoRate = 100.0 * stornoCountByVendorGroup[i] / orders;
-            var returnsRate = 100.0 * returnsCountByVendorGroup[i] / orders;
-            var refusedRate = 100.0 * (stornoCountByVendorGroup[i] - returnsCountByVendorGroup[i]) / orders;
+            var stornoRate = stornoCountByVendorGroup[i] / orders;
+            var returnsRate = returnsCountByVendorGroup[i] / orders;
+            var refusedRate = (stornoCountByVendorGroup[i] - returnsCountByVendorGroup[i]) / orders;
             var row = List.<Object>of(
-                    "%.2f%%".formatted(stornoRate),
-                    "%.2f%%".formatted(returnsRate),
-                    "%.2f%%".formatted(refusedRate)
+                    BigDecimal.valueOf(stornoRate),
+                    BigDecimal.valueOf(returnsRate),
+                    BigDecimal.valueOf(refusedRate)
             );
             headerRows.add(row);
         }
         var row = List.<Object>of(
-                "%.2f%%".formatted(100.0 * totalStorno / totalOrders),
-                "%.2f%%".formatted(100.0 * totalReturns / totalOrders),
-                "%.2f%%".formatted(100.0 * (totalStorno - totalReturns) / totalOrders)
+                BigDecimal.valueOf((double)totalStorno / totalOrders),
+                BigDecimal.valueOf((double)totalReturns / totalOrders),
+                BigDecimal.valueOf((double)(totalStorno - totalReturns) / totalOrders)
         );
         headerRows.add(row);
         var firstHeaderRow = 3;
@@ -184,11 +184,11 @@ public class PopulateStornoAndReturns {
         return Double.parseDouble(t);
     }
 
-    private static String toString(Statistics.Estimate estimate) {
+    private static Object toBigDecimalOrEmptyString(Statistics.Estimate estimate) {
         if (estimate == null) {
             return "";
         }
-        return "%.2f%%".formatted(estimate.ratePercent());
+        return BigDecimal.valueOf(estimate.rate());
     }
 
     public static void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
