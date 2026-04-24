@@ -37,14 +37,12 @@ public class PopulateDateComenziFromDB {
 
     private final int year;
 
-    /**
-     * Target spreadsheet.
-     */
-    private final String spreadSheetName;
-
     public PopulateDateComenziFromDB(int year) {
         this.year = year;
-        spreadSheetName = this.year + " - Date comenzi";
+    }
+
+    public String spreadSheetName(String vendorGroup) {
+        return vendorGroup + ". Date comenzi - " + this.year;
     }
 
     /**
@@ -58,27 +56,34 @@ public class PopulateDateComenziFromDB {
     private static final String gmvSheetName = "T. GMV/M.";
 
     public void updateSpreadsheets(EmagMirrorDB mirrorDB) throws SQLException {
-        var sheet = SheetsAPI.getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
-        if (sheet == null) {
-            throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
+        logger.log(INFO, "Read from the database.");
+        var allOrderLines = mirrorDB.readForSheet(year);
+        for (String vendorGroup : List.of("Z", "J", "S", "K")) {
+            String spreadSheetName = spreadSheetName(vendorGroup);
+            var sheet = SheetsAPI.getSpreadSheetByName(defaultGoogleApp, spreadSheetName);
+            if (sheet == null) {
+                throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
+            }
+            logger.log(INFO, "--- Update GMVs --------------------------");
+            updateGMVs(mirrorDB, sheet, vendorGroup);
+            logger.log(INFO, "--- Update orders ------------------------");
+            var rows = allOrderLines.stream().filter(row -> row.getFirst().get(5).toString().startsWith(vendorGroup)).toList();
+            updateOrders(rows, sheet);
         }
-        logger.log(INFO, "--- Update GMVs --------------------------");
-        updateGMVs(mirrorDB, sheet);
-        logger.log(INFO, "--- Update orders ------------------------");
-        updateOrders(mirrorDB, sheet);
     }
 
     /**
      * Transfer the GMV values from the database to the spreadsheet.
      *
-     * @param mirrorDB source database.
-     * @param sheet target sheet.
+     * @param mirrorDB    source database.
+     * @param sheet       target sheet.
+     * @param vendorGroup letter identifying the vendors to include.
      * @throws SQLException if something goes wrong.
      */
-    private void updateGMVs(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
+    private void updateGMVs(EmagMirrorDB mirrorDB, SheetsAPI sheet, String vendorGroup) throws SQLException {
         var month = YearMonth.from(LocalDate.now());
         while (month.getYear() == year) {
-            updateGMVForMonth(mirrorDB, sheet, month);
+            updateGMVForMonth(mirrorDB, sheet, month, vendorGroup);
             month = month.minusMonths(1);
         }
     }
@@ -86,15 +91,17 @@ public class PopulateDateComenziFromDB {
     /**
      * Read for the specific month the data from the gmv table and update the spreadsheet.
      *
-     * @param mirrorDB database.
-     * @param sheet sheet to update.
-     * @param month month to transfer.
+     * @param mirrorDB    database.
+     * @param sheet       sheet to update.
+     * @param month       month to transfer.
+     * @param vendorGroup letter identifying the vendors to include.
      * @throws SQLException on database errors.
      */
-    private static void updateGMVForMonth(EmagMirrorDB mirrorDB, SheetsAPI sheet, YearMonth month) throws SQLException {
-        logger.log(INFO, "Transfer %s from the database to the sheet.".formatted( month));
+    private static void updateGMVForMonth(EmagMirrorDB mirrorDB, SheetsAPI sheet, YearMonth month, String vendorGroup) throws SQLException {
+        logger.log(INFO, "Transfer %s from the database to the sheet.".formatted(month));
         var gmvsByProduct = mirrorDB.readGMVByMonth(month);
         var products = mirrorDB.readProducts().stream()
+                .filter(productInfo -> productInfo.name().startsWith(vendorGroup))
                 .collect(Collectors.groupingBy(ProductInfo::name));
         var productsInSheet = sheet.getColumn(gmvSheetName, "B").stream().toList();
         var monthsInSheet = sheet.getRowAsDates(gmvSheetName, 2).stream().toList();
@@ -136,7 +143,7 @@ public class PopulateDateComenziFromDB {
                     }
                 }
                 if (startRow != null) {
-                    gmvColumn.add(gmv!=null ? gmv : BigDecimal.ZERO);
+                    gmvColumn.add(gmv != null ? gmv : BigDecimal.ZERO);
                 }
             }
         }
@@ -153,14 +160,11 @@ public class PopulateDateComenziFromDB {
     /**
      * Transfer new orders from the database to the spreadsheet.
      *
-     * @param mirrorDB source database.
+     * @param rows  order rows.
      * @param sheet target sheet.
-     * @throws SQLException if something goes wrong.
      */
-    private void updateOrders(EmagMirrorDB mirrorDB, SheetsAPI sheet) throws SQLException {
+    private void updateOrders(List<List<List<Object>>> rows, SheetsAPI sheet) {
         var spreadSheetId = sheet.getSpreadSheetId();
-        logger.log(INFO, "Read from the database.");
-        var rows = mirrorDB.readForSheet(year);
         logger.log(INFO, "Read from the spreadsheet.");
         List<List<Object>> sheetData = sheet.getMultipleColumns(dateSheetName, "A", "B", "F", "X", "Y");
         //TODO: The filter does not notice changed orders.
@@ -186,7 +190,7 @@ public class PopulateDateComenziFromDB {
      * a shorter list, which does not include orders already in the spreadsheet.
      *
      * @param groupedRowsFromDB input from the database.
-     * @param sheetData orders from the spreadsheet.
+     * @param sheetData         orders from the spreadsheet.
      * @return the reduced list without the orders already found in the spreadsheet.
      */
     private static List<List<List<Object>>> filterOutExisting(List<List<List<Object>>> groupedRowsFromDB, List<List<Object>> sheetData) {
@@ -208,8 +212,8 @@ public class PopulateDateComenziFromDB {
     /**
      * Helper record, which contains only those elements of an order necessary to find duplicates.
      *
-     * @param orderId ID of the order.
-     * //@param vendor the vendor, to distinguish orders with the same ID but different vendors.
+     * @param orderId     ID of the order.
+     *                    //@param vendor the vendor, to distinguish orders with the same ID but different vendors.
      * @param productName name of the product
      */
     record OrderLine(String orderId, /*Vendor vendor,*/ String productName) {
@@ -232,6 +236,5 @@ public class PopulateDateComenziFromDB {
         var arguments = new Arguments(args);
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
         (new PopulateDateComenziFromDB(2026)).updateSpreadsheets(mirrorDB);
-        (new PopulateDateComenziFromDB(2025)).updateSpreadsheets(mirrorDB);
     }
 }
