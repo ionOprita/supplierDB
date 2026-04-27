@@ -43,7 +43,7 @@ public class PopulateStornoAndReturns {
     static void main(String[] args) throws SQLException, IOException {
         var arguments = new Arguments(args);
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
-        //updateSpreadsheets(mirrorDB);
+        updateSpreadsheets(mirrorDB);
         updateOverviewSheet(mirrorDB);
     }
 
