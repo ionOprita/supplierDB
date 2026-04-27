@@ -291,9 +291,9 @@ public class API {
         var products = mirrorDB.readProductsWithVendor().stream()
                 .sorted(ProductWithVendor.nameComparator)
                 .toList();
-        var end = YearMonth.now();
-        var month = end.minusYears(2);
-        while (month.isBefore(end)) {
+        var endExclusive = YearMonth.now().plusMonths(1);
+        var month = endExclusive.minusYears(2);
+        while (month.isBefore(endExclusive)) {
             var storno = mirrorDB.countStornoByMonth(month);
             for (ProductWithVendor product : products) {
                 var map = result.computeIfAbsent(product, _ -> new HashMap<>());
@@ -319,9 +319,9 @@ public class API {
         var products = mirrorDB.readProductsWithVendor().stream()
                 .sorted(ProductWithVendor.nameComparator)
                 .toList();
-        var end = YearMonth.now();
-        var month = end.minusYears(2);
-        while (month.isBefore(end)) {
+        var endExclusive = YearMonth.now().plusMonths(1);
+        var month = endExclusive.minusYears(2);
+        while (month.isBefore(endExclusive)) {
             var countByPNK = mirrorDB.countReturnByMonth(month);
             for (ProductWithVendor product : products) {
                 var map = result.computeIfAbsent(product, _ -> new HashMap<>());
@@ -344,11 +344,11 @@ public class API {
         var products = mirrorDB.readProductsWithVendor().stream()
                 .sorted(ProductWithVendor.nameComparator)
                 .toList();
-        var end = YearMonth.now();
-        var start = end.minusYears(2);
-        var ratioByPNK = mirrorDB.getStornoRateByProductAndMonth(start, end);
+        var endExclusive = YearMonth.now().plusMonths(1);
+        var start = endExclusive.minusYears(2);
+        var ratioByPNK = mirrorDB.getStornoRateByProductAndMonth(start, endExclusive);
         var month = start;
-        while (month.isBefore(end)) {
+        while (month.isBefore(endExclusive)) {
             for (ProductWithVendor product : products) {
                 var map = result.computeIfAbsent(product, _ -> new HashMap<>());
                 var value = ratioByPNK.getOrDefault(product.pnk(), Map.of()).get(month);
@@ -371,11 +371,11 @@ public class API {
         var products = mirrorDB.readProductsWithVendor().stream()
                 .sorted(ProductWithVendor.nameComparator)
                 .toList();
-        var end = YearMonth.now();
-        var start = end.minusYears(2);
-        var ratioByPNK = mirrorDB.getReturnRateByProductAndMonth(start, end);
+        var endExclusive = YearMonth.now().plusMonths(1);
+        var start = endExclusive.minusYears(2);
+        var ratioByPNK = mirrorDB.getReturnRateByProductAndMonth(start, endExclusive);
         var month = start;
-        while (month.isBefore(end)) {
+        while (month.isBefore(endExclusive)) {
             for (ProductWithVendor product : products) {
                 var map = result.computeIfAbsent(product, _ -> new HashMap<>());
                 var value = ratioByPNK.getOrDefault(product.pnk(), Map.of()).get(month);
