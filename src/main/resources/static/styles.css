@@ -120,6 +120,61 @@ h1 {
   min-width: 130px;
 }
 
+.product-list-actions form {
+  margin: 0;
+}
+
+.flash-message {
+  margin: .75rem 0;
+  padding: .55rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+
+.error-message {
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.product-form {
+  margin-top: .75rem;
+}
+
+.product-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: .75rem 1rem;
+  align-items: start;
+}
+
+.product-form-field label {
+  padding-left: 0;
+}
+
+.product-form-field input,
+.product-form-field select,
+.product-form-field textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  margin-bottom: 0;
+  width: 100%;
+}
+
+.product-form-field textarea {
+  resize: vertical;
+}
+
+.product-form-actions {
+  display: flex;
+  gap: .5rem;
+  margin-top: 1rem;
+}
+
+.product-form-actions form {
+  margin: 0;
+}
+
 /* Table wrapper styles */
 .wrap {
   max-width: 100%;

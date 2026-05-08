@@ -363,6 +363,14 @@ public class EmagMirrorDB {
         database.writeTX(db -> insertOrUpdateProduct(db, productInfo));
     }
 
+    public int insertProduct(ProductInfo productInfo) throws SQLException {
+        return database.writeTX(db -> ProductTable.insertNewProduct(db, productInfo));
+    }
+
+    public int updateProduct(ProductInfo productInfo) throws SQLException {
+        return database.writeTX(db -> ProductTable.updateExistingProduct(db, productInfo));
+    }
+
     public void addEmagLog(String account, LocalDate date, LocalDateTime fetchTime, String error) throws SQLException {
         database.writeTX(db -> {
             var insertedRows = insertEmagLog(db, account, date, fetchTime, error);
@@ -395,6 +403,12 @@ public class EmagMirrorDB {
 
     public List<ProductInfo> readProducts() throws SQLException {
         return database.readTX(ProductTable::getProducts);
+    }
+
+    public Optional<ProductInfo> readProduct(String productCode) throws SQLException {
+        return database.readTX(db -> ProductTable.getProducts(db).stream()
+                .filter(product -> productCode.equals(product.productCode()))
+                .findFirst());
     }
 
     public List<ProductWithVendor> readProductsWithVendor() throws SQLException {

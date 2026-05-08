@@ -43,6 +43,7 @@
                 <li><a href="/private/current-rates-categories">Current Rates by Category</a></li>
                 <li><a href="/private/returnCharts">Return Charts</a></li>
                 <li><a href="/private/rrr">RRR (Smoothed)</a></li>
+                <li><a href="/private/products">Products</a></li>
                 <li><a href="/private/tasks">Tasks</a></li>
             </ul>
             @if(userRole.equals("admin"))

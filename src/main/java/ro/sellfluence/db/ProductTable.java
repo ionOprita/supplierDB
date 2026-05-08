@@ -233,7 +233,12 @@ public class ProductTable {
             };
         }
 
-        private static final Pattern namePattern = Pattern.compile("^([A-Z])\\.\\s*(\\d+)\\s*-\\s*(.*)$");
+        public static final String NAME_PATTERN_REGEX = "^([A-Z])\\.\\s*(\\d+)\\s*-\\s*(.*)$";
+        private static final Pattern namePattern = Pattern.compile(NAME_PATTERN_REGEX);
+
+        public static boolean hasValidName(String name) {
+            return name != null && namePattern.matcher(name).matches();
+        }
 
         private record ParsedName(char letter, int number, String text) {
         }
@@ -298,6 +303,14 @@ public class ProductTable {
             }
         }
         return 0;
+    }
+
+    static int insertNewProduct(Connection db, ProductInfo productInfo) throws SQLException {
+        return insertProduct(db, productInfo);
+    }
+
+    static int updateExistingProduct(Connection db, ProductInfo productInfo) throws SQLException {
+        return updateProduct(db, productInfo);
     }
 
     /**
