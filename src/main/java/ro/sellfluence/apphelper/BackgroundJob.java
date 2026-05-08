@@ -64,7 +64,7 @@ public class BackgroundJob {
     private final List<TaskRunner> consumers = List.of(
             new TaskRunner("Transfer to storno and return sheets", hourly, always, PopulateStornoAndReturns::updateSpreadsheets),
             new TaskRunner("Transfer to order and GMV sheets for 2026", hourly, always, (new PopulateDateComenziFromDB(2026))::updateSpreadsheets),
-            new TaskRunner("Transfer to order and GMV sheets for 2025", weekly, always, (new PopulateDateComenziFromDB(2025))::updateSpreadsheets),
+            //new TaskRunner("Transfer to order and GMV sheets for 2025", weekly, always, (new PopulateDateComenziFromDB(2025))::updateSpreadsheets),
             new TaskRunner("Transfer to employee sheet", hourly, this::outOfOfficeHour, UpdateEmployeeSheetsFromDB::updateSheets)
     );
 
