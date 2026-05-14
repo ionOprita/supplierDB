@@ -83,6 +83,12 @@ public class EmagMirrorDB {
 
     private final DB database;
 
+    public record ProductWrite(ProductInfo productInfo, boolean insert) {
+    }
+
+    public record ProductWriteResult(int inserted, int updated) {
+    }
+
     private EmagMirrorDB(DB database) {
         this.database = database;
     }
@@ -369,6 +375,29 @@ public class EmagMirrorDB {
 
     public int updateProduct(ProductInfo productInfo) throws SQLException {
         return database.writeTX(db -> ProductTable.updateExistingProduct(db, productInfo));
+    }
+
+    public ProductWriteResult saveProductChanges(List<ProductWrite> changes) throws SQLException {
+        return database.writeTX(db -> {
+            int inserted = 0;
+            int updated = 0;
+            for (var change : changes) {
+                if (change.insert()) {
+                    var rows = ProductTable.insertNewProduct(db, change.productInfo());
+                    if (rows == 0) {
+                        throw new IllegalArgumentException("Product could not be inserted. It may already exist: " + change.productInfo().productCode() + ".");
+                    }
+                    inserted += rows;
+                } else {
+                    var rows = ProductTable.updateExistingProduct(db, change.productInfo());
+                    if (rows == 0) {
+                        throw new IllegalArgumentException("Product not found: " + change.productInfo().productCode() + ".");
+                    }
+                    updated += rows;
+                }
+            }
+            return new ProductWriteResult(inserted, updated);
+        });
     }
 
     public void addEmagLog(String account, LocalDate date, LocalDateTime fetchTime, String error) throws SQLException {

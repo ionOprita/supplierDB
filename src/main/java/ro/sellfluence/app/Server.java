@@ -86,13 +86,12 @@ public class Server {
             "reviewCaller"
     );
     private static final List<ProductFormField> PRODUCT_FORM_FIELDS = buildProductFormFields();
+    private static final List<ProductFormField> PRODUCT_TABLE_FIELDS = buildProductTableFields(PRODUCT_FORM_FIELDS);
 
-    public record ProductListItem(
-            String name,
+    public record ProductTableRow(
             String productCode,
-            String pnk,
             String vendorName,
-            String state
+            Map<String, String> values
     ) {
     }
 
@@ -102,6 +101,22 @@ public class Server {
             String inputType,
             boolean required
     ) {
+    }
+
+    public record ProductSaveRequest(List<ProductSaveRow> rows) {
+    }
+
+    public record ProductSaveRow(
+            String mode,
+            String productCode,
+            Map<String, String> values
+    ) {
+    }
+
+    public record ProductSaveResponse(String message, int inserted, int updated) {
+    }
+
+    public record ProductSaveError(String error) {
     }
 
     private static void configure(JavalinConfig config, int port, int securePort) {
@@ -146,6 +161,7 @@ public class Server {
         app.post("/private/products/update", ctx -> updateProduct(ctx, mirrorDB));
         app.get("/private/products/new", ctx -> renderNewProductPage(ctx, mirrorDB, null, null));
         app.post("/private/products/insert", ctx -> insertProduct(ctx, mirrorDB));
+        app.post("/private/products/save", ctx -> saveProductTableChanges(ctx, mirrorDB));
         app.get("/private/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
 
         app.before("/admin/*", ctx -> checkRole(ctx, admin));
@@ -559,7 +575,9 @@ public class Server {
         try {
             var vendors = mirrorDB.getAllVendors();
             model.put("vendors", vendors);
-            model.put("products", buildProductListItems(mirrorDB.readProducts(), vendors));
+            model.put("fields", PRODUCT_TABLE_FIELDS);
+            model.put("blankValues", blankProductFormValues());
+            model.put("products", buildProductTableRows(mirrorDB.readProducts(), vendors));
             ctx.render("products.jte", model);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load products page.", e);
@@ -641,6 +659,62 @@ public class Server {
         }
     }
 
+    private static void saveProductTableChanges(Context ctx, EmagMirrorDB mirrorDB) {
+        final ProductSaveRequest request;
+        try {
+            request = mapper.readValue(ctx.body(), ProductSaveRequest.class);
+        } catch (RuntimeException e) {
+            ctx.status(400).json(new ProductSaveError("Invalid product changes payload."));
+            return;
+        }
+
+        if (request.rows() == null || request.rows().isEmpty()) {
+            ctx.json(new ProductSaveResponse("No product changes to save.", 0, 0));
+            return;
+        }
+
+        try {
+            var vendors = mirrorDB.getAllVendors();
+            var writes = new ArrayList<EmagMirrorDB.ProductWrite>();
+            for (var row : request.rows()) {
+                if (row == null) {
+                    continue;
+                }
+                var mode = row.mode() == null ? "" : row.mode();
+                var values = normalizeProductFormValues(row.values());
+                var product = productInfoFromValues(values, vendors);
+
+                switch (mode) {
+                    case "update" -> {
+                        var originalProductCode = blankToNull(row.productCode());
+                        if (originalProductCode == null) {
+                            throw new IllegalArgumentException("Missing original product_code for an edited row.");
+                        }
+                        if (!originalProductCode.equals(product.productCode())) {
+                            throw new IllegalArgumentException("product_code cannot be changed for existing products.");
+                        }
+                        writes.add(new EmagMirrorDB.ProductWrite(product, false));
+                    }
+                    case "insert" -> writes.add(new EmagMirrorDB.ProductWrite(product, true));
+                    default -> throw new IllegalArgumentException("Unknown product save mode: " + mode + ".");
+                }
+            }
+
+            if (writes.isEmpty()) {
+                ctx.json(new ProductSaveResponse("No product changes to save.", 0, 0));
+                return;
+            }
+
+            var result = mirrorDB.saveProductChanges(writes);
+            ctx.json(new ProductSaveResponse(productSaveMessage(result), result.inserted(), result.updated()));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(new ProductSaveError(e.getMessage()));
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to save product table changes.", e);
+            ctx.status(500).json(new ProductSaveError("Database save failed: " + e.getMessage()));
+        }
+    }
+
     private static void renderProductFormPage(Context ctx,
                                               EmagMirrorDB mirrorDB,
                                               String pageTitle,
@@ -674,7 +748,7 @@ public class Server {
         }
     }
 
-    private static List<ProductListItem> buildProductListItems(List<ProductInfo> products, List<Vendor> vendors) {
+    private static List<ProductTableRow> buildProductTableRows(List<ProductInfo> products, List<Vendor> vendors) {
         var vendorNames = new HashMap<UUID, String>();
         for (var vendor : vendors) {
             if (vendor.id() != null) {
@@ -683,27 +757,12 @@ public class Server {
         }
 
         return sortProducts(products, "name").stream()
-                .map(product -> new ProductListItem(
-                        product.name(),
+                .map(product -> new ProductTableRow(
                         product.productCode(),
-                        product.pnk(),
                         product.vendor() == null ? "" : vendorNames.getOrDefault(product.vendor(), ""),
-                        productState(product)
+                        productToFormValues(product)
                 ))
                 .toList();
-    }
-
-    private static String productState(ProductInfo product) {
-        if (product.continueToSell() && !product.retracted()) {
-            return "Continue to sell";
-        }
-        if (!product.continueToSell() && product.retracted()) {
-            return "Retracted";
-        }
-        if (!product.continueToSell()) {
-            return "Not sold";
-        }
-        return "???";
     }
 
     private static List<ProductFormField> buildProductFormFields() {
@@ -715,6 +774,25 @@ public class Server {
                         "productCode".equals(component.getName()) || "name".equals(component.getName())
                 ))
                 .toList();
+    }
+
+    private static List<ProductFormField> buildProductTableFields(List<ProductFormField> formFields) {
+        var stickyFields = List.of("name", "pnk", "productCode");
+        var tableFields = new ArrayList<ProductFormField>();
+        for (var stickyField : stickyFields) {
+            for (var field : formFields) {
+                if (stickyField.equals(field.name())) {
+                    tableFields.add(field);
+                    break;
+                }
+            }
+        }
+        for (var field : formFields) {
+            if (!stickyFields.contains(field.name())) {
+                tableFields.add(field);
+            }
+        }
+        return List.copyOf(tableFields);
     }
 
     private static String productInputType(RecordComponent component) {
@@ -936,6 +1014,17 @@ public class Server {
     private static String displayProductName(ProductInfo product) {
         var name = blankToNull(product.name());
         return name == null ? product.productCode() : name;
+    }
+
+    private static String productSaveMessage(EmagMirrorDB.ProductWriteResult result) {
+        var parts = new ArrayList<String>();
+        if (result.updated() > 0) {
+            parts.add(result.updated() + " updated");
+        }
+        if (result.inserted() > 0) {
+            parts.add(result.inserted() + " inserted");
+        }
+        return parts.isEmpty() ? "No product changes to save." : "Saved product changes: " + String.join(", ", parts) + ".";
     }
 
     private static void redirectWithProductMessage(Context ctx, String message) {
