@@ -6,6 +6,7 @@ import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
+import org.jspecify.annotations.NonNull;
 import ro.sellfluence.support.Logs;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.JsonParser;
@@ -62,9 +63,11 @@ public class EmagApi {
 
     private static final Logger jsonLogger = Logs.getFileLogger("emag_decoded_json", FINE, 20, 100_000_000);
 
-    private static final String emagRO = "https://marketplace-api.emag.ro/api-3";
+    public static final String emagRO = "https://marketplace-api.emag.ro";
 
-    private static final String orderURI = emagRO + "/order";
+    public static final String emagROApi3 = "https://marketplace-api.emag.ro/api-3";
+
+    private static final String orderURI = emagROApi3 + "/order";
 
     private static final String countOrders = orderURI + "/count";
 
@@ -121,10 +124,10 @@ public class EmagApi {
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .addModule(
                     new SimpleModule()
-                    .addSerializer(LocalDateTime.class, new LocalDateTimeSerializer())
-                    .addDeserializer(LocalDateTime.class, new LocalDateTimeDeserializer())
-                    .addSerializer(LocalDate.class, new LocalDateSerializer())
-                    .addDeserializer(LocalDate.class, new LocalDateDeserializer())
+                            .addSerializer(LocalDateTime.class, new LocalDateTimeSerializer())
+                            .addDeserializer(LocalDateTime.class, new LocalDateTimeDeserializer())
+                            .addSerializer(LocalDate.class, new LocalDateSerializer())
+                            .addDeserializer(LocalDate.class, new LocalDateDeserializer())
             ).build();
 
     private static class LocalDateTimeSerializer extends ValueSerializer<LocalDateTime> {
@@ -219,9 +222,12 @@ public class EmagApi {
     }
 
     public <T> List<T> readRequest(String category, Map<String, Object> filter, Map<String, Object> data, Class<T> responseClass) throws IOException, InterruptedException {
+        return emagRequest(emagROApi3 + "/" +category + "/read", true, filter, data, responseClass);
+    }
+
+    public <T> @NonNull ArrayList<T> emagRequest(String url, boolean post, Map<String, Object> filter, Map<String, Object> data, Class<T> responseClass) throws InterruptedException {
         var page = 0;
         var finished = false;
-        var url = emagRO + "/" + category + "/read";
         var jsonInput = new HashMap<String, Object>(
                 Map.of("itemsPerPage", 100)
         );
@@ -241,11 +247,11 @@ public class EmagApi {
             // The data item, which is also on the first level, is used only for submitting data.
             var jsonAsString = gson.toJson(jsonInput);
             jsonLogger.log(FINE, "JSON = " + jsonAsString);
-            var httpRequest = HttpRequest.newBuilder()
+            var httpRequestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Authorization", "Basic " + credentials)
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(jsonAsString)).build();
+                    .header("Content-Type", "application/json");
+            var httpRequest = post ? httpRequestBuilder.POST(HttpRequest.BodyPublishers.ofString(jsonAsString)).build() : httpRequestBuilder.GET().build();
             communicationLogger.log(INFO, () -> "Sent " + jsonAsString);
             try {
                 var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
