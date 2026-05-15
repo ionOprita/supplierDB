@@ -286,7 +286,36 @@ tbody tr:nth-child(even) .sticky-col-2 {
 }
 
 .product-sheet-wrap {
-  max-height: calc(100vh - 13rem);
+  max-height: calc(100dvh - 18rem);
+}
+
+@supports selector(body:has(#productsTable)) {
+  html:has(#productsTable) {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body:has(#productsTable) {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - 4rem);
+    overflow: hidden;
+  }
+
+  body:has(#productsTable) main {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body:has(#productsTable) .product-sheet-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
 }
 
 .product-sheet-table {
