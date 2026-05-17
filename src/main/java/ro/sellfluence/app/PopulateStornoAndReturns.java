@@ -53,7 +53,7 @@ public class PopulateStornoAndReturns {
             throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
         }
         var vendors = mirrorDB.readVendorCompanies();
-        var products = mirrorDB.readProducts().stream().filter(prod -> !prod.pnk().isBlank()).sorted(ProductTable.ProductInfo.nameComparator).toList();
+        var products = mirrorDB.readProducts().stream().filter(prod -> prod.pnk()!=null && !prod.pnk().isBlank()).sorted(ProductTable.ProductInfo.nameComparator).toList();
         var replaceData = readReplacements(products, sheet);
         YearMonth month = YearMonth.now();
         var aggregateMonthsList = List.of(6, 12);
