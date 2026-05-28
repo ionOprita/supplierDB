@@ -324,90 +324,10 @@ public class ProductTable {
         var products = new ArrayList<ProductInfo>();
         try (var s = db.prepareStatement("""
                 SELECT
-                    emag_pnk,
-                    product_code,
-                    name,
-                    vendor,
-                    continue_to_sell,
-                    retracted,
-                    category,
-                    message_keyword,
-                    employee_sheet_name,
-                    employee_sheet_tab,
-                    model,
-                    product_length_mm,
-                    product_width_mm,
-                    product_height_mm,
-                    product_weight_g,
-                    ean,
-                    brand,
-                    warranty_months,
-                    import_tax,
-                    supplier_product_code,
-                    air_transport_pcs_per_carton,
-                    air_transport_kg_per_carton,
-                    air_transport_length_cm_per_carton,
-                    air_transport_width_cm_per_carton,
-                    air_transport_height_cm_per_carton,
-                    air_transport_volume_m3_per_carton,
-                    rail_transport_pcs_per_carton,
-                    rail_transport_kg_per_carton,
-                    rail_transport_length_cm_per_carton,
-                    rail_transport_width_cm_per_carton,
-                    rail_transport_height_cm_per_carton,
-                    rail_transport_volume_m3_per_carton,
-                    sea_transport_pcs_per_carton,
-                    sea_transport_kg_per_carton,
-                    sea_transport_length_cm_per_carton,
-                    sea_transport_width_cm_per_carton,
-                    sea_transport_height_cm_per_carton,
-                    sea_transport_volume_m3_per_carton,
-                    truck_transport_pcs_per_carton,
-                    truck_transport_kg_per_carton,
-                    truck_transport_length_cm_per_carton,
-                    truck_transport_width_cm_per_carton,
-                    truck_transport_height_cm_per_carton,
-                    truck_transport_volume_m3_per_carton,
-                    emag_link,
-                    emag_title,
-                    income_profit_tax,
-                    vat_payer,
-                    emag_sale_price_ron,
-                    emag_commission,
-                    offer_id_concept,
-                    offer_id_solutions,
-                    offer_id_solutions_fbe,
-                    offer_id_judios_concept,
-                    offer_id_judios_concept_fbe,
-                    offer_id_judy_creative_studios_fbe,
-                    offer_id_sellfusion,
-                    offer_id_sellfusion_fbe,
-                    offer_id_koppel,
-                    offer_id_koppel_fbe,
-                    index_category,
-                    division,
-                    supracategory,
-                    category_name,
-                    subcategory,
-                    subsubcategory,
-                    supracategory_country,
-                    category_country,
-                    category_id,
-                    scm_id,
-                    doc_id,
-                    indexed_subcategory_country,
-                    big_category,
-                    emag_ads_auto_id,
-                    emag_ads_manual_id,
-                    gender,
-                    manual_video_link,
-                    usage_guide_link,
-                    usage_site_link,
-                    usage_manual_link,
-                    other_comments,
-                    review_caller,
-                    report_link
-                FROM product
+                    p.*,
+                    b.name AS brand_name
+                FROM product AS p
+                LEFT JOIN brands AS b ON p.brand = b.id
                 """)) {
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
@@ -494,6 +414,7 @@ public class ProductTable {
      * @throws SQLException if anything bad happens.
      */
     private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
+        var brandId = Brand.insertOrGetBrand(db, productInfo.brand(), productInfo.vendor());
         try (var s = db.prepareStatement("""
                 INSERT INTO product (
                     product_code,
@@ -599,7 +520,7 @@ public class ProductTable {
             s.setObject(8, productInfo.messageKeyword());
             s.setObject(9, productInfo.employeeSheetName());
             s.setObject(10, productInfo.employeeSheetTab());
-            bindAdditionalFields(s, productInfo, 11);
+            bindAdditionalFields(s, productInfo, 11, brandId);
             return s.executeUpdate();
         }
     }
@@ -614,6 +535,7 @@ public class ProductTable {
      * @throws SQLException if anything bad happens.
      */
     private static int updateProduct(Connection db, ProductInfo productInfo) throws SQLException {
+        var brandId = Brand.insertOrGetBrand(db, productInfo.brand(), productInfo.vendor());
         try (var s = db.prepareStatement("""
                 UPDATE product
                 SET emag_pnk = ?,
@@ -709,7 +631,7 @@ public class ProductTable {
             s.setObject(7, productInfo.employeeSheetName());
             s.setObject(8, productInfo.employeeSheetTab());
             s.setObject(9, productInfo.vendor());
-            bindAdditionalFields(s, productInfo, 10);
+            bindAdditionalFields(s, productInfo, 10, brandId);
             s.setObject(83, productInfo.productCode());
             return s.executeUpdate();
         }
@@ -733,7 +655,7 @@ public class ProductTable {
                 rs.getBigDecimal("product_height_mm"),
                 rs.getBigDecimal("product_weight_g"),
                 rs.getString("ean"),
-                rs.getString("brand"),
+                rs.getString("brand_name"),
                 rs.getObject("warranty_months", Integer.class),
                 rs.getBigDecimal("import_tax"),
                 rs.getString("supplier_product_code"),
@@ -803,14 +725,14 @@ public class ProductTable {
         );
     }
 
-    private static int bindAdditionalFields(java.sql.PreparedStatement s, ProductInfo productInfo, int index) throws SQLException {
+    private static int bindAdditionalFields(java.sql.PreparedStatement s, ProductInfo productInfo, int index, UUID brandId) throws SQLException {
         s.setObject(index++, productInfo.model());
         s.setObject(index++, productInfo.productLengthMm());
         s.setObject(index++, productInfo.productWidthMm());
         s.setObject(index++, productInfo.productHeightMm());
         s.setObject(index++, productInfo.productWeightG());
         s.setObject(index++, productInfo.ean());
-        s.setObject(index++, productInfo.brand());
+        s.setObject(index++, brandId);
         s.setObject(index++, productInfo.warrantyMonths());
         s.setObject(index++, productInfo.importTax());
         s.setObject(index++, productInfo.supplierProductCode());
