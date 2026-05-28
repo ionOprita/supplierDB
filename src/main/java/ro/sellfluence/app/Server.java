@@ -818,7 +818,7 @@ public class Server {
             return "boolean";
         }
         if (type == Boolean.class) {
-            return "nullableBoolean";
+            return "boolean";
         }
         if (type == BigDecimal.class) {
             return "decimal";

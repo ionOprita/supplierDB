@@ -89,18 +89,11 @@
                                 @endif
 
                                 @if("boolean".equals(field.inputType()))
-                                    <select class="product-cell-input product-sheet-select product-sheet-select-boolean" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}">
-                                        @if("true".equals(row.values().get(field.name())))
-                                            <option value="true" selected>true</option>
-                                        @else
-                                            <option value="true">true</option>
-                                        @endif
-                                        @if("false".equals(row.values().get(field.name())))
-                                            <option value="false" selected>false</option>
-                                        @else
-                                            <option value="false">false</option>
-                                        @endif
-                                    </select>
+                                    @if("true".equals(row.values().get(field.name())))
+                                        <input class="product-cell-input product-sheet-checkbox" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="checkbox" value="true" checked>
+                                    @else
+                                        <input class="product-cell-input product-sheet-checkbox" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="checkbox" value="true">
+                                    @endif
                                 @endif
 
                                 @if("nullableBoolean".equals(field.inputType()))
@@ -178,18 +171,11 @@
                     @endif
 
                     @if("boolean".equals(field.inputType()))
-                        <select class="product-cell-input product-sheet-select product-sheet-select-boolean" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}">
-                            @if("true".equals(blankValues.get(field.name())))
-                                <option value="true" selected>true</option>
-                            @else
-                                <option value="true">true</option>
-                            @endif
-                            @if("false".equals(blankValues.get(field.name())))
-                                <option value="false" selected>false</option>
-                            @else
-                                <option value="false">false</option>
-                            @endif
-                        </select>
+                        @if("true".equals(blankValues.get(field.name())))
+                            <input class="product-cell-input product-sheet-checkbox" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="checkbox" value="true" checked>
+                        @else
+                            <input class="product-cell-input product-sheet-checkbox" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="checkbox" value="true">
+                        @endif
                     @endif
 
                     @if("nullableBoolean".equals(field.inputType()))

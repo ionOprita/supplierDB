@@ -73,18 +73,11 @@
                                 </select>
                             @else
                                 @if("boolean".equals(field.inputType()))
-                                    <select id="${field.name()}" name="${field.name()}">
-                                        @if("true".equals(values.get(field.name())))
-                                            <option value="true" selected>true</option>
-                                        @else
-                                            <option value="true">true</option>
-                                        @endif
-                                        @if("false".equals(values.get(field.name())))
-                                            <option value="false" selected>false</option>
-                                        @else
-                                            <option value="false">false</option>
-                                        @endif
-                                    </select>
+                                    @if("true".equals(values.get(field.name())))
+                                        <input id="${field.name()}" name="${field.name()}" type="checkbox" value="true" checked>
+                                    @else
+                                        <input id="${field.name()}" name="${field.name()}" type="checkbox" value="true">
+                                    @endif
                                 @else
                                     @if("nullableBoolean".equals(field.inputType()))
                                         <select id="${field.name()}" name="${field.name()}">
