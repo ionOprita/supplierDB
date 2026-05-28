@@ -577,10 +577,12 @@ public class Server {
 
         try {
             var vendors = mirrorDB.getAllVendors();
+            var brands = mirrorDB.getAllBrands();
             model.put("vendors", vendors);
+            model.put("brands", brands);
             model.put("fields", PRODUCT_TABLE_FIELDS);
             model.put("blankValues", blankProductFormValues());
-            model.put("products", buildProductTableRows(mirrorDB.readProducts(), vendors));
+            model.put("products", buildProductTableRows(mirrorDB.readProducts(), vendors, brands));
             ctx.render("products.jte", model);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load products page.", e);
@@ -628,7 +630,8 @@ public class Server {
         var values = readProductFormValues(ctx);
         try {
             var vendors = mirrorDB.getAllVendors();
-            var product = productInfoFromValues(values, vendors);
+            var brands = mirrorDB.getAllBrands();
+            var product = productInfoFromValues(values, vendors, brands);
             var updatedRows = mirrorDB.updateProduct(product);
             if (updatedRows > 0) {
                 redirectWithProductMessage(ctx, displayProductName(product) + " has been updated.");
@@ -647,7 +650,8 @@ public class Server {
         var values = readProductFormValues(ctx);
         try {
             var vendors = mirrorDB.getAllVendors();
-            var product = productInfoFromValues(values, vendors);
+            var brands = mirrorDB.getAllBrands();
+            var product = productInfoFromValues(values, vendors, brands);
             var insertedRows = mirrorDB.insertProduct(product);
             if (insertedRows > 0) {
                 redirectWithProductMessage(ctx, displayProductName(product) + " was inserted");
@@ -678,6 +682,7 @@ public class Server {
 
         try {
             var vendors = mirrorDB.getAllVendors();
+            var brands = mirrorDB.getAllBrands();
             var writes = new ArrayList<EmagMirrorDB.ProductWrite>();
             for (var row : request.rows()) {
                 if (row == null) {
@@ -685,7 +690,7 @@ public class Server {
                 }
                 var mode = row.mode() == null ? "" : row.mode();
                 var values = normalizeProductFormValues(row.values());
-                var product = productInfoFromValues(values, vendors);
+                var product = productInfoFromValues(values, vendors, brands);
 
                 switch (mode) {
                     case "update" -> {
@@ -732,7 +737,9 @@ public class Server {
         }
 
         try {
+            var brands = mirrorDB.getAllBrands();
             var normalizedValues = normalizeProductFormValues(values);
+            normalizedValues.put("brand", brandInputValue(normalizedValues.get("brand"), normalizedValues.get("vendor"), brands));
             var model = new HashMap<String, Object>();
             model.put("userName", currentUser.username());
             model.put("userRole", currentUser.role().name());
@@ -744,6 +751,7 @@ public class Server {
             model.put("fields", PRODUCT_FORM_FIELDS);
             model.put("values", normalizedValues);
             model.put("vendors", mirrorDB.getAllVendors());
+            model.put("brands", brands);
             ctx.render("product-form.jte", model);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to render product form.", e);
@@ -751,7 +759,7 @@ public class Server {
         }
     }
 
-    private static List<ProductTableRow> buildProductTableRows(List<ProductInfo> products, List<Vendor> vendors) {
+    private static List<ProductTableRow> buildProductTableRows(List<ProductInfo> products, List<Vendor> vendors, List<Brand> brands) {
         var vendorNames = new HashMap<UUID, String>();
         for (var vendor : vendors) {
             if (vendor.id() != null) {
@@ -763,7 +771,7 @@ public class Server {
                 .map(product -> new ProductTableRow(
                         product.productCode(),
                         product.vendor() == null ? "" : vendorNames.getOrDefault(product.vendor(), ""),
-                        productToFormValues(product)
+                        productToFormValues(product, brands)
                 ))
                 .toList();
     }
@@ -801,6 +809,9 @@ public class Server {
     private static String productInputType(RecordComponent component) {
         if ("vendor".equals(component.getName())) {
             return "vendor";
+        }
+        if ("brand".equals(component.getName())) {
+            return "brand";
         }
         var type = component.getType();
         if (type == boolean.class) {
@@ -855,6 +866,46 @@ public class Server {
         return values;
     }
 
+    private static Map<String, String> productToFormValues(ProductInfo product, List<Brand> brands) {
+        var values = productToFormValues(product);
+        values.put("brand", brandInputValue(product.brand(), product.vendor(), brands));
+        return values;
+    }
+
+    private static String brandInputValue(String value, String vendorValue, List<Brand> brands) {
+        return brandInputValue(value, parseUuidOrNull(vendorValue), brands);
+    }
+
+    private static String brandInputValue(String value, UUID vendor, List<Brand> brands) {
+        var normalized = blankToNull(value);
+        if (normalized == null) {
+            return "";
+        }
+        var brandId = parseUuidOrNull(normalized);
+        if (brandId != null && brands.stream().anyMatch(brand -> brandId.equals(brand.id()))) {
+            return normalized;
+        }
+        return brands.stream()
+                .filter(brand -> normalized.equals(brand.name()))
+                .filter(brand -> vendor == null || vendor.equals(brand.vendor()))
+                .map(brand -> brand.id() == null ? "" : brand.id().toString())
+                .filter(id -> !id.isBlank())
+                .findFirst()
+                .orElse("");
+    }
+
+    private static UUID parseUuidOrNull(String value) {
+        var normalized = blankToNull(value);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(normalized);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     private static Map<String, String> blankProductFormValues() {
         var values = new LinkedHashMap<String, String>();
         for (var field : PRODUCT_FORM_FIELDS) {
@@ -883,14 +934,15 @@ public class Server {
         return normalized;
     }
 
-    private static ProductInfo productInfoFromValues(Map<String, String> values, List<Vendor> vendors) {
+    private static ProductInfo productInfoFromValues(Map<String, String> values, List<Vendor> vendors, List<Brand> brands) {
         var components = ProductInfo.class.getRecordComponents();
         var parameterTypes = Arrays.stream(components)
                 .map(RecordComponent::getType)
                 .toArray(Class<?>[]::new);
         var arguments = new Object[components.length];
+        var selectedVendor = parseVendor(values.get("vendor"), vendors);
         for (int i = 0; i < components.length; i++) {
-            arguments[i] = parseProductValue(components[i], values.get(components[i].getName()), vendors);
+            arguments[i] = parseProductValue(components[i], values.get(components[i].getName()), vendors, brands, selectedVendor);
         }
         try {
             return ProductInfo.class.getDeclaredConstructor(parameterTypes).newInstance(arguments);
@@ -899,10 +951,13 @@ public class Server {
         }
     }
 
-    private static Object parseProductValue(RecordComponent component, String value, List<Vendor> vendors) {
+    private static Object parseProductValue(RecordComponent component, String value, List<Vendor> vendors, List<Brand> brands, UUID selectedVendor) {
         var name = component.getName();
         if ("vendor".equals(name)) {
-            return parseVendor(value, vendors);
+            return selectedVendor;
+        }
+        if ("brand".equals(name)) {
+            return parseBrand(value, brands, selectedVendor);
         }
 
         var label = productFieldLabel(name);
@@ -938,6 +993,30 @@ public class Server {
             return parseLong(value, label);
         }
         throw new IllegalArgumentException("Unsupported product field type for " + label + ".");
+    }
+
+    private static String parseBrand(String value, List<Brand> brands, UUID selectedVendor) {
+        var normalized = blankToNull(value);
+        if (normalized == null) {
+            return null;
+        }
+        final UUID brandId;
+        try {
+            brandId = UUID.fromString(normalized);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Select an existing brand.");
+        }
+        var selectedBrand = brands.stream()
+                .filter(brand -> brandId.equals(brand.id()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Select an existing brand."));
+        if (selectedVendor == null) {
+            throw new IllegalArgumentException("A product brand requires a vendor.");
+        }
+        if (!selectedVendor.equals(selectedBrand.vendor())) {
+            throw new IllegalArgumentException("Select a brand for the selected vendor.");
+        }
+        return selectedBrand.name();
     }
 
     private static UUID parseVendor(String value, List<Vendor> vendors) {

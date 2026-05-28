@@ -2,6 +2,7 @@
 @import java.util.Map
 @import ro.sellfluence.app.Server.ProductFormField
 @import ro.sellfluence.app.Server.ProductTableRow
+@import ro.sellfluence.db.Brand
 @import ro.sellfluence.db.Vendor
 
 @param String userName
@@ -12,6 +13,7 @@
 @param List<ProductFormField> fields
 @param Map<String, String> blankValues
 @param List<Vendor> vendors
+@param List<Brand> brands
 
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
     @if(message != null && !message.isBlank())
@@ -67,61 +69,80 @@
                                             @endif
                                         @endfor
                                     </select>
-                                @else
-                                    @if("boolean".equals(field.inputType()))
-                                        <select class="product-cell-input product-sheet-select product-sheet-select-boolean" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}">
-                                            @if("true".equals(row.values().get(field.name())))
-                                                <option value="true" selected>true</option>
-                                            @else
-                                                <option value="true">true</option>
-                                            @endif
-                                            @if("false".equals(row.values().get(field.name())))
-                                                <option value="false" selected>false</option>
-                                            @else
-                                                <option value="false">false</option>
-                                            @endif
-                                        </select>
-                                    @else
-                                        @if("nullableBoolean".equals(field.inputType()))
-                                            <select class="product-cell-input product-sheet-select product-sheet-select-boolean" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}">
-                                                @if(row.values().get(field.name()) == null || row.values().get(field.name()).isBlank())
-                                                    <option value="" selected></option>
-                                                @else
-                                                    <option value=""></option>
-                                                @endif
-                                                @if("true".equals(row.values().get(field.name())))
-                                                    <option value="true" selected>true</option>
-                                                @else
-                                                    <option value="true">true</option>
-                                                @endif
-                                                @if("false".equals(row.values().get(field.name())))
-                                                    <option value="false" selected>false</option>
-                                                @else
-                                                    <option value="false">false</option>
-                                                @endif
-                                            </select>
+                                @endif
+
+                                @if("brand".equals(field.inputType()))
+                                    <select class="product-cell-input product-sheet-select" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}">
+                                        @if(row.values().get(field.name()) == null || row.values().get(field.name()).isBlank())
+                                            <option value="" selected>No brand</option>
                                         @else
-                                            @if("textarea".equals(field.inputType()))
-                                                <textarea class="product-cell-input product-sheet-textarea" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" rows="1">${row.values().get(field.name())}</textarea>
+                                            <option value="">No brand</option>
+                                        @endif
+                                        @for(var brand : brands)
+                                            @if(brand.id() != null && brand.id().toString().equals(row.values().get(field.name())))
+                                                <option value="${brand.id().toString()}" data-vendor-id="${brand.vendor() == null ? "" : brand.vendor().toString()}" selected>${brand.name()} - ${brand.vendorName()}</option>
                                             @else
-                                                @if("integer".equals(field.inputType()))
-                                                    <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="number" step="1" value="${row.values().get(field.name())}">
-                                                @else
-                                                    @if("decimal".equals(field.inputType()))
-                                                        <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" inputmode="decimal" value="${row.values().get(field.name())}">
-                                                    @else
-                                                        @if("productCode".equals(field.name()))
-                                                            <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" value="${row.values().get(field.name())}" readonly required>
-                                                        @else
-                                                            @if(field.required())
-                                                                <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" value="${row.values().get(field.name())}" required>
-                                                            @else
-                                                                <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" value="${row.values().get(field.name())}">
-                                                            @endif
-                                                        @endif
-                                                    @endif
-                                                @endif
+                                                <option value="${brand.id().toString()}" data-vendor-id="${brand.vendor() == null ? "" : brand.vendor().toString()}">${brand.name()} - ${brand.vendorName()}</option>
                                             @endif
+                                        @endfor
+                                    </select>
+                                @endif
+
+                                @if("boolean".equals(field.inputType()))
+                                    <select class="product-cell-input product-sheet-select product-sheet-select-boolean" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}">
+                                        @if("true".equals(row.values().get(field.name())))
+                                            <option value="true" selected>true</option>
+                                        @else
+                                            <option value="true">true</option>
+                                        @endif
+                                        @if("false".equals(row.values().get(field.name())))
+                                            <option value="false" selected>false</option>
+                                        @else
+                                            <option value="false">false</option>
+                                        @endif
+                                    </select>
+                                @endif
+
+                                @if("nullableBoolean".equals(field.inputType()))
+                                    <select class="product-cell-input product-sheet-select product-sheet-select-boolean" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}">
+                                        @if(row.values().get(field.name()) == null || row.values().get(field.name()).isBlank())
+                                            <option value="" selected></option>
+                                        @else
+                                            <option value=""></option>
+                                        @endif
+                                        @if("true".equals(row.values().get(field.name())))
+                                            <option value="true" selected>true</option>
+                                        @else
+                                            <option value="true">true</option>
+                                        @endif
+                                        @if("false".equals(row.values().get(field.name())))
+                                            <option value="false" selected>false</option>
+                                        @else
+                                            <option value="false">false</option>
+                                        @endif
+                                    </select>
+                                @endif
+
+                                @if("textarea".equals(field.inputType()))
+                                    <textarea class="product-cell-input product-sheet-textarea" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" rows="1">${row.values().get(field.name())}</textarea>
+                                @endif
+
+                                @if("integer".equals(field.inputType()))
+                                    <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="number" step="1" value="${row.values().get(field.name())}">
+                                @endif
+
+                                @if("decimal".equals(field.inputType()))
+                                    <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" inputmode="decimal" value="${row.values().get(field.name())}">
+                                @endif
+
+                                @if("text".equals(field.inputType()))
+                                    @if("productCode".equals(field.name()))
+                                        <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" value="${row.values().get(field.name())}" readonly required>
+                                    @else
+                                        @if(field.required())
+                                            <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" value="${row.values().get(field.name())}" required>
+                                        @else
+                                            <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" value="${row.values().get(field.name())}">
                                         @endif
                                     @endif
                                 @endif
@@ -145,46 +166,57 @@
                                 <option value="${vendor.id().toString()}">${vendor.name()}</option>
                             @endfor
                         </select>
-                    @else
-                        @if("boolean".equals(field.inputType()))
-                            <select class="product-cell-input product-sheet-select product-sheet-select-boolean" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}">
-                                @if("true".equals(blankValues.get(field.name())))
-                                    <option value="true" selected>true</option>
-                                @else
-                                    <option value="true">true</option>
-                                @endif
-                                @if("false".equals(blankValues.get(field.name())))
-                                    <option value="false" selected>false</option>
-                                @else
-                                    <option value="false">false</option>
-                                @endif
-                            </select>
-                        @else
-                            @if("nullableBoolean".equals(field.inputType()))
-                                <select class="product-cell-input product-sheet-select product-sheet-select-boolean" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}">
-                                    <option value="" selected></option>
-                                    <option value="true">true</option>
-                                    <option value="false">false</option>
-                                </select>
+                    @endif
+
+                    @if("brand".equals(field.inputType()))
+                        <select class="product-cell-input product-sheet-select" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}">
+                            <option value="" selected>No brand</option>
+                            @for(var brand : brands)
+                                <option value="${brand.id().toString()}" data-vendor-id="${brand.vendor() == null ? "" : brand.vendor().toString()}">${brand.name()} - ${brand.vendorName()}</option>
+                            @endfor
+                        </select>
+                    @endif
+
+                    @if("boolean".equals(field.inputType()))
+                        <select class="product-cell-input product-sheet-select product-sheet-select-boolean" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}">
+                            @if("true".equals(blankValues.get(field.name())))
+                                <option value="true" selected>true</option>
                             @else
-                                @if("textarea".equals(field.inputType()))
-                                    <textarea class="product-cell-input product-sheet-textarea" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" rows="1">${blankValues.get(field.name())}</textarea>
-                                @else
-                                    @if("integer".equals(field.inputType()))
-                                        <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="number" step="1" value="${blankValues.get(field.name())}">
-                                    @else
-                                        @if("decimal".equals(field.inputType()))
-                                            <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" inputmode="decimal" value="${blankValues.get(field.name())}">
-                                        @else
-                                            @if(field.required())
-                                                <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" value="${blankValues.get(field.name())}" required>
-                                            @else
-                                                <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" value="${blankValues.get(field.name())}">
-                                            @endif
-                                        @endif
-                                    @endif
-                                @endif
+                                <option value="true">true</option>
                             @endif
+                            @if("false".equals(blankValues.get(field.name())))
+                                <option value="false" selected>false</option>
+                            @else
+                                <option value="false">false</option>
+                            @endif
+                        </select>
+                    @endif
+
+                    @if("nullableBoolean".equals(field.inputType()))
+                        <select class="product-cell-input product-sheet-select product-sheet-select-boolean" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}">
+                            <option value="" selected></option>
+                            <option value="true">true</option>
+                            <option value="false">false</option>
+                        </select>
+                    @endif
+
+                    @if("textarea".equals(field.inputType()))
+                        <textarea class="product-cell-input product-sheet-textarea" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" rows="1">${blankValues.get(field.name())}</textarea>
+                    @endif
+
+                    @if("integer".equals(field.inputType()))
+                        <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="number" step="1" value="${blankValues.get(field.name())}">
+                    @endif
+
+                    @if("decimal".equals(field.inputType()))
+                        <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" inputmode="decimal" value="${blankValues.get(field.name())}">
+                    @endif
+
+                    @if("text".equals(field.inputType()))
+                        @if(field.required())
+                            <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" value="${blankValues.get(field.name())}" required>
+                        @else
+                            <input class="product-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="text" value="${blankValues.get(field.name())}">
                         @endif
                     @endif
                 </td>

@@ -1,6 +1,7 @@
 @import java.util.List
 @import java.util.Map
 @import ro.sellfluence.app.Server.ProductFormField
+@import ro.sellfluence.db.Brand
 @import ro.sellfluence.db.Vendor
 
 @param String userName
@@ -13,6 +14,7 @@
 @param List<ProductFormField> fields
 @param Map<String, String> values
 @param List<Vendor> vendors
+@param List<Brand> brands
 
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
     @if(error != null && !error.isBlank())
@@ -54,27 +56,24 @@
                                 @endfor
                             </select>
                         @else
-                            @if("boolean".equals(field.inputType()))
+                            @if("brand".equals(field.inputType()))
                                 <select id="${field.name()}" name="${field.name()}">
-                                    @if("true".equals(values.get(field.name())))
-                                        <option value="true" selected>true</option>
+                                    @if(values.get(field.name()) == null || values.get(field.name()).isBlank())
+                                        <option value="" selected>No brand</option>
                                     @else
-                                        <option value="true">true</option>
+                                        <option value="">No brand</option>
                                     @endif
-                                    @if("false".equals(values.get(field.name())))
-                                        <option value="false" selected>false</option>
-                                    @else
-                                        <option value="false">false</option>
-                                    @endif
+                                    @for(var brand : brands)
+                                        @if(brand.id() != null && brand.id().toString().equals(values.get(field.name())))
+                                            <option value="${brand.id().toString()}" data-vendor-id="${brand.vendor() == null ? "" : brand.vendor().toString()}" selected>${brand.name()} - ${brand.vendorName()}</option>
+                                        @else
+                                            <option value="${brand.id().toString()}" data-vendor-id="${brand.vendor() == null ? "" : brand.vendor().toString()}">${brand.name()} - ${brand.vendorName()}</option>
+                                        @endif
+                                    @endfor
                                 </select>
                             @else
-                                @if("nullableBoolean".equals(field.inputType()))
+                                @if("boolean".equals(field.inputType()))
                                     <select id="${field.name()}" name="${field.name()}">
-                                        @if(values.get(field.name()) == null || values.get(field.name()).isBlank())
-                                            <option value="" selected></option>
-                                        @else
-                                            <option value=""></option>
-                                        @endif
                                         @if("true".equals(values.get(field.name())))
                                             <option value="true" selected>true</option>
                                         @else
@@ -87,19 +86,39 @@
                                         @endif
                                     </select>
                                 @else
-                                    @if("textarea".equals(field.inputType()))
-                                        <textarea id="${field.name()}" name="${field.name()}" rows="3">${values.get(field.name())}</textarea>
-                                    @else
-                                        @if("integer".equals(field.inputType()))
-                                            <input id="${field.name()}" name="${field.name()}" type="number" step="1" value="${values.get(field.name())}">
-                                        @else
-                                            @if("decimal".equals(field.inputType()))
-                                                <input id="${field.name()}" name="${field.name()}" type="text" inputmode="decimal" value="${values.get(field.name())}">
+                                    @if("nullableBoolean".equals(field.inputType()))
+                                        <select id="${field.name()}" name="${field.name()}">
+                                            @if(values.get(field.name()) == null || values.get(field.name()).isBlank())
+                                                <option value="" selected></option>
                                             @else
-                                                @if(field.required())
-                                                    <input id="${field.name()}" name="${field.name()}" type="text" value="${values.get(field.name())}" required>
+                                                <option value=""></option>
+                                            @endif
+                                            @if("true".equals(values.get(field.name())))
+                                                <option value="true" selected>true</option>
+                                            @else
+                                                <option value="true">true</option>
+                                            @endif
+                                            @if("false".equals(values.get(field.name())))
+                                                <option value="false" selected>false</option>
+                                            @else
+                                                <option value="false">false</option>
+                                            @endif
+                                        </select>
+                                    @else
+                                        @if("textarea".equals(field.inputType()))
+                                            <textarea id="${field.name()}" name="${field.name()}" rows="3">${values.get(field.name())}</textarea>
+                                        @else
+                                            @if("integer".equals(field.inputType()))
+                                                <input id="${field.name()}" name="${field.name()}" type="number" step="1" value="${values.get(field.name())}">
+                                            @else
+                                                @if("decimal".equals(field.inputType()))
+                                                    <input id="${field.name()}" name="${field.name()}" type="text" inputmode="decimal" value="${values.get(field.name())}">
                                                 @else
-                                                    <input id="${field.name()}" name="${field.name()}" type="text" value="${values.get(field.name())}">
+                                                    @if(field.required())
+                                                        <input id="${field.name()}" name="${field.name()}" type="text" value="${values.get(field.name())}" required>
+                                                    @else
+                                                        <input id="${field.name()}" name="${field.name()}" type="text" value="${values.get(field.name())}">
+                                                    @endif
                                                 @endif
                                             @endif
                                         @endif
