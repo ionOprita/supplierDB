@@ -815,6 +815,18 @@ public class EmagMirrorDB {
         return database.readTX(Vendor::getVendors);
     }
 
+    public @NonNull List<Brand> getAllBrands() throws SQLException {
+        return database.readTX(Brand::getBrands);
+    }
+
+    public int insertBrand(String name, UUID vendor) throws SQLException {
+        return database.writeTX(db -> Brand.insertBrand(db, name, vendor));
+    }
+
+    public int deleteBrand(UUID id) throws SQLException {
+        return database.writeTX(db -> Brand.deleteBrand(db, id));
+    }
+
     public int updateStornoTable() throws SQLException {
         return database.writeTX(EmagMirrorDB::stornoBackfill);
     }

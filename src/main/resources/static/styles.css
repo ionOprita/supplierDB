@@ -124,6 +124,39 @@ h1 {
   min-width: 240px;
 }
 
+.brand-create-form {
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+.brand-create-form label {
+  padding-left: 0;
+}
+
+.brand-create-form input[type="text"],
+.brand-create-form select {
+  box-sizing: border-box;
+  width: auto;
+  min-width: 220px;
+  margin-bottom: 0;
+}
+
+.brands-table {
+  min-width: 760px;
+}
+
+.brands-table td {
+  white-space: nowrap;
+}
+
+.brands-table td:nth-child(2) {
+  min-width: 220px;
+}
+
+.row-actions form {
+  margin: 0;
+}
+
 .month-filter-select {
   min-width: 130px;
 }

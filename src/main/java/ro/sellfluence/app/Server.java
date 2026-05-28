@@ -26,6 +26,7 @@ import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
 import ro.sellfluence.api.WebAuthnServer;
 import ro.sellfluence.apphelper.BackgroundJob;
+import ro.sellfluence.db.Brand;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.PassKey;
 import ro.sellfluence.db.PassKey.User;
@@ -167,6 +168,8 @@ public class Server {
         app.before("/admin/*", ctx -> checkRole(ctx, admin));
         app.get("/admin/db-explorer", ctx -> ctx.redirect("/admin/db-explorer/products"));
         app.get("/admin/db-explorer/{subPage}", ctx -> renderDBExplorerSubPage(ctx, mirrorDB, ctx.pathParam("subPage")));
+        app.post("/admin/db-explorer/brands", ctx -> insertBrand(ctx, mirrorDB));
+        app.post("/admin/db-explorer/brands/{brandId}/delete", ctx -> deleteBrand(ctx, mirrorDB));
         app.get("/admin/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
         app.post("/admin/users/{userId}/role", ctx -> changeUserRole(ctx, mirrorDB));
         app.post("/admin/users/{userId}/delete", ctx -> deleteUser(ctx, mirrorDB));
@@ -1031,6 +1034,61 @@ public class Server {
         ctx.redirect("/private/products?message=" + URLEncoder.encode(message, StandardCharsets.UTF_8));
     }
 
+    private static void insertBrand(Context ctx, EmagMirrorDB mirrorDB) {
+        try {
+            var name = requiredBrandName(ctx.formParam("name"));
+            var vendor = parseVendor(ctx.formParam("vendor"), mirrorDB.getAllVendors());
+            if (vendor == null) {
+                throw new IllegalArgumentException("Select a vendor.");
+            }
+            var insertedRows = mirrorDB.insertBrand(name, vendor);
+            if (insertedRows > 0) {
+                redirectWithBrandMessage(ctx, "message", name + " was inserted.");
+            } else {
+                redirectWithBrandMessage(ctx, "error", name + " already exists for this vendor.");
+            }
+        } catch (IllegalArgumentException e) {
+            redirectWithBrandMessage(ctx, "error", e.getMessage());
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to insert brand.", e);
+            redirectWithBrandMessage(ctx, "error", "Database insert failed: " + e.getMessage());
+        }
+    }
+
+    private static void deleteBrand(Context ctx, EmagMirrorDB mirrorDB) {
+        final UUID brandId;
+        try {
+            brandId = UUID.fromString(ctx.pathParam("brandId"));
+        } catch (IllegalArgumentException e) {
+            redirectWithBrandMessage(ctx, "error", "Invalid brand id.");
+            return;
+        }
+
+        try {
+            var deletedRows = mirrorDB.deleteBrand(brandId);
+            if (deletedRows > 0) {
+                redirectWithBrandMessage(ctx, "message", "Brand deleted.");
+            } else {
+                redirectWithBrandMessage(ctx, "error", "Brand not found.");
+            }
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to delete brand " + brandId + ".", e);
+            redirectWithBrandMessage(ctx, "error", "Database delete failed: " + e.getMessage());
+        }
+    }
+
+    private static String requiredBrandName(String name) {
+        var normalized = blankToNull(name);
+        if (normalized == null) {
+            throw new IllegalArgumentException("Brand name is required.");
+        }
+        return normalized;
+    }
+
+    private static void redirectWithBrandMessage(Context ctx, String parameter, String message) {
+        ctx.redirect("/admin/db-explorer/brands?" + parameter + "=" + URLEncoder.encode(message, StandardCharsets.UTF_8));
+    }
+
     private static void renderPage(Context ctx, EmagMirrorDB mirrorDB, String page) {
         if (!page.matches("[a-zA-Z0-9_-]+")) {
             ctx.status(400).result("Invalid page name");
@@ -1107,6 +1165,14 @@ public class Server {
                     model.put("activeSubPage", "vendors");
                     model.put("vendors", mirrorDB.getAllVendors());
                     ctx.render("db-explorer-vendors.jte", model);
+                }
+                case "brands" -> {
+                    model.put("activeSubPage", "brands");
+                    model.put("brands", mirrorDB.getAllBrands());
+                    model.put("vendors", mirrorDB.getAllVendors());
+                    model.put("message", ctx.queryParam("message"));
+                    model.put("error", ctx.queryParam("error"));
+                    ctx.render("db-explorer-brands.jte", model);
                 }
                 case "order-counts-by-products" -> renderOrderCountsByProductsPage(ctx, mirrorDB, model);
                 default -> ctx.status(404).result("Unknown DB Explorer page.");
