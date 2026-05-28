@@ -1358,8 +1358,13 @@ public class Server {
         }
     }
 
-    private static gg.jte.TemplateEngine createJteEngine() {
-        return gg.jte.TemplateEngine.create(new gg.jte.resolve.DirectoryCodeResolver(Paths.get("src/main/jte")), gg.jte.ContentType.Html);
+    static gg.jte.TemplateEngine createJteEngine() {
+        return gg.jte.TemplateEngine.create(
+                new gg.jte.resolve.DirectoryCodeResolver(Paths.get("src/main/jte")),
+                Paths.get("target", "jte-classes"),
+                gg.jte.ContentType.Html,
+                Server.class.getClassLoader()
+        );
     }
 
     /**
