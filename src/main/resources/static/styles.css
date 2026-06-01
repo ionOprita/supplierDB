@@ -330,12 +330,14 @@ tbody tr:nth-child(even) .sticky-col-2 {
 }
 
 @supports selector(body:has(#productsTable)) {
-  html:has(#productsTable) {
+  html:has(#productsTable),
+  html:has(#employeeDataTable) {
     height: 100%;
     overflow: hidden;
   }
 
-  body:has(#productsTable) {
+  body:has(#productsTable),
+  body:has(#employeeDataTable) {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -343,7 +345,8 @@ tbody tr:nth-child(even) .sticky-col-2 {
     overflow: hidden;
   }
 
-  body:has(#productsTable) main {
+  body:has(#productsTable) main,
+  body:has(#employeeDataTable) main {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
@@ -351,7 +354,8 @@ tbody tr:nth-child(even) .sticky-col-2 {
     overflow: hidden;
   }
 
-  body:has(#productsTable) .product-sheet-wrap {
+  body:has(#productsTable) .product-sheet-wrap,
+  body:has(#employeeDataTable) .product-sheet-wrap {
     flex: 1 1 auto;
     min-height: 0;
     max-height: none;
@@ -412,11 +416,34 @@ tbody tr:nth-child(even) .sticky-col-2 {
   box-shadow: 2px 0 0 var(--sticky-separator);
 }
 
+.employee-sheet-table .sticky-col-employee-name {
+  left: 0;
+  min-width: 260px;
+  width: 260px;
+  max-width: 260px;
+}
+
+.employee-sheet-table .sticky-col-employee-company {
+  left: 260px;
+  min-width: 180px;
+  width: 180px;
+  max-width: 180px;
+}
+
+.employee-sheet-table .sticky-col-employee-department {
+  left: 440px;
+  min-width: 220px;
+  width: 220px;
+  max-width: 220px;
+  box-shadow: 2px 0 0 var(--sticky-separator);
+}
+
 .product-sheet-table tbody tr:nth-child(even) .sticky-col {
   background: var(--surface-alt);
 }
 
 .product-sheet-row.is-dirty .sticky-col,
+.employee-sheet-row.is-dirty .sticky-col,
 .product-sheet-table tbody tr:nth-child(even).is-dirty .sticky-col {
   background: var(--dirty-bg);
 }

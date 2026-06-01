@@ -90,6 +90,12 @@ public class EmagMirrorDB {
     public record ProductWriteResult(int inserted, int updated) {
     }
 
+    public record EmployeeWrite(EmployeeInfo employeeInfo, boolean insert) {
+    }
+
+    public record EmployeeWriteResult(int inserted, int updated) {
+    }
+
     private EmagMirrorDB(DB database) {
         this.database = database;
     }
@@ -372,6 +378,37 @@ public class EmagMirrorDB {
 
     public int replaceEmployeeData(List<EmployeeInfo> employees) throws SQLException {
         return database.writeTX(db -> EmployeeDataTable.replaceEmployeeData(db, employees));
+    }
+
+    public List<EmployeeInfo> readEmployeeData() throws SQLException {
+        return database.readTX(EmployeeDataTable::getEmployeeData);
+    }
+
+    public int nextEmployeeDataSourceRowNumber() throws SQLException {
+        return database.singleReadTX(EmployeeDataTable::nextSourceRowNumber);
+    }
+
+    public EmployeeWriteResult saveEmployeeDataChanges(List<EmployeeWrite> changes) throws SQLException {
+        return database.writeTX(db -> {
+            int inserted = 0;
+            int updated = 0;
+            for (var change : changes) {
+                if (change.insert()) {
+                    var rows = EmployeeDataTable.insertEmployeeData(db, change.employeeInfo());
+                    if (rows == 0) {
+                        throw new IllegalArgumentException("Employee data row could not be inserted. It may already exist: " + change.employeeInfo().sourceRowNumber() + ".");
+                    }
+                    inserted += rows;
+                } else {
+                    var rows = EmployeeDataTable.updateEmployeeData(db, change.employeeInfo());
+                    if (rows == 0) {
+                        throw new IllegalArgumentException("Employee data row not found: " + change.employeeInfo().sourceRowNumber() + ".");
+                    }
+                    updated += rows;
+                }
+            }
+            return new EmployeeWriteResult(inserted, updated);
+        });
     }
 
     public int insertProduct(ProductInfo productInfo) throws SQLException {

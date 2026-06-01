@@ -28,6 +28,8 @@ import ro.sellfluence.api.WebAuthnServer;
 import ro.sellfluence.apphelper.BackgroundJob;
 import ro.sellfluence.db.Brand;
 import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.db.EmployeeDataTable.EmployeeColumn;
+import ro.sellfluence.db.EmployeeDataTable.EmployeeInfo;
 import ro.sellfluence.db.PassKey;
 import ro.sellfluence.db.PassKey.User;
 import ro.sellfluence.db.ProductTable.ProductInfo;
@@ -88,6 +90,22 @@ public class Server {
     );
     private static final List<ProductFormField> PRODUCT_FORM_FIELDS = buildProductFormFields();
     private static final List<ProductFormField> PRODUCT_TABLE_FIELDS = buildProductTableFields(PRODUCT_FORM_FIELDS);
+    private static final Set<String> MULTILINE_EMPLOYEE_FIELDS = Set.of(
+            "updated_sections",
+            "cv_and_references",
+            "family_doctor_medical_certificate",
+            "dependents_declaration",
+            "contribution_stage_certificate",
+            "health_insurance_house_declaration",
+            "work_safety_training_file",
+            "equipment_handover_minutes",
+            "gift_or_documents_address",
+            "computer_equipment",
+            "shipped_products",
+            "bank_details",
+            "working_document_link"
+    );
+    private static final List<EmployeeFormField> EMPLOYEE_TABLE_FIELDS = buildEmployeeTableFields();
 
     public record ProductTableRow(
             String productCode,
@@ -118,6 +136,39 @@ public class Server {
     }
 
     public record ProductSaveError(String error) {
+    }
+
+    public record EmployeeTableRow(
+            int sourceRowNumber,
+            String fullName,
+            String company,
+            String department,
+            Map<String, String> values
+    ) {
+    }
+
+    public record EmployeeFormField(
+            String name,
+            String label,
+            String inputType,
+            boolean required
+    ) {
+    }
+
+    public record EmployeeSaveRequest(List<EmployeeSaveRow> rows) {
+    }
+
+    public record EmployeeSaveRow(
+            String mode,
+            String sourceRowNumber,
+            Map<String, String> values
+    ) {
+    }
+
+    public record EmployeeSaveResponse(String message, int inserted, int updated) {
+    }
+
+    public record EmployeeSaveError(String error) {
     }
 
     private static void configure(JavalinConfig config, int port, int securePort) {
@@ -158,6 +209,8 @@ public class Server {
 
         app.before("/private/*", ctx -> checkRole(ctx, user));
         app.get("/private/products", ctx -> renderProductsPage(ctx, mirrorDB));
+        app.get("/private/employees", ctx -> renderEmployeesPage(ctx, mirrorDB));
+        app.post("/private/employees/save", ctx -> saveEmployeeTableChanges(ctx, mirrorDB));
         app.get("/private/products/edit", ctx -> renderEditProductPage(ctx, mirrorDB, ctx.queryParam("productCode"), null, null));
         app.post("/private/products/update", ctx -> updateProduct(ctx, mirrorDB));
         app.get("/private/products/new", ctx -> renderNewProductPage(ctx, mirrorDB, null, null));
@@ -590,6 +643,32 @@ public class Server {
         }
     }
 
+    private static void renderEmployeesPage(Context ctx, EmagMirrorDB mirrorDB) {
+        var currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null) {
+            return;
+        }
+
+        var model = new HashMap<String, Object>();
+        model.put("userName", currentUser.username());
+        model.put("userRole", currentUser.role().name());
+        model.put("pageTitle", "Employees");
+        model.put("message", ctx.queryParam("message"));
+
+        try {
+            var employees = mirrorDB.readEmployeeData();
+            var rows = buildEmployeeTableRows(employees);
+            model.put("fields", EMPLOYEE_TABLE_FIELDS);
+            model.put("blankValues", blankEmployeeFormValues(mirrorDB.nextEmployeeDataSourceRowNumber()));
+            model.put("departments", employeeDepartments(rows));
+            model.put("employees", rows);
+            ctx.render("employees.jte", model);
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load employees page.", e);
+            ctx.status(500).result("Failed to load employees.");
+        }
+    }
+
     private static void renderEditProductPage(Context ctx,
                                               EmagMirrorDB mirrorDB,
                                               String productCode,
@@ -723,6 +802,58 @@ public class Server {
         }
     }
 
+    private static void saveEmployeeTableChanges(Context ctx, EmagMirrorDB mirrorDB) {
+        final EmployeeSaveRequest request;
+        try {
+            request = mapper.readValue(ctx.body(), EmployeeSaveRequest.class);
+        } catch (RuntimeException e) {
+            ctx.status(400).json(new EmployeeSaveError("Invalid employee changes payload."));
+            return;
+        }
+
+        if (request.rows() == null || request.rows().isEmpty()) {
+            ctx.json(new EmployeeSaveResponse("No employee changes to save.", 0, 0));
+            return;
+        }
+
+        try {
+            var writes = new ArrayList<EmagMirrorDB.EmployeeWrite>();
+            for (var row : request.rows()) {
+                if (row == null) {
+                    continue;
+                }
+                var mode = row.mode() == null ? "" : row.mode();
+                var values = normalizeEmployeeFormValues(row.values());
+                var employee = employeeInfoFromValues(values);
+
+                switch (mode) {
+                    case "update" -> {
+                        var originalSourceRowNumber = parseRequiredPositiveInteger(row.sourceRowNumber(), "source_row_number");
+                        if (originalSourceRowNumber != employee.sourceRowNumber()) {
+                            throw new IllegalArgumentException("source_row_number cannot be changed for existing employee rows.");
+                        }
+                        writes.add(new EmagMirrorDB.EmployeeWrite(employee, false));
+                    }
+                    case "insert" -> writes.add(new EmagMirrorDB.EmployeeWrite(employee, true));
+                    default -> throw new IllegalArgumentException("Unknown employee save mode: " + mode + ".");
+                }
+            }
+
+            if (writes.isEmpty()) {
+                ctx.json(new EmployeeSaveResponse("No employee changes to save.", 0, 0));
+                return;
+            }
+
+            var result = mirrorDB.saveEmployeeDataChanges(writes);
+            ctx.json(new EmployeeSaveResponse(employeeSaveMessage(result), result.inserted(), result.updated()));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(new EmployeeSaveError(e.getMessage()));
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to save employee table changes.", e);
+            ctx.status(500).json(new EmployeeSaveError("Database save failed: " + e.getMessage()));
+        }
+    }
+
     private static void renderProductFormPage(Context ctx,
                                               EmagMirrorDB mirrorDB,
                                               String pageTitle,
@@ -776,6 +907,30 @@ public class Server {
                 .toList();
     }
 
+    private static List<EmployeeTableRow> buildEmployeeTableRows(List<EmployeeInfo> employees) {
+        return employees.stream()
+                .map(employee -> {
+                    var values = employeeToFormValues(employee);
+                    return new EmployeeTableRow(
+                            employee.sourceRowNumber(),
+                            values.getOrDefault("full_name", ""),
+                            values.getOrDefault("company", ""),
+                            values.getOrDefault("department", ""),
+                            values
+                    );
+                })
+                .toList();
+    }
+
+    private static List<String> employeeDepartments(List<EmployeeTableRow> rows) {
+        return rows.stream()
+                .map(EmployeeTableRow::department)
+                .filter(department -> department != null && !department.isBlank())
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
     private static List<ProductFormField> buildProductFormFields() {
         return Arrays.stream(ProductInfo.class.getRecordComponents())
                 .map(component -> new ProductFormField(
@@ -804,6 +959,35 @@ public class Server {
             }
         }
         return List.copyOf(tableFields);
+    }
+
+    private static List<EmployeeFormField> buildEmployeeTableFields() {
+        var fields = new ArrayList<EmployeeFormField>();
+        fields.add(new EmployeeFormField("source_row_number", "source_row_number", "integer", true));
+        var stickyFields = List.of("full_name", "company", "department");
+        for (var stickyField : stickyFields) {
+            for (var column : EmployeeColumn.values()) {
+                if (stickyField.equals(column.dbColumn())) {
+                    fields.add(employeeFormField(column));
+                    break;
+                }
+            }
+        }
+        for (var column : EmployeeColumn.values()) {
+            if (!stickyFields.contains(column.dbColumn())) {
+                fields.add(employeeFormField(column));
+            }
+        }
+        return List.copyOf(fields);
+    }
+
+    private static EmployeeFormField employeeFormField(EmployeeColumn column) {
+        return new EmployeeFormField(
+                column.dbColumn(),
+                column.dbColumn(),
+                MULTILINE_EMPLOYEE_FIELDS.contains(column.dbColumn()) ? "textarea" : "text",
+                column == EmployeeColumn.FULL_NAME
+        );
     }
 
     private static String productInputType(RecordComponent component) {
@@ -872,6 +1056,16 @@ public class Server {
         return values;
     }
 
+    private static Map<String, String> employeeToFormValues(EmployeeInfo employee) {
+        var values = new LinkedHashMap<String, String>();
+        values.put("source_row_number", String.valueOf(employee.sourceRowNumber()));
+        for (var column : EmployeeColumn.values()) {
+            var value = employee.value(column);
+            values.put(column.dbColumn(), value == null ? "" : value);
+        }
+        return values;
+    }
+
     private static String brandInputValue(String value, String vendorValue, List<Brand> brands) {
         return brandInputValue(value, parseUuidOrNull(vendorValue), brands);
     }
@@ -914,6 +1108,15 @@ public class Server {
         return values;
     }
 
+    private static Map<String, String> blankEmployeeFormValues(int sourceRowNumber) {
+        var values = new LinkedHashMap<String, String>();
+        for (var field : EMPLOYEE_TABLE_FIELDS) {
+            values.put(field.name(), "");
+        }
+        values.put("source_row_number", String.valueOf(sourceRowNumber));
+        return values;
+    }
+
     private static Map<String, String> readProductFormValues(Context ctx) {
         var values = new LinkedHashMap<String, String>();
         for (var field : PRODUCT_FORM_FIELDS) {
@@ -932,6 +1135,33 @@ public class Server {
             normalized.putAll(values);
         }
         return normalized;
+    }
+
+    private static Map<String, String> normalizeEmployeeFormValues(Map<String, String> values) {
+        var normalized = new LinkedHashMap<String, String>();
+        for (var field : EMPLOYEE_TABLE_FIELDS) {
+            normalized.put(field.name(), "");
+        }
+        if (values != null) {
+            normalized.putAll(values);
+        }
+        return normalized;
+    }
+
+    private static EmployeeInfo employeeInfoFromValues(Map<String, String> values) {
+        var sourceRowNumber = parseRequiredPositiveInteger(values.get("source_row_number"), "source_row_number");
+        var sourceValues = new ArrayList<String>();
+        for (int i = 0; i < ro.sellfluence.db.EmployeeDataTable.SOURCE_COLUMN_COUNT; i++) {
+            sourceValues.add(null);
+        }
+        for (var column : EmployeeColumn.values()) {
+            var value = blankToNull(values.get(column.dbColumn()));
+            if (column == EmployeeColumn.FULL_NAME && value == null) {
+                throw new IllegalArgumentException("full_name is required.");
+            }
+            sourceValues.set(column.sheetIndex() - 1, value);
+        }
+        return new EmployeeInfo(sourceRowNumber, sourceValues);
     }
 
     private static ProductInfo productInfoFromValues(Map<String, String> values, List<Vendor> vendors, List<Brand> brands) {
@@ -1073,6 +1303,14 @@ public class Server {
         }
     }
 
+    private static int parseRequiredPositiveInteger(String value, String label) {
+        var parsed = parseInteger(value, label);
+        if (parsed == null || parsed <= 0) {
+            throw new IllegalArgumentException(label + " is required and must be a positive integer.");
+        }
+        return parsed;
+    }
+
     private static Long parseLong(String value, String label) {
         var normalized = blankToNull(value);
         if (normalized == null) {
@@ -1107,6 +1345,17 @@ public class Server {
             parts.add(result.inserted() + " inserted");
         }
         return parts.isEmpty() ? "No product changes to save." : "Saved product changes: " + String.join(", ", parts) + ".";
+    }
+
+    private static String employeeSaveMessage(EmagMirrorDB.EmployeeWriteResult result) {
+        var parts = new ArrayList<String>();
+        if (result.updated() > 0) {
+            parts.add(result.updated() + " updated");
+        }
+        if (result.inserted() > 0) {
+            parts.add(result.inserted() + " inserted");
+        }
+        return parts.isEmpty() ? "No employee changes to save." : "Saved employee changes: " + String.join(", ", parts) + ".";
     }
 
     private static void redirectWithProductMessage(Context ctx, String message) {
