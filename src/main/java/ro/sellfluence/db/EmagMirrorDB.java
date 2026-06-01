@@ -7,6 +7,7 @@ import com.yubico.webauthn.data.PublicKeyCredentialDescriptor;
 import org.jspecify.annotations.NonNull;
 import ro.sellfluence.apphelper.EmployeeSheetData;
 import ro.sellfluence.db.EmagFetchLog.EmagFetchHistogram;
+import ro.sellfluence.db.EmployeeDataTable.EmployeeInfo;
 import ro.sellfluence.db.EmagOrder.ExtendedOrder;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
@@ -367,6 +368,10 @@ public class EmagMirrorDB {
 
     public void addOrUpdateProduct(ProductInfo productInfo) throws SQLException {
         database.writeTX(db -> insertOrUpdateProduct(db, productInfo));
+    }
+
+    public int replaceEmployeeData(List<EmployeeInfo> employees) throws SQLException {
+        return database.writeTX(db -> EmployeeDataTable.replaceEmployeeData(db, employees));
     }
 
     public int insertProduct(ProductInfo productInfo) throws SQLException {
