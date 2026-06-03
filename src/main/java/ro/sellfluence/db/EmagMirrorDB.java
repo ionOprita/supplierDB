@@ -6,6 +6,7 @@ import com.yubico.webauthn.data.ByteArray;
 import com.yubico.webauthn.data.PublicKeyCredentialDescriptor;
 import org.jspecify.annotations.NonNull;
 import ro.sellfluence.apphelper.EmployeeSheetData;
+import ro.sellfluence.db.CategoryDataTable.CategoryInfo;
 import ro.sellfluence.db.EmagFetchLog.EmagFetchHistogram;
 import ro.sellfluence.db.EmployeeDataTable.EmployeeInfo;
 import ro.sellfluence.db.EmagOrder.ExtendedOrder;
@@ -94,6 +95,12 @@ public class EmagMirrorDB {
     }
 
     public record EmployeeWriteResult(int inserted, int updated) {
+    }
+
+    public record CategoryWrite(CategoryInfo categoryInfo, boolean insert) {
+    }
+
+    public record CategoryWriteResult(int inserted, int updated) {
     }
 
     private EmagMirrorDB(DB database) {
@@ -408,6 +415,41 @@ public class EmagMirrorDB {
                 }
             }
             return new EmployeeWriteResult(inserted, updated);
+        });
+    }
+
+    public int replaceCategoryData(List<CategoryInfo> categories) throws SQLException {
+        return database.writeTX(db -> CategoryDataTable.replaceCategoryData(db, categories));
+    }
+
+    public List<CategoryInfo> readCategoryData() throws SQLException {
+        return database.readTX(CategoryDataTable::getCategoryData);
+    }
+
+    public int nextCategoryDataSourceRowNumber() throws SQLException {
+        return database.singleReadTX(CategoryDataTable::nextSourceRowNumber);
+    }
+
+    public CategoryWriteResult saveCategoryDataChanges(List<CategoryWrite> changes) throws SQLException {
+        return database.writeTX(db -> {
+            int inserted = 0;
+            int updated = 0;
+            for (var change : changes) {
+                if (change.insert()) {
+                    var rows = CategoryDataTable.insertCategoryData(db, change.categoryInfo());
+                    if (rows == 0) {
+                        throw new IllegalArgumentException("Category data row could not be inserted. It may already exist: " + change.categoryInfo().sourceRowNumber() + ".");
+                    }
+                    inserted += rows;
+                } else {
+                    var rows = CategoryDataTable.updateCategoryData(db, change.categoryInfo());
+                    if (rows == 0) {
+                        throw new IllegalArgumentException("Category data row not found: " + change.categoryInfo().sourceRowNumber() + ".");
+                    }
+                    updated += rows;
+                }
+            }
+            return new CategoryWriteResult(inserted, updated);
         });
     }
 

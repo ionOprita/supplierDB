@@ -331,13 +331,15 @@ tbody tr:nth-child(even) .sticky-col-2 {
 
 @supports selector(body:has(#productsTable)) {
   html:has(#productsTable),
-  html:has(#employeeDataTable) {
+  html:has(#employeeDataTable),
+  html:has(#categoryDataTable) {
     height: 100%;
     overflow: hidden;
   }
 
   body:has(#productsTable),
-  body:has(#employeeDataTable) {
+  body:has(#employeeDataTable),
+  body:has(#categoryDataTable) {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -346,7 +348,8 @@ tbody tr:nth-child(even) .sticky-col-2 {
   }
 
   body:has(#productsTable) main,
-  body:has(#employeeDataTable) main {
+  body:has(#employeeDataTable) main,
+  body:has(#categoryDataTable) main {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
@@ -355,7 +358,8 @@ tbody tr:nth-child(even) .sticky-col-2 {
   }
 
   body:has(#productsTable) .product-sheet-wrap,
-  body:has(#employeeDataTable) .product-sheet-wrap {
+  body:has(#employeeDataTable) .product-sheet-wrap,
+  body:has(#categoryDataTable) .product-sheet-wrap {
     flex: 1 1 auto;
     min-height: 0;
     max-height: none;
@@ -438,12 +442,35 @@ tbody tr:nth-child(even) .sticky-col-2 {
   box-shadow: 2px 0 0 var(--sticky-separator);
 }
 
+.category-sheet-table .sticky-col-category-subcategory-country {
+  left: 0;
+  min-width: 250px;
+  width: 250px;
+  max-width: 250px;
+}
+
+.category-sheet-table .sticky-col-category-big-category {
+  left: 250px;
+  min-width: 170px;
+  width: 170px;
+  max-width: 170px;
+}
+
+.category-sheet-table .sticky-col-category-division {
+  left: 420px;
+  min-width: 180px;
+  width: 180px;
+  max-width: 180px;
+  box-shadow: 2px 0 0 var(--sticky-separator);
+}
+
 .product-sheet-table tbody tr:nth-child(even) .sticky-col {
   background: var(--surface-alt);
 }
 
 .product-sheet-row.is-dirty .sticky-col,
 .employee-sheet-row.is-dirty .sticky-col,
+.category-sheet-row.is-dirty .sticky-col,
 .product-sheet-table tbody tr:nth-child(even).is-dirty .sticky-col {
   background: var(--dirty-bg);
 }

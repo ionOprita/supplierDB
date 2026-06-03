@@ -27,6 +27,8 @@ import ro.sellfluence.api.MyCredentialRepo;
 import ro.sellfluence.api.WebAuthnServer;
 import ro.sellfluence.apphelper.BackgroundJob;
 import ro.sellfluence.db.Brand;
+import ro.sellfluence.db.CategoryDataTable.CategoryColumn;
+import ro.sellfluence.db.CategoryDataTable.CategoryInfo;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.EmployeeDataTable.EmployeeColumn;
 import ro.sellfluence.db.EmployeeDataTable.EmployeeInfo;
@@ -106,6 +108,7 @@ public class Server {
             "working_document_link"
     );
     private static final List<EmployeeFormField> EMPLOYEE_TABLE_FIELDS = buildEmployeeTableFields();
+    private static final List<CategoryFormField> CATEGORY_TABLE_FIELDS = buildCategoryTableFields();
 
     public record ProductTableRow(
             String productCode,
@@ -171,6 +174,39 @@ public class Server {
     public record EmployeeSaveError(String error) {
     }
 
+    public record CategoryTableRow(
+            int sourceRowNumber,
+            String subcategoryCountry,
+            String bigCategory,
+            String division,
+            Map<String, String> values
+    ) {
+    }
+
+    public record CategoryFormField(
+            String name,
+            String label,
+            String inputType,
+            boolean required
+    ) {
+    }
+
+    public record CategorySaveRequest(List<CategorySaveRow> rows) {
+    }
+
+    public record CategorySaveRow(
+            String mode,
+            String sourceRowNumber,
+            Map<String, String> values
+    ) {
+    }
+
+    public record CategorySaveResponse(String message, int inserted, int updated) {
+    }
+
+    public record CategorySaveError(String error) {
+    }
+
     private static void configure(JavalinConfig config, int port, int securePort) {
         SslPlugin sslPlugin = new SslPlugin(ssl -> {
             String password;
@@ -211,6 +247,8 @@ public class Server {
         app.get("/private/products", ctx -> renderProductsPage(ctx, mirrorDB));
         app.get("/private/employees", ctx -> renderEmployeesPage(ctx, mirrorDB));
         app.post("/private/employees/save", ctx -> saveEmployeeTableChanges(ctx, mirrorDB));
+        app.get("/private/categories", ctx -> renderCategoriesPage(ctx, mirrorDB));
+        app.post("/private/categories/save", ctx -> saveCategoryTableChanges(ctx, mirrorDB));
         app.get("/private/products/edit", ctx -> renderEditProductPage(ctx, mirrorDB, ctx.queryParam("productCode"), null, null));
         app.post("/private/products/update", ctx -> updateProduct(ctx, mirrorDB));
         app.get("/private/products/new", ctx -> renderNewProductPage(ctx, mirrorDB, null, null));
@@ -669,6 +707,32 @@ public class Server {
         }
     }
 
+    private static void renderCategoriesPage(Context ctx, EmagMirrorDB mirrorDB) {
+        var currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null) {
+            return;
+        }
+
+        var model = new HashMap<String, Object>();
+        model.put("userName", currentUser.username());
+        model.put("userRole", currentUser.role().name());
+        model.put("pageTitle", "Categories");
+        model.put("message", ctx.queryParam("message"));
+
+        try {
+            var categories = mirrorDB.readCategoryData();
+            var rows = buildCategoryTableRows(categories);
+            model.put("fields", CATEGORY_TABLE_FIELDS);
+            model.put("blankValues", blankCategoryFormValues(mirrorDB.nextCategoryDataSourceRowNumber()));
+            model.put("divisions", categoryDivisions(rows));
+            model.put("categories", rows);
+            ctx.render("categories.jte", model);
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load categories page.", e);
+            ctx.status(500).result("Failed to load categories.");
+        }
+    }
+
     private static void renderEditProductPage(Context ctx,
                                               EmagMirrorDB mirrorDB,
                                               String productCode,
@@ -854,6 +918,58 @@ public class Server {
         }
     }
 
+    private static void saveCategoryTableChanges(Context ctx, EmagMirrorDB mirrorDB) {
+        final CategorySaveRequest request;
+        try {
+            request = mapper.readValue(ctx.body(), CategorySaveRequest.class);
+        } catch (RuntimeException e) {
+            ctx.status(400).json(new CategorySaveError("Invalid category changes payload."));
+            return;
+        }
+
+        if (request.rows() == null || request.rows().isEmpty()) {
+            ctx.json(new CategorySaveResponse("No category changes to save.", 0, 0));
+            return;
+        }
+
+        try {
+            var writes = new ArrayList<EmagMirrorDB.CategoryWrite>();
+            for (var row : request.rows()) {
+                if (row == null) {
+                    continue;
+                }
+                var mode = row.mode() == null ? "" : row.mode();
+                var values = normalizeCategoryFormValues(row.values());
+                var category = categoryInfoFromValues(values);
+
+                switch (mode) {
+                    case "update" -> {
+                        var originalSourceRowNumber = parseRequiredPositiveInteger(row.sourceRowNumber(), "source_row_number");
+                        if (originalSourceRowNumber != category.sourceRowNumber()) {
+                            throw new IllegalArgumentException("source_row_number cannot be changed for existing category rows.");
+                        }
+                        writes.add(new EmagMirrorDB.CategoryWrite(category, false));
+                    }
+                    case "insert" -> writes.add(new EmagMirrorDB.CategoryWrite(category, true));
+                    default -> throw new IllegalArgumentException("Unknown category save mode: " + mode + ".");
+                }
+            }
+
+            if (writes.isEmpty()) {
+                ctx.json(new CategorySaveResponse("No category changes to save.", 0, 0));
+                return;
+            }
+
+            var result = mirrorDB.saveCategoryDataChanges(writes);
+            ctx.json(new CategorySaveResponse(categorySaveMessage(result), result.inserted(), result.updated()));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(new CategorySaveError(e.getMessage()));
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to save category table changes.", e);
+            ctx.status(500).json(new CategorySaveError("Database save failed: " + e.getMessage()));
+        }
+    }
+
     private static void renderProductFormPage(Context ctx,
                                               EmagMirrorDB mirrorDB,
                                               String pageTitle,
@@ -922,10 +1038,34 @@ public class Server {
                 .toList();
     }
 
+    private static List<CategoryTableRow> buildCategoryTableRows(List<CategoryInfo> categories) {
+        return categories.stream()
+                .map(category -> {
+                    var values = categoryToFormValues(category);
+                    return new CategoryTableRow(
+                            category.sourceRowNumber(),
+                            values.getOrDefault("subcategory_country", ""),
+                            values.getOrDefault("big_category", ""),
+                            values.getOrDefault("division", ""),
+                            values
+                    );
+                })
+                .toList();
+    }
+
     private static List<String> employeeDepartments(List<EmployeeTableRow> rows) {
         return rows.stream()
                 .map(EmployeeTableRow::department)
                 .filter(department -> department != null && !department.isBlank())
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
+    private static List<String> categoryDivisions(List<CategoryTableRow> rows) {
+        return rows.stream()
+                .map(CategoryTableRow::division)
+                .filter(division -> division != null && !division.isBlank())
                 .distinct()
                 .sorted()
                 .toList();
@@ -981,12 +1121,41 @@ public class Server {
         return List.copyOf(fields);
     }
 
+    private static List<CategoryFormField> buildCategoryTableFields() {
+        var fields = new ArrayList<CategoryFormField>();
+        fields.add(new CategoryFormField("source_row_number", "source_row_number", "integer", true));
+        var stickyFields = List.of("subcategory_country", "big_category", "division");
+        for (var stickyField : stickyFields) {
+            for (var column : CategoryColumn.values()) {
+                if (stickyField.equals(column.dbColumn())) {
+                    fields.add(categoryFormField(column));
+                    break;
+                }
+            }
+        }
+        for (var column : CategoryColumn.values()) {
+            if (!stickyFields.contains(column.dbColumn())) {
+                fields.add(categoryFormField(column));
+            }
+        }
+        return List.copyOf(fields);
+    }
+
     private static EmployeeFormField employeeFormField(EmployeeColumn column) {
         return new EmployeeFormField(
                 column.dbColumn(),
                 column.dbColumn(),
                 MULTILINE_EMPLOYEE_FIELDS.contains(column.dbColumn()) ? "textarea" : "text",
                 column == EmployeeColumn.FULL_NAME
+        );
+    }
+
+    private static CategoryFormField categoryFormField(CategoryColumn column) {
+        return new CategoryFormField(
+                column.dbColumn(),
+                column.dbColumn(),
+                "text",
+                column == CategoryColumn.SUBCATEGORY_COUNTRY
         );
     }
 
@@ -1066,6 +1235,16 @@ public class Server {
         return values;
     }
 
+    private static Map<String, String> categoryToFormValues(CategoryInfo category) {
+        var values = new LinkedHashMap<String, String>();
+        values.put("source_row_number", String.valueOf(category.sourceRowNumber()));
+        for (var column : CategoryColumn.values()) {
+            var value = category.value(column);
+            values.put(column.dbColumn(), value == null ? "" : value);
+        }
+        return values;
+    }
+
     private static String brandInputValue(String value, String vendorValue, List<Brand> brands) {
         return brandInputValue(value, parseUuidOrNull(vendorValue), brands);
     }
@@ -1117,6 +1296,15 @@ public class Server {
         return values;
     }
 
+    private static Map<String, String> blankCategoryFormValues(int sourceRowNumber) {
+        var values = new LinkedHashMap<String, String>();
+        for (var field : CATEGORY_TABLE_FIELDS) {
+            values.put(field.name(), "");
+        }
+        values.put("source_row_number", String.valueOf(sourceRowNumber));
+        return values;
+    }
+
     private static Map<String, String> readProductFormValues(Context ctx) {
         var values = new LinkedHashMap<String, String>();
         for (var field : PRODUCT_FORM_FIELDS) {
@@ -1148,6 +1336,17 @@ public class Server {
         return normalized;
     }
 
+    private static Map<String, String> normalizeCategoryFormValues(Map<String, String> values) {
+        var normalized = new LinkedHashMap<String, String>();
+        for (var field : CATEGORY_TABLE_FIELDS) {
+            normalized.put(field.name(), "");
+        }
+        if (values != null) {
+            normalized.putAll(values);
+        }
+        return normalized;
+    }
+
     private static EmployeeInfo employeeInfoFromValues(Map<String, String> values) {
         var sourceRowNumber = parseRequiredPositiveInteger(values.get("source_row_number"), "source_row_number");
         var sourceValues = new ArrayList<String>();
@@ -1162,6 +1361,22 @@ public class Server {
             sourceValues.set(column.sheetIndex() - 1, value);
         }
         return new EmployeeInfo(sourceRowNumber, sourceValues);
+    }
+
+    private static CategoryInfo categoryInfoFromValues(Map<String, String> values) {
+        var sourceRowNumber = parseRequiredPositiveInteger(values.get("source_row_number"), "source_row_number");
+        var sourceValues = new ArrayList<String>();
+        for (int i = 0; i < ro.sellfluence.db.CategoryDataTable.SOURCE_COLUMN_COUNT; i++) {
+            sourceValues.add(null);
+        }
+        for (var column : CategoryColumn.values()) {
+            var value = blankToNull(values.get(column.dbColumn()));
+            if (column == CategoryColumn.SUBCATEGORY_COUNTRY && value == null) {
+                throw new IllegalArgumentException("subcategory_country is required.");
+            }
+            sourceValues.set(column.sheetIndex() - 1, value);
+        }
+        return new CategoryInfo(sourceRowNumber, sourceValues);
     }
 
     private static ProductInfo productInfoFromValues(Map<String, String> values, List<Vendor> vendors, List<Brand> brands) {
@@ -1356,6 +1571,17 @@ public class Server {
             parts.add(result.inserted() + " inserted");
         }
         return parts.isEmpty() ? "No employee changes to save." : "Saved employee changes: " + String.join(", ", parts) + ".";
+    }
+
+    private static String categorySaveMessage(EmagMirrorDB.CategoryWriteResult result) {
+        var parts = new ArrayList<String>();
+        if (result.updated() > 0) {
+            parts.add(result.updated() + " updated");
+        }
+        if (result.inserted() > 0) {
+            parts.add(result.inserted() + " inserted");
+        }
+        return parts.isEmpty() ? "No category changes to save." : "Saved category changes: " + String.join(", ", parts) + ".";
     }
 
     private static void redirectWithProductMessage(Context ctx, String message) {
