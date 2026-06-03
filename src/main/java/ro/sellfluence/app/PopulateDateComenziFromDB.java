@@ -67,7 +67,14 @@ public class PopulateDateComenziFromDB {
             logger.log(INFO, "--- Update GMVs --------------------------");
             updateGMVs(mirrorDB, sheet, vendorGroup);
             logger.log(INFO, "--- Update orders ------------------------");
-            var rows = allOrderLines.stream().filter(row -> row.getFirst().get(5).toString().startsWith(vendorGroup)).toList();
+            var rows = allOrderLines.stream().filter(row -> {
+                List<Object> firstBlock = row.getFirst();
+                Object o = firstBlock.get(5);
+                if (o==null) {
+                    logger.severe("Missing model in order %s for PNK %s date %s.".formatted(firstBlock.get(1), firstBlock.get(4), firstBlock.get(0)));
+                }
+                return o.toString().startsWith(vendorGroup);
+            }).toList();
             updateOrders(rows, sheet);
         }
     }
