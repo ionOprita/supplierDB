@@ -124,6 +124,39 @@ h1 {
   min-width: 240px;
 }
 
+.brand-create-form {
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+.brand-create-form label {
+  padding-left: 0;
+}
+
+.brand-create-form input[type="text"],
+.brand-create-form select {
+  box-sizing: border-box;
+  width: auto;
+  min-width: 220px;
+  margin-bottom: 0;
+}
+
+.brands-table {
+  min-width: 760px;
+}
+
+.brands-table td {
+  white-space: nowrap;
+}
+
+.brands-table td:nth-child(2) {
+  min-width: 220px;
+}
+
+.row-actions form {
+  margin: 0;
+}
+
 .month-filter-select {
   min-width: 130px;
 }
@@ -167,6 +200,13 @@ h1 {
   min-width: 0;
   margin-bottom: 0;
   width: 100%;
+}
+
+.product-form-field input[type="checkbox"] {
+  width: auto;
+  min-width: 0;
+  margin: .45rem 0 0;
+  accent-color: var(--primary);
 }
 
 .product-form-field textarea {
@@ -399,6 +439,14 @@ tbody tr:nth-child(even) .sticky-col-2 {
   background: transparent;
   color: var(--text);
   font: inherit;
+}
+
+.product-sheet-checkbox {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  margin: .55rem auto;
+  accent-color: var(--primary);
 }
 
 .product-sheet-select {

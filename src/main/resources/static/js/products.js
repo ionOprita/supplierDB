@@ -24,6 +24,9 @@ function rowInputs(row) {
 }
 
 function inputValue(input) {
+  if (input.type === 'checkbox') {
+    return input.checked ? 'true' : 'false';
+  }
   return input.value ?? '';
 }
 
@@ -41,7 +44,11 @@ function readRowValues(row) {
 
 function writeRowValues(row, values) {
   for (const input of rowInputs(row)) {
-    input.value = values[input.dataset.field] ?? '';
+    if (input.type === 'checkbox') {
+      input.checked = values[input.dataset.field] === 'true';
+    } else {
+      input.value = values[input.dataset.field] ?? '';
+    }
   }
   updateRowVendor(row);
   refreshRowState(row);
@@ -79,6 +86,9 @@ function refreshRowState(row) {
 
 function displayValue(row, fieldName, value) {
   const input = findInput(row, fieldName);
+  if (input?.type === 'checkbox') {
+    return value === 'true' ? 'true' : 'false';
+  }
   if (input?.tagName === 'SELECT') {
     const option = Array.from(input.options).find((item) => item.value === (value ?? ''));
     if (option) {
@@ -175,7 +185,7 @@ function initializeRow(row) {
   refreshRowState(row);
 
   for (const input of rowInputs(row)) {
-    const eventName = input.tagName === 'SELECT' ? 'change' : 'input';
+    const eventName = input.tagName === 'SELECT' || input.type === 'checkbox' ? 'change' : 'input';
     input.addEventListener(eventName, handleProductInput);
   }
 }
