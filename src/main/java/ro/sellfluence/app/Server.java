@@ -1154,7 +1154,7 @@ public class Server {
         return new CategoryFormField(
                 column.dbColumn(),
                 column.dbColumn(),
-                "text",
+                column.integerColumn() ? "integer" : "text",
                 column == CategoryColumn.SUBCATEGORY_COUNTRY
         );
     }
@@ -1373,6 +1373,10 @@ public class Server {
             var value = blankToNull(values.get(column.dbColumn()));
             if (column == CategoryColumn.SUBCATEGORY_COUNTRY && value == null) {
                 throw new IllegalArgumentException("subcategory_country is required.");
+            }
+            if (column.integerColumn()) {
+                var parsed = parseInteger(value, column.dbColumn());
+                value = parsed == null ? null : parsed.toString();
             }
             sourceValues.set(column.sheetIndex() - 1, value);
         }

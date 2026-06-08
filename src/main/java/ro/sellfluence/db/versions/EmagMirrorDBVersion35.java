@@ -26,9 +26,9 @@ class EmagMirrorDBVersion35 {
                     supracategory_country TEXT,
                     category_country TEXT,
                     subsubcategory_country TEXT,
-                    category_id TEXT,
-                    scm_id TEXT,
-                    doc_id TEXT,
+                    category_id INTEGER,
+                    scm_id INTEGER,
+                    doc_id INTEGER,
                     source_values TEXT[] NOT NULL,
                     refreshed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp
                 );

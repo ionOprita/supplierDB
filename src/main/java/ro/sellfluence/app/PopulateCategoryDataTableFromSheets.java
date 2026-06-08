@@ -19,6 +19,7 @@ import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.db.CategoryDataTable.SOURCE_COLUMN_COUNT;
+import static ro.sellfluence.db.CategoryDataTable.normalizeIntegerValue;
 import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheetByName;
 
 /**
@@ -70,7 +71,8 @@ public class PopulateCategoryDataTableFromSheets {
     private static List<String> normalizeRow(List<String> row) {
         var normalized = new ArrayList<String>(SOURCE_COLUMN_COUNT);
         for (int i = 0; i < SOURCE_COLUMN_COUNT; i++) {
-            normalized.add(i < row.size() ? cleanCell(row.get(i)) : null);
+            var column = CategoryColumn.fromSheetIndex(i + 1);
+            normalized.add(i < row.size() ? cleanCell(row.get(i), column) : null);
         }
         return normalized;
     }
@@ -79,12 +81,15 @@ public class PopulateCategoryDataTableFromSheets {
         return row.get(column.sheetIndex() - 1);
     }
 
-    private static String cleanCell(String value) {
+    private static String cleanCell(String value, CategoryColumn column) {
         if (value == null) {
             return null;
         }
         var cleaned = value.replace("\r", "").trim();
-        return cleaned.isBlank() ? null : cleaned;
+        if (cleaned.isBlank()) {
+            return null;
+        }
+        return column.integerColumn() ? normalizeIntegerValue(cleaned, column.dbColumn()) : cleaned;
     }
 
     static void main(String[] args) throws SQLException, IOException {

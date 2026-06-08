@@ -9,11 +9,12 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static ro.sellfluence.db.CategoryDataTable.SOURCE_COLUMN_COUNT;
 
 class PopulateCategoryDataTableFromSheetsTest {
     @Test
-    void toCategoryInfosMapsRowsAndPreservesSourceValues() {
+    void toCategoryInfosMapsRowsAndNormalizesIntegerIds() {
         var rows = new ArrayList<List<String>>();
         rows.add(emptyRow());
         rows.add(emptyRow());
@@ -41,9 +42,9 @@ class PopulateCategoryDataTableFromSheetsTest {
         assertEquals("Sonerii electrice", info.subcategoryCountry());
         assertEquals("Home & Garden", info.value(CategoryColumn.BIG_CATEGORY));
         assertEquals("DIY", info.value(CategoryColumn.DIVISION));
-        assertEquals("3,010", info.value(CategoryColumn.CATEGORY_ID));
-        assertEquals("3,109", info.value(CategoryColumn.SCM_ID));
-        assertEquals("3,531", info.value(CategoryColumn.DOC_ID));
+        assertEquals("3010", info.value(CategoryColumn.CATEGORY_ID));
+        assertEquals("3109", info.value(CategoryColumn.SCM_ID));
+        assertEquals("3531", info.value(CategoryColumn.DOC_ID));
         assertEquals(SOURCE_COLUMN_COUNT, info.sourceValues().size());
     }
 
@@ -62,6 +63,20 @@ class PopulateCategoryDataTableFromSheetsTest {
         assertEquals("Casti wireless", info.subcategoryCountry());
         assertNull(info.value(CategoryColumn.BIG_CATEGORY));
         assertEquals(SOURCE_COLUMN_COUNT, info.sourceValues().size());
+    }
+
+    @Test
+    void toCategoryInfosRejectsInvalidIntegerIds() {
+        var rows = new ArrayList<List<String>>();
+        rows.add(emptyRow());
+        rows.add(emptyRow());
+
+        var category = emptyRow();
+        set(category, CategoryColumn.SUBCATEGORY_COUNTRY, "Sonerii electrice");
+        set(category, CategoryColumn.CATEGORY_ID, "not an id");
+        rows.add(category);
+
+        assertThrows(IllegalArgumentException.class, () -> PopulateCategoryDataTableFromSheets.toCategoryInfos(rows));
     }
 
     private static ArrayList<String> emptyRow() {

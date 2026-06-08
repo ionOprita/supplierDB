@@ -56,7 +56,11 @@
                                 @endif
 
                                 @if("integer".equals(field.inputType()))
-                                    <input class="category-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="number" step="1" value="${row.values().get(field.name())}" readonly required>
+                                    @if(field.required())
+                                        <input class="category-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="number" step="1" value="${row.values().get(field.name())}" readonly required>
+                                    @else
+                                        <input class="category-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="number" step="1" value="${row.values().get(field.name())}">
+                                    @endif
                                 @endif
 
                                 @if("text".equals(field.inputType()))
@@ -84,7 +88,11 @@
                     @endif
 
                     @if("integer".equals(field.inputType()))
-                        <input class="category-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="number" step="1" value="${blankValues.get(field.name())}" required>
+                        @if(field.required())
+                            <input class="category-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="number" step="1" value="${blankValues.get(field.name())}" required>
+                        @else
+                            <input class="category-cell-input product-sheet-input" data-field="${field.name()}" data-label="${field.label()}" data-input-type="${field.inputType()}" type="number" step="1" value="${blankValues.get(field.name())}">
+                        @endif
                     @endif
 
                     @if("text".equals(field.inputType()))

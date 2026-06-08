@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -45,6 +46,19 @@ public class CategoryDataTable {
 
         public String dbColumn() {
             return dbColumn;
+        }
+
+        public boolean integerColumn() {
+            return this == CATEGORY_ID || this == SCM_ID || this == DOC_ID;
+        }
+
+        public static CategoryColumn fromSheetIndex(int sheetIndex) {
+            for (var column : values()) {
+                if (column.sheetIndex == sheetIndex) {
+                    return column;
+                }
+            }
+            throw new IllegalArgumentException("Unknown category sheet index: " + sheetIndex + ".");
         }
     }
 
@@ -94,7 +108,7 @@ public class CategoryDataTable {
             var mergedCategory = new CategoryInfo(category.sourceRowNumber(), mergeSourceValuesForUpdate(db, category));
             int index = 1;
             for (var column : CategoryColumn.values()) {
-                s.setObject(index++, mergedCategory.value(column));
+                bindCategoryColumn(s, index++, column, mergedCategory.value(column));
             }
             s.setArray(index++, db.createArrayOf("text", mergedCategory.sourceValues().toArray(String[]::new)));
             s.setInt(index, mergedCategory.sourceRowNumber());
@@ -137,9 +151,17 @@ public class CategoryDataTable {
     private static CategoryInfo mapCategoryInfo(ResultSet rs) throws SQLException {
         var sourceValues = sourceValues(rs);
         for (var column : CategoryColumn.values()) {
-            sourceValues.set(column.sheetIndex() - 1, rs.getString(column.dbColumn()));
+            sourceValues.set(column.sheetIndex() - 1, resultValue(rs, column));
         }
         return new CategoryInfo(rs.getInt("source_row_number"), sourceValues);
+    }
+
+    private static String resultValue(ResultSet rs, CategoryColumn column) throws SQLException {
+        if (!column.integerColumn()) {
+            return rs.getString(column.dbColumn());
+        }
+        var value = rs.getObject(column.dbColumn(), Integer.class);
+        return value == null ? null : value.toString();
     }
 
     private static ArrayList<String> sourceValues(ResultSet rs) throws SQLException {
@@ -179,9 +201,44 @@ public class CategoryDataTable {
         int index = 1;
         s.setInt(index++, category.sourceRowNumber());
         for (var column : CategoryColumn.values()) {
-            s.setObject(index++, category.value(column));
+            bindCategoryColumn(s, index++, column, category.value(column));
         }
         s.setArray(index, s.getConnection().createArrayOf("text", category.sourceValues().toArray(String[]::new)));
+    }
+
+    private static void bindCategoryColumn(java.sql.PreparedStatement s, int index, CategoryColumn column, String value) throws SQLException {
+        if (!column.integerColumn()) {
+            s.setObject(index, value);
+            return;
+        }
+        s.setObject(index, parseIntegerValue(value, column.dbColumn()), Types.INTEGER);
+    }
+
+    private static Integer parseIntegerValue(String value, String label) {
+        if (value == null) {
+            return null;
+        }
+        var normalized = normalizeIntegerValue(value, label);
+        if (normalized == null) {
+            return null;
+        }
+        return Integer.parseInt(normalized);
+    }
+
+    public static String normalizeIntegerValue(String value, String label) {
+        if (value == null) {
+            return null;
+        }
+        var normalized = value.replace(",", "").replace(" ", "").trim();
+        if (normalized.isBlank()) {
+            return null;
+        }
+        try {
+            Integer.parseInt(normalized);
+            return normalized;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(label + " must be an integer.", e);
+        }
     }
 
     private static int insertedRows(int[] batchResult) {
@@ -240,7 +297,9 @@ public class CategoryDataTable {
         Objects.requireNonNull(sourceValues);
         var padded = new ArrayList<String>(SOURCE_COLUMN_COUNT);
         for (int i = 0; i < SOURCE_COLUMN_COUNT; i++) {
-            padded.add(i < sourceValues.size() ? sourceValues.get(i) : null);
+            var value = i < sourceValues.size() ? sourceValues.get(i) : null;
+            var column = CategoryColumn.fromSheetIndex(i + 1);
+            padded.add(column.integerColumn() ? normalizeIntegerValue(value, column.dbColumn()) : value);
         }
         return padded;
     }
