@@ -7,6 +7,8 @@ import java.nio.file.Paths;
 import java.util.Objects;
 import java.util.stream.Stream;
 
+import static ro.sellfluence.support.UsefulMethods.homeDirectory;
+
 /**
  * Access API keys by an alias.
  *
@@ -21,7 +23,7 @@ public class ApiKey {
     private String alias;
     private String key;
 
-    private static final Path path = Paths.get(System.getProperty("user.home"))
+    private static final Path path = homeDirectory()
             .resolve("Secrets")
             .resolve("apikeys.txt");
 

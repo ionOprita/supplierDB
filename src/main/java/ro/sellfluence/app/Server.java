@@ -72,12 +72,13 @@ import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.db.PassKey.Role.admin;
 import static ro.sellfluence.db.PassKey.Role.nobody;
 import static ro.sellfluence.db.PassKey.Role.user;
+import static ro.sellfluence.support.UsefulMethods.homeDirectory;
 
 /**
  * Server for the EmagMirror app.
  */
 public class Server {
-    private static final Path certsDir = Paths.get(System.getProperty("user.home")).resolve("Secrets").resolve("Certs");
+    private static final Path certsDir = homeDirectory().resolve("Secrets").resolve("Certs");
     private static final ObjectMapper mapper = (new ObjectMapper());
     private static final User unsafeUser = new User("unsafe-without-authentication", admin);
     private static final boolean withoutAuthenticationAndTotalyUnsafe = true;

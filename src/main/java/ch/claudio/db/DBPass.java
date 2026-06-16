@@ -8,6 +8,8 @@ import java.nio.file.Paths;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static ro.sellfluence.support.UsefulMethods.homeDirectory;
+
 /**
  * Represents a line from the dbpass.txt file.
  * <p>
@@ -67,7 +69,7 @@ public record DBPass(String alias, String connect, String user, String pw) {
      * Return all entries from the file ~/Secrets/dbpass.txt
      */
     public static List<DBPass> getAll() throws IOException {
-        Path filePath = Paths.get(System.getProperty("user.home")).resolve("Secrets").resolve("dbpass.txt");
+        Path filePath = homeDirectory().resolve("Secrets").resolve("dbpass.txt");
         return Files.readAllLines(filePath).stream()
                 .filter(line -> !line.isBlank())
                 .map(DBPass::fromString)

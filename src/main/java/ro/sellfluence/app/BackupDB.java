@@ -13,6 +13,7 @@ import java.time.format.DateTimeFormatter;
 import static java.lang.ProcessBuilder.Redirect.INHERIT;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
+import static ro.sellfluence.support.UsefulMethods.homeDirectory;
 
 public class BackupDB {
 
@@ -31,7 +32,7 @@ public class BackupDB {
         if (pg_dump == null) {
             System.out.println("Could not find the pg_dump executable. No backup will be performed.");
         } else {
-            var backupDir = Paths.get(System.getProperty("user.home"))
+            var backupDir = homeDirectory()
                     .resolve("Desktop")
                     .resolve("supplierDB")
                     .resolve("supplierDB")

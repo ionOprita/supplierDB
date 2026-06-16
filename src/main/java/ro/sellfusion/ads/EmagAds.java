@@ -32,6 +32,7 @@ import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
+import static ro.sellfluence.support.UsefulMethods.homeDirectory;
 import static ro.sellfluence.support.UsefulMethods.require;
 import static ro.sellfluence.support.UsefulMethods.toDate;
 
@@ -255,11 +256,11 @@ public class EmagAds {
                 IO.println("Password authentication failed. Please verify you have created the user emag_ads.");
                 IO.println("You can create it with the following command (using your password):");
                 IO.println("CREATE ROLE emag_ads WITH LOGIN PASSWORD 'password';");
-                IO.println("Make also sure you have added an entry in %s/Secrets/dbpass.txt".formatted(System.getProperty("user.home")));
+                IO.println("Make also sure you have added an entry in %s/Secrets/dbpass.txt".formatted(homeDirectory()));
             } else if (e.getMessage().contains("database \"emag_ads\" does not exist")) {
                 IO.println("Database emag_ads does not exist. Please create it with the following command:");
                 IO.println("CREATE DATABASE emag_ads WITH OWNER = emag_ads TEMPLATE template0;");
-                IO.println("Make also sure you have added an entry in %s/Secrets/dbpass.txt".formatted(System.getProperty("user.home")));
+                IO.println("Make also sure you have added an entry in %s/Secrets/dbpass.txt".formatted(homeDirectory()));
             }
             throw new RuntimeException(e);
 //        } catch (SQLException e) {
