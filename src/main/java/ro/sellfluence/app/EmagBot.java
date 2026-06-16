@@ -37,7 +37,6 @@ public class EmagBot {
         logger.log(INFO, "Transfer orders from the %s database to the date comenzi sheet.".formatted(dbAlias));
         try {
             (new PopulateDateComenziFromDB(2026)).updateSpreadsheets(mirrorDB);
-            (new PopulateDateComenziFromDB(2025)).updateSpreadsheets(mirrorDB);
         } catch (SQLException e) {
             logger.log(WARNING, "Updating the date comenzi sheet ended with an exception.", e);
             throw new RuntimeException("PopulateDateComenzi ended with an exception ", e);
