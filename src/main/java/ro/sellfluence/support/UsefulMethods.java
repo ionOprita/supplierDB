@@ -6,6 +6,8 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -32,6 +34,14 @@ public class UsefulMethods {
             return false;
         }
         return bd1.compareTo(bd2) == 0; // Both are non-null, use compareTo
+    }
+
+    public static Path homeDirectory() {
+        String userHome = System.getProperty("user.home");
+        if (userHome.startsWith("C:\\WINDOWS")) {
+            userHome = "\\Users\\Oprita";
+        }
+        return Paths.get(userHome);
     }
 
     /**
