@@ -174,8 +174,51 @@ function Sync-Repository {
     throw "Directory '$AppDirectory' exists, is not empty, and is not a Git repository. Move it away, delete it, or choose another AppDirectory."
 }
 
+function Invoke-ForegroundCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $FilePath,
+
+        [string[]] $Arguments = @(),
+
+        [Parameter(Mandatory = $true)]
+        [string] $WorkingDirectory
+    )
+
+    Write-Log "> cd `"$WorkingDirectory`""
+    Write-Log ("> {0} {1}" -f $FilePath, ($Arguments -join " "))
+
+    Push-Location -LiteralPath $WorkingDirectory
+    try {
+        # Important:
+        # No PowerShell pipeline here.
+        # The Java app inherits the real console.
+        & $FilePath @Arguments
+
+        $exitCode = $LASTEXITCODE
+        if ($null -eq $exitCode) {
+            $exitCode = 0
+        }
+
+        Write-Log ("Command exited with code {0}: {1}" -f $exitCode, $FilePath)
+        return [int]$exitCode
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 Ensure-Directory $LogDirectory
 Ensure-Directory $MavenLocalRepository
+
+$TranscriptLogFile = Join-Path $LogDirectory ("java-app-console-{0}.log" -f (Get-Date -Format "yyyy-MM-dd"))
+
+try {
+    Start-Transcript -Path $TranscriptLogFile -Append | Out-Null
+}
+catch {
+    Write-Host "Could not start transcript logging: $($_.Exception.Message)"
+}
 
 Write-Log "============================================================"
 Write-Log "Java application supervisor started."
@@ -192,7 +235,7 @@ while ($true) {
         Sync-Repository
 
         Write-Log "Starting Java application via Maven."
-        $exitCode = Invoke-LoggedCommand -FilePath $MavenCommand -Arguments $MavenArguments -WorkingDirectory $AppDirectory
+        $exitCode = Invoke-ForegroundCommand -FilePath $MavenCommand -Arguments $MavenArguments -WorkingDirectory $AppDirectory
 
         Write-Log "Java application / Maven process terminated with exit code $exitCode."
     }
