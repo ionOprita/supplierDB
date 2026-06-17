@@ -9,6 +9,9 @@ import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
+import com.google.api.services.drive.DriveScopes;
+import com.google.api.services.sheets.v4.SheetsScopes;
+import com.google.auth.oauth2.GoogleCredentials;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -27,6 +30,10 @@ public class Credentials {
      * Path to the location of the credentials file. This holds the
      */
     private static final Path creddentialsPath = Paths.get(System.getProperty("user.home"))
+            .resolve("Secrets")
+            .resolve("testionut-416609-fc40756a3b13.json");
+    
+    private static final Path oauthCreddentialsPath = Paths.get(System.getProperty("user.home"))
             .resolve("Secrets")
             .resolve("googleOAuth2Credentials.json");
 
@@ -48,7 +55,23 @@ public class Credentials {
      * @return An authorized Credential object.
      * @throws IOException If the credentials.json file cannot be found.
      */
-    public static Credential getCredentials(final NetHttpTransport httpTransport)
+    public static GoogleCredentials getCredentials(final NetHttpTransport httpTransport)
+            throws IOException {
+        final InputStream in = new FileInputStream(creddentialsPath.toFile());
+        GoogleCredentials credentials = GoogleCredentials
+                .fromStream(in)
+                .createScoped(List.of(SPREADSHEETS, DRIVE_READONLY));
+        return credentials;
+    }
+
+    /**
+     * Creates an authorized Credential object.
+     *
+     * @param httpTransport The network HTTP Transport.
+     * @return An authorized Credential object.
+     * @throws IOException If the credentials.json file cannot be found.
+     */
+    public static Credential getCredentialsOAuth(final NetHttpTransport httpTransport)
             throws IOException {
         final InputStream in = new FileInputStream(creddentialsPath.toFile());
         final GoogleClientSecrets clientSecrets =
