@@ -24,6 +24,7 @@ import com.google.api.services.sheets.v4.model.RepeatCellRequest;
 import com.google.api.services.sheets.v4.model.Request;
 import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
+import com.google.auth.http.HttpCredentialsAdapter;
 import org.jspecify.annotations.Nullable;
 import ro.sellfluence.googleapi.DriveAPI.FileResult;
 import ro.sellfluence.support.Logs;
@@ -683,10 +684,12 @@ public class SheetsAPI {
         Sheets sheetService;
         try {
             final NetHttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
+            HttpRequestInitializer requestInitializer =
+                    new HttpCredentialsAdapter(getCredentials(httpTransport));
             Sheets.Builder builder = new Sheets.Builder(
                     httpTransport,
                     jsonFactory,
-                    getCredentials(httpTransport)
+                    requestInitializer
             );
             builder.setHttpRequestInitializer(setHttpTimeout(builder.getHttpRequestInitializer()));
             sheetService = builder

@@ -1,12 +1,14 @@
 package ro.sellfluence.googleapi;
 
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.http.HttpRequestInitializer;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.model.File;
 import com.google.api.services.drive.model.FileList;
+import com.google.auth.http.HttpCredentialsAdapter;
 import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
@@ -188,10 +190,12 @@ public class DriveAPI {
     private Drive setupDriveService() {
         try {
             NetHttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
+            HttpRequestInitializer requestInitializer =
+                    new HttpCredentialsAdapter(getCredentials(httpTransport));
             return new Drive.Builder(
                     httpTransport,
                     jsonFactory,
-                    getCredentials(httpTransport)
+                    requestInitializer
             )
                     .setApplicationName(appName)
                     .build();
