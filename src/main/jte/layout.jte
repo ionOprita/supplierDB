@@ -44,6 +44,8 @@
                 <li><a href="/private/returnCharts">Return Charts</a></li>
                 <li><a href="/private/rrr">RRR (Smoothed)</a></li>
                 <li><a href="/private/products">Products</a></li>
+                <li><a href="/private/categories">Categories</a></li>
+                <li><a href="/private/employees">Employees</a></li>
                 <li><a href="/private/tasks">Tasks</a></li>
             </ul>
             @if(userRole.equals("admin"))
