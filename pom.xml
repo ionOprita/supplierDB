@@ -13,7 +13,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jackson-version>3.1.0</jackson-version>
         <jte.version>3.2.3</jte.version>
-        <javalin.version>7.1.0</javalin.version>
+        <javalin.version>7.2.2</javalin.version>
         <poi.version>5.5.1</poi.version>
     </properties>
 
@@ -116,7 +116,7 @@
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
-            <version>1.83</version>
+            <version>1.84</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/org.apache.commons/commons-collections4 -->
