@@ -57,7 +57,7 @@ public record Brand(UUID id, String name, UUID vendor, String vendorName) {
             return null;
         }
         if (vendor == null) {
-            throw new IllegalArgumentException("A product brand requires a vendor.");
+            throw new IllegalArgumentException("Brand %s is missing a vendor.".formatted(name));
         }
         insertBrand(db, normalizedName, vendor);
         return getBrandId(db, normalizedName, vendor);
