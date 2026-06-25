@@ -34,7 +34,7 @@ import static ro.sellfluence.support.Time.timeE;
 
 public class EmagDBApp {
 
-    private static final Logger logger = Logger.getLogger(EmagDBApp.class.getName());
+    private static final Logger warnLogger = Logs.getConsoleAndFileLogger("EmagDBAppWarnings", WARNING, 5, 10_000_000);
     private static final Logger consoleLogger = Logs.getConsoleLogger("EmagDBApp", INFO);
     private static final List<String> emagAccounts = List.of(
             "koppel",
@@ -230,19 +230,19 @@ public class EmagDBApp {
                     ordersTransferred = transferOrdersToDatabase(account, mirrorDB, startTime, endTime, null, null, null, null);
                     rmasTransferred = transferRMAsToDatabase(account, mirrorDB, startTime, endTime);
                 } catch (Exception e) {
-                    logger.log(WARNING, "Some error occurred", e);
+                    warnLogger.log(WARNING, "Some error occurred", e);
                     exception = e;
                 } finally {
                     if (exception != null) {
                         if (retryCount == 0) {
-                            consoleLogger.log(SEVERE, "No more retries possible for the fetch for %s from %s to %s.".formatted(account, startTime, endTime), exception);
+                            warnLogger.log(SEVERE, "No more retries possible for the fetch for %s from %s to %s.".formatted(account, startTime, endTime), exception);
                         } else {
                             retryCount--;
-                            consoleLogger.log(WARNING, "Retrying fetch for %s from %s to %s, retry count %d.".formatted(account, startTime, endTime, retryCount), exception);
+                            warnLogger.log(WARNING, "Retrying fetch for %s from %s to %s, retry count %d.".formatted(account, startTime, endTime, retryCount), exception);
                         }
                     } else {
                         retryCount = maxRetries;
-                        logger.log(FINE, "Transferred %d orders and %d RMAs".formatted(ordersTransferred, rmasTransferred));
+                        consoleLogger.log(FINE, "Transferred %d orders and %d RMAs".formatted(ordersTransferred, rmasTransferred));
                     }
                 }
             }
@@ -263,9 +263,9 @@ public class EmagDBApp {
     private static void cleanupFetchLogs(EmagMirrorDB mirrorDB, LocalDate oldestDay) {
         try {
             var count = mirrorDB.deleteFetchLogsOlderThan(oldestDay);
-            logger.log(INFO, "Deleted %d fetch logs older than %s".formatted(count, oldestDay));
+            consoleLogger.log(INFO, "Deleted %d fetch logs older than %s".formatted(count, oldestDay));
         } catch (SQLException e) {
-            logger.log(WARNING, "Error deleting fetch logs", e);
+            warnLogger.log(WARNING, "Error deleting fetch logs", e);
         }
     }
 
@@ -278,7 +278,7 @@ public class EmagDBApp {
                 allFetched = true;
             } catch (Exception e) {
                 allFetched = false;
-                logger.log(WARNING, "Waiting for a minute because of an exception ", e);
+                warnLogger.log(WARNING, "Waiting for a minute because of an exception ", e);
                 e.printStackTrace();
                 try {
                     Thread.sleep(60_000);
@@ -299,7 +299,7 @@ public class EmagDBApp {
             var fetchStatus = mirrorDB.getFetchStatus(account, day).orElse(null);
             dayWasFullyFetched = dayWasFullyFetched && isDone(fetchStatus);
             if (needsFetch(fetchStatus)) {
-                logger.log(INFO, "Fetch from %s for %s–%s".formatted(account, startTime, endTime));
+                consoleLogger.log(INFO, "Fetch from %s for %s–%s".formatted(account, startTime, endTime));
                 var fetchStartTime = LocalDateTime.now();
                 Exception exception = null;
                 var ordersTransferred = 0;
@@ -308,13 +308,13 @@ public class EmagDBApp {
                     ordersTransferred = transferOrdersToDatabase(account, mirrorDB, startTime, endTime, null, null, null, null);
                     rmasTransferred = transferRMAsToDatabase(account, mirrorDB, startTime, endTime);
                 } catch (Exception e) {
-                    logger.log(WARNING, "Some error occurred", e);
+                    warnLogger.log(WARNING, "Some error occurred", e);
                     exception = e;
                 } finally {
                     var fetchEndTime = LocalDateTime.now();
                     var error = (exception != null) ? exception.getMessage() : null;
                     mirrorDB.addEmagLog(account, day, fetchEndTime, error);
-                    logger.log(FINE, "Transferred %d orders and %d RMAs in %.2f seconds".formatted(ordersTransferred, rmasTransferred, fetchStartTime.until(fetchEndTime, MILLIS) / 1000.0));
+                    consoleLogger.log(FINE, "Transferred %d orders and %d RMAs in %.2f seconds".formatted(ordersTransferred, rmasTransferred, fetchStartTime.until(fetchEndTime, MILLIS) / 1000.0));
                     if (exception != null) throw exception;
                 }
                 // If emag connection issues get high, maybe add in again Thread.sleep(1_000);
@@ -419,7 +419,7 @@ public class EmagDBApp {
     private static List<OrderResult> readFromEmag(String alias, LocalDateTime createdAfter, LocalDateTime createdBefore, LocalDateTime modifiedAfter, LocalDateTime modifiedBefore, List<Integer> statusList, String id) throws IOException, InterruptedException {
         var emagCredentials = UserPassword.findAlias(alias);
         if (emagCredentials == null) {
-            logger.log(WARNING, "Missing credentials for alias " + alias);
+            warnLogger.log(WARNING, "Missing credentials for alias " + alias);
         } else {
             var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
             var filter = new HashMap<String, Object>();
@@ -438,7 +438,7 @@ public class EmagDBApp {
     private static List<RMAResult> readRMAFromEmag(String alias, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
         var emagCredentials = UserPassword.findAlias(alias);
         if (emagCredentials == null) {
-            logger.log(WARNING, "Missing credentials for alias " + alias);
+            warnLogger.log(WARNING, "Missing credentials for alias " + alias);
         } else {
             var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
             var filter = new HashMap<String, Object>();
