@@ -7,6 +7,8 @@ import java.nio.file.Paths;
 import java.util.Objects;
 import java.util.stream.Stream;
 
+import static ro.sellfluence.support.UsefulMethods.homeDirectory;
+
 /**
  * Access user passwords by an alias.
  *
@@ -17,13 +19,15 @@ import java.util.stream.Stream;
  * The first field is considered to be an alias by which the values can be retrieved.
  * The second field is the username associated with the alias.
  * The third field is the password associated with the alias.
+ * The optional fourth field contains an otpauth URL needed for 2FA.
  */
 public class UserPassword {
     private String alias;
     private String username;
     private String password;
+    private String otpAuth;
 
-    private static final Path path = Paths.get(System.getProperty("user.home"))
+    private static final Path path = homeDirectory()
             .resolve("Secrets")
             .resolve("userpws.txt");
 
@@ -34,6 +38,8 @@ public class UserPassword {
     public String getPassword() {
         return password;
     }
+
+    public String getOtpAuth() { return  otpAuth; }
 
     /**
      * Read the username associated with the given alias.
@@ -62,10 +68,11 @@ public class UserPassword {
         }
     }
 
-    private UserPassword(String alias, String username, String password) {
+    private UserPassword(String alias, String username, String password, String otpAuth) {
         this.alias = alias;
         this.username = username;
         this.password = password;
+        this.otpAuth = otpAuth;
     }
 
     /**
@@ -79,16 +86,19 @@ public class UserPassword {
     private static UserPassword fromString(String line) {
         Objects.requireNonNull(line);
         var fields = line.trim().split("\\t");
-        if (fields.length != 3) {
-            throw new IllegalArgumentException("Line must have exactly three fields spearated by a TAB character");
+        if (fields.length == 3) {
+            return new UserPassword(fields[0], fields[1], fields[2], null);
+        } else if (fields.length == 4) {
+            return new UserPassword(fields[0], fields[1], fields[2], fields[3]);
+        } else {
+            throw new IllegalArgumentException("Line must have exactly three or four fields spearated by a TAB character");
         }
-        return new UserPassword(fields[0], fields[1], fields[2]);
     }
 
     /**
-     * Read all lines from the file and convert them into a list of ApiKey instances.
+     * Read all lines from the file and convert them into a list of UserPassword instances.
      *
-     * @return stream of ApiKey or empty stream if the file is not readable.
+     * @return stream of UserPassword or empty stream if the file is not readable.
      */
     private static Stream<UserPassword> getAll() {
         try {
