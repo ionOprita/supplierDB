@@ -24,16 +24,17 @@ import java.util.List;
 import static com.google.api.services.drive.DriveScopes.DRIVE_METADATA_READONLY;
 import static com.google.api.services.drive.DriveScopes.DRIVE_READONLY;
 import static com.google.api.services.sheets.v4.SheetsScopes.SPREADSHEETS;
+import static ro.sellfluence.support.UsefulMethods.homeDirectory;
 
 public class Credentials {
     /**
      * Path to the location of the credentials file. This holds the
      */
-    private static final Path creddentialsPath = Paths.get(System.getProperty("user.home"))
+    private static final Path creddentialsPath = homeDirectory()
             .resolve("Secrets")
             .resolve("googleServiceAccount.json");
     
-    private static final Path oauthCreddentialsPath = Paths.get(System.getProperty("user.home"))
+    private static final Path oauthCreddentialsPath = homeDirectory()
             .resolve("Secrets")
             .resolve("googleOAuth2Credentials.json");
 
