@@ -31,7 +31,7 @@ public class Credentials {
      */
     private static final Path creddentialsPath = Paths.get(System.getProperty("user.home"))
             .resolve("Secrets")
-            .resolve("testionut-416609-fc40756a3b13.json");
+            .resolve("googleServiceAccount.json");
     
     private static final Path oauthCreddentialsPath = Paths.get(System.getProperty("user.home"))
             .resolve("Secrets")
