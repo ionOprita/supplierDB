@@ -17,6 +17,10 @@ $Branch = ""
 # Log files will be written here.
 $LogDirectory = "C:\Users\Oprita\Desktop\JavaServer\logs"
 
+# Java's java.io.tmpdir will point here.
+# ro.sellfluence.support.Logs writes file logs under this directory.
+$JavaTempDirectory = "C:\Users\Oprita\Desktop\JavaServer\tmp"
+
 # Delay before restarting the app after it exits or crashes.
 $RestartDelaySeconds = 15
 
@@ -119,6 +123,39 @@ function Invoke-LoggedCommand {
     }
 }
 
+function Add-JavaToolOption {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Option
+    )
+
+    $current = [Environment]::GetEnvironmentVariable("JAVA_TOOL_OPTIONS", "Process")
+    if ([string]::IsNullOrWhiteSpace($current)) {
+        $env:JAVA_TOOL_OPTIONS = $Option
+        return
+    }
+
+    if ($current -notlike "*$Option*") {
+        $env:JAVA_TOOL_OPTIONS = "$current $Option"
+    }
+}
+
+function Set-JavaTempDirectory {
+    Ensure-Directory $JavaTempDirectory
+
+    $resolvedTempDirectory = (Resolve-Path -LiteralPath $JavaTempDirectory).Path
+
+    # Some libraries use the Windows temp environment variables directly.
+    $env:TEMP = $resolvedTempDirectory
+    $env:TMP = $resolvedTempDirectory
+
+    # The Java runtime uses this system property for System.getProperty("java.io.tmpdir")
+    # and java.util.logging.FileHandler's %t pattern.
+    Add-JavaToolOption "-Djava.io.tmpdir=$resolvedTempDirectory"
+
+    return $resolvedTempDirectory
+}
+
 function Sync-Repository {
     Ensure-Directory (Split-Path -Parent $AppDirectory)
 
@@ -210,6 +247,7 @@ function Invoke-ForegroundCommand {
 
 Ensure-Directory $LogDirectory
 Ensure-Directory $MavenLocalRepository
+$ResolvedJavaTempDirectory = Set-JavaTempDirectory
 
 $TranscriptLogFile = Join-Path $LogDirectory ("java-app-console-{0}.log" -f (Get-Date -Format "yyyy-MM-dd"))
 
@@ -226,6 +264,7 @@ Write-Log "AppDirectory: $AppDirectory"
 Write-Log "RepositoryUrl: $RepositoryUrl"
 Write-Log "Branch: $(if ([string]::IsNullOrWhiteSpace($Branch)) { '<default/current>' } else { $Branch })"
 Write-Log "LogDirectory: $LogDirectory"
+Write-Log "JavaTempDirectory: $ResolvedJavaTempDirectory"
 Write-Log "MavenCommand: $MavenCommand"
 Write-Log "MavenArguments: $($MavenArguments -join ' ')"
 Write-Log "============================================================"
