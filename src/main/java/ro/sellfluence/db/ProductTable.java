@@ -215,7 +215,7 @@ public class ProductTable {
             return n1.text.compareTo(n2.text);
         };
 
-        public static final Comparator<ProductInfo> nameComparator =  Comparator.comparing(ProductInfo::name, nameComparatorString);
+        public static final Comparator<ProductInfo> nameComparator = Comparator.comparing(ProductInfo::name, nameComparatorString);
 
         public int vendorGroup() {
             return vendorGroup(name().charAt(0));
@@ -414,7 +414,12 @@ public class ProductTable {
      * @throws SQLException if anything bad happens.
      */
     private static int insertProduct(Connection db, ProductInfo productInfo) throws SQLException {
-        var brandId = Brand.insertOrGetBrand(db, productInfo.brand(), productInfo.vendor());
+        UUID brandId;
+        try {
+            brandId = Brand.insertOrGetBrand(db, productInfo.brand(), productInfo.vendor());
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException("Brand issue with product %s PNK %s".formatted(productInfo.name(), productInfo.pnk()));
+        }
         try (var s = db.prepareStatement("""
                 INSERT INTO product (
                     product_code,
