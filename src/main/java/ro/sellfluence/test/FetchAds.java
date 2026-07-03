@@ -9,6 +9,8 @@ import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.options.AriaRole;
 import ro.sellfluence.emagapi.AdsAnalyticsResponse;
 import ro.sellfluence.emagapi.AdsCampaign;
+import ro.sellfluence.emagapi.AdsCampaignPhrasesResponse;
+import ro.sellfluence.emagapi.AdsCampaignTargetedProductsResponse;
 import ro.sellfluence.emagapi.AdsCampaignsResponse;
 import ro.sellfluence.support.UserPassword;
 import tools.jackson.core.JsonParser;
@@ -101,6 +103,14 @@ public class FetchAds {
         var adsCampaign = objectMapper.readValue(adsCampaignJSON, AdsCampaignsResponse.class);
         IO.println(adsCampaign);
         adsCampaign.data().campaigns().stream().map(AdsCampaign::name).forEach(IO::println);
+        var adsCampaignPhrasesJSON = getJSON(page, "https://advertising.emag.net/api/v1/campaigns/174138/search-phrases?adsetId=180461&page=1&perPage=100&sort%5B0%5D%5Bfield%5D=impressions&sort%5B0%5D%5Bdirection%5D=desc&dateStart=2026-06-01&dateEnd=2026-06-30");
+        Files.writeString(targetDir.resolve("adsCampaignPhrases.json"), adsCampaignPhrasesJSON);
+        var adsCampaignPhrases = objectMapper.readValue(adsCampaignPhrasesJSON, AdsCampaignPhrasesResponse.class);
+        IO.println(adsCampaignPhrases);
+        var adsCampaignTargetedProductsJSON = getJSON(page, "https://advertising.emag.net/api/v1/campaigns/174138/adsets/180461/targeted-products?page=1&perPage=100&sort%5B0%5D%5Bfield%5D=clicks&sort%5B0%5D%5Bdirection%5D=desc&dateStart=2026-06-01&dateEnd=2026-06-30");
+        Files.writeString(targetDir.resolve("adsCampaignTargetedProducts.json"), adsCampaignTargetedProductsJSON);
+        var adsCampaignTargetedProducts = objectMapper.readValue(adsCampaignTargetedProductsJSON, AdsCampaignTargetedProductsResponse.class);
+        IO.println(adsCampaignTargetedProducts);
     }
 
     private static void login(Page page, UserPassword user) {
