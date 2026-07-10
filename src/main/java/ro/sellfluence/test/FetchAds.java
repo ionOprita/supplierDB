@@ -131,7 +131,7 @@ public class FetchAds {
         return uriBuilder;
     }
 
-   private static void downloadData(Page page, LocalDate startDate, LocalDate endDate) {
+   private static void downloadData(Page page, LocalDate startDate, LocalDate endDate) throws IOException, URISyntaxException {
         var campaigns = downloadCampaigns(page,startDate,endDate);
 //        var pageNumber = 1;
 //
@@ -174,16 +174,17 @@ public class FetchAds {
     private static AdsCampaignsResponse downloadCampaigns(Page page, LocalDate startDate, LocalDate endDate) throws URISyntaxException, IOException {
         int pageNumber = 1;
         int totalPages = 0;
+        AdsCampaignsResponse response;
         do {
             var uri = skeleton(startDate,endDate,pageNumber).appendPath("campaigns").build();
             var path = targetDir.resolve("adsCampaigns_%s_%s_%d.json".formatted(startDate,endDate,pageNumber));
             var json = getJSON(page,path,uri.toASCIIString());
-            var adsCampaign = objectMapper.readValue(json, AdsCampaignsResponse.class);
-            var meta = adsCampaign.meta();
+            response = objectMapper.readValue(json, AdsCampaignsResponse.class);
+            var meta = response.meta();
             totalPages = meta.pageCount();
             pageNumber++;
         } while (pageNumber <= totalPages);
-
+        return response;
     }
 
     private static void login(Page page, UserPassword user) {

@@ -16,6 +16,8 @@ public record AdsPerformanceSummary(
         Integer offerCount,
         Integer pausedOfferCount,
         Integer adsetCount,
+        Integer keywordCount,
+        Integer productTargetCount,
         BigDecimal conversionRate,
         BigDecimal returnOnAdvertisingSpend
 ) {

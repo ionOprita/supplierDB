@@ -7,6 +7,9 @@ public record AdsAdset(
         String name,
         String targeting,
         BigDecimal bid,
-        String status
+        String status,
+        String inheritedStatus,
+        AdsRecommendedBid recommendedBid,
+        AdsPerformanceSummary summary
 ) {
 }
