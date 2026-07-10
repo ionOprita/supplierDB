@@ -191,6 +191,59 @@ Putting it all together, the LEAD(order_start) OVER (PARTITION BY emag_login ORD
 
 ## Certificates
 
+The server can load a production Let's Encrypt `PKCS#12`/PFX file or fall back to a local development certificate.
+
+Production defaults:
+
+- Host name: `server.sellfusion.ro`
+- Public URL: `https://server.sellfusion.ro`
+- Public router forwarding: `443 -> Windows machine port 8443`
+- Required for automatic Let's Encrypt renewal: `80 -> Windows machine port 8080`
+
+The Windows scripts use win-acme for ACME account handling, certificate issuance, and scheduled renewal. The Java server participates by serving HTTP-01 challenge files from `ACME_CHALLENGE_WEBROOT` and by loading the generated PFX configured through `TLS_KEYSTORE_PATH` and `TLS_KEYSTORE_PASSWORD_FILE`.
+
+### Installing win-acme (`wacs.exe`)
+
+1. Open https://www.win-acme.com/ on the Windows server.
+2. Download the latest recommended `win-acme.v2.x.x.x.x64.trimmed.zip` release. Use the `x86` ZIP only for 32-bit Windows. Use the larger/pluggable ZIP only if you need extra validation plugins.
+3. Create a permanent install directory:
+
+```powershell
+New-Item -ItemType Directory -Force -Path "C:\Program Files\win-acme"
+```
+
+4. Extract the ZIP contents into `C:\Program Files\win-acme`. After extraction, this file should exist:
+
+```powershell
+C:\Program Files\win-acme\wacs.exe
+```
+
+5. Verify the executable from an Administrator PowerShell:
+
+```powershell
+& "C:\Program Files\win-acme\wacs.exe" --version
+```
+
+The setup script automatically looks for `wacs.exe` in `PATH`, `C:\Program Files\win-acme`, and `C:\ProgramData\win-acme`. If you install it somewhere else, set `$WinAcmeExecutable` in `scripts/setup-scheduled-task.ps1` to the full path of `wacs.exe`.
+
+### Windows production with Let's Encrypt
+
+1. Make sure DNS for `server.sellfusion.ro` points to `86.124.84.214`.
+2. Configure the router:
+   - public TCP `443` to the Windows machine TCP `8443`
+   - public TCP `80` to the Windows machine TCP `8080`
+3. Install win-acme (`wacs.exe`) on the Windows machine.
+4. Edit `scripts/setup-scheduled-task.ps1` and set:
+   - `$LetsEncryptEmail`
+   - `$WinAcmeExecutable`, only if `wacs.exe` is not on `PATH` or in one of the common install locations
+5. Run PowerShell as Administrator and execute `scripts/setup-scheduled-task.ps1`.
+
+The setup script starts the Java scheduled task first, waits for `http://localhost:8080/health`, then asks win-acme to create `C:\Users\Oprita\Desktop\JavaServer\certs\server.sellfusion.ro.pfx`. win-acme also creates its own renewal task and runs `scripts/restart-java-task.ps1` after successful issuance or renewal so Jetty reloads the new PFX on process restart.
+
+If public port `80` cannot be forwarded, this HTTP-01 setup will not work. Use a DNS-01 win-acme plugin for your DNS provider instead, or use a TLS-ALPN-01 setup that can temporarily answer public port `443`.
+
+### Local development certificate
+
 Use these commands to generate a local certificate for `localhost` and convert it to a password-protected `PKCS#12` file (`.p12`) that can be used by Jetty.
 
 ### macOS
