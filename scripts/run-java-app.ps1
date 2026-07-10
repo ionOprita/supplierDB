@@ -21,6 +21,21 @@ $LogDirectory = "C:\Users\Oprita\Desktop\JavaServer\logs"
 # ro.sellfluence.support.Logs writes file logs under this directory.
 $JavaTempDirectory = "C:\Users\Oprita\Desktop\JavaServer\tmp"
 
+# Public host and local ports.
+# The router should forward public 443 to this machine's $LocalHttpsPort.
+# For Let's Encrypt HTTP-01 renewal, also forward public 80 to this machine's $LocalHttpPort.
+$PublicHostName = "server.sellfusion.ro"
+$PublicHttpsOrigin = "https://server.sellfusion.ro"
+$LocalHttpPort = 8080
+$LocalHttpsPort = 8443
+
+# Production certificate and ACME HTTP-01 challenge locations.
+# The setup script configures win-acme to write the PFX and challenge files here.
+$CertificateDirectory = "C:\Users\Oprita\Desktop\JavaServer\certs"
+$CertificatePath = Join-Path $CertificateDirectory "$PublicHostName.pfx"
+$CertificatePasswordFile = Join-Path $CertificateDirectory "$PublicHostName.pw"
+$AcmeChallengeWebRoot = "C:\Users\Oprita\Desktop\JavaServer\acme-challenge"
+
 # Delay before restarting the app after it exits or crashes.
 $RestartDelaySeconds = 15
 
@@ -156,6 +171,20 @@ function Set-JavaTempDirectory {
     return $resolvedTempDirectory
 }
 
+function Set-ApplicationEnvironment {
+    Ensure-Directory $CertificateDirectory
+    Ensure-Directory $AcmeChallengeWebRoot
+
+    $env:PORT = [string] $LocalHttpPort
+    $env:PORT_SECURE = [string] $LocalHttpsPort
+    $env:ORIGIN = $PublicHttpsOrigin
+    $env:PUBLIC_HTTPS_ORIGIN = $PublicHttpsOrigin
+    $env:RP_ID = $PublicHostName
+    $env:TLS_KEYSTORE_PATH = $CertificatePath
+    $env:TLS_KEYSTORE_PASSWORD_FILE = $CertificatePasswordFile
+    $env:ACME_CHALLENGE_WEBROOT = $AcmeChallengeWebRoot
+}
+
 function Sync-Repository {
     Ensure-Directory (Split-Path -Parent $AppDirectory)
 
@@ -248,6 +277,7 @@ function Invoke-ForegroundCommand {
 Ensure-Directory $LogDirectory
 Ensure-Directory $MavenLocalRepository
 $ResolvedJavaTempDirectory = Set-JavaTempDirectory
+Set-ApplicationEnvironment
 
 $TranscriptLogFile = Join-Path $LogDirectory ("java-app-console-{0}.log" -f (Get-Date -Format "yyyy-MM-dd"))
 
@@ -265,6 +295,12 @@ Write-Log "RepositoryUrl: $RepositoryUrl"
 Write-Log "Branch: $(if ([string]::IsNullOrWhiteSpace($Branch)) { '<default/current>' } else { $Branch })"
 Write-Log "LogDirectory: $LogDirectory"
 Write-Log "JavaTempDirectory: $ResolvedJavaTempDirectory"
+Write-Log "PublicHttpsOrigin: $PublicHttpsOrigin"
+Write-Log "LocalHttpPort: $LocalHttpPort"
+Write-Log "LocalHttpsPort: $LocalHttpsPort"
+Write-Log "CertificatePath: $CertificatePath"
+Write-Log "CertificatePasswordFile: $CertificatePasswordFile"
+Write-Log "AcmeChallengeWebRoot: $AcmeChallengeWebRoot"
 Write-Log "MavenCommand: $MavenCommand"
 Write-Log "MavenArguments: $($MavenArguments -join ' ')"
 Write-Log "============================================================"

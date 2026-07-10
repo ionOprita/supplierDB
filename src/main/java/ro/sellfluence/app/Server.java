@@ -85,6 +85,14 @@ public class Server {
     private static final boolean withoutAuthenticationAndTotalyUnsafe = false;
     private static final boolean runBackgroundTasks = false;
     private static final Path certsDir = homeDirectory().resolve("Secrets").resolve("Certs");
+    private static final String productionHostName = "server.sellfusion.ro";
+    private static final String tlsKeystorePathConfigName = "TLS_KEYSTORE_PATH";
+    private static final String tlsKeystorePasswordConfigName = "TLS_KEYSTORE_PASSWORD";
+    private static final String tlsKeystorePasswordFileConfigName = "TLS_KEYSTORE_PASSWORD_FILE";
+    private static final String acmeChallengeWebRootConfigName = "ACME_CHALLENGE_WEBROOT";
+    private static final String publicOriginConfigName = "ORIGIN";
+    private static final String publicHttpsOriginConfigName = "PUBLIC_HTTPS_ORIGIN";
+    private static final String acmeChallengePrefix = "/.well-known/acme-challenge/";
     private static final ObjectMapper mapper = (new ObjectMapper());
     private static final User unsafeUser = new User("unsafe-without-authentication", admin);
     private static final Set<String> MULTILINE_PRODUCT_FIELDS = Set.of(
@@ -210,21 +218,7 @@ public class Server {
     }
 
     private static void configure(JavalinConfig config, int port, int securePort) {
-        SslPlugin sslPlugin = new SslPlugin(ssl -> {
-            String password;
-            try {
-                password = Files.readString(Server.certsDir.resolve("localhost.pw")).trim();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-            ssl.keystoreFromPath(Server.certsDir.resolve("localhost.p12").toString(), password);
-            // You can adjust ports, whether to enable HTTP (insecure) etc.
-            ssl.securePort = securePort;
-            ssl.insecurePort = port;
-            ssl.insecure = true;
-            ssl.secure = true;
-        });
-        config.registerPlugin(sslPlugin);
+        configureSsl(config, port, securePort);
         config.bundledPlugins.enableDevLogging();
         config.fileRenderer(new JavalinJte(createJteEngine()));
         config.http.defaultContentType = "application/json";
@@ -232,10 +226,106 @@ public class Server {
         config.validation.register(YearMonth.class, YearMonth::parse);
     }
 
+    private record TlsKeystoreConfig(Path path, String password) {
+    }
+
+    private static void configureSsl(JavalinConfig config, int port, int securePort) {
+        TlsKeystoreConfig tlsKeystoreConfig = loadTlsKeystoreConfig();
+        SslPlugin sslPlugin = new SslPlugin(ssl -> {
+            if (tlsKeystoreConfig == null) {
+                logger.log(WARNING, "No TLS keystore found. HTTPS is disabled; HTTP remains available on port {0}.",
+                        port);
+                ssl.secure = false;
+            } else {
+                logger.log(INFO, "Using TLS keystore {0} on port {1}.",
+                        new Object[]{tlsKeystoreConfig.path(), securePort});
+                ssl.keystoreFromPath(tlsKeystoreConfig.path().toString(), tlsKeystoreConfig.password());
+                ssl.securePort = securePort;
+                ssl.secure = true;
+            }
+            ssl.insecurePort = port;
+            ssl.insecure = true;
+        });
+        config.registerPlugin(sslPlugin);
+    }
+
+    private static TlsKeystoreConfig loadTlsKeystoreConfig() {
+        Map<Path, Boolean> candidates = new LinkedHashMap<>();
+
+        configuredPath(tlsKeystorePathConfigName).ifPresent(path -> candidates.put(path, true));
+        candidates.putIfAbsent(certsDir.resolve(productionHostName + ".pfx"), false);
+        candidates.putIfAbsent(certsDir.resolve(productionHostName + ".p12"), false);
+        candidates.putIfAbsent(certsDir.resolve("localhost.p12"), false);
+
+        for (Map.Entry<Path, Boolean> candidate : candidates.entrySet()) {
+            Path keystorePath = candidate.getKey();
+            if (!Files.isRegularFile(keystorePath)) {
+                if (candidate.getValue()) {
+                    logger.log(WARNING, "{0} points to {1}, but that file does not exist yet.",
+                            new Object[]{tlsKeystorePathConfigName, keystorePath});
+                }
+                continue;
+            }
+
+            return new TlsKeystoreConfig(keystorePath, readKeystorePassword(keystorePath));
+        }
+
+        return null;
+    }
+
+    private static String readKeystorePassword(Path keystorePath) {
+        String password = configValue(tlsKeystorePasswordConfigName);
+        if (password != null) {
+            return password;
+        }
+
+        Path passwordFile = configuredPath(tlsKeystorePasswordFileConfigName)
+                .orElse(defaultPasswordFileFor(keystorePath));
+        if (!Files.isRegularFile(passwordFile)) {
+            logger.log(WARNING, "No TLS password file found at {0}; trying an empty keystore password.", passwordFile);
+            return "";
+        }
+
+        try {
+            return Files.readString(passwordFile).trim();
+        } catch (IOException e) {
+            throw new RuntimeException("Could not read TLS keystore password file " + passwordFile, e);
+        }
+    }
+
+    private static Path defaultPasswordFileFor(Path keystorePath) {
+        String fileName = keystorePath.getFileName().toString();
+        int extensionIndex = fileName.lastIndexOf('.');
+        String passwordFileName = extensionIndex > 0
+                ? fileName.substring(0, extensionIndex) + ".pw"
+                : fileName + ".pw";
+        Path parent = keystorePath.getParent();
+        return parent == null ? Paths.get(passwordFileName) : parent.resolve(passwordFileName);
+    }
+
+    private static java.util.Optional<Path> configuredPath(String name) {
+        String value = configValue(name);
+        if (value == null) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(Paths.get(value));
+    }
+
+    private static String configValue(String name) {
+        String value = System.getProperty(name);
+        if (value == null || value.isBlank()) {
+            value = System.getenv(name);
+        }
+        return value == null || value.isBlank() ? null : value;
+    }
+
     private static void configureRoutes(JavalinDefaultRoutingApi app,
                                         EmagMirrorDB mirrorDB,
                                         API api,
                                         RelyingParty rp) {
+        configureAcmeChallenge(app);
+        configureHttpToHttpsRedirect(app);
+
         if (withoutAuthenticationAndTotalyUnsafe) {
             logger.log(WARNING, "withoutAuthenticationAndTotalyUnsafe=true. Authentication and role checks are disabled.");
             app.get("/", ctx -> ctx.redirect("/private/overview"));
@@ -276,6 +366,61 @@ public class Server {
             ctx.req().getSession().invalidate();
             ctx.redirect("/");
         });
+    }
+
+    private static void configureAcmeChallenge(JavalinDefaultRoutingApi app) {
+        Path webRoot = acmeChallengeWebRoot();
+        app.get(acmeChallengePrefix + "{token}", ctx -> serveAcmeChallenge(ctx, webRoot));
+    }
+
+    private static Path acmeChallengeWebRoot() {
+        return configuredPath(acmeChallengeWebRootConfigName)
+                .orElse(certsDir.resolve("acme-challenge-webroot"));
+    }
+
+    private static void serveAcmeChallenge(Context ctx, Path webRoot) throws IOException {
+        String token = ctx.pathParam("token");
+        if (!token.matches("[A-Za-z0-9_-]+")) {
+            ctx.status(404);
+            return;
+        }
+
+        Path challengeDirectory = webRoot.resolve(".well-known").resolve("acme-challenge").normalize();
+        Path challengeFile = challengeDirectory.resolve(token).normalize();
+        if (!challengeFile.startsWith(challengeDirectory) || !Files.isRegularFile(challengeFile)) {
+            ctx.status(404);
+            return;
+        }
+
+        ctx.contentType("text/plain").result(Files.readString(challengeFile, StandardCharsets.UTF_8));
+    }
+
+    private static void configureHttpToHttpsRedirect(JavalinDefaultRoutingApi app) {
+        app.before(ctx -> {
+            if (ctx.req().isSecure()) {
+                return;
+            }
+
+            String requestUri = ctx.req().getRequestURI();
+            if (requestUri.startsWith(acmeChallengePrefix) || "/health".equals(requestUri)) {
+                return;
+            }
+
+            String query = ctx.req().getQueryString();
+            String location = publicHttpsOrigin() + requestUri + (query == null ? "" : "?" + query);
+            ctx.status(308).header("Location", location).result("");
+        });
+    }
+
+    private static String publicHttpsOrigin() {
+        String origin = configValue(publicHttpsOriginConfigName);
+        if (origin == null) {
+            origin = configValue(publicOriginConfigName);
+        }
+        if (origin == null) {
+            origin = "https://localhost:8443";
+        }
+        return origin.endsWith("/") ? origin.substring(0, origin.length() - 1) : origin;
     }
 
     private static final Logger logger = Logs.getFileLogger("Server", INFO, 10, 1_000_000);
