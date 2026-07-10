@@ -54,6 +54,29 @@ function New-PfxPasswordFileIfMissing {
     [Convert]::ToBase64String($bytes) | Set-Content -LiteralPath $Path -Encoding ASCII
 }
 
+function Test-PfxPassword {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $CertificatePath,
+
+        [Parameter(Mandatory = $true)]
+        [string] $Password
+    )
+
+    try {
+        $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            $CertificatePath,
+            $Password,
+            [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+        )
+        $certificate.Dispose()
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
 function Resolve-WinAcmeExecutable {
     if (-not [string]::IsNullOrWhiteSpace($WinAcmeExecutable)) {
         if (Test-Path -LiteralPath $WinAcmeExecutable -PathType Leaf) {
@@ -113,16 +136,31 @@ function Invoke-LetsEncryptSetup {
 
     Ensure-Directory $LetsEncryptCertificateDirectory
     Ensure-Directory $LetsEncryptChallengeWebRoot
-    New-PfxPasswordFileIfMissing $LetsEncryptPasswordFile
 
-    if ((Test-Path -LiteralPath $LetsEncryptCertificatePath -PathType Leaf) -and -not $ForceLetsEncryptSetup) {
-        Write-Host "Certificate already exists at $LetsEncryptCertificatePath. Skipping win-acme creation."
-        Write-Host "Set `$ForceLetsEncryptSetup = `$true if you need to recreate the win-acme renewal."
-        return
+    $certificateExists = Test-Path -LiteralPath $LetsEncryptCertificatePath -PathType Leaf
+    $passwordFileExists = Test-Path -LiteralPath $LetsEncryptPasswordFile -PathType Leaf
+
+    if ($certificateExists -and -not $passwordFileExists -and -not $ForceLetsEncryptSetup) {
+        throw "Certificate exists at $LetsEncryptCertificatePath, but password file is missing at $LetsEncryptPasswordFile. Restore the original password file or set `$ForceLetsEncryptSetup = `$true to recreate the certificate."
+    }
+
+    if (-not $certificateExists -or $ForceLetsEncryptSetup) {
+        New-PfxPasswordFileIfMissing $LetsEncryptPasswordFile
+    }
+
+    $pfxPassword = (Get-Content -LiteralPath $LetsEncryptPasswordFile -Raw).Trim()
+
+    if ($certificateExists -and -not $ForceLetsEncryptSetup) {
+        if (Test-PfxPassword -CertificatePath $LetsEncryptCertificatePath -Password $pfxPassword) {
+            Write-Host "Certificate already exists at $LetsEncryptCertificatePath and its password file is valid. Skipping win-acme creation."
+            Write-Host "Set `$ForceLetsEncryptSetup = `$true if you need to recreate the win-acme renewal."
+            return
+        }
+
+        throw "Certificate exists at $LetsEncryptCertificatePath, but $LetsEncryptPasswordFile does not unlock it. Restore the matching password file or set `$ForceLetsEncryptSetup = `$true to recreate the certificate."
     }
 
     $wacs = Resolve-WinAcmeExecutable
-    $pfxPassword = (Get-Content -LiteralPath $LetsEncryptPasswordFile -Raw).Trim()
 
     Write-Host "Requesting Let's Encrypt certificate for $LetsEncryptHostName."
     Write-Host "Router requirement: public port 80 must reach this machine on local port $LocalHttpPort."

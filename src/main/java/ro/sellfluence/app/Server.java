@@ -238,9 +238,15 @@ public class Server {
             } else {
                 logger.log(INFO, "Using TLS keystore {0} on port {1}.",
                         new Object[]{tlsKeystoreConfig.path(), securePort});
-                ssl.keystoreFromPath(tlsKeystoreConfig.path().toString(), tlsKeystoreConfig.password());
-                ssl.securePort = securePort;
-                ssl.secure = true;
+                try {
+                    ssl.keystoreFromPath(tlsKeystoreConfig.path().toString(), tlsKeystoreConfig.password());
+                    ssl.securePort = securePort;
+                    ssl.secure = true;
+                } catch (RuntimeException e) {
+                    logger.log(WARNING, "Could not load TLS keystore " + tlsKeystoreConfig.path()
+                            + ". HTTPS is disabled; HTTP remains available on port " + port + ".", e);
+                    ssl.secure = false;
+                }
             }
             ssl.insecurePort = port;
             ssl.insecure = true;
