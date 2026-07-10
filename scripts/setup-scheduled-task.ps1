@@ -7,7 +7,7 @@ $WorkingDirectory = "C:\Users\Oprita\Desktop\JavaServer"
 # Public 80 must forward to local 8080 for HTTP-01 validation.
 $EnableLetsEncrypt = $true
 $LetsEncryptHostName = "server.sellfusion.ro"
-$LetsEncryptEmail = ""
+$LetsEncryptEmail = "office@sellfusion.ro"
 $LocalHttpPort = 8080
 $LetsEncryptCertificateDirectory = "C:\Users\Oprita\Desktop\JavaServer\certs"
 $LetsEncryptChallengeWebRoot = "C:\Users\Oprita\Desktop\JavaServer\acme-challenge"
