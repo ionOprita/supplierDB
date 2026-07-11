@@ -4,6 +4,10 @@ import java.util.List;
 
 public record AdsAnalyticsResponse(
         List<Object> meta,
-        AdsAnalyticsData data
+        AdsAnalyticsData data,
+        String error,
+        String message,
+        Integer status,
+        String code
 ) {
 }

@@ -2,12 +2,14 @@ package ro.sellfluence.emagapi;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record AdsCampaign(
         Integer id,
         String name,
         Integer advertiserId,
         BigDecimal dailyBudget,
+        BigDecimal effectiveDailyBudget,
         BigDecimal remainingDailyBudget,
         String status,
         String inheritedStatus,
@@ -15,6 +17,7 @@ public record AdsCampaign(
         LocalDateTime dateStart,
         LocalDateTime dateEnd,
         AdsPerformanceSummary summary,
-        String advertiserName
+        String advertiserName,
+        List<AdsAdset> adSets
 ) {
 }
