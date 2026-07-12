@@ -8,6 +8,7 @@ import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.options.AriaRole;
 import org.apache.hc.core5.net.URIBuilder;
+import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.emagapi.AdSet;
 import ro.sellfluence.emagapi.AdsAdset;
 import ro.sellfluence.emagapi.AdsCampaign;
@@ -18,6 +19,7 @@ import ro.sellfluence.emagapi.AdsCampaignsResponse;
 import ro.sellfluence.emagapi.AdsSearchPhrase;
 import ro.sellfluence.emagapi.AdsTargetedProduct;
 import ro.sellfluence.emagapi.Campaign;
+import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 import ro.sellfluence.support.UserPassword;
 import tools.jackson.core.JsonParser;
@@ -32,6 +34,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -42,6 +45,8 @@ import java.util.Random;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
+import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 
 public class FetchAds {
@@ -49,8 +54,10 @@ public class FetchAds {
 
     private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", Level.INFO, 10, 100_000);
 
-    static void main() throws Exception {
-        fetchFrom("sellfusion");
+    static void main(String... args) throws Exception {
+        var arguments = new Arguments(args);
+        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
+        fetchFrom(mirrorDB, "sellfusion");
     }
 
     static final JsonMapper objectMapper = JsonMapper.builder()
@@ -106,7 +113,7 @@ public class FetchAds {
         return json;
     }
 
-    public static void fetchFrom(String alias) throws IOException, URISyntaxException {
+    public static void fetchFrom(EmagMirrorDB mirrorDB, String alias) throws IOException, URISyntaxException, SQLException {
         var user = UserPassword.findAlias(alias);
         try (Playwright playwright = Playwright.create()) {
             try (Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
@@ -116,7 +123,8 @@ public class FetchAds {
                 if (!offline) {
                     login(page, user);
                 }
-                downloadData(page);
+                var campaigns = downloadData(page);
+                updatedDatabase(mirrorDB, campaigns);
             }
         }
     }
@@ -131,17 +139,28 @@ public class FetchAds {
         }
     }
 
-    private static void downloadData(Page page) throws IOException, URISyntaxException {
+    private static ArrayList<Campaign> downloadData(Page page) throws IOException, URISyntaxException {
         if (!Files.exists(targetDir)) {
             Files.createDirectories(targetDir);
         }
         var endDate = LocalDate.now().with(TemporalAdjusters.previous(DayOfWeek.SATURDAY));
         var startDate = endDate.with(TemporalAdjusters.previous(DayOfWeek.SUNDAY));
+        var campaigns = new ArrayList<Campaign>();
         while (LocalDate.of(2026, 5, 1).isBefore(startDate)) {
-            downloadData(page, startDate, endDate);
+            campaigns.addAll(downloadData(page, startDate, endDate));
             startDate = startDate.minusDays(7);
             endDate = endDate.minusDays(7);
         }
+        return campaigns;
+    }
+
+    /**
+     * Updated the database using the data found in campaigns, avoiding creating duplicates.
+     *
+     * @param mirrorDB database to use.
+     * @param campaigns new data to add.
+     */
+    private static void updatedDatabase(EmagMirrorDB mirrorDB, ArrayList<Campaign> campaigns) throws SQLException {
     }
 
     private static URIBuilder skeleton(LocalDate startDate, LocalDate endDate, int pageNumber) {
@@ -153,7 +172,7 @@ public class FetchAds {
         return uriBuilder;
     }
 
-    private static void downloadData(Page page, LocalDate startDate, LocalDate endDate) throws IOException, URISyntaxException {
+    private static ArrayList<Campaign> downloadData(Page page, LocalDate startDate, LocalDate endDate) throws IOException, URISyntaxException {
         var campaigns = downloadCampaigns(page, startDate, endDate);
         var campaignList = new ArrayList<Campaign>();
         for (var campaign : campaigns) {
@@ -166,43 +185,7 @@ public class FetchAds {
             }
             campaignList.add(new Campaign(campaign, adSetList));
         }
-        IO.println(campaignList);
-//        var pageNumber = 1;
-//
-//        URIBuilder uriBuilder = new URIBuilder(advertisingAPI);
-//        uriBuilder.appendPath("campaigns");
-//        var uri = uriBuilder.build();
-//        uriBuilder.setParameter("page", Integer.toString(pageNumber));
-//        //--
-//        uriBuilder.appendPath("campaign/%d/adsets".formatted(campaignId));
-//        uriBuilder.setParameter("campaignId",Integer.toString(campaignId));
-//        //--
-//        uriBuilder.appendPath("campaigns/%d/search-phrases".formatted(campaignId));
-//        uriBuilder.setParameter("adsetId",Integer.toString(adSetId));
-//        //--
-//        uriBuilder.appendPath("campaigns/%d/adsets/%d/targeted-products".formatted(campaignId, adSetId));
-//
-//
-//
-////        var adsAnalyticsJSON = getJSON(page, "https://advertising.emag.net/api/v1/analytics/campaign?page=1&perPage=100&sort%5B0%5D%5Bfield%5D=spent&sort%5B0%5D%5Bdirection%5D=desc&dateStart=2026-05-20&dateEnd=2026-06-19");
-////        var adsAnalytics = objectMapper.readValue(adsAnalyticsJSON, AdsAnalyticsResponse.class);
-////        IO.println(adsAnalytics);
-////        IO.println(adsAnalytics.data().summary());
-//        var adsCampaignJSON = getJSON(pageNumber, "https://advertising.emag.net/api/v1/campaigns?page=1&perPage=100&sort%5B0%5D%5Bfield%5D=spent&sort%5B0%5D%5Bdirection%5D=desc&dateStart=2026-05-20&dateEnd=2026-06-19");
-//        var adsCampaign = objectMapper.readValue(adsCampaignJSON, AdsCampaignsResponse.class);
-//        IO.println(adsCampaign);
-//        adsCampaign.data().campaigns().stream().map(AdsCampaign::name).forEach(IO::println);
-//        //---
-//        var adsCampaignAdSetsJSON = getJSON(pageNumber, "https://advertising.emag.net/api/v1/campaign/505390/adsets?campaignId=505390&page=1&perPage=10&sort%5B0%5D%5Bfield%5D=id&sort%5B0%5D%5Bdirection%5D=desc&dateStart=2026-06-04&dateEnd=2026-07-03");
-//        Files.writeString(targetDir.resolve("adsCampaignAdSets.json"), adsCampaignAdSetsJSON);
-//        var adsCampaignPhrasesJSON = getJSON(pageNumber, "https://advertising.emag.net/api/v1/campaigns/174138/search-phrases?adsetId=180461&page=1&perPage=100&sort%5B0%5D%5Bfield%5D=impressions&sort%5B0%5D%5Bdirection%5D=desc&dateStart=2026-06-01&dateEnd=2026-06-30");
-//        Files.writeString(targetDir.resolve("adsCampaignPhrases.json"), adsCampaignPhrasesJSON);
-//        var adsCampaignPhrases = objectMapper.readValue(adsCampaignPhrasesJSON, AdsCampaignPhrasesResponse.class);
-//        IO.println(adsCampaignPhrases);
-//        var adsCampaignTargetedProductsJSON = getJSON(pageNumber, "https://advertising.emag.net/api/v1/campaigns/174138/adsets/180461/targeted-products?page=1&perPage=100&sort%5B0%5D%5Bfield%5D=clicks&sort%5B0%5D%5Bdirection%5D=desc&dateStart=2026-06-01&dateEnd=2026-06-30");
-//        Files.writeString(targetDir.resolve("adsCampaignTargetedProducts.json"), adsCampaignTargetedProductsJSON);
-//        var adsCampaignTargetedProducts = objectMapper.readValue(adsCampaignTargetedProductsJSON, AdsCampaignTargetedProductsResponse.class);
-//        IO.println(adsCampaignTargetedProducts);
+        return campaignList;
     }
 
     private static List<AdsCampaign> downloadCampaigns(Page page, LocalDate startDate, LocalDate endDate) throws URISyntaxException, IOException {
