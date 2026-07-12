@@ -14,6 +14,7 @@ import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
 import ro.sellfluence.db.versions.SetupDB;
 import ro.sellfluence.emagapi.CancellationReason;
+import ro.sellfluence.emagapi.Campaign;
 import ro.sellfluence.emagapi.LockerDetails;
 import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.Product;
@@ -46,6 +47,7 @@ import java.util.stream.Stream;
 import static java.math.RoundingMode.HALF_EVEN;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
+import static ro.sellfluence.db.AdsCampaignTable.upsertCampaigns;
 import static ro.sellfluence.db.EmagFetchLog.deleteFetchLogsBefore;
 import static ro.sellfluence.db.EmagFetchLog.getEmagLog;
 import static ro.sellfluence.db.EmagFetchLog.insertEmagLog;
@@ -144,6 +146,10 @@ public class EmagMirrorDB {
             var vendorId = insertOrUpdateVendor(db, order.vendor_name(), account);
             return addOrderResult(order, db, vendorId, order.vendor_name());
         });
+    }
+
+    public int addOrUpdateAdCampaigns(List<Campaign> campaigns) throws SQLException {
+        return database.writeTX(db -> upsertCampaigns(db, campaigns));
     }
 
     /**
