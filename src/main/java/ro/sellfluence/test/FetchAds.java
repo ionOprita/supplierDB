@@ -24,7 +24,6 @@ import tools.jackson.core.JsonParser;
 import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ValueDeserializer;
-import tools.jackson.databind.ext.javatime.deser.LocalDateTimeDeserializer;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.module.SimpleModule;
 
@@ -46,7 +45,7 @@ import java.util.logging.Logger;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 
 public class FetchAds {
-    private static final boolean offline = false;
+    private static final boolean offline = true;
 
     private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", Level.INFO, 10, 100_000);
 
@@ -138,7 +137,7 @@ public class FetchAds {
         }
         var endDate = LocalDate.now().with(TemporalAdjusters.previous(DayOfWeek.SATURDAY));
         var startDate = endDate.with(TemporalAdjusters.previous(DayOfWeek.SUNDAY));
-        while (LocalDate.of(2026, 6, 1).isBefore(startDate)) {
+        while (LocalDate.of(2026, 5, 1).isBefore(startDate)) {
             downloadData(page, startDate, endDate);
             startDate = startDate.minusDays(7);
             endDate = endDate.minusDays(7);
