@@ -4,12 +4,11 @@ import java.time.LocalDate;
 import java.util.List;
 
 public record Campaign(
-        LocalDate reportStartDate,
-        LocalDate reportEndDate,
+        LocalDate reportDate,
         AdsCampaign campaign,
         List<AdSet> adSets
 ) {
     public Campaign(AdsCampaign campaign, List<AdSet> adSets) {
-        this(null, null, campaign, adSets);
+        this(null, campaign, adSets);
     }
 }

@@ -35,10 +35,8 @@ import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -143,13 +141,11 @@ public class FetchAds {
         if (!Files.exists(targetDir)) {
             Files.createDirectories(targetDir);
         }
-        var endDate = LocalDate.now().with(TemporalAdjusters.previous(DayOfWeek.SATURDAY));
-        var startDate = endDate.with(TemporalAdjusters.previous(DayOfWeek.SUNDAY));
+        var currentDate = LocalDate.now();
         var campaigns = new ArrayList<Campaign>();
-        while (LocalDate.of(2026, 5, 1).isBefore(startDate)) {
-            campaigns.addAll(downloadData(page, startDate, endDate));
-            startDate = startDate.minusDays(7);
-            endDate = endDate.minusDays(7);
+        while (LocalDate.of(2026, 5, 1).isBefore(currentDate)) {
+            campaigns.addAll(downloadData(page, currentDate));
+            currentDate = currentDate.minusDays(1);
         }
         return campaigns;
     }
@@ -165,40 +161,40 @@ public class FetchAds {
         logger.log(Level.INFO, "Inserted or updated %d ads rows from %d campaigns.".formatted(changedRows, campaigns.size()));
     }
 
-    private static URIBuilder skeleton(LocalDate startDate, LocalDate endDate, int pageNumber) {
+    private static URIBuilder skeleton(LocalDate date, int pageNumber) {
         URIBuilder uriBuilder = new URIBuilder(URI.create("https://advertising.emag.net/api/v1"));
         uriBuilder.addParameter("page", Integer.toString(pageNumber));
         uriBuilder.addParameter("perPage", "100");
-        uriBuilder.addParameter("dateStart", startDate.toString());
-        uriBuilder.addParameter("dateEnd", endDate.toString());
+        uriBuilder.addParameter("dateStart", date.toString());
+        uriBuilder.addParameter("dateEnd", date.toString());
         return uriBuilder;
     }
 
-    private static ArrayList<Campaign> downloadData(Page page, LocalDate startDate, LocalDate endDate) throws IOException, URISyntaxException {
-        var campaigns = downloadCampaigns(page, startDate, endDate);
+    private static ArrayList<Campaign> downloadData(Page page, LocalDate date) throws IOException, URISyntaxException {
+        var campaigns = downloadCampaigns(page, date);
         var campaignList = new ArrayList<Campaign>();
         for (var campaign : campaigns) {
-            var adSets = downloadAdSets(page, startDate, endDate, campaign.id());
+            var adSets = downloadAdSets(page, date, campaign.id());
             var adSetList = new ArrayList<AdSet>();
             for (var adSet : adSets) {
-                var searchPhrases = downloadSearchPhrases(page, startDate, endDate, campaign.id(), adSet.id());
-                var targetedProducts = downloadTargetedProducts(page, startDate, endDate, campaign.id(), adSet.id());
+                var searchPhrases = downloadSearchPhrases(page, date, campaign.id(), adSet.id());
+                var targetedProducts = downloadTargetedProducts(page, date, campaign.id(), adSet.id());
                 adSetList.add(new AdSet(adSet, searchPhrases, targetedProducts));
             }
-            campaignList.add(new Campaign(startDate, endDate, campaign, adSetList));
+            campaignList.add(new Campaign(date, campaign, adSetList));
         }
         return campaignList;
     }
 
-    private static List<AdsCampaign> downloadCampaigns(Page page, LocalDate startDate, LocalDate endDate) throws URISyntaxException, IOException {
+    private static List<AdsCampaign> downloadCampaigns(Page page, LocalDate date) throws URISyntaxException, IOException {
         int pageNumber = 1;
         int totalPages = 0;
         List<AdsCampaign> result = new ArrayList<>();
         do {
-            var uri = skeleton(startDate, endDate, pageNumber).appendPath("campaigns")
+            var uri = skeleton(date, pageNumber).appendPath("campaigns")
                     .setParameter("page", Integer.toString(pageNumber))
                     .build();
-            var path = targetDir.resolve("adsCampaigns_%s_%s_%d.json".formatted(startDate, endDate, pageNumber));
+            var path = targetDir.resolve("adsCampaigns_%s_%d.json".formatted(date, pageNumber));
             var json = getJSON(page, path, uri.toASCIIString());
             var response = objectMapper.readValue(json, AdsCampaignsResponse.class);
             result.addAll(response.data().campaigns());
@@ -209,17 +205,17 @@ public class FetchAds {
         return result;
     }
 
-    private static List<AdsAdset> downloadAdSets(Page page, LocalDate startDate, LocalDate endDate, int campaignId) throws URISyntaxException, IOException {
+    private static List<AdsAdset> downloadAdSets(Page page, LocalDate date, int campaignId) throws URISyntaxException, IOException {
         int pageNumber = 1;
         int totalPages = 0;
         List<AdsAdset> result = new ArrayList<>();
         do {
-            var uri = skeleton(startDate, endDate, pageNumber)
+            var uri = skeleton(date, pageNumber)
                     .appendPath("campaign/%d/adsets".formatted(campaignId))
                     .setParameter("page", Integer.toString(pageNumber))
                     .setParameter("campaignId", Integer.toString(campaignId))
                     .build();
-            var path = targetDir.resolve("adsAdSets_%s_%s_%d_%d.json".formatted(startDate, endDate, pageNumber, campaignId));
+            var path = targetDir.resolve("adsAdSets_%s_%d_%d.json".formatted(date, pageNumber, campaignId));
             var json = getJSON(page, path, uri.toASCIIString());
             var response = objectMapper.readValue(json, AdsCampaignAdSetsResponse.class);
             result.addAll(response.data().adsets());
@@ -230,17 +226,17 @@ public class FetchAds {
         return result;
     }
 
-    private static List<AdsSearchPhrase> downloadSearchPhrases(Page page, LocalDate startDate, LocalDate endDate, int campaignId, int adSetId) throws URISyntaxException, IOException {
+    private static List<AdsSearchPhrase> downloadSearchPhrases(Page page, LocalDate date, int campaignId, int adSetId) throws URISyntaxException, IOException {
         int pageNumber = 1;
         int totalPages = 0;
         List<AdsSearchPhrase> result = new ArrayList<>();
         do {
-            var uri = skeleton(startDate, endDate, pageNumber)
+            var uri = skeleton(date, pageNumber)
                     .appendPath("campaigns/%d/search-phrases".formatted(campaignId))
                     .setParameter("page", Integer.toString(pageNumber))
                     .setParameter("adsetId", Integer.toString(adSetId))
                     .build();
-            var path = targetDir.resolve("adsSearchPhrases_%s_%s_%d_%d_%d.json".formatted(startDate, endDate, pageNumber, campaignId, adSetId));
+            var path = targetDir.resolve("adsSearchPhrases_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId));
             var json = getJSON(page, path, uri.toASCIIString());
             var response = objectMapper.readValue(json, AdsCampaignPhrasesResponse.class);
             result.addAll(response.data().searchPhrases());
@@ -251,16 +247,16 @@ public class FetchAds {
         return result;
     }
 
-    private static List<AdsTargetedProduct> downloadTargetedProducts(Page page, LocalDate startDate, LocalDate endDate, int campaignId, int adSetId) throws URISyntaxException, IOException {
+    private static List<AdsTargetedProduct> downloadTargetedProducts(Page page, LocalDate date, int campaignId, int adSetId) throws URISyntaxException, IOException {
         int pageNumber = 1;
         int totalPages = 0;
         List<AdsTargetedProduct> result = new ArrayList<>();
         do {
-            var uri = skeleton(startDate, endDate, pageNumber)
+            var uri = skeleton(date, pageNumber)
                     .appendPath("campaigns/%d/adsets/%s/targeted-products".formatted(campaignId, adSetId))
                     .setParameter("page", Integer.toString(pageNumber))
                     .build();
-            var path = targetDir.resolve("adsTargetedProducts_%s_%s_%d_%d_%d.json".formatted(startDate, endDate, pageNumber, campaignId, adSetId));
+            var path = targetDir.resolve("adsTargetedProducts_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId));
             var json = getJSON(page, path, uri.toASCIIString());
             var response = objectMapper.readValue(json, AdsCampaignTargetedProductsResponse.class);
             result.addAll(response.data().docs());

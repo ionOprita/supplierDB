@@ -16,8 +16,7 @@ class EmagMirrorDBVersion36 {
     private static void createAdsCampaignTable(Connection db) throws SQLException {
         executeStatement(db, """
                 CREATE TABLE ads_campaign (
-                    report_start_date DATE NOT NULL,
-                    report_end_date DATE NOT NULL,
+                    report_date DATE NOT NULL,
                     campaign_id INTEGER NOT NULL,
                     name TEXT,
                     advertiser_id INTEGER,
@@ -48,8 +47,7 @@ class EmagMirrorDBVersion36 {
                     summary_conversion_rate NUMERIC(19, 4),
                     summary_return_on_advertising_spend NUMERIC(19, 4),
                     last_seen_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
-                    CONSTRAINT ads_campaign_report_range CHECK (report_end_date >= report_start_date),
-                    PRIMARY KEY (report_start_date, report_end_date, campaign_id)
+                    PRIMARY KEY (report_date, campaign_id)
                 );
                 """);
         executeStatement(db, """
@@ -61,8 +59,7 @@ class EmagMirrorDBVersion36 {
     private static void createAdsAdsetTable(Connection db) throws SQLException {
         executeStatement(db, """
                 CREATE TABLE ads_adset (
-                    report_start_date DATE NOT NULL,
-                    report_end_date DATE NOT NULL,
+                    report_date DATE NOT NULL,
                     campaign_id INTEGER NOT NULL,
                     adset_id INTEGER NOT NULL,
                     name TEXT,
@@ -89,9 +86,9 @@ class EmagMirrorDBVersion36 {
                     summary_conversion_rate NUMERIC(19, 4),
                     summary_return_on_advertising_spend NUMERIC(19, 4),
                     last_seen_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
-                    PRIMARY KEY (report_start_date, report_end_date, campaign_id, adset_id),
-                    CONSTRAINT ads_adset_campaign_fkey FOREIGN KEY (report_start_date, report_end_date, campaign_id)
-                        REFERENCES ads_campaign (report_start_date, report_end_date, campaign_id)
+                    PRIMARY KEY (report_date, campaign_id, adset_id),
+                    CONSTRAINT ads_adset_campaign_fkey FOREIGN KEY (report_date, campaign_id)
+                        REFERENCES ads_campaign (report_date, campaign_id)
                         ON DELETE CASCADE
                 );
                 """);
@@ -105,8 +102,7 @@ class EmagMirrorDBVersion36 {
         executeStatement(db, """
                 CREATE TABLE ads_search_phrase (
                     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-                    report_start_date DATE NOT NULL,
-                    report_end_date DATE NOT NULL,
+                    report_date DATE NOT NULL,
                     campaign_id INTEGER NOT NULL,
                     adset_id INTEGER NOT NULL,
                     search_phrase TEXT NOT NULL,
@@ -130,16 +126,15 @@ class EmagMirrorDBVersion36 {
                     summary_conversion_rate NUMERIC(19, 4),
                     summary_return_on_advertising_spend NUMERIC(19, 4),
                     last_seen_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
-                    CONSTRAINT ads_search_phrase_adset_fkey FOREIGN KEY (report_start_date, report_end_date, campaign_id, adset_id)
-                        REFERENCES ads_adset (report_start_date, report_end_date, campaign_id, adset_id)
+                    CONSTRAINT ads_search_phrase_adset_fkey FOREIGN KEY (report_date, campaign_id, adset_id)
+                        REFERENCES ads_adset (report_date, campaign_id, adset_id)
                         ON DELETE CASCADE
                 );
                 """);
         executeStatement(db, """
                 ALTER TABLE ads_search_phrase
                     ADD CONSTRAINT ads_search_phrase_unique UNIQUE (
-                        report_start_date,
-                        report_end_date,
+                        report_date,
                         campaign_id,
                         adset_id,
                         is_aggregated,
@@ -151,8 +146,7 @@ class EmagMirrorDBVersion36 {
     private static void createAdsTargetedProductTable(Connection db) throws SQLException {
         executeStatement(db, """
                 CREATE TABLE ads_targeted_product (
-                    report_start_date DATE NOT NULL,
-                    report_end_date DATE NOT NULL,
+                    report_date DATE NOT NULL,
                     campaign_id INTEGER NOT NULL,
                     adset_id INTEGER NOT NULL,
                     doc_id INTEGER NOT NULL,
@@ -177,9 +171,9 @@ class EmagMirrorDBVersion36 {
                     return_on_advertising_spend NUMERIC(19, 4),
                     conversion_rate NUMERIC(19, 4),
                     last_seen_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT current_timestamp,
-                    PRIMARY KEY (report_start_date, report_end_date, campaign_id, adset_id, doc_id),
-                    CONSTRAINT ads_targeted_product_adset_fkey FOREIGN KEY (report_start_date, report_end_date, campaign_id, adset_id)
-                        REFERENCES ads_adset (report_start_date, report_end_date, campaign_id, adset_id)
+                    PRIMARY KEY (report_date, campaign_id, adset_id, doc_id),
+                    CONSTRAINT ads_targeted_product_adset_fkey FOREIGN KEY (report_date, campaign_id, adset_id)
+                        REFERENCES ads_adset (report_date, campaign_id, adset_id)
                         ON DELETE CASCADE
                 );
                 """);

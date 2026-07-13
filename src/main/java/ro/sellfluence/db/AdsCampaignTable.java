@@ -44,8 +44,7 @@ public class AdsCampaignTable {
     private static int upsertCampaignRows(Connection db, List<Campaign> campaigns) throws SQLException {
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_campaign (
-                    report_start_date,
-                    report_end_date,
+                    report_date,
                     campaign_id,
                     name,
                     advertiser_id,
@@ -75,8 +74,8 @@ public class AdsCampaignTable {
                     summary_product_target_count,
                     summary_conversion_rate,
                     summary_return_on_advertising_spend
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT (report_start_date, report_end_date, campaign_id) DO UPDATE SET
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (report_date, campaign_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     advertiser_id = EXCLUDED.advertiser_id,
                     daily_budget = EXCLUDED.daily_budget,
@@ -118,8 +117,7 @@ public class AdsCampaignTable {
     private static int upsertAdsetRows(Connection db, List<Campaign> campaigns) throws SQLException {
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_adset (
-                    report_start_date,
-                    report_end_date,
+                    report_date,
                     campaign_id,
                     adset_id,
                     name,
@@ -145,8 +143,8 @@ public class AdsCampaignTable {
                     summary_product_target_count,
                     summary_conversion_rate,
                     summary_return_on_advertising_spend
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT (report_start_date, report_end_date, campaign_id, adset_id) DO UPDATE SET
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (report_date, campaign_id, adset_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     targeting = EXCLUDED.targeting,
                     bid = EXCLUDED.bid,
@@ -186,8 +184,7 @@ public class AdsCampaignTable {
     private static int upsertSearchPhraseRows(Connection db, List<Campaign> campaigns) throws SQLException {
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_search_phrase (
-                    report_start_date,
-                    report_end_date,
+                    report_date,
                     campaign_id,
                     adset_id,
                     search_phrase,
@@ -210,10 +207,9 @@ public class AdsCampaignTable {
                     summary_product_target_count,
                     summary_conversion_rate,
                     summary_return_on_advertising_spend
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT (
-                    report_start_date,
-                    report_end_date,
+                    report_date,
                     campaign_id,
                     adset_id,
                     is_aggregated,
@@ -256,8 +252,7 @@ public class AdsCampaignTable {
     private static int upsertTargetedProductRows(Connection db, List<Campaign> campaigns) throws SQLException {
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_targeted_product (
-                    report_start_date,
-                    report_end_date,
+                    report_date,
                     campaign_id,
                     adset_id,
                     doc_id,
@@ -281,8 +276,8 @@ public class AdsCampaignTable {
                     image_url,
                     return_on_advertising_spend,
                     conversion_rate
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT (report_start_date, report_end_date, campaign_id, adset_id, doc_id) DO UPDATE SET
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (report_date, campaign_id, adset_id, doc_id) DO UPDATE SET
                     product_name = EXCLUDED.product_name,
                     price = EXCLUDED.price,
                     rating = EXCLUDED.rating,
@@ -390,8 +385,7 @@ public class AdsCampaignTable {
     }
 
     private static int bindCampaignKey(PreparedStatement s, int index, Campaign campaign, int campaignId) throws SQLException {
-        setDate(s, index++, Objects.requireNonNull(campaign.reportStartDate(), "reportStartDate"));
-        setDate(s, index++, Objects.requireNonNull(campaign.reportEndDate(), "reportEndDate"));
+        setDate(s, index++, Objects.requireNonNull(campaign.reportDate(), "reportDate"));
         s.setInt(index++, campaignId);
         return index;
     }
