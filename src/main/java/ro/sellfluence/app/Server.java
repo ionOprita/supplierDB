@@ -82,6 +82,8 @@ import static ro.sellfluence.support.UsefulMethods.homeDirectory;
  * Server for the EmagMirror app.
  */
 public class Server {
+    private static final boolean withoutAuthenticationAndTotalyUnsafe = false;
+    private static final boolean runBackgroundTasks = false;
     private static final Path certsDir = homeDirectory().resolve("Secrets").resolve("Certs");
     private static final String productionHostName = "server.sellfusion.ro";
     private static final String tlsKeystorePathConfigName = "TLS_KEYSTORE_PATH";
@@ -93,7 +95,6 @@ public class Server {
     private static final String acmeChallengePrefix = "/.well-known/acme-challenge/";
     private static final ObjectMapper mapper = (new ObjectMapper());
     private static final User unsafeUser = new User("unsafe-without-authentication", admin);
-    private static final boolean withoutAuthenticationAndTotalyUnsafe = true;
     private static final Set<String> MULTILINE_PRODUCT_FIELDS = Set.of(
             "emagTitle",
             "otherComments",
@@ -452,10 +453,12 @@ public class Server {
             return thread;
         });
 
-        var rp = WebAuthnServer.create(new MyCredentialRepo(mirrorDB));
-
         // Schedule the job with auto-restart on failure
-        scheduleWithRestart(scheduler, backgroundJob);
+        if (runBackgroundTasks) {
+            scheduleWithRestart(scheduler, backgroundJob);
+        }
+
+        var rp = WebAuthnServer.create(new MyCredentialRepo(mirrorDB));
 
         var app = Javalin.create(config -> {
             configure(config, port, securePort);

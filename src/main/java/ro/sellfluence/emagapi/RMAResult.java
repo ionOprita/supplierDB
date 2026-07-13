@@ -54,7 +54,8 @@ public record RMAResult(
         String address_type,
         Integer request_status_reason,
         String currency,
-        Boolean finalized_with_incident
+        Boolean finalized_with_incident,
+        String courier_name
 ) {
     public RMAResult {
         // Normalize Lists
