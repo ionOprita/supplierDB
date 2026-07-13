@@ -254,6 +254,7 @@ public class FetchAds {
             var uri = skeleton(date, pageNumber)
                     .appendPath("campaigns/%d/adsets/%s/targeted-products".formatted(campaignId, adSetId))
                     .setParameter("page", Integer.toString(pageNumber))
+                    .setParameter("dateEnd", date.plusDays(1).toString())
                     .build();
             var path = targetDir.resolve("adsTargetedProducts_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId));
             var json = getJSON(page, path, uri.toASCIIString());
