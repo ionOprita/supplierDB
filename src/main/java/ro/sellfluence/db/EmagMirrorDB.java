@@ -152,6 +152,22 @@ public class EmagMirrorDB {
         return database.writeTX(db -> upsertCampaigns(db, campaigns));
     }
 
+    public List<LocalDate> getAdsCampaignReportDates() throws SQLException {
+        return database.readTX(AdsCampaignTable::getCampaignReportDates);
+    }
+
+    public AdsCampaignTable.AdsCampaignTableData getAdsCampaignsByReportDate(LocalDate reportDate) throws SQLException {
+        return database.readTX(db -> AdsCampaignTable.getCampaignsByReportDate(db, reportDate));
+    }
+
+    public List<LocalDate> getAdsAdsetReportDates(int campaignId) throws SQLException {
+        return database.readTX(db -> AdsCampaignTable.getAdsetReportDates(db, campaignId));
+    }
+
+    public AdsCampaignTable.AdsAdsetTableData getAdsAdsetsByReportDate(int campaignId, LocalDate reportDate) throws SQLException {
+        return database.readTX(db -> AdsCampaignTable.getAdsetsByReportDate(db, campaignId, reportDate));
+    }
+
     /**
      * Return all orders that are open, grouped by the vendor.
      *

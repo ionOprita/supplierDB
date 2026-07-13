@@ -16,18 +16,240 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 
 public class AdsCampaignTable {
+
+    public record AdsCampaignColumn(String key, String label, boolean numeric) {
+    }
+
+    public record AdsCampaignRow(int campaignId, Map<String, String> values) {
+    }
+
+    public record AdsCampaignTableData(List<AdsCampaignColumn> columns, List<AdsCampaignRow> rows) {
+    }
+
+    public record AdsAdsetColumn(String key, String label, boolean numeric) {
+    }
+
+    public record AdsAdsetRow(int campaignId, int adsetId, Map<String, String> values) {
+    }
+
+    public record AdsAdsetTableData(List<AdsAdsetColumn> columns, List<AdsAdsetRow> rows) {
+    }
+
+    private static final List<AdsCampaignColumn> ADS_CAMPAIGN_COLUMNS = List.of(
+            column("name", "Name", false),
+            column("campaign_id", "Campaign ID", true),
+            column("advertiser_id", "Advertiser ID", true),
+            column("daily_budget", "Daily budget", true),
+            column("effective_daily_budget", "Effective daily budget", true),
+            column("remaining_daily_budget", "Remaining daily budget", true),
+            column("status", "Status", false),
+            column("inherited_status", "Inherited status", false),
+            column("targeting", "Targeting", false),
+            column("date_start", "Date start", false),
+            column("date_end", "Date end", false),
+            column("advertiser_name", "Advertiser name", false),
+            column("summary_average_cost_of_sale", "Summary average cost of sale", true),
+            column("summary_clicks", "Summary clicks", true),
+            column("summary_ctr", "Summary CTR", true),
+            column("summary_effective_cpc", "Summary effective CPC", true),
+            column("summary_impressions", "Summary impressions", true),
+            column("summary_sales", "Summary sales", true),
+            column("summary_sales_count", "Summary sales count", true),
+            column("summary_sold_units", "Summary sold units", true),
+            column("summary_spent", "Summary spent", true),
+            column("summary_active_offer_count", "Summary active offer count", true),
+            column("summary_offer_count", "Summary offer count", true),
+            column("summary_paused_offer_count", "Summary paused offer count", true),
+            column("summary_adset_count", "Summary adset count", true),
+            column("summary_keyword_count", "Summary keyword count", true),
+            column("summary_product_target_count", "Summary product target count", true),
+            column("summary_conversion_rate", "Summary conversion rate", true),
+            column("summary_return_on_advertising_spend", "Summary return on advertising spend", true),
+            column("last_seen_at", "Last seen at", false)
+    );
+
+    private static final List<AdsAdsetColumn> ADS_ADSET_COLUMNS = List.of(
+            adsetColumn("name", "Name", false),
+            adsetColumn("campaign_id", "Campaign ID", true),
+            adsetColumn("adset_id", "Adset ID", true),
+            adsetColumn("targeting", "Targeting", false),
+            adsetColumn("bid", "Bid", true),
+            adsetColumn("status", "Status", false),
+            adsetColumn("inherited_status", "Inherited status", false),
+            adsetColumn("recommended_bid", "Recommended bid", true),
+            adsetColumn("summary_average_cost_of_sale", "Summary average cost of sale", true),
+            adsetColumn("summary_clicks", "Summary clicks", true),
+            adsetColumn("summary_ctr", "Summary CTR", true),
+            adsetColumn("summary_effective_cpc", "Summary effective CPC", true),
+            adsetColumn("summary_impressions", "Summary impressions", true),
+            adsetColumn("summary_sales", "Summary sales", true),
+            adsetColumn("summary_sales_count", "Summary sales count", true),
+            adsetColumn("summary_sold_units", "Summary sold units", true),
+            adsetColumn("summary_spent", "Summary spent", true),
+            adsetColumn("summary_active_offer_count", "Summary active offer count", true),
+            adsetColumn("summary_offer_count", "Summary offer count", true),
+            adsetColumn("summary_paused_offer_count", "Summary paused offer count", true),
+            adsetColumn("summary_adset_count", "Summary adset count", true),
+            adsetColumn("summary_keyword_count", "Summary keyword count", true),
+            adsetColumn("summary_product_target_count", "Summary product target count", true),
+            adsetColumn("summary_conversion_rate", "Summary conversion rate", true),
+            adsetColumn("summary_return_on_advertising_spend", "Summary return on advertising spend", true),
+            adsetColumn("last_seen_at", "Last seen at", false)
+    );
+
+    static List<LocalDate> getCampaignReportDates(Connection db) throws SQLException {
+        Objects.requireNonNull(db);
+
+        var result = new ArrayList<LocalDate>();
+        try (var s = db.prepareStatement("""
+                SELECT DISTINCT report_date
+                FROM ads_campaign
+                ORDER BY report_date DESC
+                """)) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    result.add(rs.getDate("report_date").toLocalDate());
+                }
+            }
+        }
+        return result;
+    }
+
+    static AdsCampaignTableData getCampaignsByReportDate(Connection db, LocalDate reportDate) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reportDate);
+
+        var rows = new ArrayList<AdsCampaignRow>();
+        try (var s = db.prepareStatement("""
+                SELECT
+                    name,
+                    campaign_id,
+                    advertiser_id,
+                    daily_budget,
+                    effective_daily_budget,
+                    remaining_daily_budget,
+                    status,
+                    inherited_status,
+                    targeting,
+                    date_start,
+                    date_end,
+                    advertiser_name,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend,
+                    last_seen_at
+                FROM ads_campaign
+                WHERE report_date = ?
+                ORDER BY lower(name) NULLS LAST, name NULLS LAST, campaign_id
+                """)) {
+            s.setDate(1, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readCampaignRow(rs));
+                }
+            }
+        }
+        return new AdsCampaignTableData(ADS_CAMPAIGN_COLUMNS, rows);
+    }
+
+    static List<LocalDate> getAdsetReportDates(Connection db, int campaignId) throws SQLException {
+        Objects.requireNonNull(db);
+
+        var result = new ArrayList<LocalDate>();
+        try (var s = db.prepareStatement("""
+                SELECT DISTINCT report_date
+                FROM ads_campaign
+                WHERE campaign_id = ?
+                ORDER BY report_date DESC
+                """)) {
+            s.setInt(1, campaignId);
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    result.add(rs.getDate("report_date").toLocalDate());
+                }
+            }
+        }
+        return result;
+    }
+
+    static AdsAdsetTableData getAdsetsByReportDate(Connection db, int campaignId, LocalDate reportDate) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reportDate);
+
+        var rows = new ArrayList<AdsAdsetRow>();
+        try (var s = db.prepareStatement("""
+                SELECT
+                    name,
+                    campaign_id,
+                    adset_id,
+                    targeting,
+                    bid,
+                    status,
+                    inherited_status,
+                    recommended_bid,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend,
+                    last_seen_at
+                FROM ads_adset
+                WHERE campaign_id = ?
+                  AND report_date = ?
+                ORDER BY lower(name) NULLS LAST, name NULLS LAST, adset_id
+                """)) {
+            s.setInt(1, campaignId);
+            s.setDate(2, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readAdsetRow(rs));
+                }
+            }
+        }
+        return new AdsAdsetTableData(ADS_ADSET_COLUMNS, rows);
+    }
 
     static int upsertCampaigns(Connection db, List<Campaign> campaigns) throws SQLException {
         Objects.requireNonNull(db);
@@ -452,6 +674,49 @@ public class AdsCampaignTable {
             }
         }
         return rows;
+    }
+
+    private static AdsCampaignColumn column(String key, String label, boolean numeric) {
+        return new AdsCampaignColumn(key, label, numeric);
+    }
+
+    private static AdsAdsetColumn adsetColumn(String key, String label, boolean numeric) {
+        return new AdsAdsetColumn(key, label, numeric);
+    }
+
+    private static AdsCampaignRow readCampaignRow(ResultSet rs) throws SQLException {
+        var values = new LinkedHashMap<String, String>();
+        for (var column : ADS_CAMPAIGN_COLUMNS) {
+            values.put(column.key(), displayValue(rs.getObject(column.key())));
+        }
+        return new AdsCampaignRow(rs.getInt("campaign_id"), values);
+    }
+
+    private static AdsAdsetRow readAdsetRow(ResultSet rs) throws SQLException {
+        var values = new LinkedHashMap<String, String>();
+        for (var column : ADS_ADSET_COLUMNS) {
+            values.put(column.key(), displayValue(rs.getObject(column.key())));
+        }
+        return new AdsAdsetRow(rs.getInt("campaign_id"), rs.getInt("adset_id"), values);
+    }
+
+    private static String displayValue(Object value) {
+        if (value == null) {
+            return "";
+        }
+        if (value instanceof BigDecimal decimal) {
+            return decimal.stripTrailingZeros().toPlainString();
+        }
+        if (value instanceof Date date) {
+            return date.toLocalDate().toString();
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toLocalDateTime().toString().replace('T', ' ');
+        }
+        if (value instanceof LocalDateTime localDateTime) {
+            return localDateTime.toString().replace('T', ' ');
+        }
+        return value.toString();
     }
 
     private static void setDate(PreparedStatement s, int index, LocalDate value) throws SQLException {

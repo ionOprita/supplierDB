@@ -649,6 +649,62 @@ public class Server {
             }
         });
 
+        app.get("/app/adsCampaignDates", ctx -> {
+            var dates = api.getAdsCampaignReportDates();
+            if (dates == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(dates);
+            }
+        });
+
+        app.get("/app/adsCampaigns", ctx -> {
+            var reportDate = parseLocalDate(ctx.queryParam("date"));
+            if (reportDate == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing date\"}");
+                return;
+            }
+            var campaigns = api.getAdsCampaignsByReportDate(reportDate);
+            if (campaigns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(campaigns);
+            }
+        });
+
+        app.get("/app/adsAdsetDates", ctx -> {
+            var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
+            if (campaignId == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
+                return;
+            }
+            var dates = api.getAdsAdsetReportDates(campaignId);
+            if (dates == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(dates);
+            }
+        });
+
+        app.get("/app/adsAdsets", ctx -> {
+            var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
+            var reportDate = parseLocalDate(ctx.queryParam("date"));
+            if (campaignId == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
+                return;
+            }
+            if (reportDate == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing date\"}");
+                return;
+            }
+            var adsets = api.getAdsAdsetsByReportDate(campaignId, reportDate);
+            if (adsets == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(adsets);
+            }
+        });
+
         app.get("/app/rrr/{id}", ctx -> {
             String id = ctx.pathParam("id");
             var rrr = api.getRRR(id);
@@ -1966,6 +2022,28 @@ public class Server {
         try {
             return YearMonth.parse(text);
         } catch (DateTimeParseException _) {
+            return null;
+        }
+    }
+
+    private static LocalDate parseLocalDate(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(text);
+        } catch (DateTimeParseException _) {
+            return null;
+        }
+    }
+
+    private static Integer parseIntOrNull(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException _) {
             return null;
         }
     }

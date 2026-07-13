@@ -161,6 +161,45 @@ h1 {
   min-width: 130px;
 }
 
+.date-filter-select {
+  min-width: 150px;
+}
+
+.ads-campaigns-actions {
+  justify-content: space-between;
+}
+
+.ads-campaigns-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+.ads-campaigns-filter-controls label {
+  padding-left: 0;
+}
+
+.ads-campaigns-status {
+  margin: -.25rem 0 .5rem;
+}
+
+.ads-campaigns-table {
+  min-width: max-content;
+  width: max-content;
+}
+
+.ads-campaigns-table th,
+.ads-campaigns-table td {
+  white-space: nowrap;
+}
+
+.ads-campaigns-table .campaign-name-cell {
+  min-width: 260px;
+  max-width: 420px;
+  white-space: normal;
+}
+
 .product-list-actions form {
   margin: 0;
 }

@@ -1,6 +1,8 @@
 package ro.sellfluence.api;
 
 import com.google.gson.Gson;
+import ro.sellfluence.db.AdsCampaignTable.AdsAdsetTableData;
+import ro.sellfluence.db.AdsCampaignTable.AdsCampaignTableData;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
 import ro.sellfluence.db.ProductTable.ProductInfo;
@@ -89,6 +91,46 @@ public class API {
                     .toList();
             return gson.toJson(productList);
         } catch (SQLException e) {
+            return null;
+        }
+    }
+
+    public List<String> getAdsCampaignReportDates() {
+        try {
+            return mirrorDB.getAdsCampaignReportDates().stream()
+                    .map(LocalDate::toString)
+                    .toList();
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load ads campaign report dates.", e);
+            return null;
+        }
+    }
+
+    public AdsCampaignTableData getAdsCampaignsByReportDate(LocalDate reportDate) {
+        try {
+            return mirrorDB.getAdsCampaignsByReportDate(reportDate);
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load ads campaigns for report date " + reportDate + ".", e);
+            return null;
+        }
+    }
+
+    public List<String> getAdsAdsetReportDates(int campaignId) {
+        try {
+            return mirrorDB.getAdsAdsetReportDates(campaignId).stream()
+                    .map(LocalDate::toString)
+                    .toList();
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load ads adset report dates for campaign " + campaignId + ".", e);
+            return null;
+        }
+    }
+
+    public AdsAdsetTableData getAdsAdsetsByReportDate(int campaignId, LocalDate reportDate) {
+        try {
+            return mirrorDB.getAdsAdsetsByReportDate(campaignId, reportDate);
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load ads adsets for campaign " + campaignId + " and report date " + reportDate + ".", e);
             return null;
         }
     }
