@@ -48,7 +48,7 @@ import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 
 public class FetchAds {
-    private static final boolean offline = true;
+    private static final boolean offline = false;
 
     private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", Level.INFO, 10, 100_000);
 
@@ -121,8 +121,7 @@ public class FetchAds {
                 if (!offline) {
                     login(page, user);
                 }
-                var campaigns = downloadData(page);
-                updatedDatabase(mirrorDB, campaigns);
+                transferDataToDB(mirrorDB, page);
             }
         }
     }
@@ -137,17 +136,17 @@ public class FetchAds {
         }
     }
 
-    private static ArrayList<Campaign> downloadData(Page page) throws IOException, URISyntaxException {
+    private static void transferDataToDB(EmagMirrorDB mirrorDB, Page page) throws IOException, URISyntaxException, SQLException {
         if (!Files.exists(targetDir)) {
             Files.createDirectories(targetDir);
         }
         var currentDate = LocalDate.now();
-        var campaigns = new ArrayList<Campaign>();
-        while (LocalDate.of(2026, 5, 1).isBefore(currentDate)) {
-            campaigns.addAll(downloadData(page, currentDate));
+        var endDate = currentDate.minusDays(31);
+        while (endDate.isBefore(currentDate)) {
             currentDate = currentDate.minusDays(1);
+            var campaigns = downloadData(page, currentDate);
+            updatedDatabase(mirrorDB, campaigns);
         }
-        return campaigns;
     }
 
     /**
