@@ -1,6 +1,7 @@
 import {fetchJSON} from './common.js';
 import {bindTableCsvDownload} from './table-common.js';
 
+const TITLE = document.getElementById('title');
 const DATE_SELECT = document.getElementById('adsAdsetDateSelect');
 const STATUS = document.getElementById('adsAdsetsStatus');
 const HEAD = document.getElementById('adsAdsetsHead');
@@ -62,10 +63,12 @@ function renderHeader(columns) {
       th.classList.add('sticky-col-1');
     }
     tr.appendChild(th);
+    if (index === 0) {
+      const phrasesTh = document.createElement('th');
+      phrasesTh.textContent = 'Phrases';
+      tr.appendChild(phrasesTh);
+    }
   });
-  const phrasesTh = document.createElement('th');
-  phrasesTh.textContent = 'Phrases';
-  tr.appendChild(phrasesTh);
   HEAD.innerHTML = '';
   HEAD.appendChild(tr);
 }
@@ -117,11 +120,23 @@ function renderRows(rows, reportDate) {
   const fragment = document.createDocumentFragment();
   for (const row of rows) {
     const tr = document.createElement('tr');
-    currentColumns.forEach((column, index) => appendCell(tr, row, column, index));
-    appendPhrasesCell(tr, row, reportDate);
+    currentColumns.forEach((column, index) => {
+      appendCell(tr, row, column, index);
+      if (index === 0) {
+        appendPhrasesCell(tr, row, reportDate);
+      }
+    });
     fragment.appendChild(tr);
   }
   BODY.appendChild(fragment);
+}
+
+function setPageTitle(campaignName) {
+  const title = `Adsets for ${campaignName || 'campaign'}`;
+  if (TITLE) {
+    TITLE.textContent = title;
+  }
+  document.title = title;
 }
 
 async function loadAdsets(campaignId, reportDate) {
@@ -143,11 +158,12 @@ async function loadAdsets(campaignId, reportDate) {
   setStatus(`Loading adsets for campaign ID ${campaignId}...`);
   const params = new URLSearchParams({campaignId, date: reportDate});
   const data = await fetchJSON(`/app/adsAdsets?${params.toString()}`);
+  setPageTitle(data.campaignName);
   currentColumns = Array.isArray(data.columns) ? data.columns : [];
   const rows = Array.isArray(data.rows) ? data.rows : [];
   renderHeader(currentColumns);
   renderRows(rows, reportDate);
-  setStatus(`${rows.length} adset${rows.length === 1 ? '' : 's'} for campaign ID ${campaignId} on ${reportDate}.`);
+  setStatus(`${rows.length} adset${rows.length === 1 ? '' : 's'} on ${reportDate}.`);
 }
 
 async function init() {

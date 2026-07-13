@@ -48,7 +48,7 @@ public class AdsCampaignTable {
     public record AdsAdsetRow(int campaignId, int adsetId, Map<String, String> values) {
     }
 
-    public record AdsAdsetTableData(List<AdsAdsetColumn> columns, List<AdsAdsetRow> rows) {
+    public record AdsAdsetTableData(String campaignName, List<AdsAdsetColumn> columns, List<AdsAdsetRow> rows) {
     }
 
     public record AdsSearchPhraseColumn(String key, String label, boolean numeric) {
@@ -102,8 +102,6 @@ public class AdsCampaignTable {
 
     private static final List<AdsAdsetColumn> ADS_ADSET_COLUMNS = List.of(
             adsetColumn("name", "Name", false),
-            adsetColumn("campaign_id", "Campaign ID", true),
-            adsetColumn("adset_id", "Adset ID", true),
             adsetColumn("targeting", "Targeting", false),
             adsetColumn("bid", "Bid", true),
             adsetColumn("status", "Status", false),
@@ -245,6 +243,7 @@ public class AdsCampaignTable {
         Objects.requireNonNull(db);
         Objects.requireNonNull(reportDate);
 
+        var campaignName = getCampaignName(db, campaignId, reportDate);
         var rows = new ArrayList<AdsAdsetRow>();
         try (var s = db.prepareStatement("""
                 SELECT
@@ -287,7 +286,7 @@ public class AdsCampaignTable {
                 }
             }
         }
-        return new AdsAdsetTableData(ADS_ADSET_COLUMNS, rows);
+        return new AdsAdsetTableData(campaignName, ADS_ADSET_COLUMNS, rows);
     }
 
     static AdsSearchPhraseTableData getSearchPhrases(Connection db,
@@ -807,6 +806,24 @@ public class AdsCampaignTable {
             values.put(column.key(), displayValue(rs.getObject(column.key())));
         }
         return new AdsSearchPhraseRow(values);
+    }
+
+    private static String getCampaignName(Connection db, int campaignId, LocalDate reportDate) throws SQLException {
+        try (var s = db.prepareStatement("""
+                SELECT name
+                FROM ads_campaign
+                WHERE campaign_id = ?
+                  AND report_date = ?
+                """)) {
+            s.setInt(1, campaignId);
+            s.setDate(2, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return stringOrFallback(rs.getString("name"), "campaign ID " + campaignId);
+                }
+            }
+        }
+        return "campaign ID " + campaignId;
     }
 
     private static AdsNames getCampaignAndAdsetNames(Connection db,
