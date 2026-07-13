@@ -705,6 +705,30 @@ public class Server {
             }
         });
 
+        app.get("/app/adsSearchPhrases", ctx -> {
+            var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
+            var adsetId = parseIntOrNull(ctx.queryParam("adsetId"));
+            var reportDate = parseLocalDate(ctx.queryParam("date"));
+            if (campaignId == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
+                return;
+            }
+            if (adsetId == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing adsetId\"}");
+                return;
+            }
+            if (reportDate == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing date\"}");
+                return;
+            }
+            var phrases = api.getAdsSearchPhrases(campaignId, adsetId, reportDate);
+            if (phrases == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(phrases);
+            }
+        });
+
         app.get("/app/rrr/{id}", ctx -> {
             String id = ctx.pathParam("id");
             var rrr = api.getRRR(id);

@@ -51,6 +51,22 @@ public class AdsCampaignTable {
     public record AdsAdsetTableData(List<AdsAdsetColumn> columns, List<AdsAdsetRow> rows) {
     }
 
+    public record AdsSearchPhraseColumn(String key, String label, boolean numeric) {
+    }
+
+    public record AdsSearchPhraseRow(Map<String, String> values) {
+    }
+
+    public record AdsSearchPhraseTableData(String campaignName,
+                                           String adsetName,
+                                           String reportDate,
+                                           List<AdsSearchPhraseColumn> columns,
+                                           List<AdsSearchPhraseRow> rows) {
+    }
+
+    private record AdsNames(String campaignName, String adsetName) {
+    }
+
     private static final List<AdsCampaignColumn> ADS_CAMPAIGN_COLUMNS = List.of(
             column("name", "Name", false),
             column("campaign_id", "Campaign ID", true),
@@ -111,6 +127,29 @@ public class AdsCampaignTable {
             adsetColumn("summary_conversion_rate", "Summary conversion rate", true),
             adsetColumn("summary_return_on_advertising_spend", "Summary return on advertising spend", true),
             adsetColumn("last_seen_at", "Last seen at", false)
+    );
+
+    private static final List<AdsSearchPhraseColumn> ADS_SEARCH_PHRASE_COLUMNS = List.of(
+            searchPhraseColumn("search_phrase", "Search phrase", false),
+            searchPhraseColumn("is_aggregated", "Is aggregated", false),
+            searchPhraseColumn("summary_average_cost_of_sale", "Summary average cost of sale", true),
+            searchPhraseColumn("summary_clicks", "Summary clicks", true),
+            searchPhraseColumn("summary_ctr", "Summary CTR", true),
+            searchPhraseColumn("summary_effective_cpc", "Summary effective CPC", true),
+            searchPhraseColumn("summary_impressions", "Summary impressions", true),
+            searchPhraseColumn("summary_sales", "Summary sales", true),
+            searchPhraseColumn("summary_sales_count", "Summary sales count", true),
+            searchPhraseColumn("summary_sold_units", "Summary sold units", true),
+            searchPhraseColumn("summary_spent", "Summary spent", true),
+            searchPhraseColumn("summary_active_offer_count", "Summary active offer count", true),
+            searchPhraseColumn("summary_offer_count", "Summary offer count", true),
+            searchPhraseColumn("summary_paused_offer_count", "Summary paused offer count", true),
+            searchPhraseColumn("summary_adset_count", "Summary adset count", true),
+            searchPhraseColumn("summary_keyword_count", "Summary keyword count", true),
+            searchPhraseColumn("summary_product_target_count", "Summary product target count", true),
+            searchPhraseColumn("summary_conversion_rate", "Summary conversion rate", true),
+            searchPhraseColumn("summary_return_on_advertising_spend", "Summary return on advertising spend", true),
+            searchPhraseColumn("last_seen_at", "Last seen at", false)
     );
 
     static List<LocalDate> getCampaignReportDates(Connection db) throws SQLException {
@@ -249,6 +288,64 @@ public class AdsCampaignTable {
             }
         }
         return new AdsAdsetTableData(ADS_ADSET_COLUMNS, rows);
+    }
+
+    static AdsSearchPhraseTableData getSearchPhrases(Connection db,
+                                                     int campaignId,
+                                                     int adsetId,
+                                                     LocalDate reportDate) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reportDate);
+
+        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, reportDate);
+        var rows = new ArrayList<AdsSearchPhraseRow>();
+        try (var s = db.prepareStatement("""
+                SELECT
+                    search_phrase,
+                    is_aggregated,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend,
+                    last_seen_at
+                FROM ads_search_phrase
+                WHERE campaign_id = ?
+                  AND adset_id = ?
+                  AND report_date = ?
+                  AND (summary_clicks > 0 OR summary_impressions > 50)
+                ORDER BY summary_clicks DESC NULLS LAST,
+                         summary_impressions DESC NULLS LAST,
+                         search_phrase ASC
+                """)) {
+            s.setInt(1, campaignId);
+            s.setInt(2, adsetId);
+            s.setDate(3, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readSearchPhraseRow(rs));
+                }
+            }
+        }
+        return new AdsSearchPhraseTableData(
+                names.campaignName(),
+                names.adsetName(),
+                reportDate.toString(),
+                ADS_SEARCH_PHRASE_COLUMNS,
+                rows
+        );
     }
 
     static int upsertCampaigns(Connection db, List<Campaign> campaigns) throws SQLException {
@@ -684,6 +781,10 @@ public class AdsCampaignTable {
         return new AdsAdsetColumn(key, label, numeric);
     }
 
+    private static AdsSearchPhraseColumn searchPhraseColumn(String key, String label, boolean numeric) {
+        return new AdsSearchPhraseColumn(key, label, numeric);
+    }
+
     private static AdsCampaignRow readCampaignRow(ResultSet rs) throws SQLException {
         var values = new LinkedHashMap<String, String>();
         for (var column : ADS_CAMPAIGN_COLUMNS) {
@@ -698,6 +799,48 @@ public class AdsCampaignTable {
             values.put(column.key(), displayValue(rs.getObject(column.key())));
         }
         return new AdsAdsetRow(rs.getInt("campaign_id"), rs.getInt("adset_id"), values);
+    }
+
+    private static AdsSearchPhraseRow readSearchPhraseRow(ResultSet rs) throws SQLException {
+        var values = new LinkedHashMap<String, String>();
+        for (var column : ADS_SEARCH_PHRASE_COLUMNS) {
+            values.put(column.key(), displayValue(rs.getObject(column.key())));
+        }
+        return new AdsSearchPhraseRow(values);
+    }
+
+    private static AdsNames getCampaignAndAdsetNames(Connection db,
+                                                     int campaignId,
+                                                     int adsetId,
+                                                     LocalDate reportDate) throws SQLException {
+        try (var s = db.prepareStatement("""
+                SELECT c.name AS campaign_name,
+                       a.name AS adset_name
+                FROM ads_campaign AS c
+                LEFT JOIN ads_adset AS a
+                  ON a.report_date = c.report_date
+                 AND a.campaign_id = c.campaign_id
+                 AND a.adset_id = ?
+                WHERE c.campaign_id = ?
+                  AND c.report_date = ?
+                """)) {
+            s.setInt(1, adsetId);
+            s.setInt(2, campaignId);
+            s.setDate(3, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return new AdsNames(
+                            stringOrFallback(rs.getString("campaign_name"), "campaign ID " + campaignId),
+                            stringOrFallback(rs.getString("adset_name"), "adset ID " + adsetId)
+                    );
+                }
+            }
+        }
+        return new AdsNames("campaign ID " + campaignId, "adset ID " + adsetId);
+    }
+
+    private static String stringOrFallback(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private static String displayValue(Object value) {

@@ -48,7 +48,7 @@ import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 
 public class FetchAds {
-    private static final boolean offline = false;
+    private static final boolean offline = true;
 
     private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", Level.INFO, 10, 100_000);
 
@@ -78,12 +78,12 @@ public class FetchAds {
     private static final Random random = new Random();
 
     private static void randomWait(Double fromSec, Double toSec) {
-        var waitSec = fromSec + (toSec - fromSec) * random.nextDouble();
-        try {
-            Thread.sleep((long) waitSec * 1000);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
+            var waitSec = fromSec + (toSec - fromSec) * random.nextDouble();
+            try {
+                Thread.sleep((long) waitSec * 1000);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
 
     }
 
@@ -152,7 +152,7 @@ public class FetchAds {
     /**
      * Updated the database using the data found in campaigns, avoiding creating duplicates.
      *
-     * @param mirrorDB database to use.
+     * @param mirrorDB  database to use.
      * @param campaigns new data to add.
      */
     private static void updatedDatabase(EmagMirrorDB mirrorDB, ArrayList<Campaign> campaigns) throws SQLException {

@@ -63,6 +63,9 @@ function renderHeader(columns) {
     }
     tr.appendChild(th);
   });
+  const phrasesTh = document.createElement('th');
+  phrasesTh.textContent = 'Phrases';
+  tr.appendChild(phrasesTh);
   HEAD.innerHTML = '';
   HEAD.appendChild(tr);
 }
@@ -71,7 +74,7 @@ function renderMessageRow(message) {
   BODY.innerHTML = '';
   const tr = document.createElement('tr');
   const td = document.createElement('td');
-  td.colSpan = Math.max(currentColumns.length, 1);
+  td.colSpan = Math.max(currentColumns.length + 1, 1);
   td.textContent = message;
   tr.appendChild(td);
   BODY.appendChild(tr);
@@ -91,7 +94,20 @@ function appendCell(tr, row, column, index) {
   tr.appendChild(td);
 }
 
-function renderRows(rows) {
+function appendPhrasesCell(tr, row, reportDate) {
+  const td = document.createElement('td');
+  const campaignId = String(row.campaignId ?? row.values?.campaign_id ?? '');
+  const adsetId = String(row.adsetId ?? row.values?.adset_id ?? '');
+  if (campaignId && adsetId && reportDate) {
+    const link = document.createElement('a');
+    link.href = `/private/ads-search-phrases?campaignId=${encodeURIComponent(campaignId)}&adsetId=${encodeURIComponent(adsetId)}&date=${encodeURIComponent(reportDate)}`;
+    link.textContent = 'phrases';
+    td.appendChild(link);
+  }
+  tr.appendChild(td);
+}
+
+function renderRows(rows, reportDate) {
   BODY.innerHTML = '';
   if (!rows.length) {
     renderMessageRow('No adsets found for this campaign and report date.');
@@ -102,6 +118,7 @@ function renderRows(rows) {
   for (const row of rows) {
     const tr = document.createElement('tr');
     currentColumns.forEach((column, index) => appendCell(tr, row, column, index));
+    appendPhrasesCell(tr, row, reportDate);
     fragment.appendChild(tr);
   }
   BODY.appendChild(fragment);
@@ -129,7 +146,7 @@ async function loadAdsets(campaignId, reportDate) {
   currentColumns = Array.isArray(data.columns) ? data.columns : [];
   const rows = Array.isArray(data.rows) ? data.rows : [];
   renderHeader(currentColumns);
-  renderRows(rows);
+  renderRows(rows, reportDate);
   setStatus(`${rows.length} adset${rows.length === 1 ? '' : 's'} for campaign ID ${campaignId} on ${reportDate}.`);
 }
 
