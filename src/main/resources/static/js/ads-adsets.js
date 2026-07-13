@@ -67,6 +67,9 @@ function renderHeader(columns) {
       const phrasesTh = document.createElement('th');
       phrasesTh.textContent = 'Phrases';
       tr.appendChild(phrasesTh);
+      const productsTh = document.createElement('th');
+      productsTh.textContent = 'Products';
+      tr.appendChild(productsTh);
     }
   });
   HEAD.innerHTML = '';
@@ -77,7 +80,7 @@ function renderMessageRow(message) {
   BODY.innerHTML = '';
   const tr = document.createElement('tr');
   const td = document.createElement('td');
-  td.colSpan = Math.max(currentColumns.length + 1, 1);
+  td.colSpan = Math.max(currentColumns.length + 2, 1);
   td.textContent = message;
   tr.appendChild(td);
   BODY.appendChild(tr);
@@ -110,6 +113,19 @@ function appendPhrasesCell(tr, row, reportDate) {
   tr.appendChild(td);
 }
 
+function appendProductsCell(tr, row, reportDate) {
+  const td = document.createElement('td');
+  const campaignId = String(row.campaignId ?? row.values?.campaign_id ?? '');
+  const adsetId = String(row.adsetId ?? row.values?.adset_id ?? '');
+  if (campaignId && adsetId && reportDate) {
+    const link = document.createElement('a');
+    link.href = `/private/ads-targeted-products?campaignId=${encodeURIComponent(campaignId)}&adsetId=${encodeURIComponent(adsetId)}&date=${encodeURIComponent(reportDate)}`;
+    link.textContent = 'products';
+    td.appendChild(link);
+  }
+  tr.appendChild(td);
+}
+
 function renderRows(rows, reportDate) {
   BODY.innerHTML = '';
   if (!rows.length) {
@@ -124,6 +140,7 @@ function renderRows(rows, reportDate) {
       appendCell(tr, row, column, index);
       if (index === 0) {
         appendPhrasesCell(tr, row, reportDate);
+        appendProductsCell(tr, row, reportDate);
       }
     });
     fragment.appendChild(tr);

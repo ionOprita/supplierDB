@@ -64,6 +64,19 @@ public class AdsCampaignTable {
                                            List<AdsSearchPhraseRow> rows) {
     }
 
+    public record AdsTargetedProductColumn(String key, String label, boolean numeric) {
+    }
+
+    public record AdsTargetedProductRow(Map<String, String> values) {
+    }
+
+    public record AdsTargetedProductTableData(String campaignName,
+                                              String adsetName,
+                                              String reportDate,
+                                              List<AdsTargetedProductColumn> columns,
+                                              List<AdsTargetedProductRow> rows) {
+    }
+
     private record AdsNames(String campaignName, String adsetName) {
     }
 
@@ -148,6 +161,28 @@ public class AdsCampaignTable {
             searchPhraseColumn("summary_conversion_rate", "Summary conversion rate", true),
             searchPhraseColumn("summary_return_on_advertising_spend", "Summary return on advertising spend", true),
             searchPhraseColumn("last_seen_at", "Last seen at", false)
+    );
+
+    private static final List<AdsTargetedProductColumn> ADS_TARGETED_PRODUCT_COLUMNS = List.of(
+            targetedProductColumn("product_name", "Product name", false),
+            targetedProductColumn("price", "Price", true),
+            targetedProductColumn("rating", "Rating", true),
+            targetedProductColumn("pnk", "PNK", false),
+            targetedProductColumn("category_name", "Category name", false),
+            targetedProductColumn("brand_name", "Brand name", false),
+            targetedProductColumn("clicks", "Clicks", true),
+            targetedProductColumn("impressions", "Impressions", true),
+            targetedProductColumn("ctr", "CTR", true),
+            targetedProductColumn("effective_cpc", "Effective CPC", true),
+            targetedProductColumn("spent", "Spent", true),
+            targetedProductColumn("average_cost_of_sale", "Average cost of sale", true),
+            targetedProductColumn("sales", "Sales", true),
+            targetedProductColumn("sold_units", "Sold units", true),
+            targetedProductColumn("sales_count", "Sales count", true),
+            targetedProductColumn("image_url", "Image URL", false),
+            targetedProductColumn("return_on_advertising_spend", "Return on advertising spend", true),
+            targetedProductColumn("conversion_rate", "Conversion rate", true),
+            targetedProductColumn("last_seen_at", "Last seen at", false)
     );
 
     static List<LocalDate> getCampaignReportDates(Connection db) throws SQLException {
@@ -343,6 +378,63 @@ public class AdsCampaignTable {
                 names.adsetName(),
                 reportDate.toString(),
                 ADS_SEARCH_PHRASE_COLUMNS,
+                rows
+        );
+    }
+
+    static AdsTargetedProductTableData getTargetedProducts(Connection db,
+                                                           int campaignId,
+                                                           int adsetId,
+                                                           LocalDate reportDate) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reportDate);
+
+        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, reportDate);
+        var rows = new ArrayList<AdsTargetedProductRow>();
+        try (var s = db.prepareStatement("""
+                SELECT
+                    product_name,
+                    price,
+                    rating,
+                    pnk,
+                    category_name,
+                    brand_name,
+                    clicks,
+                    impressions,
+                    ctr,
+                    effective_cpc,
+                    spent,
+                    average_cost_of_sale,
+                    sales,
+                    sold_units,
+                    sales_count,
+                    image_url,
+                    return_on_advertising_spend,
+                    conversion_rate,
+                    last_seen_at
+                FROM ads_targeted_product
+                WHERE campaign_id = ?
+                  AND adset_id = ?
+                  AND report_date = ?
+                  AND (clicks > 0 OR impressions > 50)
+                ORDER BY clicks DESC NULLS LAST,
+                         impressions DESC NULLS LAST,
+                         product_name ASC NULLS LAST
+                """)) {
+            s.setInt(1, campaignId);
+            s.setInt(2, adsetId);
+            s.setDate(3, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readTargetedProductRow(rs));
+                }
+            }
+        }
+        return new AdsTargetedProductTableData(
+                names.campaignName(),
+                names.adsetName(),
+                reportDate.toString(),
+                ADS_TARGETED_PRODUCT_COLUMNS,
                 rows
         );
     }
@@ -784,6 +876,10 @@ public class AdsCampaignTable {
         return new AdsSearchPhraseColumn(key, label, numeric);
     }
 
+    private static AdsTargetedProductColumn targetedProductColumn(String key, String label, boolean numeric) {
+        return new AdsTargetedProductColumn(key, label, numeric);
+    }
+
     private static AdsCampaignRow readCampaignRow(ResultSet rs) throws SQLException {
         var values = new LinkedHashMap<String, String>();
         for (var column : ADS_CAMPAIGN_COLUMNS) {
@@ -806,6 +902,14 @@ public class AdsCampaignTable {
             values.put(column.key(), displayValue(rs.getObject(column.key())));
         }
         return new AdsSearchPhraseRow(values);
+    }
+
+    private static AdsTargetedProductRow readTargetedProductRow(ResultSet rs) throws SQLException {
+        var values = new LinkedHashMap<String, String>();
+        for (var column : ADS_TARGETED_PRODUCT_COLUMNS) {
+            values.put(column.key(), displayValue(rs.getObject(column.key())));
+        }
+        return new AdsTargetedProductRow(values);
     }
 
     private static String getCampaignName(Connection db, int campaignId, LocalDate reportDate) throws SQLException {

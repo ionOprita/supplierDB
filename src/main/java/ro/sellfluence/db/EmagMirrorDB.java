@@ -174,6 +174,12 @@ public class EmagMirrorDB {
         return database.readTX(db -> AdsCampaignTable.getSearchPhrases(db, campaignId, adsetId, reportDate));
     }
 
+    public AdsCampaignTable.AdsTargetedProductTableData getAdsTargetedProducts(int campaignId,
+                                                                                int adsetId,
+                                                                                LocalDate reportDate) throws SQLException {
+        return database.readTX(db -> AdsCampaignTable.getTargetedProducts(db, campaignId, adsetId, reportDate));
+    }
+
     /**
      * Return all orders that are open, grouped by the vendor.
      *

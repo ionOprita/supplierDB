@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import ro.sellfluence.db.AdsCampaignTable.AdsAdsetTableData;
 import ro.sellfluence.db.AdsCampaignTable.AdsCampaignTableData;
 import ro.sellfluence.db.AdsCampaignTable.AdsSearchPhraseTableData;
+import ro.sellfluence.db.AdsCampaignTable.AdsTargetedProductTableData;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
 import ro.sellfluence.db.ProductTable.ProductInfo;
@@ -141,6 +142,16 @@ public class API {
             return mirrorDB.getAdsSearchPhrases(campaignId, adsetId, reportDate);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load ads search phrases for campaign " + campaignId
+                    + ", adset " + adsetId + ", and report date " + reportDate + ".", e);
+            return null;
+        }
+    }
+
+    public AdsTargetedProductTableData getAdsTargetedProducts(int campaignId, int adsetId, LocalDate reportDate) {
+        try {
+            return mirrorDB.getAdsTargetedProducts(campaignId, adsetId, reportDate);
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load ads targeted products for campaign " + campaignId
                     + ", adset " + adsetId + ", and report date " + reportDate + ".", e);
             return null;
         }
