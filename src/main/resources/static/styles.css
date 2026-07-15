@@ -13,6 +13,9 @@
   --dirty-ring: #f59e0b;
   --primary: #2563eb;
   --primary-hover: #1d4ed8;
+  --danger: #dc2626;
+  --danger-hover: #b91c1c;
+  --danger-text: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -29,6 +32,9 @@
     --dirty-ring: #d97706;
     --primary: #3b82f6;
     --primary-hover: #60a5fa;
+    --danger: #ef4444;
+    --danger-hover: #dc2626;
+    --danger-text: #ffffff;
   }
 }
 
@@ -624,6 +630,71 @@ button {
 
 button:hover {
   background: var(--surface-alt);
+}
+
+.danger-action {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-text);
+}
+
+.danger-action:hover {
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
+  color: var(--danger-text);
+}
+
+.danger-action:disabled {
+  cursor: progress;
+  opacity: .7;
+}
+
+.server-stop-button {
+  font-weight: 600;
+}
+
+.server-stop-dialog {
+  width: min(420px, calc(100vw - 2rem));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.server-stop-dialog::backdrop {
+  background: rgb(17 24 39 / 55%);
+}
+
+.server-stop-dialog-content {
+  display: grid;
+  gap: .75rem;
+  padding: 1rem;
+}
+
+.server-stop-dialog-content h2,
+.server-stop-dialog-content p {
+  margin: 0;
+}
+
+.server-stop-dialog-content h2 {
+  font-size: 1.05rem;
+}
+
+.server-stop-status {
+  min-height: 1.25rem;
+  color: var(--muted);
+}
+
+.server-stop-status.is-error {
+  color: var(--danger);
+}
+
+.server-stop-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+  flex-wrap: wrap;
 }
 
 /* Status messages */

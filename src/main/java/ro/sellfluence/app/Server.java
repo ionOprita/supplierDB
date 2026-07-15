@@ -15,6 +15,7 @@ import com.yubico.webauthn.data.PublicKeyCredentialCreationOptions;
 import com.yubico.webauthn.data.ResidentKeyRequirement;
 import com.yubico.webauthn.data.UserIdentity;
 import com.yubico.webauthn.data.UserVerificationRequirement;
+import com.yubico.webauthn.exception.AssertionFailedException;
 import io.javalin.Javalin;
 import io.javalin.community.ssl.SslPlugin;
 import io.javalin.config.JavalinConfig;
@@ -64,6 +65,7 @@ import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -94,6 +96,7 @@ public class Server {
     private static final String publicHttpsOriginConfigName = "PUBLIC_HTTPS_ORIGIN";
     private static final String acmeChallengePrefix = "/.well-known/acme-challenge/";
     private static final ObjectMapper mapper = (new ObjectMapper());
+    private static final AtomicBoolean serverShutdownRequested = new AtomicBoolean(false);
     private static final User unsafeUser = new User("unsafe-without-authentication", admin);
     private static final Set<String> MULTILINE_PRODUCT_FIELDS = Set.of(
             "emagTitle",
@@ -359,6 +362,8 @@ public class Server {
         app.get("/admin/db-explorer/{subPage}", ctx -> renderDBExplorerSubPage(ctx, mirrorDB, ctx.pathParam("subPage")));
         app.post("/admin/db-explorer/brands", ctx -> insertBrand(ctx, mirrorDB));
         app.post("/admin/db-explorer/brands/{brandId}/delete", ctx -> deleteBrand(ctx, mirrorDB));
+        app.post("/admin/server-stop/options", ctx -> startServerStopAssertion(ctx, mirrorDB, rp));
+        app.post("/admin/server-stop/verify", ctx -> verifyServerStopAssertion(ctx, mirrorDB, rp));
         app.get("/admin/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
         app.post("/admin/users/{userId}/role", ctx -> changeUserRole(ctx, mirrorDB));
         app.post("/admin/users/{userId}/delete", ctx -> deleteUser(ctx, mirrorDB));
@@ -635,6 +640,126 @@ public class Server {
                 ctx.status(204);
             }
         });
+    }
+
+    private static void startServerStopAssertion(Context ctx, EmagMirrorDB mirrorDB, RelyingParty rp) {
+        if (withoutAuthenticationAndTotalyUnsafe) {
+            ctx.status(FORBIDDEN).result("Server shutdown requires passkey authentication.");
+            return;
+        }
+
+        User currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null || currentUser.role() != admin) {
+            ctx.status(FORBIDDEN);
+            return;
+        }
+
+        try {
+            String username = currentUser.username().toLowerCase();
+            Long userId = mirrorDB.findUserIdByUsername(username).orElse(null);
+            if (userId == null) {
+                ctx.status(401).result("Current user was not found.");
+                return;
+            }
+
+            AssertionRequest request = rp.startAssertion(StartAssertionOptions.builder()
+                    .username(username)
+                    .userVerification(UserVerificationRequirement.REQUIRED)
+                    .build());
+            String requestJson = mapper.writeValueAsString(request);
+            long rowId = mirrorDB.insertAssertionRequest(userId, rp.getIdentity().getId(),
+                    rp.getOrigins().stream().findFirst().get(), requestJson, java.time.Instant.now().plusSeconds(300));
+            ctx.result(mapper.writeValueAsString(Map.of(
+                    "requestId", rowId,
+                    "publicKey", request.getPublicKeyCredentialRequestOptions()
+            )));
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to create server stop passkey challenge.", e);
+            ctx.status(500).result("Could not create passkey challenge.");
+        }
+    }
+
+    private static void verifyServerStopAssertion(Context ctx, EmagMirrorDB mirrorDB, RelyingParty rp) {
+        if (withoutAuthenticationAndTotalyUnsafe) {
+            ctx.status(FORBIDDEN).result("Server shutdown requires passkey authentication.");
+            return;
+        }
+
+        User currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null || currentUser.role() != admin) {
+            ctx.status(FORBIDDEN);
+            return;
+        }
+
+        final long requestId;
+        try {
+            requestId = Long.parseLong(ctx.queryParam("requestId"));
+        } catch (NumberFormatException e) {
+            ctx.status(400).result("Invalid passkey request id.");
+            return;
+        }
+
+        try {
+            Long currentUserId = mirrorDB.findUserIdByUsername(currentUser.username()).orElse(null);
+            if (currentUserId == null || mirrorDB.findUser(requestId) != currentUserId) {
+                ctx.status(FORBIDDEN);
+                return;
+            }
+
+            String requestJson = mirrorDB.findOptionsJson(requestId, "authentication")
+                    .orElseThrow(() -> new IllegalStateException("Assertion request not found or expired."));
+            var pkc = PublicKeyCredential.parseAssertionResponseJson(ctx.body());
+            AssertionRequest assertionRequest = mapper.readValue(requestJson, AssertionRequest.class);
+
+            AssertionResult result = rp.finishAssertion(FinishAssertionOptions.builder()
+                    .request(assertionRequest)
+                    .response(pkc)
+                    .build());
+
+            if (!result.isSuccess()) {
+                ctx.status(401).result("Passkey verification failed.");
+                return;
+            }
+
+            var verifiedUser = mirrorDB.getUserForUserHandle(result.getCredential().getUserHandle()).orElse(null);
+            if (verifiedUser == null || !verifiedUser.username().equals(currentUser.username()) || verifiedUser.role() != admin) {
+                ctx.status(FORBIDDEN);
+                return;
+            }
+
+            mirrorDB.updateSignCountAndLastUsed(result.getCredential().getCredentialId(), result.getSignatureCount());
+            mirrorDB.markUsed(requestId);
+
+            scheduleServerShutdown(currentUser.username());
+            ctx.status(202).json(Map.of("message", "Server shutdown requested. The run script should restart it shortly."));
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to verify server stop passkey challenge.", e);
+            ctx.status(500).result("Could not verify passkey challenge.");
+        } catch (IOException e) {
+            ctx.status(400).result("Invalid passkey response.");
+        } catch (AssertionFailedException e) {
+            ctx.status(401).result("Passkey verification failed.");
+        } catch (IllegalStateException e) {
+            ctx.status(400).result(e.getMessage());
+        }
+    }
+
+    private static void scheduleServerShutdown(String username) {
+        if (!serverShutdownRequested.compareAndSet(false, true)) {
+            return;
+        }
+
+        logger.log(WARNING, "Admin {0} requested server shutdown.", username);
+        Thread shutdownThread = new Thread(() -> {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            System.exit(0);
+        }, "AdminServerStop");
+        shutdownThread.setDaemon(false);
+        shutdownThread.start();
     }
 
     private static void configureAPI(JavalinDefaultRoutingApi app, API api) {

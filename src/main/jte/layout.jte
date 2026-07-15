@@ -52,9 +52,23 @@
                 <ul class="menu-row menu-row-admin">
                     <li><a href="/admin/users">Administrate Users</a></li>
                     <li><a href="/admin/db-explorer/products">DB Explorer</a></li>
+                    <li><button type="button" id="serverStopButton" class="danger-action server-stop-button">Stop Server</button></li>
                 </ul>
             @endif
         </nav>
+    @endif
+    @if(userRole != null && userRole.equals("admin"))
+        <dialog id="serverStopDialog" class="server-stop-dialog">
+            <form method="dialog" class="server-stop-dialog-content">
+                <h2>Stop server?</h2>
+                <p>The Java process will exit. The run script should restart it shortly.</p>
+                <p id="serverStopStatus" class="server-stop-status" role="status" aria-live="polite"></p>
+                <div class="server-stop-dialog-actions">
+                    <button type="submit" id="serverStopCancelButton">Cancel</button>
+                    <button type="button" id="serverStopConfirmButton" class="danger-action">Proceed</button>
+                </div>
+            </form>
+        </dialog>
     @endif
     <h1 id="title">${pageTitle}</h1>
     ${content}
@@ -64,5 +78,9 @@
     <small>© Sellfusion 2025 - 2026</small>
 </footer>
 
+@if(userRole != null && userRole.equals("admin"))
+    <script src="/js/passkey.js"></script>
+    <script src="/js/server-stop.js"></script>
+@endif
 </body>
 </html>
