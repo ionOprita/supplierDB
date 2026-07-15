@@ -83,7 +83,7 @@ import static ro.sellfluence.support.UsefulMethods.homeDirectory;
  */
 public class Server {
     private static final boolean withoutAuthenticationAndTotalyUnsafe = false;
-    private static final boolean runBackgroundTasks = false;
+    private static final boolean runBackgroundTasks = true;
     private static final Path certsDir = homeDirectory().resolve("Secrets").resolve("Certs");
     private static final String productionHostName = "server.sellfusion.ro";
     private static final String tlsKeystorePathConfigName = "TLS_KEYSTORE_PATH";
