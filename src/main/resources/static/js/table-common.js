@@ -462,15 +462,36 @@ export function toTaskRows(jsonData) {
   });
 }
 
-export function renderTasksBody(tbodyEl, rows) {
+export function renderTasksBody(tbodyEl, rows, options = {}) {
+  const canRunTasks = options.canRunTasks === true;
+  const anotherTaskIsRunning = rows.some((row) => row.started != null && row.terminated == null);
+
   function renderRow(row) {
     const tr = document.createElement('tr');
+
+    const isRunning = row.started != null && row.terminated == null;
+    const tdAction = document.createElement('td');
+    if (canRunTasks && !isRunning) {
+      const runButton = document.createElement('button');
+      runButton.type = 'button';
+      runButton.textContent = 'Run';
+      runButton.classList.add('task-run-button');
+      runButton.disabled = anotherTaskIsRunning;
+      if (anotherTaskIsRunning) {
+        runButton.title = 'Another task is already running.';
+      }
+      runButton.addEventListener('click', () => options.onRun?.(row.name, runButton));
+      tdAction.appendChild(runButton);
+    } else {
+      tdAction.textContent = '-';
+    }
+    tr.appendChild(tdAction);
 
     const tdName = document.createElement('td');
     tdName.textContent = row.name;
     tr.appendChild(tdName);
     const tdStatus = document.createElement('td');
-    if (row.started != null && row.terminated == null) {
+    if (isRunning) {
       tdStatus.textContent = `RUNNING since ${formatLocalDateTime(row.started)}`;
     } else if (row.error != null && String(row.error).trim() !== "") {
       tdStatus.textContent = "ERROR";
@@ -508,22 +529,58 @@ export function renderTasksBody(tbodyEl, rows) {
  * @param {string} cfg.theadId - DOM id of <thead>
  * @param {string} cfg.tbodyId - DOM id of <tbody>
  * @param {string} cfg.dataUrl - endpoint to load the matrix JSON from
+ * @param {string} [cfg.actionStatusId] - DOM id used for run-request feedback
+ * @param {boolean} [cfg.canRunTasks] - whether Run controls should be displayed
+ * @param {function} [cfg.runUrlBuilder] - (taskName) => URL for the run endpoint
  */
 export function initTaskTable(cfg) {
   const HEAD = document.getElementById(cfg.theadId);
   const BODY = document.getElementById(cfg.tbodyId);
   const TABLE = document.getElementById(cfg.tableId);
+  const ACTION_STATUS = cfg.actionStatusId ? document.getElementById(cfg.actionStatusId) : null;
+
+  function setActionStatus(message, isError = false) {
+    if (!ACTION_STATUS) return;
+    ACTION_STATUS.textContent = message;
+    ACTION_STATUS.classList.toggle('is-error', isError);
+  }
+
+  async function runTask(taskName, button) {
+    if (typeof cfg.runUrlBuilder !== 'function') return;
+
+    for (const runButton of BODY.querySelectorAll('.task-run-button')) {
+      runButton.disabled = true;
+    }
+    button.textContent = 'Starting...';
+    setActionStatus(`Starting ${taskName}...`);
+
+    try {
+      const response = await fetch(cfg.runUrlBuilder(taskName), { method: 'POST' });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `Could not start task (HTTP ${response.status}).`);
+      }
+      setActionStatus(`${taskName} was accepted and will start shortly.`);
+      window.setTimeout(loadTasks, 500);
+    } catch (error) {
+      setActionStatus(error instanceof Error ? error.message : String(error), true);
+      await loadTasks();
+    }
+  }
 
   async function loadTasks() {
     try {
       const data = await fetchJSON(cfg.dataUrl);
       const rows = toTaskRows(data);
       const tr = buildHeaderRow([
-        'Name', 'Status', 'Last Run', 'Runtime', 'Last Successful', 'Failures', 'Error'
+        'Action', 'Name', 'Status', 'Last Run', 'Runtime', 'Last Successful', 'Failures', 'Error'
       ]);
       HEAD.innerHTML = '';
       HEAD.appendChild(tr);
-      renderTasksBody(BODY, rows);
+      renderTasksBody(BODY, rows, {
+        canRunTasks: cfg.canRunTasks,
+        onRun: runTask
+      });
     } catch (e) {
       HEAD.innerHTML = '';
       BODY.innerHTML = '<tr><td>Failed to load data</td></tr>';

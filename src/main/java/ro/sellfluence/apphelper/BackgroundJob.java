@@ -15,7 +15,10 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -30,10 +33,20 @@ public class BackgroundJob {
     private static final Duration weekly = Duration.ofDays(7);
     private static final Decider always = (_) -> true;
     private final AtomicBoolean running = new AtomicBoolean(true);
+    private final AtomicReference<@Nullable String> activeTaskName = new AtomicReference<>();
     private final EmagMirrorDB mirrorDB;
+    private final ScheduledExecutorService scheduler;
 
-    public BackgroundJob(EmagMirrorDB db) {
+    public BackgroundJob(EmagMirrorDB db, ScheduledExecutorService scheduler) {
         mirrorDB = db;
+        this.scheduler = scheduler;
+    }
+
+    public enum RunResult {
+        ACCEPTED,
+        BUSY,
+        UNKNOWN_TASK,
+        SHUTTING_DOWN
     }
 
     @FunctionalInterface
@@ -77,7 +90,7 @@ public class BackgroundJob {
      * This method will be called repeatedly by the scheduler.
      */
     public void performWork() {
-        if (!running.get()) {
+        if (!running.get() || activeTaskName.get() != null) {
             return;
         }
         try {
@@ -134,18 +147,71 @@ public class BackgroundJob {
                             && lastRun.plus(taskRunner.interval).isBefore(now)    // Waited for enough time
                             && taskRunner.decider.shallIRun(now)  // There is no other impediment
             ) {
-
-                try {
-                    mirrorDB.startTask(taskName);
-                    taskRunner.transferMethod.transfer(mirrorDB);
-                    mirrorDB.endTask(taskName, "");
-                } catch (Exception e) {
-                    mirrorDB.endTask(taskName, e);
-                    logger.log(WARNING, taskName + " ended with an error.", e);
+                if (activeTaskName.compareAndSet(null, taskName)) {
+                    executeClaimedRunner(taskRunner);
                 }
                 return; // Execute only one task at a time.
             }
         }
+    }
+
+    /**
+     * Queue a task for immediate execution, bypassing its normal schedule.
+     * Only tasks from the configured runner lists can be started, and the task is reserved before it is queued so
+     * simultaneous requests cannot start more than one task.
+     */
+    public RunResult requestRun(String taskName) {
+        if (!running.get()) {
+            return RunResult.SHUTTING_DOWN;
+        }
+
+        var taskRunner = findRunner(taskName);
+        if (taskRunner == null) {
+            return RunResult.UNKNOWN_TASK;
+        }
+        if (!activeTaskName.compareAndSet(null, taskName)) {
+            return RunResult.BUSY;
+        }
+
+        try {
+            scheduler.execute(() -> executeClaimedRunner(taskRunner));
+            return RunResult.ACCEPTED;
+        } catch (RejectedExecutionException e) {
+            activeTaskName.compareAndSet(taskName, null);
+            return RunResult.SHUTTING_DOWN;
+        }
+    }
+
+    private void executeClaimedRunner(TaskRunner taskRunner) {
+        var taskName = taskRunner.name();
+        try {
+            mirrorDB.startTask(taskName);
+            taskRunner.transferMethod.transfer(mirrorDB);
+            mirrorDB.endTask(taskName, "");
+        } catch (Exception e) {
+            try {
+                mirrorDB.endTask(taskName, e);
+            } catch (SQLException databaseException) {
+                e.addSuppressed(databaseException);
+            }
+            logger.log(WARNING, taskName + " ended with an error.", e);
+        } finally {
+            activeTaskName.compareAndSet(taskName, null);
+        }
+    }
+
+    private @Nullable TaskRunner findRunner(String taskName) {
+        for (var taskRunner : fetchers) {
+            if (taskRunner.name().equals(taskName)) {
+                return taskRunner;
+            }
+        }
+        for (var taskRunner : consumers) {
+            if (taskRunner.name().equals(taskName)) {
+                return taskRunner;
+            }
+        }
+        return null;
     }
 
 

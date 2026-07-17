@@ -331,7 +331,8 @@ public class Server {
     private static void configureRoutes(JavalinDefaultRoutingApi app,
                                         EmagMirrorDB mirrorDB,
                                         API api,
-                                        RelyingParty rp) {
+                                        RelyingParty rp,
+                                        BackgroundJob backgroundJob) {
         configureAcmeChallenge(app);
         configureHttpToHttpsRedirect(app);
 
@@ -364,6 +365,20 @@ public class Server {
         app.post("/admin/db-explorer/brands/{brandId}/delete", ctx -> deleteBrand(ctx, mirrorDB));
         app.post("/admin/server-stop/options", ctx -> startServerStopAssertion(ctx, mirrorDB, rp));
         app.post("/admin/server-stop/verify", ctx -> verifyServerStopAssertion(ctx, mirrorDB, rp));
+        app.post("/admin/tasks/{taskName}/run", ctx -> {
+            var currentUser = resolveCurrentUser(ctx);
+            if (currentUser == null || currentUser.role() != admin) {
+                ctx.status(FORBIDDEN);
+                return;
+            }
+            var taskName = ctx.pathParam("taskName");
+            switch (backgroundJob.requestRun(taskName)) {
+                case ACCEPTED -> ctx.status(202).result("Task accepted: " + taskName);
+                case BUSY -> ctx.status(409).result("Another task is already running or starting.");
+                case UNKNOWN_TASK -> ctx.status(404).result("Unknown task: " + taskName);
+                case SHUTTING_DOWN -> ctx.status(503).result("The task scheduler is shutting down.");
+            }
+        });
         app.get("/admin/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
         app.post("/admin/users/{userId}/role", ctx -> changeUserRole(ctx, mirrorDB));
         app.post("/admin/users/{userId}/delete", ctx -> deleteUser(ctx, mirrorDB));
@@ -451,12 +466,12 @@ public class Server {
                 System.getenv().getOrDefault(configNameSecurePort, arguments.getOption("secport", "8443"))));
 
         // Setup background job
-        BackgroundJob backgroundJob = new BackgroundJob(mirrorDB);
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread thread = new Thread(r, "BackgroundJob-Thread");
             thread.setDaemon(true); // Don't prevent JVM shutdown
             return thread;
         });
+        BackgroundJob backgroundJob = new BackgroundJob(mirrorDB, scheduler);
 
         // Schedule the job with auto-restart on failure
         if (runBackgroundTasks) {
@@ -467,7 +482,7 @@ public class Server {
 
         var app = Javalin.create(config -> {
             configure(config, port, securePort);
-            configureRoutes(config.routes, mirrorDB, api, rp);
+            configureRoutes(config.routes, mirrorDB, api, rp, backgroundJob);
         });
 
         app.start();

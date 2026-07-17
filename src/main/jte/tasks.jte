@@ -7,7 +7,8 @@
     <button id="refreshBtn" title="Reload">Reload</button>
   </div>
   <div class="wrap">
-    <table id="tasksTable">
+    <p id="taskActionStatus" role="status" aria-live="polite"></p>
+    <table id="tasksTable" data-can-run="${userRole.equals("admin")}">
       <thead id="tasksHead"></thead>
       <tbody id="tasksBody"></tbody>
     </table>
