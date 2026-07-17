@@ -471,7 +471,7 @@ export function renderTasksBody(tbodyEl, rows) {
     tr.appendChild(tdName);
     const tdStatus = document.createElement('td');
     if (row.started != null && row.terminated == null) {
-      tdStatus.textContent = "RUNNING";
+      tdStatus.textContent = `RUNNING since ${formatLocalDateTime(row.started)}`;
     } else if (row.error != null && String(row.error).trim() !== "") {
       tdStatus.textContent = "ERROR";
     } else {
