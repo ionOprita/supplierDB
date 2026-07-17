@@ -7,7 +7,10 @@ initTaskTable({
   theadId: 'tasksHead',
   tbodyId: 'tasksBody',
   dataUrl: '/app/tasks',
+  pausedDataUrl: '/app/tasks/paused',
   actionStatusId: 'taskActionStatus',
   canRunTasks: tasksTable?.dataset.canRun === 'true',
-  runUrlBuilder: (taskName) => `/admin/tasks/${encodeURIComponent(taskName)}/run`
+  runUrlBuilder: (taskName) => `/admin/tasks/${encodeURIComponent(taskName)}/run`,
+  pauseUrlBuilder: (taskName) => `/admin/tasks/${encodeURIComponent(taskName)}/pause`,
+  resumeUrlBuilder: (taskName) => `/admin/tasks/${encodeURIComponent(taskName)}/resume`
 });

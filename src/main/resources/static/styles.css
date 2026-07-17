@@ -744,3 +744,7 @@ canvas {
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
+/* Task controls share a cell; keep adjacent actions visually distinct. */
+.task-action-button + .task-action-button {
+  margin-left: 0.4rem;
+}

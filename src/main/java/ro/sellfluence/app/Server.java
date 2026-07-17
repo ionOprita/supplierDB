@@ -85,7 +85,6 @@ import static ro.sellfluence.support.UsefulMethods.homeDirectory;
  */
 public class Server {
     private static final boolean withoutAuthenticationAndTotalyUnsafe = false;
-    private static final boolean runBackgroundTasks = true;
     private static final Path certsDir = homeDirectory().resolve("Secrets").resolve("Certs");
     private static final String productionHostName = "server.sellfusion.ro";
     private static final String tlsKeystorePathConfigName = "TLS_KEYSTORE_PATH";
@@ -342,7 +341,7 @@ public class Server {
             app.get("/index.html", ctx -> ctx.redirect("/private/overview"));
         }
 
-        configureAPI(app, api);
+        configureAPI(app, api, backgroundJob);
         configurePasskey(app, mirrorDB, rp);
 
         app.before("/private/*", ctx -> checkRole(ctx, user));
@@ -379,6 +378,8 @@ public class Server {
                 case SHUTTING_DOWN -> ctx.status(503).result("The task scheduler is shutting down.");
             }
         });
+        app.post("/admin/tasks/{taskName}/pause", ctx -> setTaskPaused(ctx, backgroundJob, true));
+        app.post("/admin/tasks/{taskName}/resume", ctx -> setTaskPaused(ctx, backgroundJob, false));
         app.get("/admin/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
         app.post("/admin/users/{userId}/role", ctx -> changeUserRole(ctx, mirrorDB));
         app.post("/admin/users/{userId}/delete", ctx -> deleteUser(ctx, mirrorDB));
@@ -397,6 +398,20 @@ public class Server {
     private static void configureAcmeChallenge(JavalinDefaultRoutingApi app) {
         Path webRoot = acmeChallengeWebRoot();
         app.get(acmeChallengePrefix + "{token}", ctx -> serveAcmeChallenge(ctx, webRoot));
+    }
+
+    private static void setTaskPaused(Context ctx, BackgroundJob backgroundJob, boolean paused) {
+        var currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null || currentUser.role() != admin) {
+            ctx.status(FORBIDDEN);
+            return;
+        }
+
+        var taskName = ctx.pathParam("taskName");
+        switch (backgroundJob.setTaskPaused(taskName, paused)) {
+            case UPDATED -> ctx.status(204);
+            case UNKNOWN_TASK -> ctx.status(404).result("Unknown task: " + taskName);
+        }
     }
 
     private static Path acmeChallengeWebRoot() {
@@ -473,10 +488,8 @@ public class Server {
         });
         BackgroundJob backgroundJob = new BackgroundJob(mirrorDB, scheduler);
 
-        // Schedule the job with auto-restart on failure
-        if (runBackgroundTasks) {
-            scheduleWithRestart(scheduler, backgroundJob);
-        }
+        // Give administrators time to pause individual tasks before the first dispatcher cycle.
+        scheduler.schedule(() -> scheduleWithRestart(scheduler, backgroundJob), 5, TimeUnit.MINUTES);
 
         var rp = WebAuthnServer.create(new MyCredentialRepo(mirrorDB));
 
@@ -777,7 +790,7 @@ public class Server {
         shutdownThread.start();
     }
 
-    private static void configureAPI(JavalinDefaultRoutingApi app, API api) {
+    private static void configureAPI(JavalinDefaultRoutingApi app, API api, BackgroundJob backgroundJob) {
         app.before("/app/*", ctx -> checkRole(ctx, user)); // TODO: Need to protect admin calls
         app.get("/app/products", ctx -> {
             String json = api.getProducts();
@@ -947,6 +960,7 @@ public class Server {
                 ctx.json(returns);
             }
         });
+        app.get("/app/tasks/paused", ctx -> ctx.json(backgroundJob.pausedTaskNames()));
     }
 
     private static void renderProductsPage(Context ctx, EmagMirrorDB mirrorDB) {

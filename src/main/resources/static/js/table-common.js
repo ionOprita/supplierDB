@@ -433,8 +433,9 @@ export function arrayToDateTime(arr) {
   return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, ss ?? 0, ms));
 }
 
-export function toTaskRows(jsonData) {
+export function toTaskRows(jsonData, pausedTaskNames = []) {
   if (!Array.isArray(jsonData)) return [];
+  const pausedNames = new Set(Array.isArray(pausedTaskNames) ? pausedTaskNames : []);
 
   return jsonData.map((item) => {
     const {
@@ -456,6 +457,7 @@ export function toTaskRows(jsonData) {
           typeof durationOfLastRun === "number" ? durationOfLastRun : null,
       unsuccessfulRuns: typeof unsuccessfulRuns === "number" ? unsuccessfulRuns : 0,
       error: typeof error === "string" ? error : "",
+      paused: pausedNames.has(name),
       // include original item if needed:
       // raw: item
     };
@@ -471,17 +473,26 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
 
     const isRunning = row.started != null && row.terminated == null;
     const tdAction = document.createElement('td');
-    if (canRunTasks && !isRunning) {
-      const runButton = document.createElement('button');
-      runButton.type = 'button';
-      runButton.textContent = 'Run';
-      runButton.classList.add('task-run-button');
-      runButton.disabled = anotherTaskIsRunning;
-      if (anotherTaskIsRunning) {
-        runButton.title = 'Another task is already running.';
+    if (canRunTasks) {
+      if (!isRunning) {
+        const runButton = document.createElement('button');
+        runButton.type = 'button';
+        runButton.textContent = 'Run';
+        runButton.classList.add('task-action-button', 'task-run-button');
+        runButton.disabled = anotherTaskIsRunning;
+        if (anotherTaskIsRunning) {
+          runButton.title = 'Another task is already running.';
+        }
+        runButton.addEventListener('click', () => options.onRun?.(row.name, runButton));
+        tdAction.appendChild(runButton);
       }
-      runButton.addEventListener('click', () => options.onRun?.(row.name, runButton));
-      tdAction.appendChild(runButton);
+
+      const pauseButton = document.createElement('button');
+      pauseButton.type = 'button';
+      pauseButton.textContent = row.paused ? 'Resume' : 'Pause';
+      pauseButton.classList.add('task-action-button', 'task-pause-button');
+      pauseButton.addEventListener('click', () => options.onSetPaused?.(row.name, !row.paused, pauseButton));
+      tdAction.appendChild(pauseButton);
     } else {
       tdAction.textContent = '-';
     }
@@ -493,6 +504,8 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
     const tdStatus = document.createElement('td');
     if (isRunning) {
       tdStatus.textContent = `RUNNING since ${formatLocalDateTime(row.started)}`;
+    } else if (row.paused) {
+      tdStatus.textContent = 'PAUSED';
     } else if (row.error != null && String(row.error).trim() !== "") {
       tdStatus.textContent = "ERROR";
     } else {
@@ -529,9 +542,12 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
  * @param {string} cfg.theadId - DOM id of <thead>
  * @param {string} cfg.tbodyId - DOM id of <tbody>
  * @param {string} cfg.dataUrl - endpoint to load the matrix JSON from
+ * @param {string} [cfg.pausedDataUrl] - endpoint returning the names of paused tasks
  * @param {string} [cfg.actionStatusId] - DOM id used for run-request feedback
  * @param {boolean} [cfg.canRunTasks] - whether Run controls should be displayed
  * @param {function} [cfg.runUrlBuilder] - (taskName) => URL for the run endpoint
+ * @param {function} [cfg.pauseUrlBuilder] - (taskName) => URL for the pause endpoint
+ * @param {function} [cfg.resumeUrlBuilder] - (taskName) => URL for the resume endpoint
  */
 export function initTaskTable(cfg) {
   const HEAD = document.getElementById(cfg.theadId);
@@ -568,10 +584,35 @@ export function initTaskTable(cfg) {
     }
   }
 
+  async function setTaskPaused(taskName, paused, button) {
+    const urlBuilder = paused ? cfg.pauseUrlBuilder : cfg.resumeUrlBuilder;
+    if (typeof urlBuilder !== 'function') return;
+
+    button.disabled = true;
+    button.textContent = paused ? 'Pausing...' : 'Resuming...';
+    setActionStatus(`${paused ? 'Pausing' : 'Resuming'} automatic scheduling for ${taskName}...`);
+
+    try {
+      const response = await fetch(urlBuilder(taskName), { method: 'POST' });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `Could not ${paused ? 'pause' : 'resume'} task (HTTP ${response.status}).`);
+      }
+      setActionStatus(`Automatic scheduling for ${taskName} is now ${paused ? 'paused' : 'resumed'}.`);
+    } catch (error) {
+      setActionStatus(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      await loadTasks();
+    }
+  }
+
   async function loadTasks() {
     try {
-      const data = await fetchJSON(cfg.dataUrl);
-      const rows = toTaskRows(data);
+      const [data, pausedTaskNames] = await Promise.all([
+        fetchJSON(cfg.dataUrl),
+        cfg.pausedDataUrl ? fetchJSON(cfg.pausedDataUrl) : Promise.resolve([])
+      ]);
+      const rows = toTaskRows(data, pausedTaskNames);
       const tr = buildHeaderRow([
         'Action', 'Name', 'Status', 'Last Run', 'Runtime', 'Last Successful', 'Failures', 'Error'
       ]);
@@ -579,7 +620,8 @@ export function initTaskTable(cfg) {
       HEAD.appendChild(tr);
       renderTasksBody(BODY, rows, {
         canRunTasks: cfg.canRunTasks,
-        onRun: runTask
+        onRun: runTask,
+        onSetPaused: setTaskPaused
       });
     } catch (e) {
       HEAD.innerHTML = '';

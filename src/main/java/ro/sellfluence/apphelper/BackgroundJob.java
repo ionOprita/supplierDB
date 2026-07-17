@@ -14,7 +14,9 @@ import ro.sellfluence.support.Logs;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -34,6 +36,8 @@ public class BackgroundJob {
     private static final Decider always = (_) -> true;
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final AtomicReference<@Nullable String> activeTaskName = new AtomicReference<>();
+    private final Object taskControlLock = new Object();
+    private final Set<String> pausedTaskNames = new HashSet<>();
     private final EmagMirrorDB mirrorDB;
     private final ScheduledExecutorService scheduler;
 
@@ -47,6 +51,11 @@ public class BackgroundJob {
         BUSY,
         UNKNOWN_TASK,
         SHUTTING_DOWN
+    }
+
+    public enum PauseResult {
+        UPDATED,
+        UNKNOWN_TASK
     }
 
     @FunctionalInterface
@@ -146,12 +155,49 @@ public class BackgroundJob {
                     lastRun.isBefore(referenceTime)   // Was not run after dependency
                             && lastRun.plus(taskRunner.interval).isBefore(now)    // Waited for enough time
                             && taskRunner.decider.shallIRun(now)  // There is no other impediment
+                            && !isTaskPaused(taskName)
             ) {
-                if (activeTaskName.compareAndSet(null, taskName)) {
+                if (claimScheduledTask(taskName)) {
                     executeClaimedRunner(taskRunner);
                 }
                 return; // Execute only one task at a time.
             }
+        }
+    }
+
+    /**
+     * Pause or resume automatic scheduling for one configured task. Manual runs remain available while paused.
+     * Pausing an already-running task affects only its next scheduled run.
+     */
+    public PauseResult setTaskPaused(String taskName, boolean paused) {
+        if (findRunner(taskName) == null) {
+            return PauseResult.UNKNOWN_TASK;
+        }
+        synchronized (taskControlLock) {
+            if (paused) {
+                pausedTaskNames.add(taskName);
+            } else {
+                pausedTaskNames.remove(taskName);
+            }
+        }
+        return PauseResult.UPDATED;
+    }
+
+    public Set<String> pausedTaskNames() {
+        synchronized (taskControlLock) {
+            return Set.copyOf(pausedTaskNames);
+        }
+    }
+
+    private boolean isTaskPaused(String taskName) {
+        synchronized (taskControlLock) {
+            return pausedTaskNames.contains(taskName);
+        }
+    }
+
+    private boolean claimScheduledTask(String taskName) {
+        synchronized (taskControlLock) {
+            return !pausedTaskNames.contains(taskName) && activeTaskName.compareAndSet(null, taskName);
         }
     }
 
