@@ -548,6 +548,7 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
  * @param {function} [cfg.runUrlBuilder] - (taskName) => URL for the run endpoint
  * @param {function} [cfg.pauseUrlBuilder] - (taskName) => URL for the pause endpoint
  * @param {function} [cfg.resumeUrlBuilder] - (taskName) => URL for the resume endpoint
+ * @param {number} [cfg.refreshIntervalMs] - automatic refresh interval in milliseconds
  */
 export function initTaskTable(cfg) {
   const HEAD = document.getElementById(cfg.theadId);
@@ -632,6 +633,10 @@ export function initTaskTable(cfg) {
 
   document.getElementById('refreshBtn')?.addEventListener('click', loadTasks);
   window.addEventListener('resize', () => applyStickyOffsets(TABLE));
+
+  if (Number.isFinite(cfg.refreshIntervalMs) && cfg.refreshIntervalMs > 0) {
+    window.setInterval(loadTasks, cfg.refreshIntervalMs);
+  }
 
   loadTasks();
 }

@@ -12,5 +12,6 @@ initTaskTable({
   canRunTasks: tasksTable?.dataset.canRun === 'true',
   runUrlBuilder: (taskName) => `/admin/tasks/${encodeURIComponent(taskName)}/run`,
   pauseUrlBuilder: (taskName) => `/admin/tasks/${encodeURIComponent(taskName)}/pause`,
-  resumeUrlBuilder: (taskName) => `/admin/tasks/${encodeURIComponent(taskName)}/resume`
+  resumeUrlBuilder: (taskName) => `/admin/tasks/${encodeURIComponent(taskName)}/resume`,
+  refreshIntervalMs: 30_000
 });
