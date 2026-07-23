@@ -13,9 +13,11 @@ import ro.sellfluence.emagapi.AdSet;
 import ro.sellfluence.emagapi.AdsAdset;
 import ro.sellfluence.emagapi.AdsCampaign;
 import ro.sellfluence.emagapi.AdsCampaignAdSetsResponse;
+import ro.sellfluence.emagapi.AdsCampaignKeywordsResponse;
 import ro.sellfluence.emagapi.AdsCampaignPhrasesResponse;
 import ro.sellfluence.emagapi.AdsCampaignTargetedProductsResponse;
 import ro.sellfluence.emagapi.AdsCampaignsResponse;
+import ro.sellfluence.emagapi.AdsKeyword;
 import ro.sellfluence.emagapi.AdsSearchPhrase;
 import ro.sellfluence.emagapi.AdsTargetedProduct;
 import ro.sellfluence.emagapi.Campaign;
@@ -48,7 +50,7 @@ import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 
 public class FetchAds {
-    private static final boolean offline = true;
+    private static final boolean offline = Boolean.parseBoolean(System.getProperty("ads.offline", "false"));
 
     private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", Level.INFO, 10, 100_000);
 
@@ -178,7 +180,8 @@ public class FetchAds {
             for (var adSet : adSets) {
                 var searchPhrases = downloadSearchPhrases(page, date, campaign.id(), adSet.id());
                 var targetedProducts = downloadTargetedProducts(page, date, campaign.id(), adSet.id());
-                adSetList.add(new AdSet(adSet, searchPhrases, targetedProducts));
+                var keywords = downloadKeywords(page, date, campaign.id(), adSet.id());
+                adSetList.add(new AdSet(adSet, searchPhrases, targetedProducts, keywords));
             }
             campaignList.add(new Campaign(date, campaign, adSetList));
         }
@@ -260,6 +263,33 @@ public class FetchAds {
             var json = getJSON(page, path, uri.toASCIIString());
             var response = objectMapper.readValue(json, AdsCampaignTargetedProductsResponse.class);
             result.addAll(response.data().docs());
+            var meta = response.meta();
+            totalPages = meta.pageCount();
+            pageNumber++;
+        } while (pageNumber <= totalPages);
+        return result;
+    }
+
+    private static List<AdsKeyword> downloadKeywords(Page page, LocalDate date, int campaignId, int adSetId) throws URISyntaxException, IOException {
+        int pageNumber = 1;
+        int totalPages = 0;
+        List<AdsKeyword> result = new ArrayList<>();
+        do {
+            var uri = skeleton(date, pageNumber)
+                    .appendPath("campaign/%d/keywords".formatted(campaignId))
+                    .setParameter("page", Integer.toString(pageNumber))
+                    .setParameter("campaignId", Integer.toString(campaignId))
+                    .setParameter("adsetId", Integer.toString(adSetId))
+                    .build();
+            var path = targetDir.resolve("adsKeywords_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId));
+            if (offline && !Files.exists(path)) {
+                logger.log(Level.INFO, "Skip keywords for campaign %d, adset %d, and date %s because %s is not cached."
+                        .formatted(campaignId, adSetId, date, path));
+                break;
+            }
+            var json = getJSON(page, path, uri.toASCIIString());
+            var response = objectMapper.readValue(json, AdsCampaignKeywordsResponse.class);
+            result.addAll(response.data().keywords());
             var meta = response.meta();
             totalPages = meta.pageCount();
             pageNumber++;

@@ -3,6 +3,7 @@ package ro.sellfluence.db;
 import ro.sellfluence.emagapi.AdSet;
 import ro.sellfluence.emagapi.AdsAdset;
 import ro.sellfluence.emagapi.AdsCampaign;
+import ro.sellfluence.emagapi.AdsKeyword;
 import ro.sellfluence.emagapi.AdsPerformanceSummary;
 import ro.sellfluence.emagapi.AdsRecommendedBid;
 import ro.sellfluence.emagapi.AdsSearchPhrase;
@@ -75,6 +76,19 @@ public class AdsCampaignTable {
                                               String reportDate,
                                               List<AdsTargetedProductColumn> columns,
                                               List<AdsTargetedProductRow> rows) {
+    }
+
+    public record AdsKeywordColumn(String key, String label, boolean numeric) {
+    }
+
+    public record AdsKeywordRow(Map<String, String> values) {
+    }
+
+    public record AdsKeywordTableData(String campaignName,
+                                      String adsetName,
+                                      String reportDate,
+                                      List<AdsKeywordColumn> columns,
+                                      List<AdsKeywordRow> rows) {
     }
 
     private record AdsNames(String campaignName, String adsetName) {
@@ -183,6 +197,33 @@ public class AdsCampaignTable {
             targetedProductColumn("return_on_advertising_spend", "Return on advertising spend", true),
             targetedProductColumn("conversion_rate", "Conversion rate", true),
             targetedProductColumn("last_seen_at", "Last seen at", false)
+    );
+
+    private static final List<AdsKeywordColumn> ADS_KEYWORD_COLUMNS = List.of(
+            keywordColumn("keyword", "Keyword", false),
+            keywordColumn("match_type", "Match type", false),
+            keywordColumn("status", "Status", false),
+            keywordColumn("bid", "Bid", true),
+            keywordColumn("inherited_status", "Inherited status", false),
+            keywordColumn("inherited_bid", "Inherited bid", true),
+            keywordColumn("summary_average_cost_of_sale", "Average cost of sale", true),
+            keywordColumn("summary_clicks", "Clicks", true),
+            keywordColumn("summary_ctr", "CTR", true),
+            keywordColumn("summary_effective_cpc", "Effective CPC", true),
+            keywordColumn("summary_impressions", "Impressions", true),
+            keywordColumn("summary_sales", "Sales", true),
+            keywordColumn("summary_sales_count", "Sales count", true),
+            keywordColumn("summary_sold_units", "Sold units", true),
+            keywordColumn("summary_spent", "Spent", true),
+            keywordColumn("summary_active_offer_count", "Active offer count", true),
+            keywordColumn("summary_offer_count", "Offer count", true),
+            keywordColumn("summary_paused_offer_count", "Paused offer count", true),
+            keywordColumn("summary_adset_count", "Adset count", true),
+            keywordColumn("summary_keyword_count", "Keyword count", true),
+            keywordColumn("summary_product_target_count", "Product target count", true),
+            keywordColumn("summary_conversion_rate", "Conversion rate", true),
+            keywordColumn("summary_return_on_advertising_spend", "Return on advertising spend", true),
+            keywordColumn("last_seen_at", "Last seen at", false)
     );
 
     static List<LocalDate> getCampaignReportDates(Connection db) throws SQLException {
@@ -439,6 +480,67 @@ public class AdsCampaignTable {
         );
     }
 
+    static AdsKeywordTableData getKeywords(Connection db,
+                                           int campaignId,
+                                           int adsetId,
+                                           LocalDate reportDate) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reportDate);
+
+        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, reportDate);
+        var rows = new ArrayList<AdsKeywordRow>();
+        try (var s = db.prepareStatement("""
+                SELECT
+                    keyword,
+                    match_type,
+                    status,
+                    bid,
+                    inherited_status,
+                    inherited_bid,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend,
+                    last_seen_at
+                FROM ads_keyword
+                WHERE campaign_id = ?
+                  AND adset_id = ?
+                  AND report_date = ?
+                ORDER BY summary_clicks DESC NULLS LAST,
+                         summary_impressions DESC NULLS LAST,
+                         keyword ASC
+                """)) {
+            s.setInt(1, campaignId);
+            s.setInt(2, adsetId);
+            s.setDate(3, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readKeywordRow(rs));
+                }
+            }
+        }
+        return new AdsKeywordTableData(
+                names.campaignName(),
+                names.adsetName(),
+                reportDate.toString(),
+                ADS_KEYWORD_COLUMNS,
+                rows
+        );
+    }
+
     static int upsertCampaigns(Connection db, List<Campaign> campaigns) throws SQLException {
         Objects.requireNonNull(db);
         Objects.requireNonNull(campaigns);
@@ -446,6 +548,7 @@ public class AdsCampaignTable {
         int changedRows = 0;
         changedRows += upsertCampaignRows(db, campaigns);
         changedRows += upsertAdsetRows(db, campaigns);
+        changedRows += upsertKeywordRows(db, campaigns);
         changedRows += upsertSearchPhraseRows(db, campaigns);
         changedRows += upsertTargetedProductRows(db, campaigns);
         return changedRows;
@@ -585,6 +688,77 @@ public class AdsCampaignTable {
                 for (var adSet : listOrEmpty(campaign.adSets())) {
                     bindAdset(s, campaign, campaignId, adSet.adSet());
                     s.addBatch();
+                }
+            }
+            return changedRows(s.executeBatch());
+        }
+    }
+
+    private static int upsertKeywordRows(Connection db, List<Campaign> campaigns) throws SQLException {
+        try (var s = db.prepareStatement("""
+                INSERT INTO ads_keyword (
+                    report_date,
+                    campaign_id,
+                    adset_id,
+                    keyword_id,
+                    bid,
+                    status,
+                    keyword,
+                    match_type,
+                    inherited_status,
+                    inherited_bid,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (report_date, campaign_id, adset_id, keyword_id) DO UPDATE SET
+                    bid = EXCLUDED.bid,
+                    status = EXCLUDED.status,
+                    keyword = EXCLUDED.keyword,
+                    match_type = EXCLUDED.match_type,
+                    inherited_status = EXCLUDED.inherited_status,
+                    inherited_bid = EXCLUDED.inherited_bid,
+                    summary_average_cost_of_sale = EXCLUDED.summary_average_cost_of_sale,
+                    summary_clicks = EXCLUDED.summary_clicks,
+                    summary_ctr = EXCLUDED.summary_ctr,
+                    summary_effective_cpc = EXCLUDED.summary_effective_cpc,
+                    summary_impressions = EXCLUDED.summary_impressions,
+                    summary_sales = EXCLUDED.summary_sales,
+                    summary_sales_count = EXCLUDED.summary_sales_count,
+                    summary_sold_units = EXCLUDED.summary_sold_units,
+                    summary_spent = EXCLUDED.summary_spent,
+                    summary_active_offer_count = EXCLUDED.summary_active_offer_count,
+                    summary_offer_count = EXCLUDED.summary_offer_count,
+                    summary_paused_offer_count = EXCLUDED.summary_paused_offer_count,
+                    summary_adset_count = EXCLUDED.summary_adset_count,
+                    summary_keyword_count = EXCLUDED.summary_keyword_count,
+                    summary_product_target_count = EXCLUDED.summary_product_target_count,
+                    summary_conversion_rate = EXCLUDED.summary_conversion_rate,
+                    summary_return_on_advertising_spend = EXCLUDED.summary_return_on_advertising_spend,
+                    last_seen_at = current_timestamp
+                """)) {
+            for (var campaign : campaigns) {
+                var campaignId = campaignId(campaign);
+                for (var adSet : listOrEmpty(campaign.adSets())) {
+                    var adsetId = adsetId(adSet.adSet());
+                    for (var keyword : listOrEmpty(adSet.keywords())) {
+                        bindKeyword(s, campaign, campaignId, adsetId, keyword);
+                        s.addBatch();
+                    }
                 }
             }
             return changedRows(s.executeBatch());
@@ -754,6 +928,23 @@ public class AdsCampaignTable {
         bindSummary(s, index, adset.summary());
     }
 
+    private static void bindKeyword(PreparedStatement s, Campaign campaign, int campaignId, int adsetId, AdsKeyword keyword) throws SQLException {
+        Objects.requireNonNull(keyword, "keyword");
+        var keywordAdset = Objects.requireNonNull(keyword.adset(), "keyword.adset");
+        var keywordAdsetId = Objects.requireNonNull(keywordAdset.id(), "keyword.adset.id");
+        rejectMismatchedAdsetId(keywordAdsetId, adsetId, "keyword");
+        int index = bindCampaignKey(s, 1, campaign, campaignId);
+        s.setInt(index++, adsetId);
+        s.setInt(index++, Objects.requireNonNull(keyword.id(), "keyword.id"));
+        setBigDecimal(s, index++, keyword.bid());
+        s.setString(index++, keyword.status());
+        s.setString(index++, Objects.requireNonNull(keyword.keyword(), "keyword.keyword"));
+        s.setString(index++, keyword.matchType());
+        s.setString(index++, keyword.inheritedStatus());
+        setBigDecimal(s, index++, keyword.inheritedBid());
+        bindSummary(s, index, keyword.summary());
+    }
+
     private static void bindSearchPhrase(PreparedStatement s, Campaign campaign, int campaignId, int adsetId, AdsSearchPhrase phrase) throws SQLException {
         Objects.requireNonNull(phrase, "phrase");
         rejectMismatchedAdsetId(phrase.adsetId(), adsetId, "search phrase");
@@ -880,6 +1071,10 @@ public class AdsCampaignTable {
         return new AdsTargetedProductColumn(key, label, numeric);
     }
 
+    private static AdsKeywordColumn keywordColumn(String key, String label, boolean numeric) {
+        return new AdsKeywordColumn(key, label, numeric);
+    }
+
     private static AdsCampaignRow readCampaignRow(ResultSet rs) throws SQLException {
         var values = new LinkedHashMap<String, String>();
         for (var column : ADS_CAMPAIGN_COLUMNS) {
@@ -910,6 +1105,14 @@ public class AdsCampaignTable {
             values.put(column.key(), displayValue(rs.getObject(column.key())));
         }
         return new AdsTargetedProductRow(values);
+    }
+
+    private static AdsKeywordRow readKeywordRow(ResultSet rs) throws SQLException {
+        var values = new LinkedHashMap<String, String>();
+        for (var column : ADS_KEYWORD_COLUMNS) {
+            values.put(column.key(), displayValue(rs.getObject(column.key())));
+        }
+        return new AdsKeywordRow(values);
     }
 
     private static String getCampaignName(Connection db, int campaignId, LocalDate reportDate) throws SQLException {

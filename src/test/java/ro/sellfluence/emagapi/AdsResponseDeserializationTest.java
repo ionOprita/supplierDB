@@ -67,6 +67,28 @@ class AdsResponseDeserializationTest {
         assertEquals(102562071, response.data().docs().getFirst().docId());
     }
 
+    @Test
+    void deserializesCampaignKeywordsResponse() throws Exception {
+        var json = Files.readString(Path.of("AdsJSON", "adsCampaignKeywords.json"));
+
+        var response = objectMapper.readValue(json, AdsCampaignKeywordsResponse.class);
+
+        assertEquals(2, response.meta().totalCount());
+        assertEquals(new BigDecimal("12.5"), response.data().summary().averageCostOfSale());
+        assertEquals(2, response.data().keywords().size());
+        var keyword = response.data().keywords().getFirst();
+        assertEquals(1001, keyword.id());
+        assertEquals(new BigDecimal("1.25"), keyword.bid());
+        assertEquals("active", keyword.status());
+        assertEquals("example exact keyword", keyword.keyword());
+        assertEquals("exact", keyword.matchType());
+        assertEquals("active", keyword.inheritedStatus());
+        assertEquals(new BigDecimal("1.2"), keyword.inheritedBid());
+        assertEquals(2001, keyword.adset().id());
+        assertEquals("Example keyword adset", keyword.adset().name());
+        assertEquals(3, keyword.summary().clicks());
+    }
+
     private static class LocalDateTimeDeserializer extends ValueDeserializer<LocalDateTime> {
 
         @Override
