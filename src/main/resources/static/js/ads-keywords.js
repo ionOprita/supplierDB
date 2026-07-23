@@ -20,7 +20,8 @@ function paramsFromUrl() {
   return {
     campaignId: params.get('campaignId') || '',
     adsetId: params.get('adsetId') || '',
-    reportDate: params.get('date') || ''
+    reportDate: params.get('date') || '',
+    negativeOnly: params.get('negative') === 'true'
   };
 }
 
@@ -64,10 +65,12 @@ function appendCell(tr, row, column, index) {
   tr.appendChild(td);
 }
 
-function renderRows(rows) {
+function renderRows(rows, negativeOnly) {
   BODY.innerHTML = '';
   if (!rows.length) {
-    renderMessageRow('No keywords found for this adset.');
+    renderMessageRow(negativeOnly
+      ? 'No negative keywords found for this adset.'
+      : 'No keywords found for this adset.');
     return;
   }
 
@@ -80,18 +83,23 @@ function renderRows(rows) {
   BODY.appendChild(fragment);
 }
 
-function setPageTitle(data, fallbackDate) {
+function setPageTitle(data, fallbackDate, negativeOnly) {
   const campaignName = data.campaignName || 'campaign';
   const adsetName = data.adsetName || 'adset';
   const reportDate = data.reportDate || fallbackDate;
-  pageTitle = `Keywords for ${campaignName} ${adsetName} on ${reportDate}`;
+  const keywordLabel = negativeOnly ? 'Negative keywords' : 'Keywords';
+  pageTitle = `${keywordLabel} for ${campaignName} ${adsetName} on ${reportDate}`;
   if (TITLE) {
     TITLE.textContent = pageTitle;
   }
   document.title = pageTitle;
 }
 
-async function loadKeywords(campaignId, adsetId, reportDate) {
+function isNegativeKeyword(row) {
+  return String(row?.values?.match_type ?? '').trim().toLowerCase() === 'negative';
+}
+
+async function loadKeywords(campaignId, adsetId, reportDate, negativeOnly) {
   if (!campaignId || !adsetId || !reportDate) {
     HEAD.innerHTML = '';
     currentColumns = [];
@@ -100,30 +108,33 @@ async function loadKeywords(campaignId, adsetId, reportDate) {
     return;
   }
 
-  setStatus('Loading keywords...');
+  setStatus(negativeOnly ? 'Loading negative keywords...' : 'Loading keywords...');
   const params = new URLSearchParams({campaignId, adsetId, date: reportDate});
   const data = await fetchJSON(`/app/adsKeywords?${params.toString()}`);
-  setPageTitle(data, reportDate);
+  setPageTitle(data, reportDate, negativeOnly);
   currentColumns = Array.isArray(data.columns) ? data.columns : [];
-  const rows = Array.isArray(data.rows) ? data.rows : [];
+  const allRows = Array.isArray(data.rows) ? data.rows : [];
+  const rows = allRows.filter((row) => isNegativeKeyword(row) === negativeOnly);
   renderHeader(currentColumns);
-  renderRows(rows);
-  setStatus(`${rows.length} keyword${rows.length === 1 ? '' : 's'}.`);
+  renderRows(rows, negativeOnly);
+  const keywordLabel = negativeOnly ? 'negative keyword' : 'keyword';
+  setStatus(`${rows.length} ${keywordLabel}${rows.length === 1 ? '' : 's'}.`);
 }
 
 async function init() {
-  const {campaignId, adsetId, reportDate} = paramsFromUrl();
+  const {campaignId, adsetId, reportDate, negativeOnly} = paramsFromUrl();
 
   bindTableCsvDownload({
     buttonId: 'downloadCsvBtn',
     tableId: 'adsKeywordsTable',
     fileNameBuilder: ({datePart}) => {
       const date = reportDate || datePart;
-      return `ads-keywords-${campaignId || 'campaign'}-${adsetId || 'adset'}-${date}.csv`;
+      const prefix = negativeOnly ? 'ads-negative-keywords' : 'ads-keywords';
+      return `${prefix}-${campaignId || 'campaign'}-${adsetId || 'adset'}-${date}.csv`;
     }
   });
 
-  await loadKeywords(campaignId, adsetId, reportDate);
+  await loadKeywords(campaignId, adsetId, reportDate, negativeOnly);
 }
 
 init().catch((e) => {

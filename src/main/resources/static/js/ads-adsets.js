@@ -73,6 +73,9 @@ function renderHeader(columns) {
       const keywordsTh = document.createElement('th');
       keywordsTh.textContent = 'Keywords';
       tr.appendChild(keywordsTh);
+      const negativeTh = document.createElement('th');
+      negativeTh.textContent = 'Negative';
+      tr.appendChild(negativeTh);
     }
   });
   HEAD.innerHTML = '';
@@ -83,7 +86,7 @@ function renderMessageRow(message) {
   BODY.innerHTML = '';
   const tr = document.createElement('tr');
   const td = document.createElement('td');
-  td.colSpan = Math.max(currentColumns.length + 3, 1);
+  td.colSpan = Math.max(currentColumns.length + 4, 1);
   td.textContent = message;
   tr.appendChild(td);
   BODY.appendChild(tr);
@@ -129,14 +132,18 @@ function appendProductsCell(tr, row, reportDate) {
   tr.appendChild(td);
 }
 
-function appendKeywordsCell(tr, row, reportDate) {
+function appendKeywordsCell(tr, row, reportDate, negativeOnly = false) {
   const td = document.createElement('td');
   const campaignId = String(row.campaignId ?? row.values?.campaign_id ?? '');
   const adsetId = String(row.adsetId ?? row.values?.adset_id ?? '');
   if (campaignId && adsetId && reportDate) {
+    const params = new URLSearchParams({campaignId, adsetId, date: reportDate});
+    if (negativeOnly) {
+      params.set('negative', 'true');
+    }
     const link = document.createElement('a');
-    link.href = `/private/ads-keywords?campaignId=${encodeURIComponent(campaignId)}&adsetId=${encodeURIComponent(adsetId)}&date=${encodeURIComponent(reportDate)}`;
-    link.textContent = 'keywords';
+    link.href = `/private/ads-keywords?${params.toString()}`;
+    link.textContent = negativeOnly ? 'negative' : 'keywords';
     td.appendChild(link);
   }
   tr.appendChild(td);
@@ -158,6 +165,7 @@ function renderRows(rows, reportDate) {
         appendPhrasesCell(tr, row, reportDate);
         appendProductsCell(tr, row, reportDate);
         appendKeywordsCell(tr, row, reportDate);
+        appendKeywordsCell(tr, row, reportDate, true);
       }
     });
     fragment.appendChild(tr);
