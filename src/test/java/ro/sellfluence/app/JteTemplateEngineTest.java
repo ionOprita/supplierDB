@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import ro.sellfluence.db.Brand;
 import ro.sellfluence.db.Vendor;
 
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -46,5 +48,30 @@ class JteTemplateEngineTest {
         assertTrue(html.contains("Add brand"));
         assertTrue(html.contains("Acme"));
         assertTrue(html.contains("/admin/db-explorer/brands/" + brandId + "/delete"));
+    }
+
+    @Test
+    void rendersServerLogFilesTemplate() {
+        StringOutput output = new StringOutput();
+        var model = new HashMap<String, Object>();
+        model.put("userName", "test-admin");
+        model.put("userRole", "admin");
+        model.put("pageTitle", "Server Logs");
+        model.put("logFiles", List.of(new ServerLogFiles.Entry(
+                "java app <latest>.log",
+                "java%20app%20%3Clatest%3E.log",
+                123L,
+                Instant.parse("2026-07-28T08:30:00Z")
+        )));
+        model.put("error", null);
+
+        Server.createJteEngine().render("logs.jte", model, output);
+
+        var html = output.toString();
+        assertTrue(html.contains("java app &lt;latest&gt;.log"));
+        assertTrue(html.contains("/admin/logs/view?file=java%20app%20%3Clatest%3E.log"));
+        assertTrue(html.contains("/admin/logs/download?file=java%20app%20%3Clatest%3E.log"));
+        assertTrue(html.contains("2026-07-28T08:30:00Z"));
+        assertTrue(html.contains("Server Logs"));
     }
 }

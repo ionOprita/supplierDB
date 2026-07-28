@@ -744,6 +744,19 @@ canvas {
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
+
+.log-files-table {
+  min-width: 720px;
+}
+
+.log-file-actions {
+  white-space: nowrap;
+}
+
+.log-file-actions a + a {
+  margin-left: .6rem;
+}
+
 /* Task controls share a cell; keep adjacent actions visually distinct. */
 .task-action-button + .task-action-button {
   margin-left: 0.4rem;

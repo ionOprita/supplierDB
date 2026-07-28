@@ -52,6 +52,7 @@
                 <ul class="menu-row menu-row-admin">
                     <li><a href="/admin/users">Administrate Users</a></li>
                     <li><a href="/admin/db-explorer/products">DB Explorer</a></li>
+                    <li><a href="/admin/logs">Server Logs</a></li>
                     <li><button type="button" id="serverStopButton" class="danger-action server-stop-button">Stop Server</button></li>
                 </ul>
             @endif

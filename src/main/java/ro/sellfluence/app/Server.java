@@ -42,13 +42,17 @@ import ro.sellfluence.support.Logs;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -93,6 +97,7 @@ public class Server {
     private static final String acmeChallengeWebRootConfigName = "ACME_CHALLENGE_WEBROOT";
     private static final String publicOriginConfigName = "ORIGIN";
     private static final String publicHttpsOriginConfigName = "PUBLIC_HTTPS_ORIGIN";
+    private static final String logDirectoryConfigName = "LOG_DIRECTORY";
     private static final String acmeChallengePrefix = "/.well-known/acme-challenge/";
     private static final ObjectMapper mapper = (new ObjectMapper());
     private static final AtomicBoolean serverShutdownRequested = new AtomicBoolean(false);
@@ -380,6 +385,10 @@ public class Server {
         });
         app.post("/admin/tasks/{taskName}/pause", ctx -> setTaskPaused(ctx, backgroundJob, true));
         app.post("/admin/tasks/{taskName}/resume", ctx -> setTaskPaused(ctx, backgroundJob, false));
+        ServerLogFiles logFiles = new ServerLogFiles(serverLogDirectory());
+        app.get("/admin/logs", ctx -> renderLogsPage(ctx, logFiles));
+        app.get("/admin/logs/view", ctx -> serveLogFile(ctx, logFiles, false));
+        app.get("/admin/logs/download", ctx -> serveLogFile(ctx, logFiles, true));
         app.get("/admin/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
         app.post("/admin/users/{userId}/role", ctx -> changeUserRole(ctx, mirrorDB));
         app.post("/admin/users/{userId}/delete", ctx -> deleteUser(ctx, mirrorDB));
@@ -412,6 +421,75 @@ public class Server {
             case UPDATED -> ctx.status(204);
             case UNKNOWN_TASK -> ctx.status(404).result("Unknown task: " + taskName);
         }
+    }
+
+    private static Path serverLogDirectory() {
+        return ServerLogFiles.selectDirectory(
+                configuredPath(logDirectoryConfigName).orElse(null),
+                Paths.get(System.getProperty("java.io.tmpdir")),
+                Paths.get(System.getProperty("user.dir")),
+                Logs.logPath
+        );
+    }
+
+    private static void renderLogsPage(Context ctx, ServerLogFiles logFiles) {
+        User currentUser = requireAdmin(ctx);
+        if (currentUser == null) {
+            return;
+        }
+
+        var model = new HashMap<String, Object>();
+        model.put("userName", currentUser.username());
+        model.put("userRole", currentUser.role().name());
+        model.put("pageTitle", "Server Logs");
+
+        try {
+            model.put("logFiles", logFiles.list());
+            model.put("error", null);
+        } catch (IOException e) {
+            logger.log(SEVERE, "Failed to list the configured server log directory.", e);
+            model.put("logFiles", List.of());
+            model.put("error", "The server log directory is unavailable.");
+        }
+
+        setPrivateFileResponseHeaders(ctx);
+        ctx.render("logs.jte", model);
+    }
+
+    private static void serveLogFile(Context ctx, ServerLogFiles logFiles, boolean download) {
+        if (requireAdmin(ctx) == null) {
+            return;
+        }
+
+        setPrivateFileResponseHeaders(ctx);
+        try {
+            Path logFile = logFiles.resolve(ctx.queryParam("file"))
+                    .orElseThrow(() -> new NoSuchFileException("Log file not found."));
+            InputStream stream = Files.newInputStream(
+                    logFile,
+                    StandardOpenOption.READ,
+                    LinkOption.NOFOLLOW_LINKS
+            );
+
+            if (download) {
+                ctx.contentType("application/octet-stream");
+                ctx.header("Content-Disposition", ServerLogFiles.attachmentContentDisposition(logFile.getFileName().toString()));
+            } else {
+                ctx.contentType("text/plain; charset=UTF-8");
+                ctx.header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; sandbox");
+            }
+            ctx.result(stream);
+        } catch (NoSuchFileException | IllegalArgumentException e) {
+            ctx.status(404).result("Log file not found.");
+        } catch (IOException e) {
+            logger.log(SEVERE, "Failed to stream a server log file.", e);
+            ctx.status(500).result("Failed to read the log file.");
+        }
+    }
+
+    private static void setPrivateFileResponseHeaders(Context ctx) {
+        ctx.header("Cache-Control", "no-store, private");
+        ctx.header("X-Content-Type-Options", "nosniff");
     }
 
     private static Path acmeChallengeWebRoot() {
@@ -1972,7 +2050,7 @@ public class Server {
         String username = currentUser.username();
         PassKey.Role role = currentUser.role();
 
-        boolean adminOnlyPage = "users".equals(page) || "db-explorer".equals(page);
+        boolean adminOnlyPage = "users".equals(page) || "db-explorer".equals(page) || "logs".equals(page);
         boolean isAdminArea = ctx.path().startsWith("/admin/");
         if (adminOnlyPage && (role != admin || !isAdminArea)) {
             ctx.status(FORBIDDEN);
@@ -2271,6 +2349,15 @@ public class Server {
         return null;
     }
 
+    private static User requireAdmin(Context ctx) {
+        User currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null || currentUser.role() != admin) {
+            ctx.status(FORBIDDEN);
+            return null;
+        }
+        return currentUser;
+    }
+
     private static void checkRole(Context ctx, PassKey.Role minimalRole) {
         if (withoutAuthenticationAndTotalyUnsafe) {
             return;
@@ -2279,14 +2366,18 @@ public class Server {
         if (minimalRole != null) {  // No checks if no role is required.
             if (session == null) {
                 ctx.redirect("/");
-            } else if (session.getAttribute("user") instanceof User(String username, PassKey.Role role)) {
-                if (role == nobody) {
-                    ctx.redirect("/welcome.html");
-                } else if (role.ordinal() < minimalRole.ordinal()) {
-                    ctx.status(FORBIDDEN);
-                } else {
-                    logger.log(INFO, "User = " + username);
-                }
+                return;
+            }
+            if (!(session.getAttribute("user") instanceof User(String username, PassKey.Role role))) {
+                ctx.status(FORBIDDEN).skipRemainingHandlers();
+                return;
+            }
+            if (role == nobody) {
+                ctx.redirect("/welcome.html");
+            } else if (role.ordinal() < minimalRole.ordinal()) {
+                ctx.status(FORBIDDEN).skipRemainingHandlers();
+            } else {
+                logger.log(INFO, "User = " + username);
             }
         }
     }
