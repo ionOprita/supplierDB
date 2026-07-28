@@ -37,7 +37,8 @@ public record Product(
         List<String> details,
         List<String> recycle_warranties,
         List<Attachment> attachments,
-        String serial_numbers
+        String serial_numbers,
+        Campaign campaign
 ) {
     public Product {
         if (product_voucher_split == null) {
@@ -94,7 +95,8 @@ public record Product(
                 other.attachments() == null
                         ? new ArrayList<>()
                         : new ArrayList<>(other.attachments()),
-                other.serial_numbers()
+                other.serial_numbers(),
+                new Campaign(other.campaign().id(), other.campaign().name())
         );
     }
 

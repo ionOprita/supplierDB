@@ -375,7 +375,7 @@ public class VerifyDatabase {
                 p.attachments() == null
                         ? new ArrayList<>()
                         : new ArrayList<>(p.attachments()),
-                p.serial_numbers() == null ? "" : p.serial_numbers()
+                p.serial_numbers() == null ? "" : p.serial_numbers(),null
         );
     }
 
@@ -412,7 +412,7 @@ public class VerifyDatabase {
                 p.attachments() == null
                         ? new ArrayList<>()
                         : new ArrayList<>(p.attachments()),
-                p.serial_numbers() == null ? "" : p.serial_numbers()
+                p.serial_numbers() == null ? "" : p.serial_numbers(),null
         );
     }
 }
