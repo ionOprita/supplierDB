@@ -1,3 +1,3 @@
 package ro.sellfluence.emagapi;
 
-public record Campaign(int id, String name) {}
+public record Campaign(Integer id, String name) {}
