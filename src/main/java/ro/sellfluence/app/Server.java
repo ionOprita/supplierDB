@@ -376,9 +376,12 @@ public class Server {
                 return;
             }
             var taskName = ctx.pathParam("taskName");
-            switch (backgroundJob.requestRun(taskName)) {
+            var runResult = backgroundJob.requestRun(taskName);
+            switch (runResult.status()) {
                 case ACCEPTED -> ctx.status(202).result("Task accepted: " + taskName);
-                case BUSY -> ctx.status(409).result("Another task is already running or starting.");
+                case BUSY -> ctx.status(409).result(
+                        "Task \"" + runResult.blockingTaskName() + "\" is already running or starting."
+                );
                 case UNKNOWN_TASK -> ctx.status(404).result("Unknown task: " + taskName);
                 case SHUTTING_DOWN -> ctx.status(503).result("The task scheduler is shutting down.");
             }

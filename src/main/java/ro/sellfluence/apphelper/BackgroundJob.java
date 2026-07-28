@@ -46,11 +46,17 @@ public class BackgroundJob {
         this.scheduler = scheduler;
     }
 
-    public enum RunResult {
+    public enum RunStatus {
         ACCEPTED,
         BUSY,
         UNKNOWN_TASK,
         SHUTTING_DOWN
+    }
+
+    /**
+     * Result of a manual run request. {@code blockingTaskName} is set only when the status is {@link RunStatus#BUSY}.
+     */
+    public record RunResult(RunStatus status, @Nullable String blockingTaskName) {
     }
 
     public enum PauseResult {
@@ -208,23 +214,24 @@ public class BackgroundJob {
      */
     public RunResult requestRun(String taskName) {
         if (!running.get()) {
-            return RunResult.SHUTTING_DOWN;
+            return new RunResult(RunStatus.SHUTTING_DOWN, null);
         }
 
         var taskRunner = findRunner(taskName);
         if (taskRunner == null) {
-            return RunResult.UNKNOWN_TASK;
+            return new RunResult(RunStatus.UNKNOWN_TASK, null);
         }
-        if (!activeTaskName.compareAndSet(null, taskName)) {
-            return RunResult.BUSY;
+        var blockingTaskName = activeTaskName.compareAndExchange(null, taskName);
+        if (blockingTaskName != null) {
+            return new RunResult(RunStatus.BUSY, blockingTaskName);
         }
 
         try {
             scheduler.execute(() -> executeClaimedRunner(taskRunner));
-            return RunResult.ACCEPTED;
+            return new RunResult(RunStatus.ACCEPTED, null);
         } catch (RejectedExecutionException e) {
             activeTaskName.compareAndSet(taskName, null);
-            return RunResult.SHUTTING_DOWN;
+            return new RunResult(RunStatus.SHUTTING_DOWN, null);
         }
     }
 
