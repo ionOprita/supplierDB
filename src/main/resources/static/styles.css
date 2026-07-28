@@ -774,3 +774,24 @@ code {
 .task-action-button + .task-action-button {
   margin-left: 0.4rem;
 }
+
+.task-status-message {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+
+.task-status-message:empty {
+  display: none;
+}
+
+.task-scheduler-status {
+  border-color: var(--primary);
+}
+
+.task-action-status.is-error {
+  border-color: var(--danger);
+  color: var(--danger);
+}

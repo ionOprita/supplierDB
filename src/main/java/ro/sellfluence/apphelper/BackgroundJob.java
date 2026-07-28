@@ -59,6 +59,14 @@ public class BackgroundJob {
     public record RunResult(RunStatus status, @Nullable String blockingTaskName) {
     }
 
+    /**
+     * Name of the task which currently owns the single background-worker slot.
+     * The task may still be waiting for the worker thread and therefore not yet be visible as running in the database.
+     */
+    public @Nullable String activeTaskName() {
+        return activeTaskName.get();
+    }
+
     public enum PauseResult {
         UPDATED,
         UNKNOWN_TASK
@@ -214,33 +222,45 @@ public class BackgroundJob {
      */
     public RunResult requestRun(String taskName) {
         if (!running.get()) {
+            logger.info(() -> "Manual run rejected for \"" + taskName + "\": scheduler is shutting down.");
             return new RunResult(RunStatus.SHUTTING_DOWN, null);
         }
 
         var taskRunner = findRunner(taskName);
         if (taskRunner == null) {
+            logger.info(() -> "Manual run rejected for unknown task \"" + taskName + "\".");
             return new RunResult(RunStatus.UNKNOWN_TASK, null);
         }
         var blockingTaskName = activeTaskName.compareAndExchange(null, taskName);
         if (blockingTaskName != null) {
+            logger.info(() -> "Manual run rejected for \"" + taskName + "\": \"" + blockingTaskName
+                    + "\" is already running or starting.");
             return new RunResult(RunStatus.BUSY, blockingTaskName);
         }
 
         try {
+            logger.info(() -> "Manual run for \"" + taskName + "\" reserved the background-worker slot.");
             scheduler.execute(() -> executeClaimedRunner(taskRunner));
             return new RunResult(RunStatus.ACCEPTED, null);
         } catch (RejectedExecutionException e) {
             activeTaskName.compareAndSet(taskName, null);
+            logger.info(() -> "Manual run rejected for \"" + taskName + "\": scheduler did not accept the task.");
+            return new RunResult(RunStatus.SHUTTING_DOWN, null);
+        } catch (RuntimeException e) {
+            activeTaskName.compareAndSet(taskName, null);
+            logger.log(WARNING, "Manual run could not be submitted for \"" + taskName + "\".", e);
             return new RunResult(RunStatus.SHUTTING_DOWN, null);
         }
     }
 
     private void executeClaimedRunner(TaskRunner taskRunner) {
         var taskName = taskRunner.name();
+        logger.info(() -> "Task \"" + taskName + "\" is starting.");
         try {
             mirrorDB.startTask(taskName);
             taskRunner.transferMethod.transfer(mirrorDB);
             mirrorDB.endTask(taskName, "");
+            logger.info(() -> "Task \"" + taskName + "\" completed successfully.");
         } catch (Exception e) {
             try {
                 mirrorDB.endTask(taskName, e);

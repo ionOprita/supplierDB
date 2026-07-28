@@ -23,6 +23,7 @@ import io.javalin.http.Context;
 import io.javalin.rendering.template.JavalinJte;
 import io.javalin.router.JavalinDefaultRoutingApi;
 import io.javalin.validation.Validator;
+import org.jspecify.annotations.Nullable;
 import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
 import ro.sellfluence.api.WebAuthnServer;
@@ -224,6 +225,17 @@ public class Server {
     public record CategorySaveError(String error) {
     }
 
+    public record TaskSchedulerStatus(@Nullable String activeTaskName) {
+    }
+
+    public record TaskRunResponse(
+            String code,
+            String message,
+            String taskName,
+            @Nullable String blockingTaskName
+    ) {
+    }
+
     private static void configure(JavalinConfig config, int port, int securePort) {
         configureSsl(config, port, securePort);
         config.bundledPlugins.enableDevLogging();
@@ -370,20 +382,44 @@ public class Server {
         app.post("/admin/server-stop/options", ctx -> startServerStopAssertion(ctx, mirrorDB, rp));
         app.post("/admin/server-stop/verify", ctx -> verifyServerStopAssertion(ctx, mirrorDB, rp));
         app.post("/admin/tasks/{taskName}/run", ctx -> {
+            var taskName = ctx.pathParam("taskName");
             var currentUser = resolveCurrentUser(ctx);
             if (currentUser == null || currentUser.role() != admin) {
-                ctx.status(FORBIDDEN);
+                ctx.status(FORBIDDEN).json(new TaskRunResponse(
+                        "FORBIDDEN",
+                        "Your session has expired or you are not allowed to run tasks. Please sign in again.",
+                        taskName,
+                        null
+                ));
                 return;
             }
-            var taskName = ctx.pathParam("taskName");
             var runResult = backgroundJob.requestRun(taskName);
             switch (runResult.status()) {
-                case ACCEPTED -> ctx.status(202).result("Task accepted: " + taskName);
-                case BUSY -> ctx.status(409).result(
-                        "Task \"" + runResult.blockingTaskName() + "\" is already running or starting."
-                );
-                case UNKNOWN_TASK -> ctx.status(404).result("Unknown task: " + taskName);
-                case SHUTTING_DOWN -> ctx.status(503).result("The task scheduler is shutting down.");
+                case ACCEPTED -> ctx.status(202).json(new TaskRunResponse(
+                        "ACCEPTED",
+                        "Task \"" + taskName + "\" was accepted and will start shortly.",
+                        taskName,
+                        null
+                ));
+                case BUSY -> ctx.status(409).json(new TaskRunResponse(
+                        "BUSY",
+                        "Task \"" + runResult.blockingTaskName()
+                                + "\" is already running or starting. Wait for it to finish before starting another task.",
+                        taskName,
+                        runResult.blockingTaskName()
+                ));
+                case UNKNOWN_TASK -> ctx.status(404).json(new TaskRunResponse(
+                        "UNKNOWN_TASK",
+                        "Unknown task: " + taskName,
+                        taskName,
+                        null
+                ));
+                case SHUTTING_DOWN -> ctx.status(503).json(new TaskRunResponse(
+                        "SHUTTING_DOWN",
+                        "The task scheduler is shutting down.",
+                        taskName,
+                        null
+                ));
             }
         });
         app.post("/admin/tasks/{taskName}/pause", ctx -> setTaskPaused(ctx, backgroundJob, true));
@@ -1094,6 +1130,7 @@ public class Server {
             }
         });
         app.get("/app/tasks", ctx -> {
+            ctx.header("Cache-Control", "no-store");
             var returns = api.getTasks();
             if (returns == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
@@ -1101,7 +1138,14 @@ public class Server {
                 ctx.json(returns);
             }
         });
-        app.get("/app/tasks/paused", ctx -> ctx.json(backgroundJob.pausedTaskNames()));
+        app.get("/app/tasks/active", ctx -> {
+            ctx.header("Cache-Control", "no-store");
+            ctx.json(new TaskSchedulerStatus(backgroundJob.activeTaskName()));
+        });
+        app.get("/app/tasks/paused", ctx -> {
+            ctx.header("Cache-Control", "no-store");
+            ctx.json(backgroundJob.pausedTaskNames());
+        });
     }
 
     private static void renderProductsPage(Context ctx, EmagMirrorDB mirrorDB) {
