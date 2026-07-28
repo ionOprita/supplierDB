@@ -81,6 +81,16 @@ public final class ServerLogFiles {
     }
 
     /**
+     * One fixed log-directory section rendered on the administration page.
+     */
+    public record Section(String title,
+                          String description,
+                          String source,
+                          List<Entry> files,
+                          String error) {
+    }
+
+    /**
      * Lists direct, regular, non-symbolic-link children of the configured directory.
      */
     public List<Entry> list() throws IOException {

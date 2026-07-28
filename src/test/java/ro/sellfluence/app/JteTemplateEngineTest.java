@@ -57,21 +57,84 @@ class JteTemplateEngineTest {
         model.put("userName", "test-admin");
         model.put("userRole", "admin");
         model.put("pageTitle", "Server Logs");
-        model.put("logFiles", List.of(new ServerLogFiles.Entry(
-                "java app <latest>.log",
-                "java%20app%20%3Clatest%3E.log",
-                123L,
-                Instant.parse("2026-07-28T08:30:00Z")
-        )));
-        model.put("error", null);
+        model.put("logSections", List.of(
+                new ServerLogFiles.Section(
+                        "Supervisor logs",
+                        "Files written by the PowerShell application supervisor.",
+                        "supervisor",
+                        List.of(new ServerLogFiles.Entry(
+                                "java app <latest>.log",
+                                "java%20app%20%3Clatest%3E.log",
+                                123L,
+                                Instant.parse("2026-07-28T08:30:00Z")
+                        )),
+                        null
+                ),
+                new ServerLogFiles.Section(
+                        "Application logs",
+                        "Files written by Java logging under java.io.tmpdir/EmagDBLogs.",
+                        "application",
+                        List.of(new ServerLogFiles.Entry(
+                                "Server_0.log",
+                                "Server_0.log",
+                                456L,
+                                Instant.parse("2026-07-28T08:31:00Z")
+                        )),
+                        null
+                )
+        ));
 
         Server.createJteEngine().render("logs.jte", model, output);
 
         var html = output.toString();
+        assertTrue(html.contains("Supervisor logs"));
+        assertTrue(html.contains("Application logs"));
+        assertTrue(html.contains("java.io.tmpdir/EmagDBLogs"));
         assertTrue(html.contains("java app &lt;latest&gt;.log"));
-        assertTrue(html.contains("/admin/logs/view?file=java%20app%20%3Clatest%3E.log"));
-        assertTrue(html.contains("/admin/logs/download?file=java%20app%20%3Clatest%3E.log"));
+        assertTrue(html.contains("Server_0.log"));
+        assertTrue(html.contains(
+                "/admin/logs/view?source=supervisor&amp;file=java%20app%20%3Clatest%3E.log"
+        ));
+        assertTrue(html.contains(
+                "/admin/logs/download?source=application&amp;file=Server_0.log"
+        ));
         assertTrue(html.contains("2026-07-28T08:30:00Z"));
         assertTrue(html.contains("Server Logs"));
+    }
+
+    @Test
+    void rendersLogDirectoryErrorsWithoutHidingTheOtherDirectory() {
+        StringOutput output = new StringOutput();
+        var model = new HashMap<String, Object>();
+        model.put("userName", "test-admin");
+        model.put("userRole", "admin");
+        model.put("pageTitle", "Server Logs");
+        model.put("logSections", List.of(
+                new ServerLogFiles.Section(
+                        "Supervisor logs",
+                        "Supervisor description",
+                        "supervisor",
+                        List.of(new ServerLogFiles.Entry(
+                                "available.log",
+                                "available.log",
+                                12L,
+                                Instant.parse("2026-07-28T08:30:00Z")
+                        )),
+                        null
+                ),
+                new ServerLogFiles.Section(
+                        "Application logs",
+                        "Application description",
+                        "application",
+                        List.of(),
+                        "Application logs are unavailable <retry>."
+                )
+        ));
+
+        Server.createJteEngine().render("logs.jte", model, output);
+
+        var html = output.toString();
+        assertTrue(html.contains("available.log"));
+        assertTrue(html.contains("Application logs are unavailable &lt;retry&gt;."));
     }
 }

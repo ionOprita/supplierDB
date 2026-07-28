@@ -385,10 +385,21 @@ public class Server {
         });
         app.post("/admin/tasks/{taskName}/pause", ctx -> setTaskPaused(ctx, backgroundJob, true));
         app.post("/admin/tasks/{taskName}/resume", ctx -> setTaskPaused(ctx, backgroundJob, false));
-        ServerLogFiles logFiles = new ServerLogFiles(serverLogDirectory());
-        app.get("/admin/logs", ctx -> renderLogsPage(ctx, logFiles));
-        app.get("/admin/logs/view", ctx -> serveLogFile(ctx, logFiles, false));
-        app.get("/admin/logs/download", ctx -> serveLogFile(ctx, logFiles, true));
+        ServerLogFiles supervisorLogFiles = new ServerLogFiles(serverLogDirectory());
+        ServerLogFiles applicationLogFiles = new ServerLogFiles(Logs.logPath);
+        app.get("/admin/logs", ctx -> renderLogsPage(ctx, supervisorLogFiles, applicationLogFiles));
+        app.get("/admin/logs/view", ctx -> serveLogFile(
+                ctx,
+                supervisorLogFiles,
+                applicationLogFiles,
+                false
+        ));
+        app.get("/admin/logs/download", ctx -> serveLogFile(
+                ctx,
+                supervisorLogFiles,
+                applicationLogFiles,
+                true
+        ));
         app.get("/admin/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
         app.post("/admin/users/{userId}/role", ctx -> changeUserRole(ctx, mirrorDB));
         app.post("/admin/users/{userId}/delete", ctx -> deleteUser(ctx, mirrorDB));
@@ -432,7 +443,9 @@ public class Server {
         );
     }
 
-    private static void renderLogsPage(Context ctx, ServerLogFiles logFiles) {
+    private static void renderLogsPage(Context ctx,
+                                       ServerLogFiles supervisorLogFiles,
+                                       ServerLogFiles applicationLogFiles) {
         User currentUser = requireAdmin(ctx);
         if (currentUser == null) {
             return;
@@ -442,27 +455,62 @@ public class Server {
         model.put("userName", currentUser.username());
         model.put("userRole", currentUser.role().name());
         model.put("pageTitle", "Server Logs");
-
-        try {
-            model.put("logFiles", logFiles.list());
-            model.put("error", null);
-        } catch (IOException e) {
-            logger.log(SEVERE, "Failed to list the configured server log directory.", e);
-            model.put("logFiles", List.of());
-            model.put("error", "The server log directory is unavailable.");
-        }
+        model.put("logSections", List.of(
+                listLogSection(
+                        "Supervisor logs",
+                        "Files written by the PowerShell application supervisor.",
+                        "supervisor",
+                        supervisorLogFiles
+                ),
+                listLogSection(
+                        "Application logs",
+                        "Files written by Java logging under java.io.tmpdir/EmagDBLogs.",
+                        "application",
+                        applicationLogFiles
+                )
+        ));
 
         setPrivateFileResponseHeaders(ctx);
         ctx.render("logs.jte", model);
     }
 
-    private static void serveLogFile(Context ctx, ServerLogFiles logFiles, boolean download) {
+    private static ServerLogFiles.Section listLogSection(String title,
+                                                         String description,
+                                                         String source,
+                                                         ServerLogFiles logFiles) {
+        try {
+            return new ServerLogFiles.Section(title, description, source, logFiles.list(), null);
+        } catch (IOException e) {
+            logger.log(SEVERE, "Failed to list the " + source + " log directory.", e);
+            return new ServerLogFiles.Section(
+                    title,
+                    description,
+                    source,
+                    List.of(),
+                    "The " + source + " log directory is unavailable."
+            );
+        }
+    }
+
+    private static void serveLogFile(Context ctx,
+                                     ServerLogFiles supervisorLogFiles,
+                                     ServerLogFiles applicationLogFiles,
+                                     boolean download) {
         if (requireAdmin(ctx) == null) {
             return;
         }
 
         setPrivateFileResponseHeaders(ctx);
         try {
+            ServerLogFiles logFiles = selectLogFiles(
+                    ctx.queryParam("source"),
+                    supervisorLogFiles,
+                    applicationLogFiles
+            );
+            if (logFiles == null) {
+                ctx.status(404).result("Log file not found.");
+                return;
+            }
             Path logFile = logFiles.resolve(ctx.queryParam("file"))
                     .orElseThrow(() -> new NoSuchFileException("Log file not found."));
             InputStream stream = Files.newInputStream(
@@ -485,6 +533,18 @@ public class Server {
             logger.log(SEVERE, "Failed to stream a server log file.", e);
             ctx.status(500).result("Failed to read the log file.");
         }
+    }
+
+    private static ServerLogFiles selectLogFiles(String source,
+                                                 ServerLogFiles supervisorLogFiles,
+                                                 ServerLogFiles applicationLogFiles) {
+        if (source == null || source.equals("supervisor")) {
+            return supervisorLogFiles;
+        }
+        if (source.equals("application")) {
+            return applicationLogFiles;
+        }
+        return null;
     }
 
     private static void setPrivateFileResponseHeaders(Context ctx) {
