@@ -5,6 +5,15 @@ const TITLE = document.getElementById('title');
 const STATUS = document.getElementById('adsKeywordsStatus');
 const HEAD = document.getElementById('adsKeywordsHead');
 const BODY = document.getElementById('adsKeywordsBody');
+const HIDDEN_COLUMN_KEYS = new Set([
+  'summary_active_offer_count',
+  'summary_offer_count',
+  'summary_paused_offer_count',
+  'summary_adset_count',
+  'summary_keyword_count',
+  'summary_product_target_count',
+  'last_seen_at'
+]);
 
 let currentColumns = [];
 let pageTitle = 'Keywords';
@@ -112,7 +121,10 @@ async function loadKeywords(campaignId, adsetId, reportDate, negativeOnly) {
   const params = new URLSearchParams({campaignId, adsetId, date: reportDate});
   const data = await fetchJSON(`/app/adsKeywords?${params.toString()}`);
   setPageTitle(data, reportDate, negativeOnly);
-  currentColumns = Array.isArray(data.columns) ? data.columns : [];
+  currentColumns = Array.isArray(data.columns)
+    ? data.columns.filter((column) => !HIDDEN_COLUMN_KEYS.has(column.key)
+      && (!negativeOnly || column.key !== 'match_type'))
+    : [];
   const allRows = Array.isArray(data.rows) ? data.rows : [];
   const rows = allRows.filter((row) => isNegativeKeyword(row) === negativeOnly);
   renderHeader(currentColumns);

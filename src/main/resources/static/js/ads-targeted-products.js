@@ -5,6 +5,11 @@ const TITLE = document.getElementById('title');
 const STATUS = document.getElementById('adsTargetedProductsStatus');
 const HEAD = document.getElementById('adsTargetedProductsHead');
 const BODY = document.getElementById('adsTargetedProductsBody');
+const HIDDEN_COLUMN_KEYS = new Set([
+  'brand_name',
+  'image_url',
+  'last_seen_at'
+]);
 
 let currentColumns = [];
 let pageTitle = 'Targeted products';
@@ -104,7 +109,9 @@ async function loadTargetedProducts(campaignId, adsetId, reportDate) {
   const params = new URLSearchParams({campaignId, adsetId, date: reportDate});
   const data = await fetchJSON(`/app/adsTargetedProducts?${params.toString()}`);
   setPageTitle(data, reportDate);
-  currentColumns = Array.isArray(data.columns) ? data.columns : [];
+  currentColumns = Array.isArray(data.columns)
+    ? data.columns.filter((column) => !HIDDEN_COLUMN_KEYS.has(column.key))
+    : [];
   const rows = Array.isArray(data.rows) ? data.rows : [];
   renderHeader(currentColumns);
   renderRows(rows);

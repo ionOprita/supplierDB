@@ -5,6 +5,16 @@ const TITLE = document.getElementById('title');
 const STATUS = document.getElementById('adsSearchPhrasesStatus');
 const HEAD = document.getElementById('adsSearchPhrasesHead');
 const BODY = document.getElementById('adsSearchPhrasesBody');
+const HIDDEN_COLUMN_KEYS = new Set([
+  'is_aggregated',
+  'summary_active_offer_count',
+  'summary_offer_count',
+  'summary_paused_offer_count',
+  'summary_adset_count',
+  'summary_keyword_count',
+  'summary_product_target_count',
+  'last_seen_at'
+]);
 
 let currentColumns = [];
 let pageTitle = 'Search phrases';
@@ -104,7 +114,9 @@ async function loadSearchPhrases(campaignId, adsetId, reportDate) {
   const params = new URLSearchParams({campaignId, adsetId, date: reportDate});
   const data = await fetchJSON(`/app/adsSearchPhrases?${params.toString()}`);
   setPageTitle(data, reportDate);
-  currentColumns = Array.isArray(data.columns) ? data.columns : [];
+  currentColumns = Array.isArray(data.columns)
+    ? data.columns.filter((column) => !HIDDEN_COLUMN_KEYS.has(column.key))
+    : [];
   const rows = Array.isArray(data.rows) ? data.rows : [];
   renderHeader(currentColumns);
   renderRows(rows);
