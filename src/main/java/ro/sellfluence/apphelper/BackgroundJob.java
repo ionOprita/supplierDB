@@ -90,10 +90,8 @@ public class BackgroundJob {
 
 
     private final List<TaskRunner> fetchers = List.of(
-            new TaskRunner("Fetch from eMAG", hourly, always, db -> {
-                PopulateProductsTableFromSheets.updateProductTable(db);
-                EmagDBApp.fetchAndStoreToDB(db);
-            }),
+            new TaskRunner("Populate products from sheets", hourly, always, PopulateProductsTableFromSheets::updateProductTable),
+            new TaskRunner("Fetch from eMAG", hourly, always, EmagDBApp::fetchAndStoreToDB),
             new TaskRunner("Refetch some from eMAG", weekly, always, EmagDBApp::fetchAndStoreToDBProbabilistic)
     );
 
