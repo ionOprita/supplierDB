@@ -41,6 +41,7 @@ import java.util.logging.Logger;
 
 import static java.net.HttpURLConnection.HTTP_FORBIDDEN;
 import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
+import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
@@ -63,6 +64,9 @@ public class EmagApi {
 
     private static final Logger jsonLogger = Logs.getFileLogger("emag_decoded_json", FINE, 20, 100_000_000);
 
+    private static final int MAX_REQUEST_RETRIES = 4;
+    private static final long INITIAL_RETRY_DELAY_MILLISECONDS = 10_000;
+
     public static final String emagRO = "https://marketplace-api.emag.ro";
 
     public static final String emagROApi3 = "https://marketplace-api.emag.ro/api-3";
@@ -74,6 +78,12 @@ public class EmagApi {
     private final String emagUser;
     private final String credentials;
     private final HttpClient httpClient;
+    private final Sleeper sleeper;
+
+    @FunctionalInterface
+    interface Sleeper {
+        void sleep(long milliseconds) throws InterruptedException;
+    }
 
     private static final DateTimeFormatter emagDate = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -167,9 +177,14 @@ public class EmagApi {
 
 
     public EmagApi(String username, String password) {
+        this(username, password, Thread::sleep);
+    }
+
+    EmagApi(String username, String password, Sleeper sleeper) {
         emagUser = username;
         credentials = Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
         httpClient = HttpClient.newHttpClient();
+        this.sleeper = sleeper;
     }
 
     public CountResponse countOrderRequest() throws IOException, InterruptedException {
@@ -238,8 +253,8 @@ public class EmagApi {
             jsonInput.put("data", data);
         }
         var accumulatedResponses = new ArrayList<T>();
-        var retryCount = 4;
-        var retryDelay = 10_000;
+        var retryCount = MAX_REQUEST_RETRIES;
+        var retryDelay = INITIAL_RETRY_DELAY_MILLISECONDS;
         while (!finished) {
             page++;
             jsonInput.put("currentPage", page);
@@ -258,6 +273,8 @@ public class EmagApi {
                 int statusCode = httpResponse.statusCode();
                 communicationLogger.log(FINE, "Status code = " + statusCode);
                 if (statusCode == HTTP_OK) {
+                    retryCount = MAX_REQUEST_RETRIES;
+                    retryDelay = INITIAL_RETRY_DELAY_MILLISECONDS;
                     String receivedJSON = httpResponse.body();
                     communicationLogger.log(INFO, () -> "Received " + receivedJSON);
                     try {
@@ -295,10 +312,10 @@ public class EmagApi {
                 } else if (statusCode == HTTP_FORBIDDEN) {
                     errorLogger.log(SEVERE, "Received 403 for user %s, please check your password.".formatted(emagUser));
                     finished = true;
-                } else if (statusCode == HTTP_GATEWAY_TIMEOUT && retryCount > 0) {
-                    errorLogger.log(WARNING, "Received 504, retrying, retryCount=%d, retryDelay=%d s".formatted(retryCount, retryDelay / 1000));
+                } else if ((statusCode == HTTP_INTERNAL_ERROR || statusCode == HTTP_GATEWAY_TIMEOUT) && retryCount > 0) {
+                    errorLogger.log(WARNING, "Received %d, retrying, retryCount=%d, retryDelay=%d s".formatted(statusCode, retryCount, retryDelay / 1000));
                     retryCount--;
-                    Thread.sleep(retryDelay);
+                    sleeper.sleep(retryDelay);
                     retryDelay *= 2; // Double delay
                     page--; // Refetch the same page.
                 } else {
@@ -312,7 +329,7 @@ public class EmagApi {
                     throw new RuntimeException("Received IOException", e);
                 }
                 retryCount--;
-                Thread.sleep(retryDelay);
+                sleeper.sleep(retryDelay);
                 retryDelay *= 2; // Double delay
                 page--; // Refetch the same page.
             }
