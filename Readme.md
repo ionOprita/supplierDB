@@ -16,6 +16,20 @@ The following arguments are known to EmagDBApp and passed from EmagBot to it:
 - `--refetch-all` Refetch everything from the past 3 years. This takes about 10-12 hours to run.
 - `--nofetch` Do not fetch anything from eMAG.
 
+### Product import background tasks
+
+The server updates product data in two independent background tasks. `Populate products from sheets` reads
+`Cons. Date Prod.` and preserves the existing `employee_sheet_tab` value. The lower-priority
+`Update employee sheet tabs from sheets` task reads each employee spreadsheet's `Setari` tab and updates only
+`employee_sheet_tab`. Successful employee spreadsheets are committed independently; failures are recorded and retried
+after one hour without blocking the main product import or other higher-priority jobs.
+
+This split intentionally changes these standalone applications, which are not used in production:
+
+- `PopulateProductsTableFromSheets.main()` updates the main product data but no longer refreshes employee tab mappings.
+- `EmagBot.main()` calls only that main product import before `UpdateEmployeeSheetsFromDB`, so its employee-sheet transfer
+  can use stale or null tab mappings.
+
 # eMAG Mirror to DB
 
 [PostgreSQL](https://www.postgresql.org/) is used as the database system the eMAG mirror DB.

@@ -12,6 +12,7 @@ import ro.sellfluence.db.EmployeeDataTable.EmployeeInfo;
 import ro.sellfluence.db.EmagOrder.ExtendedOrder;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
+import ro.sellfluence.db.ProductTable.EmployeeSheetTabUpdate;
 import ro.sellfluence.db.versions.SetupDB;
 import ro.sellfluence.emagapi.CancellationReason;
 import ro.sellfluence.emagapi.LockerDetails;
@@ -57,6 +58,7 @@ import static ro.sellfluence.db.GMV.getGMVByProductId;
 import static ro.sellfluence.db.ProductTable.getProductCodes;
 import static ro.sellfluence.db.ProductTable.getProducts;
 import static ro.sellfluence.db.ProductTable.insertOrUpdateProduct;
+import static ro.sellfluence.db.ProductTable.insertOrUpdateProductPreservingEmployeeSheetTab;
 import static ro.sellfluence.db.RMA.addRMAResult;
 import static ro.sellfluence.db.Vendor.insertOrUpdateVendor;
 import static ro.sellfluence.db.Vendor.selectFetchTimeByAccount;
@@ -381,6 +383,37 @@ public class EmagMirrorDB {
 
     public void addOrUpdateProduct(ProductInfo productInfo) throws SQLException {
         database.writeTX(db -> insertOrUpdateProduct(db, productInfo));
+    }
+
+    public void addOrUpdateProductPreservingEmployeeSheetTab(ProductInfo productInfo) throws SQLException {
+        database.writeTX(db -> insertOrUpdateProductPreservingEmployeeSheetTab(db, productInfo));
+    }
+
+    /**
+     * Updates only employee-sheet tab mappings in one transaction.
+     *
+     * @param updates tab mappings and the product associations used to resolve them
+     * @return number of updated product rows
+     */
+    public int updateProductEmployeeSheetTabs(List<EmployeeSheetTabUpdate> updates) throws SQLException {
+        if (updates == null) {
+            throw new NullPointerException("updates");
+        }
+        return database.writeTX(db -> {
+            var updatedRows = 0;
+            for (var update : updates) {
+                if (update.productCode() == null || update.productCode().isBlank()) {
+                    throw new IllegalArgumentException("A product code must not be null or blank.");
+                }
+                var affectedRows = ProductTable.updateProductEmployeeSheetTab(db, update);
+                if (affectedRows != 1) {
+                    throw new SQLException("Expected to update one product with code %s, but updated %d."
+                            .formatted(update.productCode(), affectedRows));
+                }
+                updatedRows += affectedRows;
+            }
+            return updatedRows;
+        });
     }
 
     public int replaceEmployeeData(List<EmployeeInfo> employees) throws SQLException {

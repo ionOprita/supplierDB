@@ -6,6 +6,7 @@ import ro.sellfluence.app.EmagDBApp;
 import ro.sellfluence.app.PopulateDateComenziFromDB;
 import ro.sellfluence.app.PopulateProductsTableFromSheets;
 import ro.sellfluence.app.PopulateStornoAndReturns;
+import ro.sellfluence.app.UpdateProductEmployeeSheetTabsFromSheets;
 import ro.sellfluence.app.UpdateEmployeeSheetsFromDB;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.Task;
@@ -82,21 +83,48 @@ public class BackgroundJob {
         boolean shallIRun(LocalDateTime lastRun);
     }
 
+    /**
+     * Describes one operation managed by the background-job scheduler.
+     *
+     * @param name                 unique task name used for database history and administrative controls
+     * @param interval             minimum time between successful runs
+     * @param failureRetryInterval minimum time after a failed run before another automatic attempt
+     * @param decider              additional time-based condition that must allow the task to run
+     * @param transferMethod       operation to execute with the application's database
+     */
     private record TaskRunner(
             String name,
-            Duration interval, Decider decider, Transferrer transferMethod
+            Duration interval,
+            Duration failureRetryInterval,
+            Decider decider,
+            Transferrer transferMethod
     ) {
+        private TaskRunner(String name, Duration interval, Decider decider, Transferrer transferMethod) {
+            this(name, interval, Duration.ZERO, decider, transferMethod);
+        }
     }
 
 
     private final List<TaskRunner> fetchers = List.of(
             new TaskRunner("Populate products from sheets", hourly, always, PopulateProductsTableFromSheets::updateProductTable),
-            new TaskRunner("Fetch from eMAG", hourly, always, EmagDBApp::fetchAndStoreToDB),
-            new TaskRunner("Refetch some from eMAG", weekly, always, EmagDBApp::fetchAndStoreToDBProbabilistic)
+            new TaskRunner("Fetch from eMAG and update GMV in DB", hourly, always, db -> {
+                EmagDBApp.fetchAndStoreToDB(db);
+                db.updateGMVTable();
+            }),
+            new TaskRunner("Refetch some from eMAG and update GMV in DB", weekly, always, db -> {
+                EmagDBApp.fetchAndStoreToDBProbabilistic(db);
+                db.updateGMVTable();
+            })
     );
 
     private final List<TaskRunner> consumers = List.of(
-            new TaskRunner("Update GMV in database", hourly, always, EmagMirrorDB::updateGMVTable),
+            new TaskRunner(
+                    "Update employee sheet tabs in product table",
+                    hourly,
+                    hourly,
+                    always,
+                    UpdateProductEmployeeSheetTabsFromSheets::updateEmployeeSheetTabs
+            ),
             new TaskRunner("Transfer to storno and return sheets", hourly, always, PopulateStornoAndReturns::updateSpreadsheets),
             new TaskRunner("Transfer to order and GMV sheets for 2026", hourly, always, (new PopulateDateComenziFromDB(2026))::updateSpreadsheets),
             new TaskRunner("Transfer to employee sheet", hourly, this::outOfOfficeHour, UpdateEmployeeSheetsFromDB::updateSheets)
@@ -151,12 +179,12 @@ public class BackgroundJob {
     /**
      * Execute the runners in the list according to the schedule.
      *
-     * @param taskRunners list of tasks to run.
-     * @param taskInfos information about all tasks.
+     * @param taskRunners   list of tasks to run.
+     * @param taskInfos     information about all tasks.
      * @param referenceTime absolute time barrier. A task shall not execute if it already ran after this time.
      * @throws SQLException if a database access error occurs.
      */
-    private void executeRunners(List<TaskRunner> taskRunners, List<Task> taskInfos, LocalDateTime referenceTime) throws SQLException {
+    private boolean executeRunners(List<TaskRunner> taskRunners, List<Task> taskInfos, LocalDateTime referenceTime) throws SQLException {
         for (var taskRunner : taskRunners) {
             var taskName = taskRunner.name();
             var taskInfo = findTask(taskInfos, taskName);
@@ -166,15 +194,25 @@ public class BackgroundJob {
             if (
                     lastRun.isBefore(referenceTime)   // Was not run after dependency
                             && lastRun.plus(taskRunner.interval).isBefore(now)    // Waited for enough time
+                            && failureRetryDelayElapsed(taskInfo, taskRunner.failureRetryInterval, now)
                             && taskRunner.decider.shallIRun(now)  // There is no other impediment
                             && !isTaskPaused(taskName)
             ) {
                 if (claimScheduledTask(taskName)) {
                     executeClaimedRunner(taskRunner);
+                    return true;
                 }
-                return; // Execute only one task at a time.
+                return false; // Execute only one task from this priority group at a time.
             }
         }
+        return false;
+    }
+
+    static boolean failureRetryDelayElapsed(@Nullable Task taskInfo, Duration retryInterval, LocalDateTime now) {
+        if (taskInfo == null || taskInfo.error() == null || taskInfo.error().isBlank() || taskInfo.terminated() == null) {
+            return true;
+        }
+        return !taskInfo.terminated().plus(retryInterval).isAfter(now);
     }
 
     /**

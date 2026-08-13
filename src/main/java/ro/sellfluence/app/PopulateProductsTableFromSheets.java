@@ -11,17 +11,14 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.function.BiFunction;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static java.lang.Boolean.TRUE;
-import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
@@ -34,7 +31,6 @@ import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheetByName;
 public class PopulateProductsTableFromSheets {
 
     private static final Logger logger = Logs.getConsoleLogger("populateProductsTableWarnings", WARNING);
-    private static final Logger infos = Logs.getConsoleAndFileLogger("populateProductsTableInfos", INFO, 10, 1_000_000);
 
     private static final String productSpreadsheetName = "2025 - Date produse & angajati";
 
@@ -150,64 +146,11 @@ public class PopulateProductsTableFromSheets {
         var productInfos = populateFrom(sheet, "Cons. Date Prod.", vendors);
         for (ProductInfo productInfo : productInfos) {
             try {
-                mirrorDB.addOrUpdateProduct(productInfo);
+                mirrorDB.addOrUpdateProductPreservingEmployeeSheetTab(productInfo);
             } catch (SQLException e) {
                 logger.log(WARNING, "Could not add the product " + productInfo, e);
             }
         }
-    }
-
-    private record PNKMapping(String pnk, String sheetName, String tabName) {
-    }
-
-    private static final Map<String, PNKMapping> pnkMapping = new HashMap<>();
-
-    private static final String setariSheetName = "Setari";
-
-    private static void addMappingsFrom(String sheetName) {
-        var spreadSheet = getSpreadSheetByName(defaultGoogleApp, sheetName);
-        if (spreadSheet == null) {
-            throw new RuntimeException("Spreadsheet %s not found.".formatted(sheetName));
-        }
-        // This reads the setari sheet so that we can map from PNK to the tab within the spreadsheet.
-        infos.log(INFO, () -> "Read from %s %s columns C and E\n ".formatted(spreadSheet.getSpreadSheetName(), setariSheetName));
-        spreadSheet.getMultipleColumns(setariSheetName, "C", "E").stream()
-                .skip(2)
-                .map(row -> {
-                    if (row.get(0) instanceof String pnk && row.get(1) instanceof String tabName) {
-                        return new PNKMapping(pnk, sheetName, tabName);
-                    } else {
-                        return null;
-                    }
-                })
-                .filter(Objects::nonNull)
-                .forEach(it -> {
-                    var oldMapping = pnkMapping.get(it.pnk);
-                    if (oldMapping != null && !oldMapping.equals(it)) {
-                        logger.log(INFO, "Replaced mapping for PNK %s: from %s to %s".formatted(it.pnk, oldMapping, it));
-                    }
-                    pnkMapping.put(it.pnk, it);
-                });
-    }
-
-    private static String getEmployeeSheetTabFor(String pnk, String employeeSheetName) {
-        if (employeeSheetName == null) {
-            return null;
-        }
-        var mapping = pnkMapping.get(pnk);
-        if (mapping == null || !mapping.sheetName.equals(employeeSheetName)) {
-            addMappingsFrom(employeeSheetName);
-            mapping = pnkMapping.get(pnk);
-        }
-        if (mapping == null) {
-            logger.log(WARNING, "No mapping found for PNK %s".formatted(pnk));
-            return null;
-        }
-        if (!mapping.sheetName.equals(employeeSheetName)) {
-            logger.log(WARNING, "Mapping for PNK %s is %s, but we were asked for %s.".formatted(pnk, mapping, employeeSheetName));
-            return null;
-        }
-        return mapping.tabName;
     }
 
 
@@ -225,12 +168,12 @@ public class PopulateProductsTableFromSheets {
         var productsData = spreadSheet.getMultipleColumns(overviewSheetName, productDataColumns).stream()
                 .skip(3).toList();
         return productsData.stream()
-                .map(row -> toProductInfo(row, vendors, PopulateProductsTableFromSheets::getEmployeeSheetTabFor))
+                .map(row -> toProductInfo(row, vendors))
                 .filter(Objects::nonNull)
                 .toList();
     }
 
-    static ProductInfo toProductInfo(List<Object> row, Map<String, UUID> vendors, BiFunction<String, String, String> employeeSheetTabResolver) {
+    static ProductInfo toProductInfo(List<Object> row, Map<String, UUID> vendors) {
         var productCode = stringCell(row, ProductColumn.PRODUCT_CODE);
         if (productCode == null) {
             return null;
@@ -250,7 +193,6 @@ public class PopulateProductsTableFromSheets {
             retracted = false;
         }
 
-        var employeeSheetTab = employeeSheetTabResolver.apply(pnk, employeeSheetName);
         return new ProductInfo(
                 pnk,
                 productCode,
@@ -261,7 +203,7 @@ public class PopulateProductsTableFromSheets {
                 stringCell(row, ProductColumn.CATEGORY),
                 stringCell(row, ProductColumn.MESSAGE_KEYWORD),
                 employeeSheetName,
-                employeeSheetTab,
+                null,
                 stringCell(row, ProductColumn.MODEL),
                 decimalCell(row, ProductColumn.PRODUCT_LENGTH_MM),
                 decimalCell(row, ProductColumn.PRODUCT_WIDTH_MM),

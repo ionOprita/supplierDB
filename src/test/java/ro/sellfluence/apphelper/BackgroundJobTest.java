@@ -1,16 +1,61 @@
 package ro.sellfluence.apphelper;
 
 import org.junit.jupiter.api.Test;
+import ro.sellfluence.db.Task;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static ro.sellfluence.apphelper.BackgroundJob.RunStatus.ACCEPTED;
 import static ro.sellfluence.apphelper.BackgroundJob.RunStatus.BUSY;
 import static ro.sellfluence.apphelper.BackgroundJob.RunStatus.SHUTTING_DOWN;
 
 class BackgroundJobTest {
+
+    @Test
+    void waitsForTheFailureRetryIntervalAfterAnUnsuccessfulRun() {
+        var failedAt = LocalDateTime.of(2026, 8, 12, 10, 0);
+        var failedTask = new Task(
+                "Update employee sheet tabs from sheets",
+                failedAt.minusMinutes(5),
+                failedAt,
+                failedAt.minusDays(1),
+                Duration.ofMinutes(5),
+                1,
+                "timeout"
+        );
+
+        assertFalse(BackgroundJob.failureRetryDelayElapsed(
+                failedTask,
+                Duration.ofHours(1),
+                failedAt.plusMinutes(59)
+        ));
+        assertTrue(BackgroundJob.failureRetryDelayElapsed(
+                failedTask,
+                Duration.ofHours(1),
+                failedAt.plusHours(1)
+        ));
+    }
+
+    @Test
+    void recognizesTheSeparateEmployeeSheetTabUpdateTask() {
+        var scheduler = new HoldingScheduler();
+        try {
+            var backgroundJob = new BackgroundJob(null, scheduler);
+
+            var result = backgroundJob.requestRun("Update employee sheet tabs from sheets");
+
+            assertEquals(ACCEPTED, result.status());
+            assertEquals("Update employee sheet tabs from sheets", backgroundJob.activeTaskName());
+        } finally {
+            scheduler.shutdownNow();
+        }
+    }
 
     @Test
     void reportsTheTaskBlockingAnotherManualRun() {

@@ -284,6 +284,17 @@ public class ProductTable {
     }
 
     /**
+     * A tab-only update tied to the product association from which the tab was resolved.
+     */
+    public record EmployeeSheetTabUpdate(
+            String productCode,
+            String pnk,
+            String employeeSheetName,
+            String tabName
+    ) {
+    }
+
+    /**
      * Inserts or updates a product in the product table. If an insertion attempt fails because the product already exists,
      * the method attempts to update the product's information. If neither insertion nor update is successful,
      * a runtime exception is thrown.
@@ -298,6 +309,21 @@ public class ProductTable {
         var inserted = insertProduct(db, productInfo);
         if (inserted == 0) {
             var updated = updateProduct(db, productInfo);
+            if (updated == 0) {
+                throw new RuntimeException("Product could neither be inserted nor updated: %s.".formatted(productInfo));
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Inserts or updates product data imported from the product overview sheet. The overview does not contain the
+     * employee tab mapping, so an existing {@code employee_sheet_tab} value is deliberately left unchanged.
+     */
+    static int insertOrUpdateProductPreservingEmployeeSheetTab(Connection db, ProductInfo productInfo) throws SQLException {
+        var inserted = insertProduct(db, productInfo);
+        if (inserted == 0) {
+            var updated = updateProduct(db, productInfo, false);
             if (updated == 0) {
                 throw new RuntimeException("Product could neither be inserted nor updated: %s.".formatted(productInfo));
             }
@@ -400,6 +426,25 @@ public class ProductTable {
         try (var s = db.prepareStatement("UPDATE product SET employee_sheet_tab = ? WHERE emag_pnk = ?")) {
             s.setString(1, tabName);
             s.setString(2, pnk);
+            return s.executeUpdate();
+        }
+    }
+
+    /**
+     * Updates a tab only while the product still has the PNK and employee-sheet association used to resolve it.
+     */
+    static int updateProductEmployeeSheetTab(Connection db, EmployeeSheetTabUpdate update) throws SQLException {
+        try (var s = db.prepareStatement("""
+                UPDATE product
+                SET employee_sheet_tab = ?
+                WHERE product_code = ?
+                  AND emag_pnk IS NOT DISTINCT FROM ?
+                  AND employee_sheet_name IS NOT DISTINCT FROM ?
+                """)) {
+            s.setString(1, update.tabName());
+            s.setString(2, update.productCode());
+            s.setString(3, update.pnk());
+            s.setString(4, update.employeeSheetName());
             return s.executeUpdate();
         }
     }
@@ -540,7 +585,12 @@ public class ProductTable {
      * @throws SQLException if anything bad happens.
      */
     private static int updateProduct(Connection db, ProductInfo productInfo) throws SQLException {
+        return updateProduct(db, productInfo, true);
+    }
+
+    private static int updateProduct(Connection db, ProductInfo productInfo, boolean updateEmployeeSheetTab) throws SQLException {
         var brandId = Brand.insertOrGetBrand(db, productInfo.brand(), productInfo.vendor());
+        var employeeSheetTabAssignment = updateEmployeeSheetTab ? "employee_sheet_tab = ?," : "";
         try (var s = db.prepareStatement("""
                 UPDATE product
                 SET emag_pnk = ?,
@@ -550,7 +600,7 @@ public class ProductTable {
                     retracted = ?,
                     name = ?,
                     employee_sheet_name = ?,
-                    employee_sheet_tab = ?,
+                    %s
                     vendor = ?,
                     model = ?,
                     product_length_mm = ?,
@@ -626,18 +676,21 @@ public class ProductTable {
                     review_caller = ?,
                     report_link = ?
                 WHERE product_code = ?
-                """)) {
-            s.setObject(1, productInfo.pnk());
-            s.setObject(2, productInfo.category());
-            s.setObject(3, productInfo.messageKeyword());
-            s.setBoolean(4, productInfo.continueToSell());
-            s.setBoolean(5, productInfo.retracted());
-            s.setObject(6, productInfo.name());
-            s.setObject(7, productInfo.employeeSheetName());
-            s.setObject(8, productInfo.employeeSheetTab());
-            s.setObject(9, productInfo.vendor());
-            bindAdditionalFields(s, productInfo, 10, brandId);
-            s.setObject(83, productInfo.productCode());
+                """.formatted(employeeSheetTabAssignment))) {
+            var index = 1;
+            s.setObject(index++, productInfo.pnk());
+            s.setObject(index++, productInfo.category());
+            s.setObject(index++, productInfo.messageKeyword());
+            s.setBoolean(index++, productInfo.continueToSell());
+            s.setBoolean(index++, productInfo.retracted());
+            s.setObject(index++, productInfo.name());
+            s.setObject(index++, productInfo.employeeSheetName());
+            if (updateEmployeeSheetTab) {
+                s.setObject(index++, productInfo.employeeSheetTab());
+            }
+            s.setObject(index++, productInfo.vendor());
+            index = bindAdditionalFields(s, productInfo, index, brandId);
+            s.setObject(index, productInfo.productCode());
             return s.executeUpdate();
         }
     }
