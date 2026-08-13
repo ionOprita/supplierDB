@@ -40,6 +40,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static java.net.HttpURLConnection.HTTP_FORBIDDEN;
+import static java.net.HttpURLConnection.HTTP_BAD_GATEWAY;
 import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
 import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
 import static java.net.HttpURLConnection.HTTP_OK;
@@ -312,7 +313,7 @@ public class EmagApi {
                 } else if (statusCode == HTTP_FORBIDDEN) {
                     errorLogger.log(SEVERE, "Received 403 for user %s, please check your password.".formatted(emagUser));
                     finished = true;
-                } else if ((statusCode == HTTP_INTERNAL_ERROR || statusCode == HTTP_GATEWAY_TIMEOUT) && retryCount > 0) {
+                } else if ((statusCode == HTTP_INTERNAL_ERROR || statusCode == HTTP_BAD_GATEWAY || statusCode == HTTP_GATEWAY_TIMEOUT) && retryCount > 0) {
                     errorLogger.log(WARNING, "Received %d, retrying, retryCount=%d, retryDelay=%d s".formatted(statusCode, retryCount, retryDelay / 1000));
                     retryCount--;
                     sleeper.sleep(retryDelay);
