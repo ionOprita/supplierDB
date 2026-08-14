@@ -154,16 +154,20 @@ public class EmagMirrorDB {
      * @return Map from the eMAG account to new orders associated with that account.
      * @throws SQLException on database issues.
      */
-    public Map<String, List<String>> readOrderIdForOpenOrdersByVendor() throws SQLException {
+    public Map<String, List<String>> readOrderIdForOpenOrdersByVendor(boolean newOnly) throws SQLException {
         return database.singleReadTX(db -> {
             var result = new HashMap<String, List<String>>();
-            try (var s = db.prepareStatement("""
+            String sql = """
                     SELECT o.id, v.account
                     FROM emag_order AS o
                     INNER JOIN vendor AS v
                     ON o.vendor_id = v.id
                     WHERE status IN (1,2,3)
-                    """)) {
+                    """;
+            if (newOnly) {
+                sql = sql + " AND date >= LOCALTIMESTAMP - INTERVAL '30 days'";
+            }
+            try (var s = db.prepareStatement(sql)) {
                 try (var rs = s.executeQuery()) {
                     while (rs.next()) {
                         result.computeIfAbsent(rs.getString(2), _ -> new ArrayList<>()).add(rs.getString(1));

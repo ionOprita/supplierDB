@@ -33,6 +33,7 @@ public class BackgroundJob {
 
     private static final Logger logger = Logs.getFileLogger("BackgroundJob", Level.INFO, 10, 1_000_000);
     private static final Duration hourly = Duration.ofHours(1);
+    private static final Duration daily = Duration.ofDays(1);
     private static final Duration weekly = Duration.ofDays(7);
     private static final Decider always = (_) -> true;
     private final AtomicBoolean running = new AtomicBoolean(true);
@@ -107,8 +108,24 @@ public class BackgroundJob {
 
     private final List<TaskRunner> fetchers = List.of(
             new TaskRunner("Populate products from sheets", hourly, always, PopulateProductsTableFromSheets::updateProductTable),
-            new TaskRunner("Fetch from eMAG and update GMV in DB", hourly, always, db -> {
-                EmagDBApp.fetchAndStoreToDB(db);
+            new TaskRunner("Fetch new orders from eMAG and update GMV in DB", hourly, always, db -> {
+                EmagDBApp.fetchNewOrders(db);
+                db.updateGMVTable();
+            }),
+            new TaskRunner("Fetch not finalized orders from last 30 days eMAG and update GMV in DB", hourly, always, db -> {
+                EmagDBApp.fetchOrdersNotFinalizedInDB(db, true);
+                db.updateGMVTable();
+            }),
+            new TaskRunner("Fetch not finalized orders and update GMV in DB", daily, this::outOfOfficeHour, db -> {
+                EmagDBApp.fetchOrdersNotFinalizedInDB(db, false);
+                db.updateGMVTable();
+            }),
+            new TaskRunner("Fetch storno orders from eMAG and update GMV in DB", hourly, always, db -> {
+                EmagDBApp.fetchStornoOrders(db);
+                db.updateGMVTable();
+            }),
+            new TaskRunner("Fetch RMAs from eMAG and update GMV in DB", hourly, always, db -> {
+                EmagDBApp.fetchRMAs(db);
                 db.updateGMVTable();
             }),
             new TaskRunner("Refetch some from eMAG and update GMV in DB", weekly, always, db -> {
