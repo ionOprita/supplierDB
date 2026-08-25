@@ -17,13 +17,16 @@ import ro.sellfluence.emagapi.AdsCampaignKeywordsResponse;
 import ro.sellfluence.emagapi.AdsCampaignPhrasesResponse;
 import ro.sellfluence.emagapi.AdsCampaignTargetedProductsResponse;
 import ro.sellfluence.emagapi.AdsCampaignsResponse;
+import ro.sellfluence.emagapi.AdsError;
 import ro.sellfluence.emagapi.AdsKeyword;
+import ro.sellfluence.emagapi.AdsResponse;
 import ro.sellfluence.emagapi.AdsSearchPhrase;
 import ro.sellfluence.emagapi.AdsTargetedProduct;
 import ro.sellfluence.emagapi.Campaign;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 import ro.sellfluence.support.UserPassword;
+import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonParser;
 import tools.jackson.databind.DeserializationContext;
 import tools.jackson.databind.DeserializationFeature;
@@ -42,9 +45,12 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
+import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.SEVERE;
+import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
@@ -52,7 +58,7 @@ import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 public class FetchAds {
     private static final boolean offline = Boolean.parseBoolean(System.getProperty("ads.offline", "false"));
 
-    private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", Level.INFO, 10, 100_000);
+    private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", INFO, 10, 100_000);
 
     static void main(String... args) throws Exception {
         var arguments = new Arguments(args);
@@ -96,11 +102,11 @@ public class FetchAds {
      * @param path to the cache file.
      * @param url  from which to fetch the data.
      * @return JSON read from either the file or url.
-     * @throws IOException
+     * @throws IOException on communication errors.
      */
     private static String getJSON(Page page, Path path, String url) throws IOException {
         if (Files.exists(path)) {
-            logger.log(Level.INFO, "Return %s for %s.".formatted(path, url));
+            logger.log(INFO, "Return %s for %s.".formatted(path, url));
             return Files.readString(path);
         }
         if (offline) {
@@ -108,8 +114,11 @@ public class FetchAds {
         }
         randomWait(0.1, 0.5);
         var json = page.request().get(url).text();
+        if (json.toLowerCase().contains("error")) {
+            logger.log(WARNING, "JSON has word errors in it: %s".formatted(json));
+        }
         Files.writeString(path, json);
-        logger.log(Level.INFO, "Retrieved %s and stored to %s.".formatted(url, path));
+        logger.log(INFO, "Retrieved %s and stored to %s.".formatted(url, path));
         return json;
     }
 
@@ -159,13 +168,13 @@ public class FetchAds {
      */
     private static void updatedDatabase(EmagMirrorDB mirrorDB, ArrayList<Campaign> campaigns) throws SQLException {
         var changedRows = mirrorDB.addOrUpdateAdCampaigns(campaigns);
-        logger.log(Level.INFO, "Inserted or updated %d ads rows from %d campaigns.".formatted(changedRows, campaigns.size()));
+        logger.log(INFO, "Inserted or updated %d ads rows from %d campaigns.".formatted(changedRows, campaigns.size()));
     }
 
     private static URIBuilder skeleton(LocalDate date, int pageNumber) {
         URIBuilder uriBuilder = new URIBuilder(URI.create("https://advertising.emag.net/api/v1"));
         uriBuilder.addParameter("page", Integer.toString(pageNumber));
-        uriBuilder.addParameter("perPage", "100");
+        uriBuilder.addParameter("perPage", "1000");
         uriBuilder.addParameter("dateStart", date.toString());
         uriBuilder.addParameter("dateEnd", date.toString());
         return uriBuilder;
@@ -177,11 +186,13 @@ public class FetchAds {
         for (var campaign : campaigns) {
             var adSets = downloadAdSets(page, date, campaign.id());
             var adSetList = new ArrayList<AdSet>();
+            var searchPhrases = downloadSearchPhrases(page, date, campaign.id());
+            var searchPhrasesByAdSet = searchPhrases.stream().collect(Collectors.groupingBy(AdsSearchPhrase::adsetId));
             for (var adSet : adSets) {
-                var searchPhrases = downloadSearchPhrases(page, date, campaign.id(), adSet.id());
                 var targetedProducts = downloadTargetedProducts(page, date, campaign.id(), adSet.id());
                 var keywords = downloadKeywords(page, date, campaign.id(), adSet.id());
-                adSetList.add(new AdSet(adSet, searchPhrases, targetedProducts, keywords));
+                adSetList.add(new AdSet(adSet, searchPhrasesByAdSet.get(adSet.id()), targetedProducts, keywords
+                ));
             }
             campaignList.add(new Campaign(date, campaign, adSetList));
         }
@@ -190,7 +201,7 @@ public class FetchAds {
 
     private static List<AdsCampaign> downloadCampaigns(Page page, LocalDate date) throws URISyntaxException, IOException {
         int pageNumber = 1;
-        int totalPages = 0;
+        int totalPages;
         List<AdsCampaign> result = new ArrayList<>();
         do {
             var uri = skeleton(date, pageNumber).appendPath("campaigns")
@@ -198,9 +209,9 @@ public class FetchAds {
                     .build();
             var path = targetDir.resolve("adsCampaigns_%s_%d.json".formatted(date, pageNumber));
             var json = getJSON(page, path, uri.toASCIIString());
-            var response = objectMapper.readValue(json, AdsCampaignsResponse.class);
-            result.addAll(response.data().campaigns());
-            var meta = response.meta();
+            var response = decodeJSON(json, AdsCampaignsResponse.class);
+            result.addAll(response.data.campaigns());
+            var meta = response.meta;
             totalPages = meta.pageCount();
             pageNumber++;
         } while (pageNumber <= totalPages);
@@ -209,7 +220,7 @@ public class FetchAds {
 
     private static List<AdsAdset> downloadAdSets(Page page, LocalDate date, int campaignId) throws URISyntaxException, IOException {
         int pageNumber = 1;
-        int totalPages = 0;
+        int totalPages;
         List<AdsAdset> result = new ArrayList<>();
         do {
             var uri = skeleton(date, pageNumber)
@@ -219,30 +230,29 @@ public class FetchAds {
                     .build();
             var path = targetDir.resolve("adsAdSets_%s_%d_%d.json".formatted(date, pageNumber, campaignId));
             var json = getJSON(page, path, uri.toASCIIString());
-            var response = objectMapper.readValue(json, AdsCampaignAdSetsResponse.class);
-            result.addAll(response.data().adsets());
-            var meta = response.meta();
+            var response = decodeJSON(json, AdsCampaignAdSetsResponse.class);
+            result.addAll(response.data.adsets());
+            var meta = response.meta;
             totalPages = meta.pageCount();
             pageNumber++;
         } while (pageNumber <= totalPages);
         return result;
     }
 
-    private static List<AdsSearchPhrase> downloadSearchPhrases(Page page, LocalDate date, int campaignId, int adSetId) throws URISyntaxException, IOException {
+    private static List<AdsSearchPhrase> downloadSearchPhrases(Page page, LocalDate date, int campaignId) throws URISyntaxException, IOException {
         int pageNumber = 1;
-        int totalPages = 0;
+        int totalPages;
         List<AdsSearchPhrase> result = new ArrayList<>();
         do {
             var uri = skeleton(date, pageNumber)
                     .appendPath("campaigns/%d/search-phrases".formatted(campaignId))
                     .setParameter("page", Integer.toString(pageNumber))
-                    .setParameter("adsetId", Integer.toString(adSetId))
                     .build();
-            var path = targetDir.resolve("adsSearchPhrases_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId));
+            var path = targetDir.resolve("adsSearchPhrases_%s_%d_%d.json".formatted(date, pageNumber, campaignId));
             var json = getJSON(page, path, uri.toASCIIString());
-            var response = objectMapper.readValue(json, AdsCampaignPhrasesResponse.class);
-            result.addAll(response.data().searchPhrases());
-            var meta = response.meta();
+            var response = decodeJSON(json, AdsCampaignPhrasesResponse.class);
+            result.addAll(response.data.searchPhrases());
+            var meta = response.meta;
             totalPages = meta.pageCount();
             pageNumber++;
         } while (pageNumber <= totalPages);
@@ -251,7 +261,7 @@ public class FetchAds {
 
     private static List<AdsTargetedProduct> downloadTargetedProducts(Page page, LocalDate date, int campaignId, int adSetId) throws URISyntaxException, IOException {
         int pageNumber = 1;
-        int totalPages = 0;
+        int totalPages;
         List<AdsTargetedProduct> result = new ArrayList<>();
         do {
             var uri = skeleton(date, pageNumber)
@@ -261,9 +271,9 @@ public class FetchAds {
                     .build();
             var path = targetDir.resolve("adsTargetedProducts_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId));
             var json = getJSON(page, path, uri.toASCIIString());
-            var response = objectMapper.readValue(json, AdsCampaignTargetedProductsResponse.class);
-            result.addAll(response.data().docs());
-            var meta = response.meta();
+            var response =decodeJSON(json, AdsCampaignTargetedProductsResponse.class);
+            result.addAll(response.data.docs());
+            var meta = response.meta;
             totalPages = meta.pageCount();
             pageNumber++;
         } while (pageNumber <= totalPages);
@@ -272,7 +282,7 @@ public class FetchAds {
 
     private static List<AdsKeyword> downloadKeywords(Page page, LocalDate date, int campaignId, int adSetId) throws URISyntaxException, IOException {
         int pageNumber = 1;
-        int totalPages = 0;
+        int totalPages;
         List<AdsKeyword> result = new ArrayList<>();
         do {
             var uri = skeleton(date, pageNumber)
@@ -283,18 +293,38 @@ public class FetchAds {
                     .build();
             var path = targetDir.resolve("adsKeywords_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId));
             if (offline && !Files.exists(path)) {
-                logger.log(Level.INFO, "Skip keywords for campaign %d, adset %d, and date %s because %s is not cached."
+                logger.log(INFO, "Skip keywords for campaign %d, adset %d, and date %s because %s is not cached."
                         .formatted(campaignId, adSetId, date, path));
                 break;
             }
             var json = getJSON(page, path, uri.toASCIIString());
-            var response = objectMapper.readValue(json, AdsCampaignKeywordsResponse.class);
-            result.addAll(response.data().keywords());
-            var meta = response.meta();
+            var response = decodeJSON(json, AdsCampaignKeywordsResponse.class);
+            result.addAll(response.data.keywords());
+            var meta = response.meta;
             totalPages = meta.pageCount();
             pageNumber++;
         } while (pageNumber <= totalPages);
         return result;
+    }
+
+    private static <T extends AdsResponse> T decodeJSON(String json, Class<T> valueType) {
+        T response;
+        try {
+            response = objectMapper.readValue(json, valueType);
+        } catch (JacksonException e) {
+            logger.log(SEVERE, "Cannot decode JSON %s".formatted(json));
+            throw new RuntimeException(e);
+        }
+        if (response.error !=null && !response.error.isBlank()) {
+            logger.log(SEVERE, "Error response %s: %s (%s, %s)".formatted(response.error, response.message, response.code, response.status));
+            if (response.errors!=null) {
+                for (AdsError error:response.errors) {
+                    logger.log(SEVERE, "%s: %s".formatted(error.propertyPath(), error.message()));
+                }
+            }
+            throw new RuntimeException("eMag returned an error response.");
+        }
+        return response;
     }
 
     private static void login(Page page, UserPassword user) {

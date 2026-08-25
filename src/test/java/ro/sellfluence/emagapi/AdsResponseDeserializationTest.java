@@ -32,15 +32,15 @@ class AdsResponseDeserializationTest {
 
         var response = objectMapper.readValue(json, AdsCampaignAdSetsResponse.class);
 
-        assertEquals(1, response.meta().totalCount());
-        assertEquals(505390, response.data().id());
-        assertEquals(LocalDateTime.of(2026, 2, 15, 0, 0), response.data().dateStart());
-        assertNull(response.data().dateEnd());
-        assertEquals(1, response.data().adsets().size());
-        assertEquals(557688, response.data().adsets().getFirst().id());
-        assertEquals(new BigDecimal("3.62"), response.data().adsets().getFirst().recommendedBid().bid());
-        assertEquals(2, response.data().adsets().getFirst().summary().keywordCount());
-        assertNull(response.data().adsets().getFirst().summary().productTargetCount());
+        assertEquals(1, response.meta.totalCount());
+        assertEquals(505390, response.data.id());
+        assertEquals(LocalDateTime.of(2026, 2, 15, 0, 0), response.data.dateStart());
+        assertNull(response.data.dateEnd());
+        assertEquals(1, response.data.adsets().size());
+        assertEquals(557688, response.data.adsets().getFirst().id());
+        assertEquals(new BigDecimal("3.62"), response.data.adsets().getFirst().recommendedBid().bid());
+        assertEquals(2, response.data.adsets().getFirst().summary().keywordCount());
+        assertNull(response.data.adsets().getFirst().summary().productTargetCount());
     }
 
     @Test
@@ -49,10 +49,10 @@ class AdsResponseDeserializationTest {
 
         var response = objectMapper.readValue(json, AdsCampaignPhrasesResponse.class);
 
-        assertEquals(3779, response.meta().totalCount());
-        assertEquals(100, response.data().searchPhrases().size());
-        assertEquals(180461, response.data().adsets().getFirst().id());
-        assertEquals("philips oneblade", response.data().searchPhrases().getFirst().searchPhrase());
+        assertEquals(3779, response.meta.totalCount());
+        assertEquals(100, response.data.searchPhrases().size());
+        assertEquals(180461, response.data.adsets().getFirst().id());
+        assertEquals("philips oneblade", response.data.searchPhrases().getFirst().searchPhrase());
     }
 
     @Test
@@ -61,10 +61,10 @@ class AdsResponseDeserializationTest {
 
         var response = objectMapper.readValue(json, AdsCampaignTargetedProductsResponse.class);
 
-        assertEquals(4192, response.meta().totalCount());
-        assertEquals(100, response.data().docs().size());
-        assertEquals(174138, response.data().campaign().id());
-        assertEquals(102562071, response.data().docs().getFirst().docId());
+        assertEquals(4192, response.meta.totalCount());
+        assertEquals(100, response.data.docs().size());
+        assertEquals(174138, response.data.campaign().id());
+        assertEquals(102562071, response.data.docs().getFirst().docId());
     }
 
     @Test
@@ -73,10 +73,10 @@ class AdsResponseDeserializationTest {
 
         var response = objectMapper.readValue(json, AdsCampaignKeywordsResponse.class);
 
-        assertEquals(2, response.meta().totalCount());
-        assertEquals(new BigDecimal("12.5"), response.data().summary().averageCostOfSale());
-        assertEquals(2, response.data().keywords().size());
-        var keyword = response.data().keywords().getFirst();
+        assertEquals(2, response.meta.totalCount());
+        assertEquals(new BigDecimal("12.5"), response.data.summary().averageCostOfSale());
+        assertEquals(2, response.data.keywords().size());
+        var keyword = response.data.keywords().getFirst();
         assertEquals(1001, keyword.id());
         assertEquals(new BigDecimal("1.25"), keyword.bid());
         assertEquals("active", keyword.status());
