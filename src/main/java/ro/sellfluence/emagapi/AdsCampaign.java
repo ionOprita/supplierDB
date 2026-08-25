@@ -18,6 +18,8 @@ public record AdsCampaign(
         LocalDateTime dateEnd,
         AdsPerformanceSummary summary,
         String advertiserName,
-        List<AdsAdset> adSets
+        List<AdsAdset> adSets,
+        String bidStrategy, //TODO: Store in database
+        String bidConfig //TODO: Store in database
 ) {
 }

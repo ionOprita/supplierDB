@@ -16,6 +16,8 @@ public record AdsCampaignAdSetsData(
         BigDecimal remainingDailyBudget,
         String status,
         String inheritedStatus,
-        String targeting
+        String targeting,
+        String bidStrategy, //TODO: Store in database
+        String bidConfig //TODO: Store in database
 ) {
 }
