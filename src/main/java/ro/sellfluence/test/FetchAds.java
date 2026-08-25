@@ -45,6 +45,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.function.Function;
+import java.util.function.IntFunction;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -86,12 +88,12 @@ public class FetchAds {
     private static final Random random = new Random();
 
     private static void randomWait(Double fromSec, Double toSec) {
-            var waitSec = fromSec + (toSec - fromSec) * random.nextDouble();
-            try {
-                Thread.sleep((long) waitSec * 1000);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
+        var waitSec = fromSec + (toSec - fromSec) * random.nextDouble();
+        try {
+            Thread.sleep((long) waitSec * 1000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
 
     }
 
@@ -104,7 +106,7 @@ public class FetchAds {
      * @return JSON read from either the file or url.
      * @throws IOException on communication errors.
      */
-    private static String getJSON(Page page, Path path, String url) throws IOException {
+    private static String getJSON(Page page, Path path, String url, boolean doWait) throws IOException {
         if (Files.exists(path)) {
             logger.log(INFO, "Return %s for %s.".formatted(path, url));
             return Files.readString(path);
@@ -112,7 +114,7 @@ public class FetchAds {
         if (offline) {
             throw new RuntimeException("Could not proceed with loading %s because offline.".formatted(url));
         }
-        randomWait(0.1, 0.5);
+        if (doWait) randomWait(0.1, 0.5);
         var json = page.request().get(url).text();
         if (json.toLowerCase().contains("error")) {
             logger.log(WARNING, "JSON has word errors in it: %s".formatted(json));
@@ -200,108 +202,85 @@ public class FetchAds {
     }
 
     private static List<AdsCampaign> downloadCampaigns(Page page, LocalDate date) throws URISyntaxException, IOException {
-        int pageNumber = 1;
-        int totalPages;
-        List<AdsCampaign> result = new ArrayList<>();
-        do {
-            var uri = skeleton(date, pageNumber).appendPath("campaigns")
-                    .setParameter("page", Integer.toString(pageNumber))
-                    .build();
-            var path = targetDir.resolve("adsCampaigns_%s_%d.json".formatted(date, pageNumber));
-            var json = getJSON(page, path, uri.toASCIIString());
-            var response = decodeJSON(json, AdsCampaignsResponse.class);
-            result.addAll(response.data.campaigns());
-            var meta = response.meta;
-            totalPages = meta.pageCount();
-            pageNumber++;
-        } while (pageNumber <= totalPages);
-        return result;
+        return downloadPages(
+                page,
+                pageNumber -> skeleton(date, pageNumber).appendPath("campaigns")
+                        .setParameter("page", Integer.toString(pageNumber)),
+                pageNumber -> targetDir.resolve("adsCampaigns_%s_%d.json".formatted(date, pageNumber)),
+                AdsCampaignsResponse.class,
+                response -> response.data.campaigns()
+        );
     }
 
     private static List<AdsAdset> downloadAdSets(Page page, LocalDate date, int campaignId) throws URISyntaxException, IOException {
-        int pageNumber = 1;
-        int totalPages;
-        List<AdsAdset> result = new ArrayList<>();
-        do {
-            var uri = skeleton(date, pageNumber)
-                    .appendPath("campaign/%d/adsets".formatted(campaignId))
-                    .setParameter("page", Integer.toString(pageNumber))
-                    .setParameter("campaignId", Integer.toString(campaignId))
-                    .build();
-            var path = targetDir.resolve("adsAdSets_%s_%d_%d.json".formatted(date, pageNumber, campaignId));
-            var json = getJSON(page, path, uri.toASCIIString());
-            var response = decodeJSON(json, AdsCampaignAdSetsResponse.class);
-            result.addAll(response.data.adsets());
-            var meta = response.meta;
-            totalPages = meta.pageCount();
-            pageNumber++;
-        } while (pageNumber <= totalPages);
-        return result;
+        return downloadPages(
+                page,
+                pageNumber -> skeleton(date, pageNumber)
+                        .appendPath("campaign/%d/adsets".formatted(campaignId))
+                        .setParameter("page", Integer.toString(pageNumber))
+                        .setParameter("campaignId", Integer.toString(campaignId)),
+                pageNumber -> targetDir.resolve("adsAdSets_%s_%d_%d.json".formatted(date, pageNumber, campaignId)),
+                AdsCampaignAdSetsResponse.class,
+                response -> response.data.adsets()
+        );
     }
 
     private static List<AdsSearchPhrase> downloadSearchPhrases(Page page, LocalDate date, int campaignId) throws URISyntaxException, IOException {
-        int pageNumber = 1;
-        int totalPages;
-        List<AdsSearchPhrase> result = new ArrayList<>();
-        do {
-            var uri = skeleton(date, pageNumber)
-                    .appendPath("campaigns/%d/search-phrases".formatted(campaignId))
-                    .setParameter("page", Integer.toString(pageNumber))
-                    .build();
-            var path = targetDir.resolve("adsSearchPhrases_%s_%d_%d.json".formatted(date, pageNumber, campaignId));
-            var json = getJSON(page, path, uri.toASCIIString());
-            var response = decodeJSON(json, AdsCampaignPhrasesResponse.class);
-            result.addAll(response.data.searchPhrases());
-            var meta = response.meta;
-            totalPages = meta.pageCount();
-            pageNumber++;
-        } while (pageNumber <= totalPages);
-        return result;
+        return downloadPages(
+                page,
+                pageNumber -> skeleton(date, pageNumber)
+                        .appendPath("campaigns/%d/search-phrases".formatted(campaignId))
+                        .setParameter("page", Integer.toString(pageNumber)),
+                pageNumber -> targetDir.resolve("adsSearchPhrases_%s_%d_%d.json".formatted(date, pageNumber, campaignId)),
+                AdsCampaignPhrasesResponse.class,
+                response -> response.data.searchPhrases()
+        );
     }
 
     private static List<AdsTargetedProduct> downloadTargetedProducts(Page page, LocalDate date, int campaignId, int adSetId) throws URISyntaxException, IOException {
-        int pageNumber = 1;
-        int totalPages;
-        List<AdsTargetedProduct> result = new ArrayList<>();
-        do {
-            var uri = skeleton(date, pageNumber)
-                    .appendPath("campaigns/%d/adsets/%s/targeted-products".formatted(campaignId, adSetId))
-                    .setParameter("page", Integer.toString(pageNumber))
-                    .setParameter("dateEnd", date.plusDays(1).toString())
-                    .build();
-            var path = targetDir.resolve("adsTargetedProducts_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId));
-            var json = getJSON(page, path, uri.toASCIIString());
-            var response =decodeJSON(json, AdsCampaignTargetedProductsResponse.class);
-            result.addAll(response.data.docs());
-            var meta = response.meta;
-            totalPages = meta.pageCount();
-            pageNumber++;
-        } while (pageNumber <= totalPages);
-        return result;
+        return downloadPages(
+                page,
+                pageNumber -> skeleton(date, pageNumber)
+                        .appendPath("campaigns/%d/adsets/%s/targeted-products".formatted(campaignId, adSetId))
+                        .setParameter("page", Integer.toString(pageNumber))
+                        .setParameter("dateEnd", date.plusDays(1).toString()),
+                pageNumber -> targetDir.resolve("adsTargetedProducts_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId)),
+                AdsCampaignTargetedProductsResponse.class,
+                response -> response.data.docs()
+        );
     }
 
     private static List<AdsKeyword> downloadKeywords(Page page, LocalDate date, int campaignId, int adSetId) throws URISyntaxException, IOException {
+        return downloadPages(
+                page,
+                pageNumber -> skeleton(date, pageNumber)
+                        .appendPath("campaign/%d/keywords".formatted(campaignId))
+                        .setParameter("page", Integer.toString(pageNumber))
+                        .setParameter("campaignId", Integer.toString(campaignId))
+                        .setParameter("adsetId", Integer.toString(adSetId)),
+                pageNumber -> targetDir.resolve("adsKeywords_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId)),
+                AdsCampaignKeywordsResponse.class,
+                response -> response.data.keywords()
+        );
+    }
+
+    private static <T, R extends AdsResponse> List<T> downloadPages(
+            Page page,
+            IntFunction<URIBuilder> uriForPage,
+            IntFunction<Path> pathForPage,
+            Class<R> responseType,
+            Function<R, List<T>> itemsFromResponse
+    ) throws URISyntaxException, IOException {
         int pageNumber = 1;
         int totalPages;
-        List<AdsKeyword> result = new ArrayList<>();
+        List<T> result = new ArrayList<>();
         do {
-            var uri = skeleton(date, pageNumber)
-                    .appendPath("campaign/%d/keywords".formatted(campaignId))
-                    .setParameter("page", Integer.toString(pageNumber))
-                    .setParameter("campaignId", Integer.toString(campaignId))
-                    .setParameter("adsetId", Integer.toString(adSetId))
-                    .build();
-            var path = targetDir.resolve("adsKeywords_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId));
-            if (offline && !Files.exists(path)) {
-                logger.log(INFO, "Skip keywords for campaign %d, adset %d, and date %s because %s is not cached."
-                        .formatted(campaignId, adSetId, date, path));
-                break;
-            }
-            var json = getJSON(page, path, uri.toASCIIString());
-            var response = decodeJSON(json, AdsCampaignKeywordsResponse.class);
-            result.addAll(response.data.keywords());
-            var meta = response.meta;
-            totalPages = meta.pageCount();
+            var uri = uriForPage.apply(pageNumber).build();
+            var path = pathForPage.apply(pageNumber);
+            var json = getJSON(page, path, uri.toASCIIString(), pageNumber == 1);
+            var response = decodeJSON(json, responseType);
+            result.addAll(itemsFromResponse.apply(response));
+            totalPages = response.meta.pageCount();
             pageNumber++;
         } while (pageNumber <= totalPages);
         return result;
@@ -315,10 +294,10 @@ public class FetchAds {
             logger.log(SEVERE, "Cannot decode JSON %s".formatted(json));
             throw new RuntimeException(e);
         }
-        if (response.error !=null && !response.error.isBlank()) {
+        if (response.error != null && !response.error.isBlank()) {
             logger.log(SEVERE, "Error response %s: %s (%s, %s)".formatted(response.error, response.message, response.code, response.status));
-            if (response.errors!=null) {
-                for (AdsError error:response.errors) {
+            if (response.errors != null) {
+                for (AdsError error : response.errors) {
                     logger.log(SEVERE, "%s: %s".formatted(error.propertyPath(), error.message()));
                 }
             }
