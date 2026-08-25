@@ -26,6 +26,7 @@ import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
 import ro.sellfluence.api.WebAuthnServer;
 import ro.sellfluence.apphelper.BackgroundJob;
+import ro.sellfluence.db.AdsReportPeriod;
 import ro.sellfluence.db.Brand;
 import ro.sellfluence.db.CategoryDataTable.CategoryColumn;
 import ro.sellfluence.db.CategoryDataTable.CategoryInfo;
@@ -659,12 +660,11 @@ public class Server {
         });
 
         app.get("/app/adsCampaigns", ctx -> {
-            var reportDate = parseLocalDate(ctx.queryParam("date"));
-            if (reportDate == null) {
-                ctx.status(400).result("{\"error\":\"Invalid or missing date\"}");
+            var reportPeriod = parseAdsReportPeriod(ctx);
+            if (reportPeriod == null) {
                 return;
             }
-            var campaigns = api.getAdsCampaignsByReportDate(reportDate);
+            var campaigns = api.getAdsCampaigns(reportPeriod);
             if (campaigns == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
@@ -688,16 +688,15 @@ public class Server {
 
         app.get("/app/adsAdsets", ctx -> {
             var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
-            var reportDate = parseLocalDate(ctx.queryParam("date"));
             if (campaignId == null) {
                 ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
                 return;
             }
-            if (reportDate == null) {
-                ctx.status(400).result("{\"error\":\"Invalid or missing date\"}");
+            var reportPeriod = parseAdsReportPeriod(ctx);
+            if (reportPeriod == null) {
                 return;
             }
-            var adsets = api.getAdsAdsetsByReportDate(campaignId, reportDate);
+            var adsets = api.getAdsAdsets(campaignId, reportPeriod);
             if (adsets == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
@@ -708,7 +707,6 @@ public class Server {
         app.get("/app/adsSearchPhrases", ctx -> {
             var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
             var adsetId = parseIntOrNull(ctx.queryParam("adsetId"));
-            var reportDate = parseLocalDate(ctx.queryParam("date"));
             if (campaignId == null) {
                 ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
                 return;
@@ -717,11 +715,11 @@ public class Server {
                 ctx.status(400).result("{\"error\":\"Invalid or missing adsetId\"}");
                 return;
             }
-            if (reportDate == null) {
-                ctx.status(400).result("{\"error\":\"Invalid or missing date\"}");
+            var reportPeriod = parseAdsReportPeriod(ctx);
+            if (reportPeriod == null) {
                 return;
             }
-            var phrases = api.getAdsSearchPhrases(campaignId, adsetId, reportDate);
+            var phrases = api.getAdsSearchPhrases(campaignId, adsetId, reportPeriod);
             if (phrases == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
@@ -732,7 +730,6 @@ public class Server {
         app.get("/app/adsTargetedProducts", ctx -> {
             var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
             var adsetId = parseIntOrNull(ctx.queryParam("adsetId"));
-            var reportDate = parseLocalDate(ctx.queryParam("date"));
             if (campaignId == null) {
                 ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
                 return;
@@ -741,11 +738,11 @@ public class Server {
                 ctx.status(400).result("{\"error\":\"Invalid or missing adsetId\"}");
                 return;
             }
-            if (reportDate == null) {
-                ctx.status(400).result("{\"error\":\"Invalid or missing date\"}");
+            var reportPeriod = parseAdsReportPeriod(ctx);
+            if (reportPeriod == null) {
                 return;
             }
-            var products = api.getAdsTargetedProducts(campaignId, adsetId, reportDate);
+            var products = api.getAdsTargetedProducts(campaignId, adsetId, reportPeriod);
             if (products == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
@@ -756,7 +753,6 @@ public class Server {
         app.get("/app/adsKeywords", ctx -> {
             var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
             var adsetId = parseIntOrNull(ctx.queryParam("adsetId"));
-            var reportDate = parseLocalDate(ctx.queryParam("date"));
             if (campaignId == null) {
                 ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
                 return;
@@ -765,11 +761,11 @@ public class Server {
                 ctx.status(400).result("{\"error\":\"Invalid or missing adsetId\"}");
                 return;
             }
-            if (reportDate == null) {
-                ctx.status(400).result("{\"error\":\"Invalid or missing date\"}");
+            var reportPeriod = parseAdsReportPeriod(ctx);
+            if (reportPeriod == null) {
                 return;
             }
-            var keywords = api.getAdsKeywords(campaignId, adsetId, reportDate);
+            var keywords = api.getAdsKeywords(campaignId, adsetId, reportPeriod);
             if (keywords == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
@@ -2107,6 +2103,49 @@ public class Server {
         } catch (DateTimeParseException _) {
             return null;
         }
+    }
+
+    private static AdsReportPeriod parseAdsReportPeriod(Context ctx) {
+        try {
+            return parseAdsReportPeriod(
+                    ctx.queryParam("date"),
+                    ctx.queryParam("dateFrom"),
+                    ctx.queryParam("dateTo")
+            );
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+            return null;
+        }
+    }
+
+    static AdsReportPeriod parseAdsReportPeriod(String date, String dateFrom, String dateTo) {
+        boolean hasDate = date != null;
+        boolean hasDateFrom = dateFrom != null;
+        boolean hasDateTo = dateTo != null;
+
+        if (hasDate) {
+            if (hasDateFrom || hasDateTo) {
+                throw new IllegalArgumentException("date cannot be combined with dateFrom or dateTo");
+            }
+            return AdsReportPeriod.singleDay(requireAdsReportDate("date", date));
+        }
+
+        if (!hasDateFrom || !hasDateTo) {
+            throw new IllegalArgumentException("Provide either date or both dateFrom and dateTo");
+        }
+
+        return new AdsReportPeriod(
+                requireAdsReportDate("dateFrom", dateFrom),
+                requireAdsReportDate("dateTo", dateTo)
+        );
+    }
+
+    private static LocalDate requireAdsReportDate(String parameterName, String value) {
+        var date = parseLocalDate(value);
+        if (date == null) {
+            throw new IllegalArgumentException("Invalid or missing " + parameterName);
+        }
+        return date;
     }
 
     private static Integer parseIntOrNull(String text) {

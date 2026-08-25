@@ -1,5 +1,13 @@
 import {fetchJSON} from './common.js';
 import {bindTableCsvDownload} from './table-common.js';
+import {
+  adsPeriodFilePart,
+  adsPeriodPhrase,
+  adsPeriodSearchParams,
+  isValidAdsPeriod,
+  parseAdsPeriod,
+  replaceAdsPeriodInUrl
+} from './ads-period.js';
 
 const TITLE = document.getElementById('title');
 const STATUS = document.getElementById('adsSearchPhrasesStatus');
@@ -30,7 +38,7 @@ function paramsFromUrl() {
   return {
     campaignId: params.get('campaignId') || '',
     adsetId: params.get('adsetId') || '',
-    reportDate: params.get('date') || ''
+    period: parseAdsPeriod(params)
   };
 }
 
@@ -74,10 +82,10 @@ function appendCell(tr, row, column, index) {
   tr.appendChild(td);
 }
 
-function renderRows(rows) {
+function renderRows(rows, period) {
   BODY.innerHTML = '';
   if (!rows.length) {
-    renderMessageRow('No search phrases found for this adset.');
+    renderMessageRow(`No search phrases found for this adset ${adsPeriodPhrase(period)}.`);
     return;
   }
 
@@ -90,52 +98,53 @@ function renderRows(rows) {
   BODY.appendChild(fragment);
 }
 
-function setPageTitle(data, fallbackDate) {
+function setPageTitle(data, period) {
   const campaignName = data.campaignName || 'campaign';
   const adsetName = data.adsetName || 'adset';
-  const reportDate = data.reportDate || fallbackDate;
-  pageTitle = `Search phrases for ${campaignName} ${adsetName} on ${reportDate}`;
+  pageTitle = `Search phrases for ${campaignName} ${adsetName} ${adsPeriodPhrase(period)}`;
   if (TITLE) {
     TITLE.textContent = pageTitle;
   }
   document.title = pageTitle;
 }
 
-async function loadSearchPhrases(campaignId, adsetId, reportDate) {
-  if (!campaignId || !adsetId || !reportDate) {
+async function loadSearchPhrases(campaignId, adsetId, period) {
+  if (!campaignId || !adsetId || !isValidAdsPeriod(period)) {
     HEAD.innerHTML = '';
     currentColumns = [];
-    renderMessageRow('Missing campaign id, adset id, or report date.');
+    renderMessageRow('Missing campaign id, adset id, or valid report period.');
     setStatus('');
     return;
   }
 
-  setStatus('Loading search phrases...');
-  const params = new URLSearchParams({campaignId, adsetId, date: reportDate});
+  const periodPhrase = adsPeriodPhrase(period);
+  setStatus(`Loading search phrases ${periodPhrase}...`);
+  const params = adsPeriodSearchParams(period, {campaignId, adsetId});
   const data = await fetchJSON(`/app/adsSearchPhrases?${params.toString()}`);
-  setPageTitle(data, reportDate);
+  setPageTitle(data, period);
   currentColumns = Array.isArray(data.columns)
     ? data.columns.filter((column) => !HIDDEN_COLUMN_KEYS.has(column.key))
     : [];
   const rows = Array.isArray(data.rows) ? data.rows : [];
   renderHeader(currentColumns);
-  renderRows(rows);
-  setStatus(`${rows.length} phrase${rows.length === 1 ? '' : 's'}.`);
+  renderRows(rows, period);
+  setStatus(`${rows.length} phrase${rows.length === 1 ? '' : 's'} ${periodPhrase}.`);
 }
 
 async function init() {
-  const {campaignId, adsetId, reportDate} = paramsFromUrl();
+  const {campaignId, adsetId, period} = paramsFromUrl();
+  replaceAdsPeriodInUrl(period, {campaignId, adsetId});
 
   bindTableCsvDownload({
     buttonId: 'downloadCsvBtn',
     tableId: 'adsSearchPhrasesTable',
     fileNameBuilder: ({datePart}) => {
-      const date = reportDate || datePart;
-      return `ads-search-phrases-${campaignId || 'campaign'}-${adsetId || 'adset'}-${date}.csv`;
+      const periodPart = adsPeriodFilePart(period, datePart);
+      return `ads-search-phrases-${campaignId || 'campaign'}-${adsetId || 'adset'}-${periodPart}.csv`;
     }
   });
 
-  await loadSearchPhrases(campaignId, adsetId, reportDate);
+  await loadSearchPhrases(campaignId, adsetId, period);
 }
 
 init().catch((e) => {

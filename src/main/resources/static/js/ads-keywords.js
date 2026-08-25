@@ -1,5 +1,13 @@
 import {fetchJSON} from './common.js';
 import {bindTableCsvDownload} from './table-common.js';
+import {
+  adsPeriodFilePart,
+  adsPeriodPhrase,
+  adsPeriodSearchParams,
+  isValidAdsPeriod,
+  parseAdsPeriod,
+  replaceAdsPeriodInUrl
+} from './ads-period.js';
 
 const TITLE = document.getElementById('title');
 const STATUS = document.getElementById('adsKeywordsStatus');
@@ -29,7 +37,7 @@ function paramsFromUrl() {
   return {
     campaignId: params.get('campaignId') || '',
     adsetId: params.get('adsetId') || '',
-    reportDate: params.get('date') || '',
+    period: parseAdsPeriod(params),
     negativeOnly: params.get('negative') === 'true'
   };
 }
@@ -74,12 +82,12 @@ function appendCell(tr, row, column, index) {
   tr.appendChild(td);
 }
 
-function renderRows(rows, negativeOnly) {
+function renderRows(rows, negativeOnly, period) {
   BODY.innerHTML = '';
   if (!rows.length) {
     renderMessageRow(negativeOnly
-      ? 'No negative keywords found for this adset.'
-      : 'No keywords found for this adset.');
+      ? `No negative keywords found for this adset ${adsPeriodPhrase(period)}.`
+      : `No keywords found for this adset ${adsPeriodPhrase(period)}.`);
     return;
   }
 
@@ -92,12 +100,11 @@ function renderRows(rows, negativeOnly) {
   BODY.appendChild(fragment);
 }
 
-function setPageTitle(data, fallbackDate, negativeOnly) {
+function setPageTitle(data, period, negativeOnly) {
   const campaignName = data.campaignName || 'campaign';
   const adsetName = data.adsetName || 'adset';
-  const reportDate = data.reportDate || fallbackDate;
   const keywordLabel = negativeOnly ? 'Negative keywords' : 'Keywords';
-  pageTitle = `${keywordLabel} for ${campaignName} ${adsetName} on ${reportDate}`;
+  pageTitle = `${keywordLabel} for ${campaignName} ${adsetName} ${adsPeriodPhrase(period)}`;
   if (TITLE) {
     TITLE.textContent = pageTitle;
   }
@@ -108,19 +115,20 @@ function isNegativeKeyword(row) {
   return String(row?.values?.match_type ?? '').trim().toLowerCase() === 'negative';
 }
 
-async function loadKeywords(campaignId, adsetId, reportDate, negativeOnly) {
-  if (!campaignId || !adsetId || !reportDate) {
+async function loadKeywords(campaignId, adsetId, period, negativeOnly) {
+  if (!campaignId || !adsetId || !isValidAdsPeriod(period)) {
     HEAD.innerHTML = '';
     currentColumns = [];
-    renderMessageRow('Missing campaign id, adset id, or report date.');
+    renderMessageRow('Missing campaign id, adset id, or valid report period.');
     setStatus('');
     return;
   }
 
-  setStatus(negativeOnly ? 'Loading negative keywords...' : 'Loading keywords...');
-  const params = new URLSearchParams({campaignId, adsetId, date: reportDate});
+  const periodPhrase = adsPeriodPhrase(period);
+  setStatus(`${negativeOnly ? 'Loading negative keywords' : 'Loading keywords'} ${periodPhrase}...`);
+  const params = adsPeriodSearchParams(period, {campaignId, adsetId});
   const data = await fetchJSON(`/app/adsKeywords?${params.toString()}`);
-  setPageTitle(data, reportDate, negativeOnly);
+  setPageTitle(data, period, negativeOnly);
   currentColumns = Array.isArray(data.columns)
     ? data.columns.filter((column) => !HIDDEN_COLUMN_KEYS.has(column.key)
       && (!negativeOnly || column.key !== 'match_type'))
@@ -128,25 +136,30 @@ async function loadKeywords(campaignId, adsetId, reportDate, negativeOnly) {
   const allRows = Array.isArray(data.rows) ? data.rows : [];
   const rows = allRows.filter((row) => isNegativeKeyword(row) === negativeOnly);
   renderHeader(currentColumns);
-  renderRows(rows, negativeOnly);
+  renderRows(rows, negativeOnly, period);
   const keywordLabel = negativeOnly ? 'negative keyword' : 'keyword';
-  setStatus(`${rows.length} ${keywordLabel}${rows.length === 1 ? '' : 's'}.`);
+  setStatus(`${rows.length} ${keywordLabel}${rows.length === 1 ? '' : 's'} ${periodPhrase}.`);
 }
 
 async function init() {
-  const {campaignId, adsetId, reportDate, negativeOnly} = paramsFromUrl();
+  const {campaignId, adsetId, period, negativeOnly} = paramsFromUrl();
+  replaceAdsPeriodInUrl(period, {
+    campaignId,
+    adsetId,
+    negative: negativeOnly ? 'true' : null
+  });
 
   bindTableCsvDownload({
     buttonId: 'downloadCsvBtn',
     tableId: 'adsKeywordsTable',
     fileNameBuilder: ({datePart}) => {
-      const date = reportDate || datePart;
+      const periodPart = adsPeriodFilePart(period, datePart);
       const prefix = negativeOnly ? 'ads-negative-keywords' : 'ads-keywords';
-      return `${prefix}-${campaignId || 'campaign'}-${adsetId || 'adset'}-${date}.csv`;
+      return `${prefix}-${campaignId || 'campaign'}-${adsetId || 'adset'}-${periodPart}.csv`;
     }
   });
 
-  await loadKeywords(campaignId, adsetId, reportDate, negativeOnly);
+  await loadKeywords(campaignId, adsetId, period, negativeOnly);
 }
 
 init().catch((e) => {

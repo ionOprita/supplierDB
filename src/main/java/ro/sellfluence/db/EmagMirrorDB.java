@@ -160,6 +160,10 @@ public class EmagMirrorDB {
         return database.readTX(db -> AdsCampaignTable.getCampaignsByReportDate(db, reportDate));
     }
 
+    public AdsCampaignTable.AdsCampaignTableData getAdsCampaigns(AdsReportPeriod period) throws SQLException {
+        return database.readTX(db -> AdsCampaignTable.getCampaigns(db, period));
+    }
+
     public List<LocalDate> getAdsAdsetReportDates(int campaignId) throws SQLException {
         return database.readTX(db -> AdsCampaignTable.getAdsetReportDates(db, campaignId));
     }
@@ -168,10 +172,20 @@ public class EmagMirrorDB {
         return database.readTX(db -> AdsCampaignTable.getAdsetsByReportDate(db, campaignId, reportDate));
     }
 
+    public AdsCampaignTable.AdsAdsetTableData getAdsAdsets(int campaignId, AdsReportPeriod period) throws SQLException {
+        return database.readTX(db -> AdsCampaignTable.getAdsets(db, campaignId, period));
+    }
+
     public AdsCampaignTable.AdsSearchPhraseTableData getAdsSearchPhrases(int campaignId,
                                                                           int adsetId,
                                                                           LocalDate reportDate) throws SQLException {
         return database.readTX(db -> AdsCampaignTable.getSearchPhrases(db, campaignId, adsetId, reportDate));
+    }
+
+    public AdsCampaignTable.AdsSearchPhraseTableData getAdsSearchPhrases(int campaignId,
+                                                                          int adsetId,
+                                                                          AdsReportPeriod period) throws SQLException {
+        return database.readTX(db -> AdsCampaignTable.getSearchPhrases(db, campaignId, adsetId, period));
     }
 
     public AdsCampaignTable.AdsTargetedProductTableData getAdsTargetedProducts(int campaignId,
@@ -180,10 +194,22 @@ public class EmagMirrorDB {
         return database.readTX(db -> AdsCampaignTable.getTargetedProducts(db, campaignId, adsetId, reportDate));
     }
 
+    public AdsCampaignTable.AdsTargetedProductTableData getAdsTargetedProducts(int campaignId,
+                                                                                int adsetId,
+                                                                                AdsReportPeriod period) throws SQLException {
+        return database.readTX(db -> AdsCampaignTable.getTargetedProducts(db, campaignId, adsetId, period));
+    }
+
     public AdsCampaignTable.AdsKeywordTableData getAdsKeywords(int campaignId,
                                                                 int adsetId,
                                                                 LocalDate reportDate) throws SQLException {
         return database.readTX(db -> AdsCampaignTable.getKeywords(db, campaignId, adsetId, reportDate));
+    }
+
+    public AdsCampaignTable.AdsKeywordTableData getAdsKeywords(int campaignId,
+                                                                int adsetId,
+                                                                AdsReportPeriod period) throws SQLException {
+        return database.readTX(db -> AdsCampaignTable.getKeywords(db, campaignId, adsetId, period));
     }
 
     /**

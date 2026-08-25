@@ -34,6 +34,12 @@ import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 
 public class AdsCampaignTable {
 
+    /*
+     * Period reports preserve the stored API values for a single day. For longer periods they sum
+     * performance primitives, recompute rates from those totals, and use the latest snapshot in the
+     * period for configuration and descriptive fields.
+     */
+
     public record AdsCampaignColumn(String key, String label, boolean numeric) {
     }
 
@@ -295,6 +301,98 @@ public class AdsCampaignTable {
         return new AdsCampaignTableData(ADS_CAMPAIGN_COLUMNS, rows);
     }
 
+    static AdsCampaignTableData getCampaigns(Connection db, AdsReportPeriod period) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(period);
+        if (period.isSingleDay()) {
+            return getCampaignsByReportDate(db, period.dateFrom());
+        }
+
+        var rows = new ArrayList<AdsCampaignRow>();
+        try (var s = db.prepareStatement("""
+                WITH ranged AS (
+                    SELECT *
+                    FROM ads_campaign
+                    WHERE report_date BETWEEN ? AND ?
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (campaign_id) *
+                    FROM ranged
+                    ORDER BY campaign_id, report_date DESC
+                ),
+                totals AS (
+                    SELECT
+                        campaign_id,
+                        SUM(summary_clicks) AS summary_clicks,
+                        SUM(summary_impressions) AS summary_impressions,
+                        SUM(summary_sales) AS summary_sales,
+                        SUM(summary_sales_count) AS summary_sales_count,
+                        SUM(summary_sold_units) AS summary_sold_units,
+                        SUM(summary_spent) AS summary_spent,
+                        MAX(last_seen_at) AS last_seen_at
+                    FROM ranged
+                    GROUP BY campaign_id
+                )
+                SELECT
+                    l.name,
+                    l.campaign_id,
+                    l.advertiser_id,
+                    l.daily_budget,
+                    l.effective_daily_budget,
+                    l.remaining_daily_budget,
+                    l.status,
+                    l.inherited_status,
+                    l.targeting,
+                    l.date_start,
+                    l.date_end,
+                    l.advertiser_name,
+                    CASE WHEN t.summary_sales IS NULL THEN NULL
+                         WHEN t.summary_sales = 0 THEN 0
+                         ELSE ROUND(t.summary_spent * 100.0 / t.summary_sales, 2)
+                    END AS summary_average_cost_of_sale,
+                    t.summary_clicks,
+                    CASE WHEN t.summary_impressions IS NULL THEN NULL
+                         WHEN t.summary_impressions = 0 THEN 0
+                         ELSE ROUND(t.summary_clicks * 100.0 / t.summary_impressions, 2)
+                    END AS summary_ctr,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_spent / t.summary_clicks, 2)
+                    END AS summary_effective_cpc,
+                    t.summary_impressions,
+                    t.summary_sales,
+                    t.summary_sales_count,
+                    t.summary_sold_units,
+                    t.summary_spent,
+                    l.summary_active_offer_count,
+                    l.summary_offer_count,
+                    l.summary_paused_offer_count,
+                    l.summary_adset_count,
+                    l.summary_keyword_count,
+                    l.summary_product_target_count,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_sales_count * 100.0 / t.summary_clicks, 2)
+                    END AS summary_conversion_rate,
+                    CASE WHEN t.summary_spent IS NULL THEN NULL
+                         WHEN t.summary_spent = 0 THEN 0
+                         ELSE ROUND(t.summary_sales / t.summary_spent, 2)
+                    END AS summary_return_on_advertising_spend,
+                    t.last_seen_at
+                FROM latest AS l
+                JOIN totals AS t USING (campaign_id)
+                ORDER BY lower(l.name) NULLS LAST, l.name NULLS LAST, l.campaign_id
+                """)) {
+            bindPeriod(s, 1, period);
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readCampaignRow(rs));
+                }
+            }
+        }
+        return new AdsCampaignTableData(ADS_CAMPAIGN_COLUMNS, rows);
+    }
+
     static List<LocalDate> getAdsetReportDates(Connection db, int campaignId) throws SQLException {
         Objects.requireNonNull(db);
 
@@ -365,6 +463,98 @@ public class AdsCampaignTable {
         return new AdsAdsetTableData(campaignName, ADS_ADSET_COLUMNS, rows);
     }
 
+    static AdsAdsetTableData getAdsets(Connection db, int campaignId, AdsReportPeriod period) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(period);
+        if (period.isSingleDay()) {
+            return getAdsetsByReportDate(db, campaignId, period.dateFrom());
+        }
+
+        var campaignName = getCampaignName(db, campaignId, period);
+        var rows = new ArrayList<AdsAdsetRow>();
+        try (var s = db.prepareStatement("""
+                WITH ranged AS (
+                    SELECT *
+                    FROM ads_adset
+                    WHERE campaign_id = ?
+                      AND report_date BETWEEN ? AND ?
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (adset_id) *
+                    FROM ranged
+                    ORDER BY adset_id, report_date DESC
+                ),
+                totals AS (
+                    SELECT
+                        campaign_id,
+                        adset_id,
+                        SUM(summary_clicks) AS summary_clicks,
+                        SUM(summary_impressions) AS summary_impressions,
+                        SUM(summary_sales) AS summary_sales,
+                        SUM(summary_sales_count) AS summary_sales_count,
+                        SUM(summary_sold_units) AS summary_sold_units,
+                        SUM(summary_spent) AS summary_spent,
+                        MAX(last_seen_at) AS last_seen_at
+                    FROM ranged
+                    GROUP BY campaign_id, adset_id
+                )
+                SELECT
+                    l.name,
+                    l.campaign_id,
+                    l.adset_id,
+                    l.targeting,
+                    l.bid,
+                    l.status,
+                    l.inherited_status,
+                    l.recommended_bid,
+                    CASE WHEN t.summary_sales IS NULL THEN NULL
+                         WHEN t.summary_sales = 0 THEN 0
+                         ELSE ROUND(t.summary_spent * 100.0 / t.summary_sales, 2)
+                    END AS summary_average_cost_of_sale,
+                    t.summary_clicks,
+                    CASE WHEN t.summary_impressions IS NULL THEN NULL
+                         WHEN t.summary_impressions = 0 THEN 0
+                         ELSE ROUND(t.summary_clicks * 100.0 / t.summary_impressions, 2)
+                    END AS summary_ctr,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_spent / t.summary_clicks, 2)
+                    END AS summary_effective_cpc,
+                    t.summary_impressions,
+                    t.summary_sales,
+                    t.summary_sales_count,
+                    t.summary_sold_units,
+                    t.summary_spent,
+                    l.summary_active_offer_count,
+                    l.summary_offer_count,
+                    l.summary_paused_offer_count,
+                    l.summary_adset_count,
+                    l.summary_keyword_count,
+                    l.summary_product_target_count,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_sales_count * 100.0 / t.summary_clicks, 2)
+                    END AS summary_conversion_rate,
+                    CASE WHEN t.summary_spent IS NULL THEN NULL
+                         WHEN t.summary_spent = 0 THEN 0
+                         ELSE ROUND(t.summary_sales / t.summary_spent, 2)
+                    END AS summary_return_on_advertising_spend,
+                    t.last_seen_at
+                FROM latest AS l
+                JOIN totals AS t USING (campaign_id, adset_id)
+                ORDER BY lower(l.name) NULLS LAST, l.name NULLS LAST, l.adset_id
+                """)) {
+            s.setInt(1, campaignId);
+            bindPeriod(s, 2, period);
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readAdsetRow(rs));
+                }
+            }
+        }
+        return new AdsAdsetTableData(campaignName, ADS_ADSET_COLUMNS, rows);
+    }
+
     static AdsSearchPhraseTableData getSearchPhrases(Connection db,
                                                      int campaignId,
                                                      int adsetId,
@@ -418,6 +608,107 @@ public class AdsCampaignTable {
                 names.campaignName(),
                 names.adsetName(),
                 reportDate.toString(),
+                ADS_SEARCH_PHRASE_COLUMNS,
+                rows
+        );
+    }
+
+    static AdsSearchPhraseTableData getSearchPhrases(Connection db,
+                                                     int campaignId,
+                                                     int adsetId,
+                                                     AdsReportPeriod period) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(period);
+        if (period.isSingleDay()) {
+            return getSearchPhrases(db, campaignId, adsetId, period.dateFrom());
+        }
+
+        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, period);
+        var rows = new ArrayList<AdsSearchPhraseRow>();
+        try (var s = db.prepareStatement("""
+                WITH ranged AS (
+                    SELECT *
+                    FROM ads_search_phrase
+                    WHERE campaign_id = ?
+                      AND adset_id = ?
+                      AND report_date BETWEEN ? AND ?
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (search_phrase_hash, is_aggregated) *
+                    FROM ranged
+                    ORDER BY search_phrase_hash, is_aggregated, report_date DESC
+                ),
+                totals AS (
+                    SELECT
+                        search_phrase_hash,
+                        is_aggregated,
+                        SUM(summary_clicks) AS summary_clicks,
+                        SUM(summary_impressions) AS summary_impressions,
+                        SUM(summary_sales) AS summary_sales,
+                        SUM(summary_sales_count) AS summary_sales_count,
+                        SUM(summary_sold_units) AS summary_sold_units,
+                        SUM(summary_spent) AS summary_spent,
+                        MAX(last_seen_at) AS last_seen_at
+                    FROM ranged
+                    GROUP BY search_phrase_hash, is_aggregated
+                )
+                SELECT
+                    l.search_phrase,
+                    l.is_aggregated,
+                    CASE WHEN t.summary_sales IS NULL THEN NULL
+                         WHEN t.summary_sales = 0 THEN 0
+                         ELSE ROUND(t.summary_spent * 100.0 / t.summary_sales, 2)
+                    END AS summary_average_cost_of_sale,
+                    t.summary_clicks,
+                    CASE WHEN t.summary_impressions IS NULL THEN NULL
+                         WHEN t.summary_impressions = 0 THEN 0
+                         ELSE ROUND(t.summary_clicks * 100.0 / t.summary_impressions, 2)
+                    END AS summary_ctr,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_spent / t.summary_clicks, 2)
+                    END AS summary_effective_cpc,
+                    t.summary_impressions,
+                    t.summary_sales,
+                    t.summary_sales_count,
+                    t.summary_sold_units,
+                    t.summary_spent,
+                    l.summary_active_offer_count,
+                    l.summary_offer_count,
+                    l.summary_paused_offer_count,
+                    l.summary_adset_count,
+                    l.summary_keyword_count,
+                    l.summary_product_target_count,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_sales_count * 100.0 / t.summary_clicks, 2)
+                    END AS summary_conversion_rate,
+                    CASE WHEN t.summary_spent IS NULL THEN NULL
+                         WHEN t.summary_spent = 0 THEN 0
+                         ELSE ROUND(t.summary_sales / t.summary_spent, 2)
+                    END AS summary_return_on_advertising_spend,
+                    t.last_seen_at
+                FROM latest AS l
+                JOIN totals AS t USING (search_phrase_hash, is_aggregated)
+                WHERE COALESCE(t.summary_clicks, 0) > 0
+                   OR COALESCE(t.summary_impressions, 0) > 50
+                ORDER BY t.summary_clicks DESC NULLS LAST,
+                         t.summary_impressions DESC NULLS LAST,
+                         l.search_phrase ASC
+                """)) {
+            s.setInt(1, campaignId);
+            s.setInt(2, adsetId);
+            bindPeriod(s, 3, period);
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readSearchPhraseRow(rs));
+                }
+            }
+        }
+        return new AdsSearchPhraseTableData(
+                names.campaignName(),
+                names.adsetName(),
+                period.label(),
                 ADS_SEARCH_PHRASE_COLUMNS,
                 rows
         );
@@ -480,6 +771,105 @@ public class AdsCampaignTable {
         );
     }
 
+    static AdsTargetedProductTableData getTargetedProducts(Connection db,
+                                                           int campaignId,
+                                                           int adsetId,
+                                                           AdsReportPeriod period) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(period);
+        if (period.isSingleDay()) {
+            return getTargetedProducts(db, campaignId, adsetId, period.dateFrom());
+        }
+
+        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, period);
+        var rows = new ArrayList<AdsTargetedProductRow>();
+        try (var s = db.prepareStatement("""
+                WITH ranged AS (
+                    SELECT *
+                    FROM ads_targeted_product
+                    WHERE campaign_id = ?
+                      AND adset_id = ?
+                      AND report_date BETWEEN ? AND ?
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (doc_id) *
+                    FROM ranged
+                    ORDER BY doc_id, report_date DESC
+                ),
+                totals AS (
+                    SELECT
+                        doc_id,
+                        SUM(clicks) AS clicks,
+                        SUM(impressions) AS impressions,
+                        SUM(sales) AS sales,
+                        SUM(sales_count) AS sales_count,
+                        SUM(sold_units) AS sold_units,
+                        SUM(spent) AS spent,
+                        MAX(last_seen_at) AS last_seen_at
+                    FROM ranged
+                    GROUP BY doc_id
+                )
+                SELECT
+                    l.product_name,
+                    l.price,
+                    l.rating,
+                    l.pnk,
+                    l.category_name,
+                    l.brand_name,
+                    t.clicks,
+                    t.impressions,
+                    CASE WHEN t.impressions IS NULL THEN NULL
+                         WHEN t.impressions = 0 THEN 0
+                         ELSE ROUND(t.clicks * 100.0 / t.impressions, 2)
+                    END AS ctr,
+                    CASE WHEN t.clicks IS NULL THEN NULL
+                         WHEN t.clicks = 0 THEN 0
+                         ELSE ROUND(t.spent / t.clicks, 2)
+                    END AS effective_cpc,
+                    t.spent,
+                    CASE WHEN t.sales IS NULL THEN NULL
+                         WHEN t.sales = 0 THEN 0
+                         ELSE ROUND(t.spent * 100.0 / t.sales, 2)
+                    END AS average_cost_of_sale,
+                    t.sales,
+                    t.sold_units,
+                    t.sales_count,
+                    l.image_url,
+                    CASE WHEN t.spent IS NULL THEN NULL
+                         WHEN t.spent = 0 THEN 0
+                         ELSE ROUND(t.sales / t.spent, 2)
+                    END AS return_on_advertising_spend,
+                    CASE WHEN t.clicks IS NULL THEN NULL
+                         WHEN t.clicks = 0 THEN 0
+                         ELSE ROUND(t.sales_count * 100.0 / t.clicks, 2)
+                    END AS conversion_rate,
+                    t.last_seen_at
+                FROM latest AS l
+                JOIN totals AS t USING (doc_id)
+                WHERE COALESCE(t.clicks, 0) > 0
+                   OR COALESCE(t.impressions, 0) > 50
+                ORDER BY t.clicks DESC NULLS LAST,
+                         t.impressions DESC NULLS LAST,
+                         l.product_name ASC NULLS LAST
+                """)) {
+            s.setInt(1, campaignId);
+            s.setInt(2, adsetId);
+            bindPeriod(s, 3, period);
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readTargetedProductRow(rs));
+                }
+            }
+        }
+        return new AdsTargetedProductTableData(
+                names.campaignName(),
+                names.adsetName(),
+                period.label(),
+                ADS_TARGETED_PRODUCT_COLUMNS,
+                rows
+        );
+    }
+
     static AdsKeywordTableData getKeywords(Connection db,
                                            int campaignId,
                                            int adsetId,
@@ -536,6 +926,108 @@ public class AdsCampaignTable {
                 names.campaignName(),
                 names.adsetName(),
                 reportDate.toString(),
+                ADS_KEYWORD_COLUMNS,
+                rows
+        );
+    }
+
+    static AdsKeywordTableData getKeywords(Connection db,
+                                           int campaignId,
+                                           int adsetId,
+                                           AdsReportPeriod period) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(period);
+        if (period.isSingleDay()) {
+            return getKeywords(db, campaignId, adsetId, period.dateFrom());
+        }
+
+        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, period);
+        var rows = new ArrayList<AdsKeywordRow>();
+        try (var s = db.prepareStatement("""
+                WITH ranged AS (
+                    SELECT *
+                    FROM ads_keyword
+                    WHERE campaign_id = ?
+                      AND adset_id = ?
+                      AND report_date BETWEEN ? AND ?
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (keyword_id) *
+                    FROM ranged
+                    ORDER BY keyword_id, report_date DESC
+                ),
+                totals AS (
+                    SELECT
+                        keyword_id,
+                        SUM(summary_clicks) AS summary_clicks,
+                        SUM(summary_impressions) AS summary_impressions,
+                        SUM(summary_sales) AS summary_sales,
+                        SUM(summary_sales_count) AS summary_sales_count,
+                        SUM(summary_sold_units) AS summary_sold_units,
+                        SUM(summary_spent) AS summary_spent,
+                        MAX(last_seen_at) AS last_seen_at
+                    FROM ranged
+                    GROUP BY keyword_id
+                )
+                SELECT
+                    l.keyword,
+                    l.match_type,
+                    l.status,
+                    l.bid,
+                    l.inherited_status,
+                    l.inherited_bid,
+                    CASE WHEN t.summary_sales IS NULL THEN NULL
+                         WHEN t.summary_sales = 0 THEN 0
+                         ELSE ROUND(t.summary_spent * 100.0 / t.summary_sales, 2)
+                    END AS summary_average_cost_of_sale,
+                    t.summary_clicks,
+                    CASE WHEN t.summary_impressions IS NULL THEN NULL
+                         WHEN t.summary_impressions = 0 THEN 0
+                         ELSE ROUND(t.summary_clicks * 100.0 / t.summary_impressions, 2)
+                    END AS summary_ctr,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_spent / t.summary_clicks, 2)
+                    END AS summary_effective_cpc,
+                    t.summary_impressions,
+                    t.summary_sales,
+                    t.summary_sales_count,
+                    t.summary_sold_units,
+                    t.summary_spent,
+                    l.summary_active_offer_count,
+                    l.summary_offer_count,
+                    l.summary_paused_offer_count,
+                    l.summary_adset_count,
+                    l.summary_keyword_count,
+                    l.summary_product_target_count,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_sales_count * 100.0 / t.summary_clicks, 2)
+                    END AS summary_conversion_rate,
+                    CASE WHEN t.summary_spent IS NULL THEN NULL
+                         WHEN t.summary_spent = 0 THEN 0
+                         ELSE ROUND(t.summary_sales / t.summary_spent, 2)
+                    END AS summary_return_on_advertising_spend,
+                    t.last_seen_at
+                FROM latest AS l
+                JOIN totals AS t USING (keyword_id)
+                ORDER BY t.summary_clicks DESC NULLS LAST,
+                         t.summary_impressions DESC NULLS LAST,
+                         l.keyword ASC
+                """)) {
+            s.setInt(1, campaignId);
+            s.setInt(2, adsetId);
+            bindPeriod(s, 3, period);
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readKeywordRow(rs));
+                }
+            }
+        }
+        return new AdsKeywordTableData(
+                names.campaignName(),
+                names.adsetName(),
+                period.label(),
                 ADS_KEYWORD_COLUMNS,
                 rows
         );
@@ -1133,6 +1625,26 @@ public class AdsCampaignTable {
         return "campaign ID " + campaignId;
     }
 
+    private static String getCampaignName(Connection db, int campaignId, AdsReportPeriod period) throws SQLException {
+        try (var s = db.prepareStatement("""
+                SELECT name
+                FROM ads_campaign
+                WHERE campaign_id = ?
+                  AND report_date BETWEEN ? AND ?
+                ORDER BY report_date DESC
+                LIMIT 1
+                """)) {
+            s.setInt(1, campaignId);
+            bindPeriod(s, 2, period);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return stringOrFallback(rs.getString("name"), "campaign ID " + campaignId);
+                }
+            }
+        }
+        return "campaign ID " + campaignId;
+    }
+
     private static AdsNames getCampaignAndAdsetNames(Connection db,
                                                      int campaignId,
                                                      int adsetId,
@@ -1151,6 +1663,43 @@ public class AdsCampaignTable {
             s.setInt(1, adsetId);
             s.setInt(2, campaignId);
             s.setDate(3, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return new AdsNames(
+                            stringOrFallback(rs.getString("campaign_name"), "campaign ID " + campaignId),
+                            stringOrFallback(rs.getString("adset_name"), "adset ID " + adsetId)
+                    );
+                }
+            }
+        }
+        return new AdsNames("campaign ID " + campaignId, "adset ID " + adsetId);
+    }
+
+    private static AdsNames getCampaignAndAdsetNames(Connection db,
+                                                     int campaignId,
+                                                     int adsetId,
+                                                     AdsReportPeriod period) throws SQLException {
+        try (var s = db.prepareStatement("""
+                SELECT
+                    (SELECT c.name
+                     FROM ads_campaign AS c
+                     WHERE c.campaign_id = ?
+                       AND c.report_date BETWEEN ? AND ?
+                     ORDER BY c.report_date DESC
+                     LIMIT 1) AS campaign_name,
+                    (SELECT a.name
+                     FROM ads_adset AS a
+                     WHERE a.campaign_id = ?
+                       AND a.adset_id = ?
+                       AND a.report_date BETWEEN ? AND ?
+                     ORDER BY a.report_date DESC
+                     LIMIT 1) AS adset_name
+                """)) {
+            s.setInt(1, campaignId);
+            bindPeriod(s, 2, period);
+            s.setInt(4, campaignId);
+            s.setInt(5, adsetId);
+            bindPeriod(s, 6, period);
             try (var rs = s.executeQuery()) {
                 if (rs.next()) {
                     return new AdsNames(
@@ -1188,6 +1737,11 @@ public class AdsCampaignTable {
 
     private static void setDate(PreparedStatement s, int index, LocalDate value) throws SQLException {
         s.setDate(index, Date.valueOf(value));
+    }
+
+    private static void bindPeriod(PreparedStatement s, int startIndex, AdsReportPeriod period) throws SQLException {
+        s.setDate(startIndex, Date.valueOf(period.dateFrom()));
+        s.setDate(startIndex + 1, Date.valueOf(period.dateTo()));
     }
 
     private static void setTimestamp(PreparedStatement s, int index, LocalDateTime value) throws SQLException {

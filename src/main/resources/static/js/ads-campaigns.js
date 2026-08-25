@@ -1,44 +1,25 @@
 import {fetchJSON} from './common.js';
 import {bindTableCsvDownload} from './table-common.js';
+import {
+  adsPeriodFilePart,
+  adsPeriodPhrase,
+  adsPeriodSearchParams,
+  bindAdsPeriodControls,
+  isValidAdsPeriod,
+  replaceAdsPeriodInUrl,
+  resolveAdsPeriod
+} from './ads-period.js';
 
-const DATE_SELECT = document.getElementById('adsCampaignDateSelect');
 const STATUS = document.getElementById('adsCampaignsStatus');
 const HEAD = document.getElementById('adsCampaignsHead');
 const BODY = document.getElementById('adsCampaignsBody');
 
 let currentColumns = [];
+let activePeriod = null;
 
 function setStatus(message) {
   if (STATUS) {
     STATUS.textContent = message || '';
-  }
-}
-
-function selectedDateFromUrl(dates) {
-  const requestedDate = new URLSearchParams(window.location.search).get('date');
-  if (requestedDate && dates.includes(requestedDate)) {
-    return requestedDate;
-  }
-  return dates[0] || '';
-}
-
-function setDateInUrl(reportDate) {
-  const url = new URL(window.location.href);
-  if (reportDate) {
-    url.searchParams.set('date', reportDate);
-  } else {
-    url.searchParams.delete('date');
-  }
-  window.history.replaceState(null, '', url);
-}
-
-function populateDateSelect(dates) {
-  DATE_SELECT.innerHTML = '';
-  for (const reportDate of dates) {
-    const option = document.createElement('option');
-    option.value = reportDate;
-    option.textContent = reportDate;
-    DATE_SELECT.appendChild(option);
   }
 }
 
@@ -80,9 +61,10 @@ function appendCell(tr, row, column, index) {
     td.classList.add('sticky-col-1', 'campaign-name-cell');
     const campaignId = String(row.campaignId ?? values.campaign_id ?? '');
     td.dataset.campaignId = campaignId;
-    if (campaignId) {
+    if (campaignId && isValidAdsPeriod(activePeriod)) {
       const link = document.createElement('a');
-      link.href = `/private/ads-adsets?campaignId=${encodeURIComponent(campaignId)}&date=${encodeURIComponent(DATE_SELECT.value || '')}`;
+      const params = adsPeriodSearchParams(activePeriod, {campaignId});
+      link.href = `/private/ads-adsets?${params.toString()}`;
       link.textContent = displayText;
       td.appendChild(link);
     } else {
@@ -94,10 +76,10 @@ function appendCell(tr, row, column, index) {
   tr.appendChild(td);
 }
 
-function renderRows(rows) {
+function renderRows(rows, period) {
   BODY.innerHTML = '';
   if (!rows.length) {
-    renderMessageRow('No campaigns found for this report date.');
+    renderMessageRow(`No campaigns found ${adsPeriodPhrase(period)}.`);
     return;
   }
 
@@ -110,8 +92,8 @@ function renderRows(rows) {
   BODY.appendChild(fragment);
 }
 
-async function loadCampaigns(reportDate) {
-  if (!reportDate) {
+async function loadCampaigns(period) {
+  if (!isValidAdsPeriod(period)) {
     currentColumns = [];
     HEAD.innerHTML = '';
     renderMessageRow('No campaign report dates found.');
@@ -119,45 +101,53 @@ async function loadCampaigns(reportDate) {
     return;
   }
 
-  setStatus('Loading campaigns...');
-  const params = new URLSearchParams({date: reportDate});
+  const periodPhrase = adsPeriodPhrase(period);
+  setStatus(`Loading campaigns ${periodPhrase}...`);
+  const params = adsPeriodSearchParams(period);
   const data = await fetchJSON(`/app/adsCampaigns?${params.toString()}`);
   currentColumns = Array.isArray(data.columns) ? data.columns : [];
   const rows = Array.isArray(data.rows) ? data.rows : [];
   renderHeader(currentColumns);
-  renderRows(rows);
-  setStatus(`${rows.length} campaign${rows.length === 1 ? '' : 's'} for ${reportDate}.`);
+  renderRows(rows, period);
+  setStatus(`${rows.length} campaign${rows.length === 1 ? '' : 's'} ${periodPhrase}.`);
 }
 
 async function init() {
   const dates = await fetchJSON('/app/adsCampaignDates');
   const reportDates = Array.isArray(dates) ? dates : [];
-  populateDateSelect(reportDates);
+  activePeriod = resolveAdsPeriod(window.location.search, reportDates);
+  replaceAdsPeriodInUrl(activePeriod);
 
-  const selectedDate = selectedDateFromUrl(reportDates);
-  if (selectedDate) {
-    DATE_SELECT.value = selectedDate;
-    setDateInUrl(selectedDate);
-  }
-
-  DATE_SELECT.addEventListener('change', () => {
-    const reportDate = DATE_SELECT.value;
-    setDateInUrl(reportDate);
-    loadCampaigns(reportDate).catch((e) => {
-      HEAD.innerHTML = '';
-      renderMessageRow('Failed to load campaigns.');
-      setStatus('');
-      console.error(e);
-    });
+  bindAdsPeriodControls({
+    periodSelectId: 'adsCampaignPeriodSelect',
+    dateSelectId: 'adsCampaignDateSelect',
+    dateControlsId: 'adsCampaignDateControls',
+    dateLabelId: 'adsCampaignDateLabel',
+    customControlsId: 'adsCampaignCustomControls',
+    dateFromInputId: 'adsCampaignDateFromInput',
+    dateToInputId: 'adsCampaignDateToInput',
+    applyButtonId: 'adsCampaignApplyRangeBtn',
+    reportDates,
+    initialPeriod: activePeriod,
+    onApply: (period) => {
+      activePeriod = period;
+      replaceAdsPeriodInUrl(period);
+      loadCampaigns(period).catch((e) => {
+        HEAD.innerHTML = '';
+        renderMessageRow('Failed to load campaigns.');
+        setStatus('');
+        console.error(e);
+      });
+    }
   });
 
   bindTableCsvDownload({
     buttonId: 'downloadCsvBtn',
     tableId: 'adsCampaignsTable',
-    fileNameBuilder: ({datePart}) => `ads-campaigns-${DATE_SELECT.value || datePart}.csv`
+    fileNameBuilder: ({datePart}) => `ads-campaigns-${adsPeriodFilePart(activePeriod, datePart)}.csv`
   });
 
-  await loadCampaigns(selectedDate);
+  await loadCampaigns(activePeriod);
 }
 
 init().catch((e) => {

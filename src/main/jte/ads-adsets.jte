@@ -5,8 +5,24 @@
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
     <div class="page-actions ads-campaigns-actions">
         <div class="ads-campaigns-filter-controls">
-            <label for="adsAdsetDateSelect">Report date:</label>
-            <select id="adsAdsetDateSelect" class="date-filter-select"></select>
+            <label for="adsAdsetPeriodSelect">Period:</label>
+            <select id="adsAdsetPeriodSelect" class="ads-period-select">
+                <option value="day">Day</option>
+                <option value="last7">Last 7 days</option>
+                <option value="last30">Last 30 days</option>
+                <option value="custom">Custom</option>
+            </select>
+            <span id="adsAdsetDateControls" class="ads-period-anchor-controls">
+                <label id="adsAdsetDateLabel" for="adsAdsetDateSelect">Report date:</label>
+                <select id="adsAdsetDateSelect" class="date-filter-select"></select>
+            </span>
+            <span id="adsAdsetCustomControls" class="ads-period-custom-controls" hidden>
+                <label for="adsAdsetDateFromInput">From:</label>
+                <input id="adsAdsetDateFromInput" class="ads-period-date-input" type="date">
+                <label for="adsAdsetDateToInput">To:</label>
+                <input id="adsAdsetDateToInput" class="ads-period-date-input" type="date">
+                <button id="adsAdsetApplyRangeBtn" type="button">Apply</button>
+            </span>
         </div>
         <button id="downloadCsvBtn" type="button">Download CSV</button>
     </div>

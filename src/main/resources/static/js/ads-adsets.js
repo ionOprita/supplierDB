@@ -1,13 +1,22 @@
 import {fetchJSON} from './common.js';
 import {bindTableCsvDownload} from './table-common.js';
+import {
+  adsPeriodFilePart,
+  adsPeriodPhrase,
+  adsPeriodSearchParams,
+  bindAdsPeriodControls,
+  isValidAdsPeriod,
+  replaceAdsPeriodInUrl,
+  resolveAdsPeriod
+} from './ads-period.js';
 
 const TITLE = document.getElementById('title');
-const DATE_SELECT = document.getElementById('adsAdsetDateSelect');
 const STATUS = document.getElementById('adsAdsetsStatus');
 const HEAD = document.getElementById('adsAdsetsHead');
 const BODY = document.getElementById('adsAdsetsBody');
 
 let currentColumns = [];
+let activePeriod = null;
 
 function setStatus(message) {
   if (STATUS) {
@@ -18,37 +27,8 @@ function setStatus(message) {
 function paramsFromUrl() {
   const params = new URLSearchParams(window.location.search);
   return {
-    campaignId: params.get('campaignId') || '',
-    requestedDate: params.get('date') || ''
+    campaignId: params.get('campaignId') || ''
   };
-}
-
-function setDateInUrl(campaignId, reportDate) {
-  const url = new URL(window.location.href);
-  url.searchParams.set('campaignId', campaignId);
-  if (reportDate) {
-    url.searchParams.set('date', reportDate);
-  } else {
-    url.searchParams.delete('date');
-  }
-  window.history.replaceState(null, '', url);
-}
-
-function selectedDate(reportDates, requestedDate) {
-  if (requestedDate && reportDates.includes(requestedDate)) {
-    return requestedDate;
-  }
-  return reportDates[0] || '';
-}
-
-function populateDateSelect(dates) {
-  DATE_SELECT.innerHTML = '';
-  for (const reportDate of dates) {
-    const option = document.createElement('option');
-    option.value = reportDate;
-    option.textContent = reportDate;
-    DATE_SELECT.appendChild(option);
-  }
 }
 
 function renderHeader(columns) {
@@ -106,41 +86,44 @@ function appendCell(tr, row, column, index) {
   tr.appendChild(td);
 }
 
-function appendPhrasesCell(tr, row, reportDate) {
+function appendPhrasesCell(tr, row, period) {
   const td = document.createElement('td');
   const campaignId = String(row.campaignId ?? row.values?.campaign_id ?? '');
   const adsetId = String(row.adsetId ?? row.values?.adset_id ?? '');
-  if (campaignId && adsetId && reportDate) {
+  if (campaignId && adsetId && isValidAdsPeriod(period)) {
     const link = document.createElement('a');
-    link.href = `/private/ads-search-phrases?campaignId=${encodeURIComponent(campaignId)}&adsetId=${encodeURIComponent(adsetId)}&date=${encodeURIComponent(reportDate)}`;
+    const params = adsPeriodSearchParams(period, {campaignId, adsetId});
+    link.href = `/private/ads-search-phrases?${params.toString()}`;
     link.textContent = 'phrases';
     td.appendChild(link);
   }
   tr.appendChild(td);
 }
 
-function appendProductsCell(tr, row, reportDate) {
+function appendProductsCell(tr, row, period) {
   const td = document.createElement('td');
   const campaignId = String(row.campaignId ?? row.values?.campaign_id ?? '');
   const adsetId = String(row.adsetId ?? row.values?.adset_id ?? '');
-  if (campaignId && adsetId && reportDate) {
+  if (campaignId && adsetId && isValidAdsPeriod(period)) {
     const link = document.createElement('a');
-    link.href = `/private/ads-targeted-products?campaignId=${encodeURIComponent(campaignId)}&adsetId=${encodeURIComponent(adsetId)}&date=${encodeURIComponent(reportDate)}`;
+    const params = adsPeriodSearchParams(period, {campaignId, adsetId});
+    link.href = `/private/ads-targeted-products?${params.toString()}`;
     link.textContent = 'products';
     td.appendChild(link);
   }
   tr.appendChild(td);
 }
 
-function appendKeywordsCell(tr, row, reportDate, negativeOnly = false) {
+function appendKeywordsCell(tr, row, period, negativeOnly = false) {
   const td = document.createElement('td');
   const campaignId = String(row.campaignId ?? row.values?.campaign_id ?? '');
   const adsetId = String(row.adsetId ?? row.values?.adset_id ?? '');
-  if (campaignId && adsetId && reportDate) {
-    const params = new URLSearchParams({campaignId, adsetId, date: reportDate});
-    if (negativeOnly) {
-      params.set('negative', 'true');
-    }
+  if (campaignId && adsetId && isValidAdsPeriod(period)) {
+    const params = adsPeriodSearchParams(period, {
+      campaignId,
+      adsetId,
+      negative: negativeOnly ? 'true' : null
+    });
     const link = document.createElement('a');
     link.href = `/private/ads-keywords?${params.toString()}`;
     link.textContent = negativeOnly ? 'negative' : 'keywords';
@@ -149,10 +132,10 @@ function appendKeywordsCell(tr, row, reportDate, negativeOnly = false) {
   tr.appendChild(td);
 }
 
-function renderRows(rows, reportDate) {
+function renderRows(rows, period) {
   BODY.innerHTML = '';
   if (!rows.length) {
-    renderMessageRow('No adsets found for this campaign and report date.');
+    renderMessageRow(`No adsets found for this campaign ${adsPeriodPhrase(period)}.`);
     return;
   }
 
@@ -162,10 +145,10 @@ function renderRows(rows, reportDate) {
     currentColumns.forEach((column, index) => {
       appendCell(tr, row, column, index);
       if (index === 0) {
-        appendPhrasesCell(tr, row, reportDate);
-        appendProductsCell(tr, row, reportDate);
-        appendKeywordsCell(tr, row, reportDate);
-        appendKeywordsCell(tr, row, reportDate, true);
+        appendPhrasesCell(tr, row, period);
+        appendProductsCell(tr, row, period);
+        appendKeywordsCell(tr, row, period);
+        appendKeywordsCell(tr, row, period, true);
       }
     });
     fragment.appendChild(tr);
@@ -181,7 +164,7 @@ function setPageTitle(campaignName) {
   document.title = title;
 }
 
-async function loadAdsets(campaignId, reportDate) {
+async function loadAdsets(campaignId, period) {
   if (!campaignId) {
     currentColumns = [];
     HEAD.innerHTML = '';
@@ -189,7 +172,7 @@ async function loadAdsets(campaignId, reportDate) {
     setStatus('');
     return;
   }
-  if (!reportDate) {
+  if (!isValidAdsPeriod(period)) {
     currentColumns = [];
     HEAD.innerHTML = '';
     renderMessageRow('No report dates found for this campaign.');
@@ -197,19 +180,20 @@ async function loadAdsets(campaignId, reportDate) {
     return;
   }
 
-  setStatus(`Loading adsets for campaign ID ${campaignId}...`);
-  const params = new URLSearchParams({campaignId, date: reportDate});
+  const periodPhrase = adsPeriodPhrase(period);
+  setStatus(`Loading adsets for campaign ID ${campaignId} ${periodPhrase}...`);
+  const params = adsPeriodSearchParams(period, {campaignId});
   const data = await fetchJSON(`/app/adsAdsets?${params.toString()}`);
   setPageTitle(data.campaignName);
   currentColumns = Array.isArray(data.columns) ? data.columns : [];
   const rows = Array.isArray(data.rows) ? data.rows : [];
   renderHeader(currentColumns);
-  renderRows(rows, reportDate);
-  setStatus(`${rows.length} adset${rows.length === 1 ? '' : 's'} on ${reportDate}.`);
+  renderRows(rows, period);
+  setStatus(`${rows.length} adset${rows.length === 1 ? '' : 's'} ${periodPhrase}.`);
 }
 
 async function init() {
-  const {campaignId, requestedDate} = paramsFromUrl();
+  const {campaignId} = paramsFromUrl();
   if (!campaignId) {
     currentColumns = [];
     HEAD.innerHTML = '';
@@ -221,32 +205,39 @@ async function init() {
   const dateParams = new URLSearchParams({campaignId});
   const dates = await fetchJSON(`/app/adsAdsetDates?${dateParams.toString()}`);
   const reportDates = Array.isArray(dates) ? dates : [];
-  populateDateSelect(reportDates);
+  activePeriod = resolveAdsPeriod(window.location.search, reportDates);
+  replaceAdsPeriodInUrl(activePeriod, {campaignId});
 
-  const reportDate = selectedDate(reportDates, requestedDate);
-  if (reportDate) {
-    DATE_SELECT.value = reportDate;
-    setDateInUrl(campaignId, reportDate);
-  }
-
-  DATE_SELECT.addEventListener('change', () => {
-    const nextDate = DATE_SELECT.value;
-    setDateInUrl(campaignId, nextDate);
-    loadAdsets(campaignId, nextDate).catch((e) => {
-      HEAD.innerHTML = '';
-      renderMessageRow('Failed to load adsets.');
-      setStatus('');
-      console.error(e);
-    });
+  bindAdsPeriodControls({
+    periodSelectId: 'adsAdsetPeriodSelect',
+    dateSelectId: 'adsAdsetDateSelect',
+    dateControlsId: 'adsAdsetDateControls',
+    dateLabelId: 'adsAdsetDateLabel',
+    customControlsId: 'adsAdsetCustomControls',
+    dateFromInputId: 'adsAdsetDateFromInput',
+    dateToInputId: 'adsAdsetDateToInput',
+    applyButtonId: 'adsAdsetApplyRangeBtn',
+    reportDates,
+    initialPeriod: activePeriod,
+    onApply: (period) => {
+      activePeriod = period;
+      replaceAdsPeriodInUrl(period, {campaignId});
+      loadAdsets(campaignId, period).catch((e) => {
+        HEAD.innerHTML = '';
+        renderMessageRow('Failed to load adsets.');
+        setStatus('');
+        console.error(e);
+      });
+    }
   });
 
   bindTableCsvDownload({
     buttonId: 'downloadCsvBtn',
     tableId: 'adsAdsetsTable',
-    fileNameBuilder: ({datePart}) => `ads-adsets-${campaignId}-${DATE_SELECT.value || datePart}.csv`
+    fileNameBuilder: ({datePart}) => `ads-adsets-${campaignId}-${adsPeriodFilePart(activePeriod, datePart)}.csv`
   });
 
-  await loadAdsets(campaignId, reportDate);
+  await loadAdsets(campaignId, activePeriod);
 }
 
 init().catch((e) => {
