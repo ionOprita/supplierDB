@@ -8,9 +8,9 @@ import tools.jackson.databind.ValueDeserializer;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.module.SimpleModule;
 
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.math.BigDecimal;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -28,9 +28,7 @@ class AdsResponseDeserializationTest {
 
     @Test
     void deserializesCampaignAdSetsResponse() throws Exception {
-        var json = Files.readString(Path.of("AdsJSON", "adsCampaignAdSets.json"));
-
-        var response = objectMapper.readValue(json, AdsCampaignAdSetsResponse.class);
+        var response = readResponse("adsCampaignAdSets.json", AdsCampaignAdSetsResponse.class);
 
         assertEquals(1, response.meta.totalCount());
         assertEquals(505390, response.data.id());
@@ -45,9 +43,7 @@ class AdsResponseDeserializationTest {
 
     @Test
     void deserializesCampaignPhrasesResponse() throws Exception {
-        var json = Files.readString(Path.of("AdsJSON", "adsCampaignPhrases.json"));
-
-        var response = objectMapper.readValue(json, AdsCampaignPhrasesResponse.class);
+        var response = readResponse("adsCampaignPhrases.json", AdsCampaignPhrasesResponse.class);
 
         assertEquals(3779, response.meta.totalCount());
         assertEquals(100, response.data.searchPhrases().size());
@@ -57,9 +53,7 @@ class AdsResponseDeserializationTest {
 
     @Test
     void deserializesCampaignTargetedProductsResponse() throws Exception {
-        var json = Files.readString(Path.of("AdsJSON", "adsCampaignTargetedProducts.json"));
-
-        var response = objectMapper.readValue(json, AdsCampaignTargetedProductsResponse.class);
+        var response = readResponse("adsCampaignTargetedProducts.json", AdsCampaignTargetedProductsResponse.class);
 
         assertEquals(4192, response.meta.totalCount());
         assertEquals(100, response.data.docs().size());
@@ -69,9 +63,7 @@ class AdsResponseDeserializationTest {
 
     @Test
     void deserializesCampaignKeywordsResponse() throws Exception {
-        var json = Files.readString(Path.of("AdsJSON", "adsCampaignKeywords.json"));
-
-        var response = objectMapper.readValue(json, AdsCampaignKeywordsResponse.class);
+        var response = readResponse("adsCampaignKeywords.json", AdsCampaignKeywordsResponse.class);
 
         assertEquals(2, response.meta.totalCount());
         assertEquals(new BigDecimal("12.5"), response.data.summary().averageCostOfSale());
@@ -87,6 +79,15 @@ class AdsResponseDeserializationTest {
         assertEquals(2001, keyword.adset().id());
         assertEquals("Example keyword adset", keyword.adset().name());
         assertEquals(3, keyword.summary().clicks());
+    }
+
+    private static <T> T readResponse(String resourceName, Class<T> responseType) throws IOException {
+        try (var resource = AdsResponseDeserializationTest.class.getResourceAsStream(resourceName)) {
+            if (resource == null) {
+                throw new FileNotFoundException("Test resource not found: " + resourceName);
+            }
+            return objectMapper.readValue(resource, responseType);
+        }
     }
 
     private static class LocalDateTimeDeserializer extends ValueDeserializer<LocalDateTime> {

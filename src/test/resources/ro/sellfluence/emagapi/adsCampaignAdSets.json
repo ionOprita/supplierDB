@@ -1,0 +1,69 @@
+{
+  "meta": {
+    "totalCount": 1,
+    "page": 1,
+    "perPage": 10,
+    "pageCount": 1
+  },
+  "data": {
+    "summary": {
+      "averageCostOfSale": 105.96,
+      "clicks": 196,
+      "ctr": 2.1,
+      "effectiveCpc": 6.39,
+      "impressions": 9345,
+      "sales": 1181.74,
+      "salesCount": 9,
+      "soldUnits": 9,
+      "spent": 1252.14,
+      "activeOfferCount": 1,
+      "offerCount": 1,
+      "pausedOfferCount": 0,
+      "keywordCount": 2,
+      "productTargetCount": 0,
+      "conversionRate": 4.59,
+      "returnOnAdvertisingSpend": 0.94
+    },
+    "adsets": [
+      {
+        "id": 557688,
+        "name": "DDHSVQMBM",
+        "targeting": "keywords",
+        "bid": 0.35,
+        "status": "active",
+        "inheritedStatus": "active",
+        "recommendedBid": {
+          "bid": 3.62
+        },
+        "summary": {
+          "averageCostOfSale": 105.96,
+          "clicks": 196,
+          "ctr": 2.1,
+          "effectiveCpc": 6.39,
+          "impressions": 9345,
+          "sales": 1181.74,
+          "salesCount": 9,
+          "soldUnits": 9,
+          "spent": 1252.14,
+          "activeOfferCount": 1,
+          "offerCount": 1,
+          "pausedOfferCount": 0,
+          "keywordCount": 2,
+          "productTargetCount": null,
+          "conversionRate": 4.59,
+          "returnOnAdvertisingSpend": 0.94
+        }
+      }
+    ],
+    "id": 505390,
+    "name": "KW exact - masina de tuns | Trimmer 2.0 | DDHSVQMBM",
+    "advertiserId": 128025,
+    "dateStart": "2026-02-15 00:00:00",
+    "dateEnd": null,
+    "dailyBudget": 1000,
+    "remainingDailyBudget": 976.12,
+    "status": "active",
+    "inheritedStatus": "active",
+    "targeting": "manual"
+  }
+}
