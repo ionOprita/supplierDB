@@ -174,6 +174,7 @@ function Set-JavaTempDirectory {
 function Set-ApplicationEnvironment {
     Ensure-Directory $CertificateDirectory
     Ensure-Directory $AcmeChallengeWebRoot
+    Ensure-Directory $LogDirectory
 
     $env:PORT = [string] $LocalHttpPort
     $env:PORT_SECURE = [string] $LocalHttpsPort
@@ -183,6 +184,7 @@ function Set-ApplicationEnvironment {
     $env:TLS_KEYSTORE_PATH = $CertificatePath
     $env:TLS_KEYSTORE_PASSWORD_FILE = $CertificatePasswordFile
     $env:ACME_CHALLENGE_WEBROOT = $AcmeChallengeWebRoot
+    $env:LOG_DIRECTORY = (Resolve-Path -LiteralPath $LogDirectory).Path
 }
 
 function Sync-Repository {

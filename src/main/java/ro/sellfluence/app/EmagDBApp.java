@@ -92,7 +92,7 @@ public class EmagDBApp {
         );
         time(
                 "Fetch orders that are not finalised in the database",
-                () -> repeatUntilDone(() -> fetchOrdersNotFinalizedInDB(mirrorDB))
+                () -> repeatUntilDone(() -> fetchOrdersNotFinalizedInDB(mirrorDB, false))
         );
         time(
                 "Fetch storno orders",
@@ -108,7 +108,7 @@ public class EmagDBApp {
         );
     }
 
-    private static Boolean fetchRMAs(EmagMirrorDB mirrorDB) {
+    public static Boolean fetchRMAs(EmagMirrorDB mirrorDB) {
         for (String emagAccount : emagAccounts) {
             System.out.println(emagAccount);
             try {
@@ -120,7 +120,7 @@ public class EmagDBApp {
         return true;
     }
 
-    private static boolean fetchStornoOrders(EmagMirrorDB mirrorDB) {
+    public static boolean fetchStornoOrders(EmagMirrorDB mirrorDB) {
         for (String emagAccount : emagAccounts) {
             System.out.println(emagAccount);
             try {
@@ -137,7 +137,7 @@ public class EmagDBApp {
      *
      * @param mirrorDB to which to store the orders.
      */
-    private static boolean fetchNewOrders(EmagMirrorDB mirrorDB) {
+    public static boolean fetchNewOrders(EmagMirrorDB mirrorDB) {
         for (String emagAccount : emagAccounts) {
             try {
                 var startOfFetch = LocalDateTime.now();
@@ -160,9 +160,9 @@ public class EmagDBApp {
         return true;
     }
 
-    private static boolean fetchOrdersNotFinalizedInDB(EmagMirrorDB mirrorDB) {
+    public static boolean fetchOrdersNotFinalizedInDB(EmagMirrorDB mirrorDB, boolean newOnly) {
         try {
-            var ordersInProgress = mirrorDB.readOrderIdForOpenOrdersByVendor();
+            var ordersInProgress = mirrorDB.readOrderIdForOpenOrdersByVendor(newOnly);
             for (String emagAccount : emagAccounts) {
                 System.out.println(emagAccount);
                 List<String> orderIds = ordersInProgress.get(emagAccount);

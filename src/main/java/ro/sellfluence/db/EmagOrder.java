@@ -489,7 +489,8 @@ public class EmagOrder {
                             Arrays.asList(rs.getString("details").split("\\n")),
                             Arrays.asList(rs.getString("recycle_warranties").split("\\n")),
                             attachments,
-                            rs.getString("serial_numbers"));
+                            rs.getString("serial_numbers"),
+                            null);
                 }
                 if (rs.next()) {
                     throw new RuntimeException("More than one product with the same ID " + productId);
@@ -530,7 +531,7 @@ public class EmagOrder {
                             Arrays.asList(rs.getString("details").split("\\n")),
                             Arrays.asList(rs.getString("recycle_warranties").split("\\n")),
                             null,
-                            rs.getString("serial_numbers"));
+                            rs.getString("serial_numbers"),null);
                     productsBySurrogate
                             .computeIfAbsent(
                                     rs.getInt("emag_order_surrogate_id"),

@@ -15,6 +15,7 @@ import com.yubico.webauthn.data.PublicKeyCredentialCreationOptions;
 import com.yubico.webauthn.data.ResidentKeyRequirement;
 import com.yubico.webauthn.data.UserIdentity;
 import com.yubico.webauthn.data.UserVerificationRequirement;
+import com.yubico.webauthn.exception.AssertionFailedException;
 import io.javalin.Javalin;
 import io.javalin.community.ssl.SslPlugin;
 import io.javalin.config.JavalinConfig;
@@ -22,6 +23,7 @@ import io.javalin.http.Context;
 import io.javalin.rendering.template.JavalinJte;
 import io.javalin.router.JavalinDefaultRoutingApi;
 import io.javalin.validation.Validator;
+import org.jspecify.annotations.Nullable;
 import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
 import ro.sellfluence.api.WebAuthnServer;
@@ -42,13 +44,17 @@ import ro.sellfluence.support.Logs;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -65,6 +71,7 @@ import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -84,7 +91,6 @@ import static ro.sellfluence.support.UsefulMethods.homeDirectory;
  */
 public class Server {
     private static final boolean withoutAuthenticationAndTotalyUnsafe = false;
-    private static final boolean runBackgroundTasks = false;
     private static final Path certsDir = homeDirectory().resolve("Secrets").resolve("Certs");
     private static final String productionHostName = "server.sellfusion.ro";
     private static final String tlsKeystorePathConfigName = "TLS_KEYSTORE_PATH";
@@ -93,8 +99,10 @@ public class Server {
     private static final String acmeChallengeWebRootConfigName = "ACME_CHALLENGE_WEBROOT";
     private static final String publicOriginConfigName = "ORIGIN";
     private static final String publicHttpsOriginConfigName = "PUBLIC_HTTPS_ORIGIN";
+    private static final String logDirectoryConfigName = "LOG_DIRECTORY";
     private static final String acmeChallengePrefix = "/.well-known/acme-challenge/";
     private static final ObjectMapper mapper = (new ObjectMapper());
+    private static final AtomicBoolean serverShutdownRequested = new AtomicBoolean(false);
     private static final User unsafeUser = new User("unsafe-without-authentication", admin);
     private static final Set<String> MULTILINE_PRODUCT_FIELDS = Set.of(
             "emagTitle",
@@ -218,6 +226,17 @@ public class Server {
     public record CategorySaveError(String error) {
     }
 
+    public record TaskSchedulerStatus(@Nullable String activeTaskName) {
+    }
+
+    public record TaskRunResponse(
+            String code,
+            String message,
+            String taskName,
+            @Nullable String blockingTaskName
+    ) {
+    }
+
     private static void configure(JavalinConfig config, int port, int securePort) {
         configureSsl(config, port, securePort);
         config.bundledPlugins.enableDevLogging();
@@ -329,7 +348,8 @@ public class Server {
     private static void configureRoutes(JavalinDefaultRoutingApi app,
                                         EmagMirrorDB mirrorDB,
                                         API api,
-                                        RelyingParty rp) {
+                                        RelyingParty rp,
+                                        BackgroundJob backgroundJob) {
         configureAcmeChallenge(app);
         configureHttpToHttpsRedirect(app);
 
@@ -339,7 +359,7 @@ public class Server {
             app.get("/index.html", ctx -> ctx.redirect("/private/overview"));
         }
 
-        configureAPI(app, api);
+        configureAPI(app, api, backgroundJob);
         configurePasskey(app, mirrorDB, rp);
 
         app.before("/private/*", ctx -> checkRole(ctx, user));
@@ -360,6 +380,66 @@ public class Server {
         app.get("/admin/db-explorer/{subPage}", ctx -> renderDBExplorerSubPage(ctx, mirrorDB, ctx.pathParam("subPage")));
         app.post("/admin/db-explorer/brands", ctx -> insertBrand(ctx, mirrorDB));
         app.post("/admin/db-explorer/brands/{brandId}/delete", ctx -> deleteBrand(ctx, mirrorDB));
+        app.post("/admin/server-stop/options", ctx -> startServerStopAssertion(ctx, mirrorDB, rp));
+        app.post("/admin/server-stop/verify", ctx -> verifyServerStopAssertion(ctx, mirrorDB, rp));
+        app.post("/admin/tasks/{taskName}/run", ctx -> {
+            var taskName = ctx.pathParam("taskName");
+            var currentUser = resolveCurrentUser(ctx);
+            if (currentUser == null || currentUser.role() != admin) {
+                ctx.status(FORBIDDEN).json(new TaskRunResponse(
+                        "FORBIDDEN",
+                        "Your session has expired or you are not allowed to run tasks. Please sign in again.",
+                        taskName,
+                        null
+                ));
+                return;
+            }
+            var runResult = backgroundJob.requestRun(taskName);
+            switch (runResult.status()) {
+                case ACCEPTED -> ctx.status(202).json(new TaskRunResponse(
+                        "ACCEPTED",
+                        "Task \"" + taskName + "\" was accepted and will start shortly.",
+                        taskName,
+                        null
+                ));
+                case BUSY -> ctx.status(409).json(new TaskRunResponse(
+                        "BUSY",
+                        "Task \"" + runResult.blockingTaskName()
+                                + "\" is already running or starting. Wait for it to finish before starting another task.",
+                        taskName,
+                        runResult.blockingTaskName()
+                ));
+                case UNKNOWN_TASK -> ctx.status(404).json(new TaskRunResponse(
+                        "UNKNOWN_TASK",
+                        "Unknown task: " + taskName,
+                        taskName,
+                        null
+                ));
+                case SHUTTING_DOWN -> ctx.status(503).json(new TaskRunResponse(
+                        "SHUTTING_DOWN",
+                        "The task scheduler is shutting down.",
+                        taskName,
+                        null
+                ));
+            }
+        });
+        app.post("/admin/tasks/{taskName}/pause", ctx -> setTaskPaused(ctx, backgroundJob, true));
+        app.post("/admin/tasks/{taskName}/resume", ctx -> setTaskPaused(ctx, backgroundJob, false));
+        ServerLogFiles supervisorLogFiles = new ServerLogFiles(serverLogDirectory());
+        ServerLogFiles applicationLogFiles = new ServerLogFiles(Logs.logPath);
+        app.get("/admin/logs", ctx -> renderLogsPage(ctx, supervisorLogFiles, applicationLogFiles));
+        app.get("/admin/logs/view", ctx -> serveLogFile(
+                ctx,
+                supervisorLogFiles,
+                applicationLogFiles,
+                false
+        ));
+        app.get("/admin/logs/download", ctx -> serveLogFile(
+                ctx,
+                supervisorLogFiles,
+                applicationLogFiles,
+                true
+        ));
         app.get("/admin/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
         app.post("/admin/users/{userId}/role", ctx -> changeUserRole(ctx, mirrorDB));
         app.post("/admin/users/{userId}/delete", ctx -> deleteUser(ctx, mirrorDB));
@@ -378,6 +458,138 @@ public class Server {
     private static void configureAcmeChallenge(JavalinDefaultRoutingApi app) {
         Path webRoot = acmeChallengeWebRoot();
         app.get(acmeChallengePrefix + "{token}", ctx -> serveAcmeChallenge(ctx, webRoot));
+    }
+
+    private static void setTaskPaused(Context ctx, BackgroundJob backgroundJob, boolean paused) {
+        var currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null || currentUser.role() != admin) {
+            ctx.status(FORBIDDEN);
+            return;
+        }
+
+        var taskName = ctx.pathParam("taskName");
+        switch (backgroundJob.setTaskPaused(taskName, paused)) {
+            case UPDATED -> ctx.status(204);
+            case UNKNOWN_TASK -> ctx.status(404).result("Unknown task: " + taskName);
+        }
+    }
+
+    private static Path serverLogDirectory() {
+        return ServerLogFiles.selectDirectory(
+                configuredPath(logDirectoryConfigName).orElse(null),
+                Paths.get(System.getProperty("java.io.tmpdir")),
+                Paths.get(System.getProperty("user.dir")),
+                Logs.logPath
+        );
+    }
+
+    private static void renderLogsPage(Context ctx,
+                                       ServerLogFiles supervisorLogFiles,
+                                       ServerLogFiles applicationLogFiles) {
+        User currentUser = requireAdmin(ctx);
+        if (currentUser == null) {
+            return;
+        }
+
+        var model = new HashMap<String, Object>();
+        model.put("userName", currentUser.username());
+        model.put("userRole", currentUser.role().name());
+        model.put("pageTitle", "Server Logs");
+        model.put("logSections", List.of(
+                listLogSection(
+                        "Supervisor logs",
+                        "Files written by the PowerShell application supervisor.",
+                        "supervisor",
+                        supervisorLogFiles
+                ),
+                listLogSection(
+                        "Application logs",
+                        "Files written by Java logging under java.io.tmpdir/EmagDBLogs.",
+                        "application",
+                        applicationLogFiles
+                )
+        ));
+
+        setPrivateFileResponseHeaders(ctx);
+        ctx.render("logs.jte", model);
+    }
+
+    private static ServerLogFiles.Section listLogSection(String title,
+                                                         String description,
+                                                         String source,
+                                                         ServerLogFiles logFiles) {
+        try {
+            return new ServerLogFiles.Section(title, description, source, logFiles.list(), null);
+        } catch (IOException e) {
+            logger.log(SEVERE, "Failed to list the " + source + " log directory.", e);
+            return new ServerLogFiles.Section(
+                    title,
+                    description,
+                    source,
+                    List.of(),
+                    "The " + source + " log directory is unavailable."
+            );
+        }
+    }
+
+    private static void serveLogFile(Context ctx,
+                                     ServerLogFiles supervisorLogFiles,
+                                     ServerLogFiles applicationLogFiles,
+                                     boolean download) {
+        if (requireAdmin(ctx) == null) {
+            return;
+        }
+
+        setPrivateFileResponseHeaders(ctx);
+        try {
+            ServerLogFiles logFiles = selectLogFiles(
+                    ctx.queryParam("source"),
+                    supervisorLogFiles,
+                    applicationLogFiles
+            );
+            if (logFiles == null) {
+                ctx.status(404).result("Log file not found.");
+                return;
+            }
+            Path logFile = logFiles.resolve(ctx.queryParam("file"))
+                    .orElseThrow(() -> new NoSuchFileException("Log file not found."));
+            InputStream stream = Files.newInputStream(
+                    logFile,
+                    StandardOpenOption.READ,
+                    LinkOption.NOFOLLOW_LINKS
+            );
+
+            if (download) {
+                ctx.contentType("application/octet-stream");
+                ctx.header("Content-Disposition", ServerLogFiles.attachmentContentDisposition(logFile.getFileName().toString()));
+            } else {
+                ctx.contentType("text/plain; charset=UTF-8");
+                ctx.header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; sandbox");
+            }
+            ctx.result(stream);
+        } catch (NoSuchFileException | IllegalArgumentException e) {
+            ctx.status(404).result("Log file not found.");
+        } catch (IOException e) {
+            logger.log(SEVERE, "Failed to stream a server log file.", e);
+            ctx.status(500).result("Failed to read the log file.");
+        }
+    }
+
+    private static ServerLogFiles selectLogFiles(String source,
+                                                 ServerLogFiles supervisorLogFiles,
+                                                 ServerLogFiles applicationLogFiles) {
+        if (source == null || source.equals("supervisor")) {
+            return supervisorLogFiles;
+        }
+        if (source.equals("application")) {
+            return applicationLogFiles;
+        }
+        return null;
+    }
+
+    private static void setPrivateFileResponseHeaders(Context ctx) {
+        ctx.header("Cache-Control", "no-store, private");
+        ctx.header("X-Content-Type-Options", "nosniff");
     }
 
     private static Path acmeChallengeWebRoot() {
@@ -447,23 +659,21 @@ public class Server {
                 System.getenv().getOrDefault(configNameSecurePort, arguments.getOption("secport", "8443"))));
 
         // Setup background job
-        BackgroundJob backgroundJob = new BackgroundJob(mirrorDB);
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread thread = new Thread(r, "BackgroundJob-Thread");
             thread.setDaemon(true); // Don't prevent JVM shutdown
             return thread;
         });
+        BackgroundJob backgroundJob = new BackgroundJob(mirrorDB, scheduler);
 
-        // Schedule the job with auto-restart on failure
-        if (runBackgroundTasks) {
-            scheduleWithRestart(scheduler, backgroundJob);
-        }
+        // Give administrators time to pause individual tasks before the first dispatcher cycle.
+        scheduler.schedule(() -> scheduleWithRestart(scheduler, backgroundJob), 5, TimeUnit.MINUTES);
 
         var rp = WebAuthnServer.create(new MyCredentialRepo(mirrorDB));
 
         var app = Javalin.create(config -> {
             configure(config, port, securePort);
-            configureRoutes(config.routes, mirrorDB, api, rp);
+            configureRoutes(config.routes, mirrorDB, api, rp, backgroundJob);
         });
 
         app.start();
@@ -638,7 +848,127 @@ public class Server {
         });
     }
 
-    private static void configureAPI(JavalinDefaultRoutingApi app, API api) {
+    private static void startServerStopAssertion(Context ctx, EmagMirrorDB mirrorDB, RelyingParty rp) {
+        if (withoutAuthenticationAndTotalyUnsafe) {
+            ctx.status(FORBIDDEN).result("Server shutdown requires passkey authentication.");
+            return;
+        }
+
+        User currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null || currentUser.role() != admin) {
+            ctx.status(FORBIDDEN);
+            return;
+        }
+
+        try {
+            String username = currentUser.username().toLowerCase();
+            Long userId = mirrorDB.findUserIdByUsername(username).orElse(null);
+            if (userId == null) {
+                ctx.status(401).result("Current user was not found.");
+                return;
+            }
+
+            AssertionRequest request = rp.startAssertion(StartAssertionOptions.builder()
+                    .username(username)
+                    .userVerification(UserVerificationRequirement.REQUIRED)
+                    .build());
+            String requestJson = mapper.writeValueAsString(request);
+            long rowId = mirrorDB.insertAssertionRequest(userId, rp.getIdentity().getId(),
+                    rp.getOrigins().stream().findFirst().get(), requestJson, java.time.Instant.now().plusSeconds(300));
+            ctx.result(mapper.writeValueAsString(Map.of(
+                    "requestId", rowId,
+                    "publicKey", request.getPublicKeyCredentialRequestOptions()
+            )));
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to create server stop passkey challenge.", e);
+            ctx.status(500).result("Could not create passkey challenge.");
+        }
+    }
+
+    private static void verifyServerStopAssertion(Context ctx, EmagMirrorDB mirrorDB, RelyingParty rp) {
+        if (withoutAuthenticationAndTotalyUnsafe) {
+            ctx.status(FORBIDDEN).result("Server shutdown requires passkey authentication.");
+            return;
+        }
+
+        User currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null || currentUser.role() != admin) {
+            ctx.status(FORBIDDEN);
+            return;
+        }
+
+        final long requestId;
+        try {
+            requestId = Long.parseLong(ctx.queryParam("requestId"));
+        } catch (NumberFormatException e) {
+            ctx.status(400).result("Invalid passkey request id.");
+            return;
+        }
+
+        try {
+            Long currentUserId = mirrorDB.findUserIdByUsername(currentUser.username()).orElse(null);
+            if (currentUserId == null || mirrorDB.findUser(requestId) != currentUserId) {
+                ctx.status(FORBIDDEN);
+                return;
+            }
+
+            String requestJson = mirrorDB.findOptionsJson(requestId, "authentication")
+                    .orElseThrow(() -> new IllegalStateException("Assertion request not found or expired."));
+            var pkc = PublicKeyCredential.parseAssertionResponseJson(ctx.body());
+            AssertionRequest assertionRequest = mapper.readValue(requestJson, AssertionRequest.class);
+
+            AssertionResult result = rp.finishAssertion(FinishAssertionOptions.builder()
+                    .request(assertionRequest)
+                    .response(pkc)
+                    .build());
+
+            if (!result.isSuccess()) {
+                ctx.status(401).result("Passkey verification failed.");
+                return;
+            }
+
+            var verifiedUser = mirrorDB.getUserForUserHandle(result.getCredential().getUserHandle()).orElse(null);
+            if (verifiedUser == null || !verifiedUser.username().equals(currentUser.username()) || verifiedUser.role() != admin) {
+                ctx.status(FORBIDDEN);
+                return;
+            }
+
+            mirrorDB.updateSignCountAndLastUsed(result.getCredential().getCredentialId(), result.getSignatureCount());
+            mirrorDB.markUsed(requestId);
+
+            scheduleServerShutdown(currentUser.username());
+            ctx.status(202).json(Map.of("message", "Server shutdown requested. The run script should restart it shortly."));
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to verify server stop passkey challenge.", e);
+            ctx.status(500).result("Could not verify passkey challenge.");
+        } catch (IOException e) {
+            ctx.status(400).result("Invalid passkey response.");
+        } catch (AssertionFailedException e) {
+            ctx.status(401).result("Passkey verification failed.");
+        } catch (IllegalStateException e) {
+            ctx.status(400).result(e.getMessage());
+        }
+    }
+
+    private static void scheduleServerShutdown(String username) {
+        if (!serverShutdownRequested.compareAndSet(false, true)) {
+            return;
+        }
+
+        logger.log(WARNING, "Admin {0} requested server shutdown.", username);
+        Thread shutdownThread = new Thread(() -> {
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            System.exit(0);
+        }, "AdminServerStop");
+        shutdownThread.setDaemon(false);
+        shutdownThread.start();
+    }
+
+    private static void configureAPI(JavalinDefaultRoutingApi app, API api, BackgroundJob backgroundJob) {
         app.before("/app/*", ctx -> checkRole(ctx, user)); // TODO: Need to protect admin calls
         app.get("/app/products", ctx -> {
             String json = api.getProducts();
@@ -924,12 +1254,21 @@ public class Server {
             }
         });
         app.get("/app/tasks", ctx -> {
+            ctx.header("Cache-Control", "no-store");
             var returns = api.getTasks();
             if (returns == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
                 ctx.json(returns);
             }
+        });
+        app.get("/app/tasks/active", ctx -> {
+            ctx.header("Cache-Control", "no-store");
+            ctx.json(new TaskSchedulerStatus(backgroundJob.activeTaskName()));
+        });
+        app.get("/app/tasks/paused", ctx -> {
+            ctx.header("Cache-Control", "no-store");
+            ctx.json(backgroundJob.pausedTaskNames());
         });
     }
 
@@ -1942,7 +2281,7 @@ public class Server {
         String username = currentUser.username();
         PassKey.Role role = currentUser.role();
 
-        boolean adminOnlyPage = "users".equals(page) || "db-explorer".equals(page);
+        boolean adminOnlyPage = "users".equals(page) || "db-explorer".equals(page) || "logs".equals(page);
         boolean isAdminArea = ctx.path().startsWith("/admin/");
         if (adminOnlyPage && (role != admin || !isAdminArea)) {
             ctx.status(FORBIDDEN);
@@ -2306,6 +2645,15 @@ public class Server {
         return null;
     }
 
+    private static User requireAdmin(Context ctx) {
+        User currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null || currentUser.role() != admin) {
+            ctx.status(FORBIDDEN);
+            return null;
+        }
+        return currentUser;
+    }
+
     private static void checkRole(Context ctx, PassKey.Role minimalRole) {
         if (withoutAuthenticationAndTotalyUnsafe) {
             return;
@@ -2314,14 +2662,18 @@ public class Server {
         if (minimalRole != null) {  // No checks if no role is required.
             if (session == null) {
                 ctx.redirect("/");
-            } else if (session.getAttribute("user") instanceof User(String username, PassKey.Role role)) {
-                if (role == nobody) {
-                    ctx.redirect("/welcome.html");
-                } else if (role.ordinal() < minimalRole.ordinal()) {
-                    ctx.status(FORBIDDEN);
-                } else {
-                    logger.log(INFO, "User = " + username);
-                }
+                return;
+            }
+            if (!(session.getAttribute("user") instanceof User(String username, PassKey.Role role))) {
+                ctx.status(FORBIDDEN).skipRemainingHandlers();
+                return;
+            }
+            if (role == nobody) {
+                ctx.redirect("/welcome.html");
+            } else if (role.ordinal() < minimalRole.ordinal()) {
+                ctx.status(FORBIDDEN).skipRemainingHandlers();
+            } else {
+                logger.log(INFO, "User = " + username);
             }
         }
     }

@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 class PopulateProductsTableFromSheetsTest {
     @Test
-    void toProductInfoMapsAdditionalFields() {
+    void toProductInfoMapsAdditionalFieldsWithoutResolvingTheEmployeeSheetTab() {
         var row = emptyRow();
         var vendorId = UUID.randomUUID();
 
@@ -71,8 +71,7 @@ class PopulateProductsTableFromSheetsTest {
 
         var info = PopulateProductsTableFromSheets.toProductInfo(
                 row,
-                Map.of("Zoopie Solutions SRL", vendorId),
-                (pnk, sheetName) -> "Tab 1"
+                Map.of("Zoopie Solutions SRL", vendorId)
         );
 
         assertEquals("D9LYDSBBM", info.productCode());
@@ -97,7 +96,7 @@ class PopulateProductsTableFromSheetsTest {
         assertEquals("https://example.com/video", info.manualVideoLink());
         assertEquals("Ana", info.reviewCaller());
         assertEquals("Raport Zoopie", info.employeeSheetName());
-        assertEquals("Tab 1", info.employeeSheetTab());
+        assertNull(info.employeeSheetTab());
         assertEquals("https://example.com/report", info.reportLink());
         assertFalse(info.retracted());
     }
@@ -108,7 +107,7 @@ class PopulateProductsTableFromSheetsTest {
 
         set(row, PopulateProductsTableFromSheets.ProductColumn.NAME, "Ignored");
 
-        var info = PopulateProductsTableFromSheets.toProductInfo(row, Map.of(), (pnk, sheetName) -> "Tab 1");
+        var info = PopulateProductsTableFromSheets.toProductInfo(row, Map.of());
 
         assertNull(info);
     }

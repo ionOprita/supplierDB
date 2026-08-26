@@ -14,9 +14,6 @@ import static java.util.logging.Level.FINEST;
 public class FetchOneOrder {
 
     private static final List<String> emagAccounts = List.of(
-            "sellfluence",
-            "zoopieconcept",
-            "zoopieinvest",
             "zoopiesolutions",
             "judios",
             "koppel",
@@ -40,7 +37,7 @@ public class FetchOneOrder {
     public static void main(String[] args) throws Exception {
         EmagApi.setAPILogLevel(FINEST);
     //    emagAccounts.forEach(account -> fetchOrder(account,"407649385"));
-        fetchOrder("sellfusion","427037619");
+        fetchOrder("koppelfbe","427037619");
         //fetchOrder("zoopieconcept", "226552373");
     }
 

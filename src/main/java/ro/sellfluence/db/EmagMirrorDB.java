@@ -14,12 +14,13 @@ import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
 import ro.sellfluence.db.AdsCampaignTable.AdsAdsetKey;
 import ro.sellfluence.db.AdsCampaignTable.AdsAdsetReport;
+import ro.sellfluence.db.ProductTable.EmployeeSheetTabUpdate;
 import ro.sellfluence.db.versions.SetupDB;
 import ro.sellfluence.emagapi.AdsKeyword;
+import ro.sellfluence.emagapi.AdsCampaignSnapshot;
 import ro.sellfluence.emagapi.AdsSearchPhrase;
 import ro.sellfluence.emagapi.AdsTargetedProduct;
 import ro.sellfluence.emagapi.CancellationReason;
-import ro.sellfluence.emagapi.Campaign;
 import ro.sellfluence.emagapi.LockerDetails;
 import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.Product;
@@ -68,6 +69,7 @@ import static ro.sellfluence.db.GMV.getGMVByProductId;
 import static ro.sellfluence.db.ProductTable.getProductCodes;
 import static ro.sellfluence.db.ProductTable.getProducts;
 import static ro.sellfluence.db.ProductTable.insertOrUpdateProduct;
+import static ro.sellfluence.db.ProductTable.insertOrUpdateProductPreservingEmployeeSheetTab;
 import static ro.sellfluence.db.RMA.addRMAResult;
 import static ro.sellfluence.db.Vendor.insertOrUpdateVendor;
 import static ro.sellfluence.db.Vendor.selectFetchTimeByAccount;
@@ -157,11 +159,11 @@ public class EmagMirrorDB {
         });
     }
 
-    public int addOrUpdateAdCampaigns(List<Campaign> campaigns) throws SQLException {
+    public int addOrUpdateAdCampaigns(List<AdsCampaignSnapshot> campaigns) throws SQLException {
         return database.writeTX(db -> upsertCampaigns(db, campaigns));
     }
 
-    public int addOrUpdateAdsAndCampaigns(List<Campaign> campaigns) throws SQLException {
+    public int addOrUpdateAdsAndCampaigns(List<AdsCampaignSnapshot> campaigns) throws SQLException {
         return database.writeTX(db -> upsertCampaignsAndAdsets(db, campaigns));
     }
 
@@ -247,16 +249,20 @@ public class EmagMirrorDB {
      * @return Map from the eMAG account to new orders associated with that account.
      * @throws SQLException on database issues.
      */
-    public Map<String, List<String>> readOrderIdForOpenOrdersByVendor() throws SQLException {
+    public Map<String, List<String>> readOrderIdForOpenOrdersByVendor(boolean newOnly) throws SQLException {
         return database.singleReadTX(db -> {
             var result = new HashMap<String, List<String>>();
-            try (var s = db.prepareStatement("""
+            String sql = """
                     SELECT o.id, v.account
                     FROM emag_order AS o
                     INNER JOIN vendor AS v
                     ON o.vendor_id = v.id
                     WHERE status IN (1,2,3)
-                    """)) {
+                    """;
+            if (newOnly) {
+                sql = sql + " AND date >= LOCALTIMESTAMP - INTERVAL '30 days'";
+            }
+            try (var s = db.prepareStatement(sql)) {
                 try (var rs = s.executeQuery()) {
                     while (rs.next()) {
                         result.computeIfAbsent(rs.getString(2), _ -> new ArrayList<>()).add(rs.getString(1));
@@ -476,6 +482,37 @@ public class EmagMirrorDB {
 
     public void addOrUpdateProduct(ProductInfo productInfo) throws SQLException {
         database.writeTX(db -> insertOrUpdateProduct(db, productInfo));
+    }
+
+    public void addOrUpdateProductPreservingEmployeeSheetTab(ProductInfo productInfo) throws SQLException {
+        database.writeTX(db -> insertOrUpdateProductPreservingEmployeeSheetTab(db, productInfo));
+    }
+
+    /**
+     * Updates only employee-sheet tab mappings in one transaction.
+     *
+     * @param updates tab mappings and the product associations used to resolve them
+     * @return number of updated product rows
+     */
+    public int updateProductEmployeeSheetTabs(List<EmployeeSheetTabUpdate> updates) throws SQLException {
+        if (updates == null) {
+            throw new NullPointerException("updates");
+        }
+        return database.writeTX(db -> {
+            var updatedRows = 0;
+            for (var update : updates) {
+                if (update.productCode() == null || update.productCode().isBlank()) {
+                    throw new IllegalArgumentException("A product code must not be null or blank.");
+                }
+                var affectedRows = ProductTable.updateProductEmployeeSheetTab(db, update);
+                if (affectedRows != 1) {
+                    throw new SQLException("Expected to update one product with code %s, but updated %d."
+                            .formatted(update.productCode(), affectedRows));
+                }
+                updatedRows += affectedRows;
+            }
+            return updatedRows;
+        });
     }
 
     public int replaceEmployeeData(List<EmployeeInfo> employees) throws SQLException {

@@ -8,7 +8,7 @@ import ro.sellfluence.emagapi.AdsPerformanceSummary;
 import ro.sellfluence.emagapi.AdsRecommendedBid;
 import ro.sellfluence.emagapi.AdsSearchPhrase;
 import ro.sellfluence.emagapi.AdsTargetedProduct;
-import ro.sellfluence.emagapi.Campaign;
+import ro.sellfluence.emagapi.AdsCampaignSnapshot;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -1080,7 +1080,7 @@ public class AdsCampaignTable {
         );
     }
 
-    static int upsertCampaigns(Connection db, List<Campaign> campaigns) throws SQLException {
+    static int upsertCampaigns(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         Objects.requireNonNull(db);
         Objects.requireNonNull(campaigns);
 
@@ -1093,14 +1093,14 @@ public class AdsCampaignTable {
         return changedRows;
     }
 
-    static int upsertCampaignsAndAdsets(Connection db, List<Campaign> campaigns) throws SQLException {
+    static int upsertCampaignsAndAdsets(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         Objects.requireNonNull(db);
         Objects.requireNonNull(campaigns);
 
         return upsertCampaignRows(db, campaigns) + upsertAdsetRows(db, campaigns);
     }
 
-    private static int upsertCampaignRows(Connection db, List<Campaign> campaigns) throws SQLException {
+    private static int upsertCampaignRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_campaign (
                     report_date,
@@ -1173,7 +1173,7 @@ public class AdsCampaignTable {
         }
     }
 
-    private static int upsertAdsetRows(Connection db, List<Campaign> campaigns) throws SQLException {
+    private static int upsertAdsetRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_adset (
                     report_date,
@@ -1240,7 +1240,7 @@ public class AdsCampaignTable {
         }
     }
 
-    private static int upsertKeywordRows(Connection db, List<Campaign> campaigns) throws SQLException {
+    private static int upsertKeywordRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         var reports = new ArrayList<AdsAdsetReport<AdsKeyword>>();
         for (var campaign : campaigns) {
             var campaignId = campaignId(campaign);
@@ -1322,7 +1322,7 @@ public class AdsCampaignTable {
         }
     }
 
-    private static int upsertSearchPhraseRows(Connection db, List<Campaign> campaigns) throws SQLException {
+    private static int upsertSearchPhraseRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         var reports = new ArrayList<AdsAdsetReport<AdsSearchPhrase>>();
         for (var campaign : campaigns) {
             var campaignId = campaignId(campaign);
@@ -1401,7 +1401,7 @@ public class AdsCampaignTable {
         }
     }
 
-    private static int upsertTargetedProductRows(Connection db, List<Campaign> campaigns) throws SQLException {
+    private static int upsertTargetedProductRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         var reports = new ArrayList<AdsAdsetReport<AdsTargetedProduct>>();
         for (var campaign : campaigns) {
             var campaignId = campaignId(campaign);
@@ -1477,7 +1477,7 @@ public class AdsCampaignTable {
         }
     }
 
-    private static void bindCampaign(PreparedStatement s, Campaign campaignSnapshot) throws SQLException {
+    private static void bindCampaign(PreparedStatement s, AdsCampaignSnapshot campaignSnapshot) throws SQLException {
         var campaign = Objects.requireNonNull(campaignSnapshot.campaign(), "campaign");
         int index = bindCampaignKey(s, 1, campaignSnapshot, campaignId(campaignSnapshot));
         s.setString(index++, campaign.name());
@@ -1494,7 +1494,7 @@ public class AdsCampaignTable {
         bindSummary(s, index, campaign.summary());
     }
 
-    private static void bindAdset(PreparedStatement s, Campaign campaign, int campaignId, AdsAdset adset) throws SQLException {
+    private static void bindAdset(PreparedStatement s, AdsCampaignSnapshot campaign, int campaignId, AdsAdset adset) throws SQLException {
         Objects.requireNonNull(adset, "adset");
         int index = bindCampaignKey(s, 1, campaign, campaignId);
         s.setInt(index++, adsetId(adset));
@@ -1568,7 +1568,7 @@ public class AdsCampaignTable {
         return index;
     }
 
-    private static int bindCampaignKey(PreparedStatement s, int index, Campaign campaign, int campaignId) throws SQLException {
+    private static int bindCampaignKey(PreparedStatement s, int index, AdsCampaignSnapshot campaign, int campaignId) throws SQLException {
         setDate(s, index++, Objects.requireNonNull(campaign.reportDate(), "reportDate"));
         s.setInt(index++, campaignId);
         return index;
@@ -1595,7 +1595,7 @@ public class AdsCampaignTable {
         return index;
     }
 
-    private static int campaignId(Campaign campaign) {
+    private static int campaignId(AdsCampaignSnapshot campaign) {
         return Objects.requireNonNull(Objects.requireNonNull(campaign.campaign(), "campaign").id(), "campaign.id");
     }
 

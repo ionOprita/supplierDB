@@ -433,8 +433,9 @@ export function arrayToDateTime(arr) {
   return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, ss ?? 0, ms));
 }
 
-export function toTaskRows(jsonData) {
+export function toTaskRows(jsonData, pausedTaskNames = []) {
   if (!Array.isArray(jsonData)) return [];
+  const pausedNames = new Set(Array.isArray(pausedTaskNames) ? pausedTaskNames : []);
 
   return jsonData.map((item) => {
     const {
@@ -456,22 +457,77 @@ export function toTaskRows(jsonData) {
           typeof durationOfLastRun === "number" ? durationOfLastRun : null,
       unsuccessfulRuns: typeof unsuccessfulRuns === "number" ? unsuccessfulRuns : 0,
       error: typeof error === "string" ? error : "",
+      paused: pausedNames.has(name),
       // include original item if needed:
       // raw: item
     };
   });
 }
 
-export function renderTasksBody(tbodyEl, rows) {
+export function renderTasksBody(tbodyEl, rows, options = {}) {
+  const canRunTasks = options.canRunTasks === true;
+  const activeTaskName = typeof options.activeTaskName === 'string' && options.activeTaskName
+    ? options.activeTaskName
+    : null;
+  const pendingTaskName = typeof options.pendingTaskName === 'string' && options.pendingTaskName
+    ? options.pendingTaskName
+    : null;
+  const checkingTaskName = typeof options.checkingTaskName === 'string' && options.checkingTaskName
+    ? options.checkingTaskName
+    : null;
+  const databaseRunningTaskName =
+    rows.find((row) => row.started != null && row.terminated == null)?.name ?? null;
+  const blockingTaskName =
+    activeTaskName ?? pendingTaskName ?? checkingTaskName ?? databaseRunningTaskName;
+
   function renderRow(row) {
     const tr = document.createElement('tr');
+
+    const isRunning = row.started != null && row.terminated == null;
+    const isStarting = !isRunning &&
+      (row.name === activeTaskName || row.name === pendingTaskName);
+    const isCheckingResult = !isRunning && !isStarting && row.name === checkingTaskName;
+    const tdAction = document.createElement('td');
+    if (canRunTasks) {
+      if (!isRunning && !isStarting && !isCheckingResult) {
+        const runButton = document.createElement('button');
+        runButton.type = 'button';
+        runButton.textContent = 'Run';
+        runButton.classList.add('task-action-button', 'task-run-button');
+        runButton.disabled = blockingTaskName != null;
+        if (blockingTaskName != null) {
+          runButton.title =
+            checkingTaskName != null && activeTaskName == null && pendingTaskName == null
+              ? `Waiting for the result of task "${checkingTaskName}".`
+              : `Task "${blockingTaskName}" is already running or starting.`;
+        }
+        runButton.addEventListener('click', () => options.onRun?.(row.name, runButton));
+        tdAction.appendChild(runButton);
+      }
+
+      const pauseButton = document.createElement('button');
+      pauseButton.type = 'button';
+      pauseButton.textContent = row.paused ? 'Resume' : 'Pause';
+      pauseButton.classList.add('task-action-button', 'task-pause-button');
+      pauseButton.addEventListener('click', () => options.onSetPaused?.(row.name, !row.paused, pauseButton));
+      tdAction.appendChild(pauseButton);
+    } else {
+      tdAction.textContent = '-';
+    }
+    tr.appendChild(tdAction);
 
     const tdName = document.createElement('td');
     tdName.textContent = row.name;
     tr.appendChild(tdName);
     const tdStatus = document.createElement('td');
-    if (row.started != null && row.terminated == null) {
-      tdStatus.textContent = "RUNNING";
+    if (isRunning) {
+      tdStatus.textContent = `RUNNING since ${formatLocalDateTime(row.started)}`;
+    } else if (isStarting) {
+      tdStatus.textContent = 'STARTING (waiting for the background worker)';
+    } else if (isCheckingResult) {
+      tdStatus.textContent = 'CHECKING RESULT';
+    } else if (row.paused) {
+      tdStatus.textContent = 'PAUSED';
     } else if (row.error != null && String(row.error).trim() !== "") {
       tdStatus.textContent = "ERROR";
     } else {
@@ -508,31 +564,276 @@ export function renderTasksBody(tbodyEl, rows) {
  * @param {string} cfg.theadId - DOM id of <thead>
  * @param {string} cfg.tbodyId - DOM id of <tbody>
  * @param {string} cfg.dataUrl - endpoint to load the matrix JSON from
+ * @param {string} [cfg.activeDataUrl] - endpoint returning the task which owns the background worker
+ * @param {string} [cfg.pausedDataUrl] - endpoint returning the names of paused tasks
+ * @param {string} [cfg.actionStatusId] - DOM id used for run-request feedback
+ * @param {string} [cfg.schedulerStatusId] - DOM id used for current worker feedback
+ * @param {boolean} [cfg.canRunTasks] - whether Run controls should be displayed
+ * @param {function} [cfg.runUrlBuilder] - (taskName) => URL for the run endpoint
+ * @param {function} [cfg.pauseUrlBuilder] - (taskName) => URL for the pause endpoint
+ * @param {function} [cfg.resumeUrlBuilder] - (taskName) => URL for the resume endpoint
+ * @param {number} [cfg.refreshIntervalMs] - automatic refresh interval in milliseconds
  */
 export function initTaskTable(cfg) {
   const HEAD = document.getElementById(cfg.theadId);
   const BODY = document.getElementById(cfg.tbodyId);
   const TABLE = document.getElementById(cfg.tableId);
+  const ACTION_STATUS = cfg.actionStatusId ? document.getElementById(cfg.actionStatusId) : null;
+  const SCHEDULER_STATUS = cfg.schedulerStatusId ? document.getElementById(cfg.schedulerStatusId) : null;
+  let pendingTaskName = null;
+  let requestInFlight = false;
+  let currentActiveTaskName = null;
+  let currentDatabaseRunningTaskName = null;
+  let latestTaskRows = [];
+  let trackedRun = null;
+  let latestLoadRequest = 0;
+  let activeTaskPollTimer = null;
+  let clearRunStatusWhenIdle = false;
+  let actionStatusSource = null;
+
+  function setActionStatus(message, isError = false, clearWhenIdle = false, source = 'action') {
+    if (!ACTION_STATUS) return;
+    ACTION_STATUS.textContent = message;
+    ACTION_STATUS.classList.toggle('is-error', isError);
+    clearRunStatusWhenIdle = clearWhenIdle;
+    actionStatusSource = message ? source : null;
+  }
+
+  function setSchedulerStatus(activeTaskName) {
+    if (!SCHEDULER_STATUS) return;
+    SCHEDULER_STATUS.textContent = activeTaskName
+      ? `Task "${activeTaskName}" is running or starting. Other tasks are unavailable until it finishes.`
+      : '';
+  }
+
+  async function readActionResponse(response, fallback) {
+    const responseText = await response.text();
+    if (!responseText) {
+      return { message: fallback, code: null };
+    }
+    try {
+      const payload = JSON.parse(responseText);
+      return {
+        message: typeof payload?.message === 'string' && payload.message.trim()
+          ? payload.message
+          : fallback,
+        code: typeof payload?.code === 'string' ? payload.code : null
+      };
+    } catch {
+      return { message: responseText, code: null };
+    }
+  }
+
+  function scheduleActiveTaskPoll() {
+    if (activeTaskPollTimer != null) return;
+    activeTaskPollTimer = window.setTimeout(async () => {
+      activeTaskPollTimer = null;
+      await loadTasks();
+    }, 1_000);
+  }
+
+  function taskTimestamp(value) {
+    return value instanceof Date ? value.getTime() : null;
+  }
+
+  function updateTrackedRun(rows) {
+    if (trackedRun == null) return;
+
+    const row = rows.find((candidate) => candidate.name === trackedRun.taskName);
+    const rowIsRunning = row?.started != null && row?.terminated == null;
+    if (currentActiveTaskName === trackedRun.taskName || rowIsRunning) {
+      return;
+    }
+
+    const taskRecordChanged = row != null && (
+      taskTimestamp(row.started) !== trackedRun.previousStarted ||
+      taskTimestamp(row.terminated) !== trackedRun.previousTerminated
+    );
+    if (taskRecordChanged && row.terminated != null) {
+      const error = String(row.error ?? '').trim();
+      if (error) {
+        setActionStatus(
+          `Task "${trackedRun.taskName}" failed. See its Error column and the application logs for details.`,
+          true,
+          false,
+          'run'
+        );
+      } else {
+        setActionStatus(`Task "${trackedRun.taskName}" completed successfully.`, false, false, 'run');
+      }
+      trackedRun = null;
+      return;
+    }
+
+    if (Date.now() - trackedRun.acceptedAt >= 2_000) {
+      setActionStatus(
+        `Task "${trackedRun.taskName}" was accepted, but no execution result was recorded. Check the application logs.`,
+        true,
+        false,
+        'run'
+      );
+      trackedRun = null;
+    }
+  }
+
+  async function runTask(taskName, button) {
+    if (typeof cfg.runUrlBuilder !== 'function') return;
+
+    const previousRow = latestTaskRows.find((row) => row.name === taskName);
+    const trackedRunCandidate = {
+      taskName,
+      previousStarted: taskTimestamp(previousRow?.started),
+      previousTerminated: taskTimestamp(previousRow?.terminated),
+      acceptedAt: 0
+    };
+    trackedRun = null;
+    pendingTaskName = taskName;
+    requestInFlight = true;
+    for (const runButton of BODY.querySelectorAll('.task-run-button')) {
+      runButton.disabled = true;
+    }
+    button.textContent = 'Starting...';
+    setActionStatus(`Starting ${taskName}...`, false, false, 'run');
+
+    try {
+      const response = await fetch(cfg.runUrlBuilder(taskName), { method: 'POST' });
+      if (response.redirected) {
+        throw new Error('Your session may have expired. Please sign in again before running the task.');
+      }
+      const result = await readActionResponse(
+        response,
+        response.status === 202
+          ? `Task "${taskName}" was accepted and will start shortly.`
+          : response.status === 401 || response.status === 403
+            ? 'Your session has expired or you are not allowed to run tasks. Please sign in again.'
+            : `Could not start task (HTTP ${response.status}).`
+      );
+      if (response.status !== 202) {
+        pendingTaskName = null;
+        setActionStatus(
+          result.message,
+          true,
+          result.code === 'BUSY' || response.status === 409,
+          'run'
+        );
+        await loadTasks();
+        return;
+      }
+      pendingTaskName = null;
+      trackedRun = {
+        ...trackedRunCandidate,
+        acceptedAt: Date.now()
+      };
+      setActionStatus(result.message, false, false, 'run');
+      await loadTasks();
+    } catch (error) {
+      pendingTaskName = null;
+      trackedRun = null;
+      setActionStatus(error instanceof Error ? error.message : String(error), true, false, 'run');
+      await loadTasks();
+    } finally {
+      requestInFlight = false;
+      pendingTaskName = null;
+      scheduleActiveTaskPoll();
+    }
+  }
+
+  async function setTaskPaused(taskName, paused, button) {
+    const urlBuilder = paused ? cfg.pauseUrlBuilder : cfg.resumeUrlBuilder;
+    if (typeof urlBuilder !== 'function') return;
+
+    button.disabled = true;
+    button.textContent = paused ? 'Pausing...' : 'Resuming...';
+    setActionStatus(`${paused ? 'Pausing' : 'Resuming'} automatic scheduling for ${taskName}...`);
+
+    try {
+      const response = await fetch(urlBuilder(taskName), { method: 'POST' });
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `Could not ${paused ? 'pause' : 'resume'} task (HTTP ${response.status}).`);
+      }
+      setActionStatus(`Automatic scheduling for ${taskName} is now ${paused ? 'paused' : 'resumed'}.`);
+    } catch (error) {
+      setActionStatus(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      await loadTasks();
+    }
+  }
 
   async function loadTasks() {
+    const loadRequest = ++latestLoadRequest;
     try {
-      const data = await fetchJSON(cfg.dataUrl);
-      const rows = toTaskRows(data);
+      const [data, pausedTaskNames, activeTaskStatus] = await Promise.all([
+        fetchJSON(cfg.dataUrl),
+        cfg.pausedDataUrl ? fetchJSON(cfg.pausedDataUrl) : Promise.resolve([]),
+        cfg.activeDataUrl ? fetchJSON(cfg.activeDataUrl) : Promise.resolve({ activeTaskName: null })
+      ]);
+      if (loadRequest !== latestLoadRequest) return;
+
+      const rows = toTaskRows(data, pausedTaskNames);
+      latestTaskRows = rows;
+      currentDatabaseRunningTaskName =
+        rows.find((row) => row.started != null && row.terminated == null)?.name ?? null;
+      currentActiveTaskName =
+        typeof activeTaskStatus?.activeTaskName === 'string' && activeTaskStatus.activeTaskName
+          ? activeTaskStatus.activeTaskName
+          : null;
+      if (actionStatusSource === 'load') {
+        setActionStatus('');
+      }
+      if (!requestInFlight) {
+        pendingTaskName = null;
+        if (currentActiveTaskName == null &&
+            currentDatabaseRunningTaskName == null &&
+            clearRunStatusWhenIdle) {
+          setActionStatus('');
+        }
+      }
+      updateTrackedRun(rows);
       const tr = buildHeaderRow([
-        'Name', 'Status', 'Last Run', 'Runtime', 'Last Successful', 'Failures', 'Error'
+        'Action', 'Name', 'Status', 'Last Run', 'Runtime', 'Last Successful', 'Failures', 'Error'
       ]);
       HEAD.innerHTML = '';
       HEAD.appendChild(tr);
-      renderTasksBody(BODY, rows);
+      renderTasksBody(BODY, rows, {
+        canRunTasks: cfg.canRunTasks,
+        activeTaskName: currentActiveTaskName,
+        pendingTaskName,
+        checkingTaskName: trackedRun?.taskName ?? null,
+        onRun: runTask,
+        onSetPaused: setTaskPaused
+      });
+      setSchedulerStatus(currentActiveTaskName ?? currentDatabaseRunningTaskName);
+      if (currentActiveTaskName != null ||
+          currentDatabaseRunningTaskName != null ||
+          trackedRun != null) {
+        scheduleActiveTaskPoll();
+      }
     } catch (e) {
+      if (loadRequest !== latestLoadRequest) return;
       HEAD.innerHTML = '';
       BODY.innerHTML = '<tr><td>Failed to load data</td></tr>';
+      setActionStatus(
+        e instanceof Error ? `Failed to load tasks: ${e.message}` : 'Failed to load tasks.',
+        true,
+        false,
+        'load'
+      );
       console.error(e);
+      if (currentActiveTaskName != null ||
+          currentDatabaseRunningTaskName != null ||
+          trackedRun != null) {
+        scheduleActiveTaskPoll();
+      }
     }
   };
 
   document.getElementById('refreshBtn')?.addEventListener('click', loadTasks);
   window.addEventListener('resize', () => applyStickyOffsets(TABLE));
+
+  if (Number.isFinite(cfg.refreshIntervalMs) && cfg.refreshIntervalMs > 0) {
+    window.setInterval(loadTasks, cfg.refreshIntervalMs);
+  }
 
   loadTasks();
 }

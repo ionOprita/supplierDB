@@ -24,7 +24,7 @@ import ro.sellfluence.emagapi.AdsKeyword;
 import ro.sellfluence.emagapi.AdsResponse;
 import ro.sellfluence.emagapi.AdsSearchPhrase;
 import ro.sellfluence.emagapi.AdsTargetedProduct;
-import ro.sellfluence.emagapi.Campaign;
+import ro.sellfluence.emagapi.AdsCampaignSnapshot;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 import ro.sellfluence.support.UserPassword;
@@ -323,13 +323,13 @@ public class FetchAds {
      * @param date for which to download the data.
      * @return Campaign and ad set snapshots for the date.
      */
-    private static ArrayList<Campaign> downloadAdsAndCampaigns(Page page, LocalDate date) {
-        var campaignList = new ArrayList<Campaign>();
+    private static ArrayList<AdsCampaignSnapshot> downloadAdsAndCampaigns(Page page, LocalDate date) {
+        var campaignList = new ArrayList<AdsCampaignSnapshot>();
         for (var campaign : downloadCampaigns(page, date)) {
             var adSetList = downloadAdSets(page, date, campaign.id()).stream()
                     .map(adSet -> new AdSet(adSet, List.of(), List.of(), List.of()))
                     .toList();
-            campaignList.add(new Campaign(date, campaign, adSetList));
+            campaignList.add(new AdsCampaignSnapshot(date, campaign, adSetList));
         }
         return campaignList;
     }
