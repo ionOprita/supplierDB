@@ -9,4 +9,16 @@ public class AdsResponse {
     public Integer status;
     public String code;
     public List<AdsError> errors;
+
+    @Override
+    public String toString() {
+        return "AdsResponse{" +
+                "meta=" + meta +
+                ", error='" + error + '\'' +
+                ", message='" + message + '\'' +
+                ", status=" + status +
+                ", code='" + code + '\'' +
+                ", errors=" + errors +
+                '}';
+    }
 }

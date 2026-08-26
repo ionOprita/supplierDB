@@ -108,7 +108,7 @@ public class FetchAds {
      */
     private static String getJSON(Page page, Path path, String url, boolean doWait) throws IOException {
         if (Files.exists(path)) {
-            logger.log(INFO, "Return %s for %s.".formatted(path, url));
+//            logger.log(INFO, "Return %s for %s.".formatted(path, url));
             return Files.readString(path);
         }
         if (offline) {
@@ -116,9 +116,6 @@ public class FetchAds {
         }
         if (doWait) randomWait(0.1, 0.5);
         var json = page.request().get(url).text();
-        if (json.toLowerCase().contains("error")) {
-            logger.log(WARNING, "JSON has word errors in it: %s".formatted(json));
-        }
         Files.writeString(path, json);
         logger.log(INFO, "Retrieved %s and stored to %s.".formatted(url, path));
         return json;
@@ -176,7 +173,7 @@ public class FetchAds {
     private static URIBuilder skeleton(LocalDate date, int pageNumber) {
         URIBuilder uriBuilder = new URIBuilder(URI.create("https://advertising.emag.net/api/v1"));
         uriBuilder.addParameter("page", Integer.toString(pageNumber));
-        uriBuilder.addParameter("perPage", "1000");
+        uriBuilder.addParameter("perPage", "700");
         uriBuilder.addParameter("dateStart", date.toString());
         uriBuilder.addParameter("dateEnd", date.toString());
         return uriBuilder;
@@ -264,6 +261,13 @@ public class FetchAds {
         );
     }
 
+    static class EmagException extends RuntimeException {
+        public AdsResponse response;
+        EmagException(AdsResponse response) {
+            this.response = response;
+        }
+    }
+
     private static <T, R extends AdsResponse> List<T> downloadPages(
             Page page,
             IntFunction<URIBuilder> uriForPage,
@@ -274,15 +278,24 @@ public class FetchAds {
         int pageNumber = 1;
         int totalPages;
         List<T> result = new ArrayList<>();
-        do {
-            var uri = uriForPage.apply(pageNumber).build();
-            var path = pathForPage.apply(pageNumber);
-            var json = getJSON(page, path, uri.toASCIIString(), pageNumber == 1);
-            var response = decodeJSON(json, responseType);
-            result.addAll(itemsFromResponse.apply(response));
-            totalPages = response.meta.pageCount();
-            pageNumber++;
-        } while (pageNumber <= totalPages);
+        URI uri = null;
+        try {
+            do {
+                uri = uriForPage.apply(pageNumber).build();
+                var path = pathForPage.apply(pageNumber);
+                var json = getJSON(page, path, uri.toASCIIString(), pageNumber == 1);
+                var response = decodeJSON(json, responseType);
+                result.addAll(itemsFromResponse.apply(response));
+                totalPages = response.meta.pageCount();
+                pageNumber++;
+            } while (pageNumber <= totalPages);
+        } catch (EmagException e) {
+            logger.log(WARNING, "Skipping over URI %s because of error %s".formatted(uri, e.response));
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         return result;
     }
 
@@ -301,7 +314,7 @@ public class FetchAds {
                     logger.log(SEVERE, "%s: %s".formatted(error.propertyPath(), error.message()));
                 }
             }
-            throw new RuntimeException("eMag returned an error response.");
+            throw new EmagException(response);
         }
         return response;
     }
