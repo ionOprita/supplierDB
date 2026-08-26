@@ -58,6 +58,25 @@ public class AdsCampaignTable {
     public record AdsAdsetTableData(String campaignName, List<AdsAdsetColumn> columns, List<AdsAdsetRow> rows) {
     }
 
+    /**
+     * Identifies an ad set snapshot stored for one report date.
+     */
+    public record AdsAdsetKey(LocalDate reportDate, int campaignId, int adsetId) {
+        public AdsAdsetKey {
+            Objects.requireNonNull(reportDate, "reportDate");
+        }
+    }
+
+    /**
+     * Associates downloaded detail rows with the ad set snapshot to which they belong.
+     */
+    public record AdsAdsetReport<T>(AdsAdsetKey adset, List<T> rows) {
+        public AdsAdsetReport {
+            Objects.requireNonNull(adset, "adset");
+            rows = List.copyOf(Objects.requireNonNull(rows, "rows"));
+        }
+    }
+
     public record AdsSearchPhraseColumn(String key, String label, boolean numeric) {
     }
 
@@ -231,6 +250,34 @@ public class AdsCampaignTable {
             keywordColumn("summary_return_on_advertising_spend", "Return on advertising spend", true),
             keywordColumn("last_seen_at", "Last seen at", false)
     );
+
+    static List<AdsAdsetKey> getAdsetKeys(Connection db, LocalDate startDate, LocalDate endDate) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(startDate);
+        Objects.requireNonNull(endDate);
+
+        var result = new ArrayList<AdsAdsetKey>();
+        try (var s = db.prepareStatement("""
+                SELECT report_date, campaign_id, adset_id
+                FROM ads_adset
+                WHERE report_date >= ?
+                  AND report_date < ?
+                ORDER BY report_date, campaign_id, adset_id
+                """)) {
+            s.setDate(1, Date.valueOf(startDate));
+            s.setDate(2, Date.valueOf(endDate));
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    result.add(new AdsAdsetKey(
+                            rs.getDate("report_date").toLocalDate(),
+                            rs.getInt("campaign_id"),
+                            rs.getInt("adset_id")
+                    ));
+                }
+            }
+        }
+        return result;
+    }
 
     static List<LocalDate> getCampaignReportDates(Connection db) throws SQLException {
         Objects.requireNonNull(db);
@@ -1046,6 +1093,13 @@ public class AdsCampaignTable {
         return changedRows;
     }
 
+    static int upsertCampaignsAndAdsets(Connection db, List<Campaign> campaigns) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(campaigns);
+
+        return upsertCampaignRows(db, campaigns) + upsertAdsetRows(db, campaigns);
+    }
+
     private static int upsertCampaignRows(Connection db, List<Campaign> campaigns) throws SQLException {
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_campaign (
@@ -1187,6 +1241,21 @@ public class AdsCampaignTable {
     }
 
     private static int upsertKeywordRows(Connection db, List<Campaign> campaigns) throws SQLException {
+        var reports = new ArrayList<AdsAdsetReport<AdsKeyword>>();
+        for (var campaign : campaigns) {
+            var campaignId = campaignId(campaign);
+            for (var adSet : listOrEmpty(campaign.adSets())) {
+                var key = new AdsAdsetKey(campaign.reportDate(), campaignId, adsetId(adSet.adSet()));
+                reports.add(new AdsAdsetReport<>(key, listOrEmpty(adSet.keywords())));
+            }
+        }
+        return upsertKeywordReports(db, reports);
+    }
+
+    static int upsertKeywordReports(Connection db, List<AdsAdsetReport<AdsKeyword>> reports) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reports);
+
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_keyword (
                     report_date,
@@ -1243,14 +1312,10 @@ public class AdsCampaignTable {
                     summary_return_on_advertising_spend = EXCLUDED.summary_return_on_advertising_spend,
                     last_seen_at = current_timestamp
                 """)) {
-            for (var campaign : campaigns) {
-                var campaignId = campaignId(campaign);
-                for (var adSet : listOrEmpty(campaign.adSets())) {
-                    var adsetId = adsetId(adSet.adSet());
-                    for (var keyword : listOrEmpty(adSet.keywords())) {
-                        bindKeyword(s, campaign, campaignId, adsetId, keyword);
-                        s.addBatch();
-                    }
+            for (var report : reports) {
+                for (var keyword : report.rows()) {
+                    bindKeyword(s, report.adset(), keyword);
+                    s.addBatch();
                 }
             }
             return changedRows(s.executeBatch());
@@ -1258,6 +1323,21 @@ public class AdsCampaignTable {
     }
 
     private static int upsertSearchPhraseRows(Connection db, List<Campaign> campaigns) throws SQLException {
+        var reports = new ArrayList<AdsAdsetReport<AdsSearchPhrase>>();
+        for (var campaign : campaigns) {
+            var campaignId = campaignId(campaign);
+            for (var adSet : listOrEmpty(campaign.adSets())) {
+                var key = new AdsAdsetKey(campaign.reportDate(), campaignId, adsetId(adSet.adSet()));
+                reports.add(new AdsAdsetReport<>(key, listOrEmpty(adSet.searchPrases())));
+            }
+        }
+        return upsertSearchPhraseReports(db, reports);
+    }
+
+    static int upsertSearchPhraseReports(Connection db, List<AdsAdsetReport<AdsSearchPhrase>> reports) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reports);
+
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_search_phrase (
                     report_date,
@@ -1311,14 +1391,10 @@ public class AdsCampaignTable {
                     summary_return_on_advertising_spend = EXCLUDED.summary_return_on_advertising_spend,
                     last_seen_at = current_timestamp
                 """)) {
-            for (var campaign : campaigns) {
-                var campaignId = campaignId(campaign);
-                for (var adSet : listOrEmpty(campaign.adSets())) {
-                    var adsetId = adsetId(adSet.adSet());
-                    for (var phrase : listOrEmpty(adSet.searchPrases())) {
-                        bindSearchPhrase(s, campaign, campaignId, adsetId, phrase);
-                        s.addBatch();
-                    }
+            for (var report : reports) {
+                for (var phrase : report.rows()) {
+                    bindSearchPhrase(s, report.adset(), phrase);
+                    s.addBatch();
                 }
             }
             return changedRows(s.executeBatch());
@@ -1326,6 +1402,21 @@ public class AdsCampaignTable {
     }
 
     private static int upsertTargetedProductRows(Connection db, List<Campaign> campaigns) throws SQLException {
+        var reports = new ArrayList<AdsAdsetReport<AdsTargetedProduct>>();
+        for (var campaign : campaigns) {
+            var campaignId = campaignId(campaign);
+            for (var adSet : listOrEmpty(campaign.adSets())) {
+                var key = new AdsAdsetKey(campaign.reportDate(), campaignId, adsetId(adSet.adSet()));
+                reports.add(new AdsAdsetReport<>(key, listOrEmpty(adSet.targetedProducts())));
+            }
+        }
+        return upsertTargetedProductReports(db, reports);
+    }
+
+    static int upsertTargetedProductReports(Connection db, List<AdsAdsetReport<AdsTargetedProduct>> reports) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reports);
+
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_targeted_product (
                     report_date,
@@ -1376,14 +1467,10 @@ public class AdsCampaignTable {
                     conversion_rate = EXCLUDED.conversion_rate,
                     last_seen_at = current_timestamp
                 """)) {
-            for (var campaign : campaigns) {
-                var campaignId = campaignId(campaign);
-                for (var adSet : listOrEmpty(campaign.adSets())) {
-                    var adsetId = adsetId(adSet.adSet());
-                    for (var targetedProduct : listOrEmpty(adSet.targetedProducts())) {
-                        bindTargetedProduct(s, campaign, campaignId, adsetId, targetedProduct);
-                        s.addBatch();
-                    }
+            for (var report : reports) {
+                for (var targetedProduct : report.rows()) {
+                    bindTargetedProduct(s, report.adset(), targetedProduct);
+                    s.addBatch();
                 }
             }
             return changedRows(s.executeBatch());
@@ -1420,13 +1507,12 @@ public class AdsCampaignTable {
         bindSummary(s, index, adset.summary());
     }
 
-    private static void bindKeyword(PreparedStatement s, Campaign campaign, int campaignId, int adsetId, AdsKeyword keyword) throws SQLException {
+    private static void bindKeyword(PreparedStatement s, AdsAdsetKey adset, AdsKeyword keyword) throws SQLException {
         Objects.requireNonNull(keyword, "keyword");
         var keywordAdset = Objects.requireNonNull(keyword.adset(), "keyword.adset");
         var keywordAdsetId = Objects.requireNonNull(keywordAdset.id(), "keyword.adset.id");
-        rejectMismatchedAdsetId(keywordAdsetId, adsetId, "keyword");
-        int index = bindCampaignKey(s, 1, campaign, campaignId);
-        s.setInt(index++, adsetId);
+        rejectMismatchedAdsetId(keywordAdsetId, adset.adsetId(), "keyword");
+        int index = bindAdsetKey(s, 1, adset);
         s.setInt(index++, Objects.requireNonNull(keyword.id(), "keyword.id"));
         setBigDecimal(s, index++, keyword.bid());
         s.setString(index++, keyword.status());
@@ -1437,11 +1523,10 @@ public class AdsCampaignTable {
         bindSummary(s, index, keyword.summary());
     }
 
-    private static void bindSearchPhrase(PreparedStatement s, Campaign campaign, int campaignId, int adsetId, AdsSearchPhrase phrase) throws SQLException {
+    private static void bindSearchPhrase(PreparedStatement s, AdsAdsetKey adset, AdsSearchPhrase phrase) throws SQLException {
         Objects.requireNonNull(phrase, "phrase");
-        rejectMismatchedAdsetId(phrase.adsetId(), adsetId, "search phrase");
-        int index = bindCampaignKey(s, 1, campaign, campaignId);
-        s.setInt(index++, adsetId);
+        rejectMismatchedAdsetId(phrase.adsetId(), adset.adsetId(), "search phrase");
+        int index = bindAdsetKey(s, 1, adset);
         var searchPhrase = Objects.requireNonNull(phrase.searchPhrase(), "searchPhrase");
         s.setString(index++, searchPhrase);
         s.setString(index++, sha256(searchPhrase));
@@ -1449,11 +1534,10 @@ public class AdsCampaignTable {
         bindSummary(s, index, phrase.summary());
     }
 
-    private static void bindTargetedProduct(PreparedStatement s, Campaign campaign, int campaignId, int adsetId, AdsTargetedProduct product) throws SQLException {
+    private static void bindTargetedProduct(PreparedStatement s, AdsAdsetKey adset, AdsTargetedProduct product) throws SQLException {
         Objects.requireNonNull(product, "product");
-        rejectMismatchedAdsetId(product.adsetId(), adsetId, "targeted product");
-        int index = bindCampaignKey(s, 1, campaign, campaignId);
-        s.setInt(index++, adsetId);
+        rejectMismatchedAdsetId(product.adsetId(), adset.adsetId(), "targeted product");
+        int index = bindAdsetKey(s, 1, adset);
         s.setInt(index++, Objects.requireNonNull(product.docId(), "docId"));
         s.setString(index++, product.productName());
         setBigDecimal(s, index++, product.price());
@@ -1475,6 +1559,13 @@ public class AdsCampaignTable {
         s.setString(index++, product.imageUrl());
         setBigDecimal(s, index++, product.returnOnAdvertisingSpend());
         setBigDecimal(s, index, product.conversionRate());
+    }
+
+    private static int bindAdsetKey(PreparedStatement s, int index, AdsAdsetKey adset) throws SQLException {
+        setDate(s, index++, adset.reportDate());
+        s.setInt(index++, adset.campaignId());
+        s.setInt(index++, adset.adsetId());
+        return index;
     }
 
     private static int bindCampaignKey(PreparedStatement s, int index, Campaign campaign, int campaignId) throws SQLException {

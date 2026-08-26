@@ -12,7 +12,12 @@ import ro.sellfluence.db.EmployeeDataTable.EmployeeInfo;
 import ro.sellfluence.db.EmagOrder.ExtendedOrder;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
+import ro.sellfluence.db.AdsCampaignTable.AdsAdsetKey;
+import ro.sellfluence.db.AdsCampaignTable.AdsAdsetReport;
 import ro.sellfluence.db.versions.SetupDB;
+import ro.sellfluence.emagapi.AdsKeyword;
+import ro.sellfluence.emagapi.AdsSearchPhrase;
+import ro.sellfluence.emagapi.AdsTargetedProduct;
 import ro.sellfluence.emagapi.CancellationReason;
 import ro.sellfluence.emagapi.Campaign;
 import ro.sellfluence.emagapi.LockerDetails;
@@ -48,6 +53,10 @@ import static java.math.RoundingMode.HALF_EVEN;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 import static ro.sellfluence.db.AdsCampaignTable.upsertCampaigns;
+import static ro.sellfluence.db.AdsCampaignTable.upsertCampaignsAndAdsets;
+import static ro.sellfluence.db.AdsCampaignTable.upsertKeywordReports;
+import static ro.sellfluence.db.AdsCampaignTable.upsertSearchPhraseReports;
+import static ro.sellfluence.db.AdsCampaignTable.upsertTargetedProductReports;
 import static ro.sellfluence.db.EmagFetchLog.deleteFetchLogsBefore;
 import static ro.sellfluence.db.EmagFetchLog.getEmagLog;
 import static ro.sellfluence.db.EmagFetchLog.insertEmagLog;
@@ -150,6 +159,26 @@ public class EmagMirrorDB {
 
     public int addOrUpdateAdCampaigns(List<Campaign> campaigns) throws SQLException {
         return database.writeTX(db -> upsertCampaigns(db, campaigns));
+    }
+
+    public int addOrUpdateAdsAndCampaigns(List<Campaign> campaigns) throws SQLException {
+        return database.writeTX(db -> upsertCampaignsAndAdsets(db, campaigns));
+    }
+
+    public int addOrUpdateAdsKeywords(List<AdsAdsetReport<AdsKeyword>> reports) throws SQLException {
+        return database.writeTX(db -> upsertKeywordReports(db, reports));
+    }
+
+    public int addOrUpdateAdsSearchPhrases(List<AdsAdsetReport<AdsSearchPhrase>> reports) throws SQLException {
+        return database.writeTX(db -> upsertSearchPhraseReports(db, reports));
+    }
+
+    public int addOrUpdateAdsTargetedProducts(List<AdsAdsetReport<AdsTargetedProduct>> reports) throws SQLException {
+        return database.writeTX(db -> upsertTargetedProductReports(db, reports));
+    }
+
+    public List<AdsAdsetKey> getAdsAdsetKeys(LocalDate startDate, LocalDate endDate) throws SQLException {
+        return database.readTX(db -> AdsCampaignTable.getAdsetKeys(db, startDate, endDate));
     }
 
     public List<LocalDate> getAdsCampaignReportDates() throws SQLException {

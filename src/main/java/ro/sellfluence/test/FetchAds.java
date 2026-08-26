@@ -8,6 +8,8 @@ import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.options.AriaRole;
 import org.apache.hc.core5.net.URIBuilder;
+import ro.sellfluence.db.AdsCampaignTable.AdsAdsetKey;
+import ro.sellfluence.db.AdsCampaignTable.AdsAdsetReport;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.emagapi.AdSet;
 import ro.sellfluence.emagapi.AdsAdset;
@@ -43,8 +45,11 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntFunction;
 import java.util.logging.Logger;
@@ -90,23 +95,66 @@ public class FetchAds {
     }
 
     static void main(String... args) throws Exception {
-        setupCacheDirectory();
         var arguments = new Arguments(args);
         var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
         var endDate = LocalDate.now();
         var startDate = endDate.minusDays(31);
-        fetchFrom("sellfusion", mirrorDB, startDate, endDate);
+        fetchAdsAndCampaigns("sellfusion", mirrorDB, startDate, endDate);
+        fetchKeywords("sellfusion", mirrorDB, startDate, endDate);
+        fetchSearchPhrases("sellfusion", mirrorDB, startDate, endDate);
+        fetchTargetedProducts("sellfusion", mirrorDB, startDate, endDate);
     }
 
     /**
-     * Fetch from eMag user given by {@see alias} ads and campaign relevant data and store it into the database.
+     * Fetch campaigns and their ad sets and store them in the database.
      *
      * @param alias     eMag user.
      * @param mirrorDB  database.
      * @param startDate First day to fetch.
      * @param endDate   End date not to be included.
      */
-    private static void fetchFrom(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+    public static void fetchAdsAndCampaigns(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+        withPlaywrightSession(alias, page -> transferAdsAndCampaignsToDB(page, mirrorDB, startDate, endDate));
+    }
+
+    /**
+     * Fetch keywords for the ad sets stored in the database.
+     *
+     * @param alias     eMag user.
+     * @param mirrorDB  database containing the campaign and ad set IDs.
+     * @param startDate First day to fetch.
+     * @param endDate   End date not to be included.
+     */
+    public static void fetchKeywords(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+        withPlaywrightSession(alias, page -> transferKeywordsToDB(page, mirrorDB, startDate, endDate));
+    }
+
+    /**
+     * Fetch search phrases for the campaigns and ad sets stored in the database.
+     *
+     * @param alias     eMag user.
+     * @param mirrorDB  database containing the campaign and ad set IDs.
+     * @param startDate First day to fetch.
+     * @param endDate   End date not to be included.
+     */
+    public static void fetchSearchPhrases(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+        withPlaywrightSession(alias, page -> transferSearchPhrasesToDB(page, mirrorDB, startDate, endDate));
+    }
+
+    /**
+     * Fetch targeted products for the ad sets stored in the database.
+     *
+     * @param alias     eMag user.
+     * @param mirrorDB  database containing the campaign and ad set IDs.
+     * @param startDate First day to fetch.
+     * @param endDate   End date not to be included.
+     */
+    public static void fetchTargetedProducts(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+        withPlaywrightSession(alias, page -> transferTargetedProductsToDB(page, mirrorDB, startDate, endDate));
+    }
+
+    private static void withPlaywrightSession(String alias, Consumer<Page> transfer) {
+        setupCacheDirectory();
         var user = UserPassword.findAlias(alias);
         if (user == null) {
             logger.log(WARNING, "Skipping unknown alias %s".formatted(alias));
@@ -114,70 +162,173 @@ public class FetchAds {
             try (Playwright playwright = Playwright.create()) {
                 try (Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
                         .setHeadless(false))) {
-                    BrowserContext context = browser.newContext();
-                    Page page = context.newPage();
-                    if (!offline) {
-                        login(page, user);
+                    try (BrowserContext context = browser.newContext()) {
+                        Page page = context.newPage();
+                        if (!offline) {
+                            login(page, user);
+                        }
+                        transfer.accept(page);
                     }
-                    transferDataToDB(page, mirrorDB, startDate, endDate);
                 }
             }
         }
     }
 
     /**
-     * Download ads related data from eMag and store it into the database.
+     * Download campaigns and ad sets from eMag and store them in the database.
      *
      * @param page      Playwright session.
      * @param mirrorDB  database.
      * @param startDate First day to fetch.
      * @param endDate   End date not to be included.
      */
-    private static void transferDataToDB(Page page, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+    private static void transferAdsAndCampaignsToDB(Page page, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
         var currentDate = startDate;
         while (currentDate.isBefore(endDate)) {
-            var campaigns = downloadData(page, currentDate);
+            var campaigns = downloadAdsAndCampaigns(page, currentDate);
             try {
-                updatedDatabase(mirrorDB, campaigns);
+                var changedRows = mirrorDB.addOrUpdateAdsAndCampaigns(campaigns);
+                logger.log(INFO, "Inserted or updated %d campaign and ad set rows from %d campaigns for %s."
+                        .formatted(changedRows, campaigns.size(), currentDate));
             } catch (SQLException e) {
-                throw new RuntimeException("Error storing the data to the database.", e);
+                throw new RuntimeException("Error storing campaigns and ad sets in the database.", e);
             }
             currentDate = currentDate.plusDays(1);
         }
     }
 
     /**
-     * Updated the database using the data found in campaigns, avoiding creating duplicates.
+     * Download keyword data using the ad set IDs stored in the database.
      *
-     * @param mirrorDB  database to use.
-     * @param campaigns new data to add.
+     * @param page      Playwright session.
+     * @param mirrorDB  database.
+     * @param startDate First day to fetch.
+     * @param endDate   End date not to be included.
      */
-    private static void updatedDatabase(EmagMirrorDB mirrorDB, ArrayList<Campaign> campaigns) throws SQLException {
-        var changedRows = mirrorDB.addOrUpdateAdCampaigns(campaigns);
-        logger.log(INFO, "Inserted or updated %d ads rows from %d campaigns.".formatted(changedRows, campaigns.size()));
+    private static void transferKeywordsToDB(Page page, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+        var adsetsByDate = readAdsetsByDate(mirrorDB, startDate, endDate);
+        var currentDate = startDate;
+        while (currentDate.isBefore(endDate)) {
+            var reports = new ArrayList<AdsAdsetReport<AdsKeyword>>();
+            var downloadedRows = 0;
+            for (var adset : adsetsByDate.getOrDefault(currentDate, List.of())) {
+                var keywords = downloadKeywords(page, currentDate, adset.campaignId(), adset.adsetId());
+                downloadedRows += keywords.size();
+                reports.add(new AdsAdsetReport<>(adset, keywords));
+            }
+            try {
+                var changedRows = mirrorDB.addOrUpdateAdsKeywords(reports);
+                logger.log(INFO, "Inserted or updated %d keyword rows from %d downloaded rows for %s."
+                        .formatted(changedRows, downloadedRows, currentDate));
+            } catch (SQLException e) {
+                throw new RuntimeException("Error storing keywords in the database.", e);
+            }
+            currentDate = currentDate.plusDays(1);
+        }
     }
 
     /**
-     * Download all ads and campaign information for one day.
+     * Download search phrase data using the campaign and ad set IDs stored in the database.
+     *
+     * @param page      Playwright session.
+     * @param mirrorDB  database.
+     * @param startDate First day to fetch.
+     * @param endDate   End date not to be included.
+     */
+    private static void transferSearchPhrasesToDB(Page page, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+        var adsetsByDate = readAdsetsByDate(mirrorDB, startDate, endDate);
+        var currentDate = startDate;
+        while (currentDate.isBefore(endDate)) {
+            var reports = new ArrayList<AdsAdsetReport<AdsSearchPhrase>>();
+            var downloadedRows = 0;
+            var matchedRows = 0;
+            var adsetsByCampaign = adsetsByDate.getOrDefault(currentDate, List.of()).stream()
+                    .collect(Collectors.groupingBy(AdsAdsetKey::campaignId, LinkedHashMap::new, Collectors.toList()));
+            for (var campaignEntry : adsetsByCampaign.entrySet()) {
+                var searchPhrases = downloadSearchPhrases(page, currentDate, campaignEntry.getKey());
+                downloadedRows += searchPhrases.size();
+                var phrasesByAdset = searchPhrases.stream()
+                        .filter(phrase -> phrase.adsetId() != null)
+                        .collect(Collectors.groupingBy(AdsSearchPhrase::adsetId));
+                for (var adset : campaignEntry.getValue()) {
+                    var phrases = phrasesByAdset.getOrDefault(adset.adsetId(), List.of());
+                    matchedRows += phrases.size();
+                    reports.add(new AdsAdsetReport<>(adset, phrases));
+                }
+            }
+            if (matchedRows != downloadedRows) {
+                logger.log(WARNING, "Ignored %d search phrase rows for unknown ad sets on %s."
+                        .formatted(downloadedRows - matchedRows, currentDate));
+            }
+            try {
+                var changedRows = mirrorDB.addOrUpdateAdsSearchPhrases(reports);
+                logger.log(INFO, "Inserted or updated %d search phrase rows from %d downloaded rows for %s."
+                        .formatted(changedRows, downloadedRows, currentDate));
+            } catch (SQLException e) {
+                throw new RuntimeException("Error storing search phrases in the database.", e);
+            }
+            currentDate = currentDate.plusDays(1);
+        }
+    }
+
+    /**
+     * Download targeted product data using the ad set IDs stored in the database.
+     *
+     * @param page      Playwright session.
+     * @param mirrorDB  database.
+     * @param startDate First day to fetch.
+     * @param endDate   End date not to be included.
+     */
+    private static void transferTargetedProductsToDB(Page page, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+        var adsetsByDate = readAdsetsByDate(mirrorDB, startDate, endDate);
+        var currentDate = startDate;
+        while (currentDate.isBefore(endDate)) {
+            var reports = new ArrayList<AdsAdsetReport<AdsTargetedProduct>>();
+            var downloadedRows = 0;
+            for (var adset : adsetsByDate.getOrDefault(currentDate, List.of())) {
+                var targetedProducts = downloadTargetedProducts(
+                        page, currentDate, adset.campaignId(), adset.adsetId()
+                );
+                downloadedRows += targetedProducts.size();
+                reports.add(new AdsAdsetReport<>(adset, targetedProducts));
+            }
+            try {
+                var changedRows = mirrorDB.addOrUpdateAdsTargetedProducts(reports);
+                logger.log(INFO, "Inserted or updated %d targeted product rows from %d downloaded rows for %s."
+                        .formatted(changedRows, downloadedRows, currentDate));
+            } catch (SQLException e) {
+                throw new RuntimeException("Error storing targeted products in the database.", e);
+            }
+            currentDate = currentDate.plusDays(1);
+        }
+    }
+
+    private static Map<LocalDate, List<AdsAdsetKey>> readAdsetsByDate(
+            EmagMirrorDB mirrorDB,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
+        try {
+            return mirrorDB.getAdsAdsetKeys(startDate, endDate).stream()
+                    .collect(Collectors.groupingBy(AdsAdsetKey::reportDate, LinkedHashMap::new, Collectors.toList()));
+        } catch (SQLException e) {
+            throw new RuntimeException("Error reading campaign and ad set IDs from the database.", e);
+        }
+    }
+
+    /**
+     * Download campaigns and ad sets for one day.
      *
      * @param page Playwright session.
      * @param date for which to download the data.
-     * @return All downloaded data in one complex structure.
+     * @return Campaign and ad set snapshots for the date.
      */
-    private static ArrayList<Campaign> downloadData(Page page, LocalDate date) {
-        var campaigns = downloadCampaigns(page, date);
+    private static ArrayList<Campaign> downloadAdsAndCampaigns(Page page, LocalDate date) {
         var campaignList = new ArrayList<Campaign>();
-        for (var campaign : campaigns) {
-            var adSets = downloadAdSets(page, date, campaign.id());
-            var adSetList = new ArrayList<AdSet>();
-            var searchPhrases = downloadSearchPhrases(page, date, campaign.id());
-            var searchPhrasesByAdSet = searchPhrases.stream().collect(Collectors.groupingBy(AdsSearchPhrase::adsetId));
-            for (var adSet : adSets) {
-                var targetedProducts = downloadTargetedProducts(page, date, campaign.id(), adSet.id());
-                var keywords = downloadKeywords(page, date, campaign.id(), adSet.id());
-                adSetList.add(new AdSet(adSet, searchPhrasesByAdSet.get(adSet.id()), targetedProducts, keywords
-                ));
-            }
+        for (var campaign : downloadCampaigns(page, date)) {
+            var adSetList = downloadAdSets(page, date, campaign.id()).stream()
+                    .map(adSet -> new AdSet(adSet, List.of(), List.of(), List.of()))
+                    .toList();
             campaignList.add(new Campaign(date, campaign, adSetList));
         }
         return campaignList;
