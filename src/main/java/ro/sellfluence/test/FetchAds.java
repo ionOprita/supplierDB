@@ -332,5 +332,6 @@ public class FetchAds {
         page.navigate("https://marketplace.emag.ro/dashboard");
         randomWait(2.0, 2.0);
         page.navigate("https://advertising.emag.net/");
+        randomWait(5.0, 8.0);
     }
 }
