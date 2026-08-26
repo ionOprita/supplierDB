@@ -1,4 +1,4 @@
-package ro.sellfluence.test;
+package ro.sellfluence.app;
 
 import com.bastiaanjansen.otp.TOTPGenerator;
 import com.microsoft.playwright.Browser;
