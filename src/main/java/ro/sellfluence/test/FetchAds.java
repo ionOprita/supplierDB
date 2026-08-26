@@ -173,7 +173,7 @@ public class FetchAds {
     private static URIBuilder skeleton(LocalDate date, int pageNumber) {
         URIBuilder uriBuilder = new URIBuilder(URI.create("https://advertising.emag.net/api/v1"));
         uriBuilder.addParameter("page", Integer.toString(pageNumber));
-        uriBuilder.addParameter("perPage", "700");
+        uriBuilder.addParameter("perPage", "1000");
         uriBuilder.addParameter("dateStart", date.toString());
         uriBuilder.addParameter("dateEnd", date.toString());
         return uriBuilder;
@@ -261,9 +261,9 @@ public class FetchAds {
         );
     }
 
-    static class EmagException extends RuntimeException {
+    static class EMAGException extends RuntimeException {
         public AdsResponse response;
-        EmagException(AdsResponse response) {
+        EMAGException(AdsResponse response) {
             this.response = response;
         }
     }
@@ -289,12 +289,8 @@ public class FetchAds {
                 totalPages = response.meta.pageCount();
                 pageNumber++;
             } while (pageNumber <= totalPages);
-        } catch (EmagException e) {
+        } catch (EMAGException e) {
             logger.log(WARNING, "Skipping over URI %s because of error %s".formatted(uri, e.response));
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(e);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
         }
         return result;
     }
@@ -314,13 +310,13 @@ public class FetchAds {
                     logger.log(SEVERE, "%s: %s".formatted(error.propertyPath(), error.message()));
                 }
             }
-            throw new EmagException(response);
+            throw new EMAGException(response);
         }
         return response;
     }
 
     private static void login(Page page, UserPassword user) {
-        page.navigate("https://auth.emag.net/login?adk=PQ02EfRdOtbhV7N2");
+        page.navigate("https://auth.emag.net/login");
         randomWait(1.0, 1.0);
         page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Enter your username or e-mail")).dblclick();
         randomWait(1.0, 1.0);
