@@ -277,6 +277,10 @@ public class EmagMirrorDB {
         return database.writeTX(Task::resetState);
     }
 
+    public int registerTasks(List<String> taskNames) throws SQLException {
+        return database.writeTX(db -> Task.registerTasks(db, taskNames));
+    }
+
     public int startTask(String name) throws SQLException {
         return database.writeTX(db -> Task.startTask(db, name));
     }

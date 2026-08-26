@@ -48,11 +48,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.IntFunction;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static java.util.logging.Level.INFO;
@@ -63,13 +65,13 @@ import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 
 public class FetchAds {
-    private static final boolean offline = Boolean.parseBoolean(System.getProperty("ads.offline", "false"));
-
     private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", INFO, 10, 100_000);
 
     private static final Random random = new Random();
 
     private static final Path cacheDirectory = Path.of("AdsJSON");
+
+    private static final Pattern safeAlias = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]*");
 
     private static class LocalDateTimeDeserializer extends ValueDeserializer<LocalDateTime> {
 
@@ -86,12 +88,25 @@ public class FetchAds {
                             .addDeserializer(LocalDateTime.class, new LocalDateTimeDeserializer())
             ).build();
 
-    static class EMAGException extends Exception {
-        public AdsResponse response;
+    static class EMAGException extends RuntimeException {
+        public final AdsResponse response;
 
         EMAGException(AdsResponse response) {
+            super("eMAG Ads returned an error: %s (%s, %s)"
+                    .formatted(response.error, response.code, response.status));
             this.response = response;
         }
+    }
+
+    record HttpResult(boolean ok, int status, String statusText, String body) {
+    }
+
+    @FunctionalInterface
+    interface HttpFetcher {
+        HttpResult fetch(String url);
+    }
+
+    record DownloadedPage<T>(List<T> items, int pageCount) {
     }
 
     static void main(String... args) throws Exception {
@@ -114,7 +129,8 @@ public class FetchAds {
      * @param endDate   End date not to be included.
      */
     public static void fetchAdsAndCampaigns(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
-        withPlaywrightSession(alias, page -> transferAdsAndCampaignsToDB(page, mirrorDB, startDate, endDate));
+        withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
+                transferAdsAndCampaignsToDB(page, aliasCacheDirectory, mirrorDB, startDate, endDate));
     }
 
     /**
@@ -126,7 +142,8 @@ public class FetchAds {
      * @param endDate   End date not to be included.
      */
     public static void fetchKeywords(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
-        withPlaywrightSession(alias, page -> transferKeywordsToDB(page, mirrorDB, startDate, endDate));
+        withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
+                transferKeywordsToDB(page, aliasCacheDirectory, mirrorDB, startDate, endDate));
     }
 
     /**
@@ -138,7 +155,8 @@ public class FetchAds {
      * @param endDate   End date not to be included.
      */
     public static void fetchSearchPhrases(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
-        withPlaywrightSession(alias, page -> transferSearchPhrasesToDB(page, mirrorDB, startDate, endDate));
+        withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
+                transferSearchPhrasesToDB(page, aliasCacheDirectory, mirrorDB, startDate, endDate));
     }
 
     /**
@@ -150,27 +168,77 @@ public class FetchAds {
      * @param endDate   End date not to be included.
      */
     public static void fetchTargetedProducts(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
-        withPlaywrightSession(alias, page -> transferTargetedProductsToDB(page, mirrorDB, startDate, endDate));
+        withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
+                transferTargetedProductsToDB(page, aliasCacheDirectory, mirrorDB, startDate, endDate));
     }
 
-    private static void withPlaywrightSession(String alias, Consumer<Page> transfer) {
-        setupCacheDirectory();
-        var user = UserPassword.findAlias(alias);
-        if (user == null) {
-            logger.log(WARNING, "Skipping unknown alias %s".formatted(alias));
-        } else {
-            try (Playwright playwright = Playwright.create()) {
-                try (Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
-                        .setHeadless(false))) {
-                    try (BrowserContext context = browser.newContext()) {
-                        Page page = context.newPage();
-                        if (!offline) {
-                            login(page, user);
-                        }
-                        transfer.accept(page);
+    private static void withPlaywrightSession(String alias, BiConsumer<Page, Path> transfer) {
+        var aliasCacheDirectory = cacheDirectoryForAlias(cacheDirectory, alias);
+        var user = requireCredentials(alias);
+        setupCacheDirectory(aliasCacheDirectory);
+        try (Playwright playwright = Playwright.create()) {
+            try (Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
+                    .setHeadless(isHeadless()))) {
+                try (BrowserContext context = browser.newContext()) {
+                    Page page = context.newPage();
+                    if (!isOffline()) {
+                        login(page, user);
                     }
+                    transfer.accept(page, aliasCacheDirectory);
                 }
             }
+        }
+    }
+
+    static Path cacheDirectoryForAlias(Path root, String alias) {
+        Objects.requireNonNull(root, "Cache root must not be null.");
+        if (alias == null || !safeAlias.matcher(alias).matches()) {
+            throw new IllegalArgumentException("Invalid eMAG Ads alias: %s".formatted(alias));
+        }
+        var normalizedRoot = root.toAbsolutePath().normalize();
+        var aliasDirectory = normalizedRoot.resolve(alias).normalize();
+        if (!normalizedRoot.equals(aliasDirectory.getParent())) {
+            throw new IllegalArgumentException("eMAG Ads alias must identify one cache directory.");
+        }
+        return root.resolve(alias);
+    }
+
+    static boolean isHeadless() {
+        return booleanProperty("ads.headless", true);
+    }
+
+    private static boolean isOffline() {
+        return booleanProperty("ads.offline", false);
+    }
+
+    private static boolean booleanProperty(String name, boolean defaultValue) {
+        var value = System.getProperty(name);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value.equalsIgnoreCase("true")) {
+            return true;
+        }
+        if (value.equalsIgnoreCase("false")) {
+            return false;
+        }
+        throw new IllegalArgumentException("System property %s must be either true or false.".formatted(name));
+    }
+
+    static UserPassword requireCredentials(String alias) {
+        var user = UserPassword.findAlias(alias);
+        if (user == null) {
+            throw new IllegalArgumentException("Unknown eMAG Ads alias: %s".formatted(alias));
+        }
+        validateCredentials(alias, user.getUsername(), user.getPassword(), user.getOtpAuth());
+        return user;
+    }
+
+    static void validateCredentials(String alias, String username, String password, String otpAuth) {
+        if (username == null || username.isBlank()
+                || password == null || password.isBlank()
+                || otpAuth == null || otpAuth.isBlank()) {
+            throw new IllegalStateException("Incomplete eMAG Ads credentials for alias %s.".formatted(alias));
         }
     }
 
@@ -182,10 +250,16 @@ public class FetchAds {
      * @param startDate First day to fetch.
      * @param endDate   End date not to be included.
      */
-    private static void transferAdsAndCampaignsToDB(Page page, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+    private static void transferAdsAndCampaignsToDB(
+            Page page,
+            Path aliasCacheDirectory,
+            EmagMirrorDB mirrorDB,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
         var currentDate = startDate;
         while (currentDate.isBefore(endDate)) {
-            var campaigns = downloadAdsAndCampaigns(page, currentDate);
+            var campaigns = downloadAdsAndCampaigns(page, aliasCacheDirectory, currentDate);
             try {
                 var changedRows = mirrorDB.addOrUpdateAdsAndCampaigns(campaigns);
                 logger.log(INFO, "Inserted or updated %d campaign and ad set rows from %d campaigns for %s."
@@ -205,14 +279,22 @@ public class FetchAds {
      * @param startDate First day to fetch.
      * @param endDate   End date not to be included.
      */
-    private static void transferKeywordsToDB(Page page, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+    private static void transferKeywordsToDB(
+            Page page,
+            Path aliasCacheDirectory,
+            EmagMirrorDB mirrorDB,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
         var adsetsByDate = readAdsetsByDate(mirrorDB, startDate, endDate);
         var currentDate = startDate;
         while (currentDate.isBefore(endDate)) {
             var reports = new ArrayList<AdsAdsetReport<AdsKeyword>>();
             var downloadedRows = 0;
             for (var adset : adsetsByDate.getOrDefault(currentDate, List.of())) {
-                var keywords = downloadKeywords(page, currentDate, adset.campaignId(), adset.adsetId());
+                var keywords = downloadKeywords(
+                        page, aliasCacheDirectory, currentDate, adset.campaignId(), adset.adsetId()
+                );
                 downloadedRows += keywords.size();
                 reports.add(new AdsAdsetReport<>(adset, keywords));
             }
@@ -235,7 +317,13 @@ public class FetchAds {
      * @param startDate First day to fetch.
      * @param endDate   End date not to be included.
      */
-    private static void transferSearchPhrasesToDB(Page page, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+    private static void transferSearchPhrasesToDB(
+            Page page,
+            Path aliasCacheDirectory,
+            EmagMirrorDB mirrorDB,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
         var adsetsByDate = readAdsetsByDate(mirrorDB, startDate, endDate);
         var currentDate = startDate;
         while (currentDate.isBefore(endDate)) {
@@ -245,7 +333,9 @@ public class FetchAds {
             var adsetsByCampaign = adsetsByDate.getOrDefault(currentDate, List.of()).stream()
                     .collect(Collectors.groupingBy(AdsAdsetKey::campaignId, LinkedHashMap::new, Collectors.toList()));
             for (var campaignEntry : adsetsByCampaign.entrySet()) {
-                var searchPhrases = downloadSearchPhrases(page, currentDate, campaignEntry.getKey());
+                var searchPhrases = downloadSearchPhrases(
+                        page, aliasCacheDirectory, currentDate, campaignEntry.getKey()
+                );
                 downloadedRows += searchPhrases.size();
                 var phrasesByAdset = searchPhrases.stream()
                         .filter(phrase -> phrase.adsetId() != null)
@@ -279,7 +369,13 @@ public class FetchAds {
      * @param startDate First day to fetch.
      * @param endDate   End date not to be included.
      */
-    private static void transferTargetedProductsToDB(Page page, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+    private static void transferTargetedProductsToDB(
+            Page page,
+            Path aliasCacheDirectory,
+            EmagMirrorDB mirrorDB,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
         var adsetsByDate = readAdsetsByDate(mirrorDB, startDate, endDate);
         var currentDate = startDate;
         while (currentDate.isBefore(endDate)) {
@@ -287,7 +383,7 @@ public class FetchAds {
             var downloadedRows = 0;
             for (var adset : adsetsByDate.getOrDefault(currentDate, List.of())) {
                 var targetedProducts = downloadTargetedProducts(
-                        page, currentDate, adset.campaignId(), adset.adsetId()
+                        page, aliasCacheDirectory, currentDate, adset.campaignId(), adset.adsetId()
                 );
                 downloadedRows += targetedProducts.size();
                 reports.add(new AdsAdsetReport<>(adset, targetedProducts));
@@ -323,10 +419,14 @@ public class FetchAds {
      * @param date for which to download the data.
      * @return Campaign and ad set snapshots for the date.
      */
-    private static ArrayList<AdsCampaignSnapshot> downloadAdsAndCampaigns(Page page, LocalDate date) {
+    private static ArrayList<AdsCampaignSnapshot> downloadAdsAndCampaigns(
+            Page page,
+            Path aliasCacheDirectory,
+            LocalDate date
+    ) {
         var campaignList = new ArrayList<AdsCampaignSnapshot>();
-        for (var campaign : downloadCampaigns(page, date)) {
-            var adSetList = downloadAdSets(page, date, campaign.id()).stream()
+        for (var campaign : downloadCampaigns(page, aliasCacheDirectory, date)) {
+            var adSetList = downloadAdSets(page, aliasCacheDirectory, date, campaign.id()).stream()
                     .map(adSet -> new AdSet(adSet, List.of(), List.of(), List.of()))
                     .toList();
             campaignList.add(new AdsCampaignSnapshot(date, campaign, adSetList));
@@ -341,12 +441,12 @@ public class FetchAds {
      * @param date for which to download the data.
      * @return List of campaign data.
      */
-    private static List<AdsCampaign> downloadCampaigns(Page page, LocalDate date) {
+    private static List<AdsCampaign> downloadCampaigns(Page page, Path aliasCacheDirectory, LocalDate date) {
         return downloadPages(
                 page,
                 pageNumber -> createCommonURI(date, pageNumber).appendPath("campaigns")
                         .setParameter("page", Integer.toString(pageNumber)),
-                pageNumber -> cacheDirectory.resolve("adsCampaigns_%s_%d.json".formatted(date, pageNumber)),
+                pageNumber -> aliasCacheDirectory.resolve("adsCampaigns_%s_%d.json".formatted(date, pageNumber)),
                 AdsCampaignsResponse.class,
                 response -> response.data.campaigns()
         );
@@ -359,14 +459,21 @@ public class FetchAds {
      * @param date for which to download the data.
      * @return List of campaign data.
      */
-    private static List<AdsAdset> downloadAdSets(Page page, LocalDate date, int campaignId) {
+    private static List<AdsAdset> downloadAdSets(
+            Page page,
+            Path aliasCacheDirectory,
+            LocalDate date,
+            int campaignId
+    ) {
         return downloadPages(
                 page,
                 pageNumber -> createCommonURI(date, pageNumber)
                         .appendPath("campaign/%d/adsets".formatted(campaignId))
                         .setParameter("page", Integer.toString(pageNumber))
                         .setParameter("campaignId", Integer.toString(campaignId)),
-                pageNumber -> cacheDirectory.resolve("adsAdSets_%s_%d_%d.json".formatted(date, pageNumber, campaignId)),
+                pageNumber -> aliasCacheDirectory.resolve(
+                        "adsAdSets_%s_%d_%d.json".formatted(date, pageNumber, campaignId)
+                ),
                 AdsCampaignAdSetsResponse.class,
                 response -> response.data.adsets()
         );
@@ -380,13 +487,20 @@ public class FetchAds {
      * @param campaignId selects the campaign.
      * @return List of campaign data.
      */
-    private static List<AdsSearchPhrase> downloadSearchPhrases(Page page, LocalDate date, int campaignId) {
+    private static List<AdsSearchPhrase> downloadSearchPhrases(
+            Page page,
+            Path aliasCacheDirectory,
+            LocalDate date,
+            int campaignId
+    ) {
         return downloadPages(
                 page,
                 pageNumber -> createCommonURI(date, pageNumber)
                         .appendPath("campaigns/%d/search-phrases".formatted(campaignId))
                         .setParameter("page", Integer.toString(pageNumber)),
-                pageNumber -> cacheDirectory.resolve("adsSearchPhrases_%s_%d_%d.json".formatted(date, pageNumber, campaignId)),
+                pageNumber -> aliasCacheDirectory.resolve(
+                        "adsSearchPhrases_%s_%d_%d.json".formatted(date, pageNumber, campaignId)
+                ),
                 AdsCampaignPhrasesResponse.class,
                 response -> response.data.searchPhrases()
         );
@@ -401,14 +515,23 @@ public class FetchAds {
      * @param adSetId    selects the ad set within the campaign.
      * @return List of targeted product data.
      */
-    private static List<AdsTargetedProduct> downloadTargetedProducts(Page page, LocalDate date, int campaignId, int adSetId) {
+    private static List<AdsTargetedProduct> downloadTargetedProducts(
+            Page page,
+            Path aliasCacheDirectory,
+            LocalDate date,
+            int campaignId,
+            int adSetId
+    ) {
         return downloadPages(
                 page,
                 pageNumber -> createCommonURI(date, pageNumber)
                         .appendPath("campaigns/%d/adsets/%s/targeted-products".formatted(campaignId, adSetId))
                         .setParameter("page", Integer.toString(pageNumber))
                         .setParameter("dateEnd", date.plusDays(1).toString()),
-                pageNumber -> cacheDirectory.resolve("adsTargetedProducts_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId)),
+                pageNumber -> aliasCacheDirectory.resolve(
+                        "adsTargetedProducts_%s_%d_%d_%d.json"
+                                .formatted(date, pageNumber, campaignId, adSetId)
+                ),
                 AdsCampaignTargetedProductsResponse.class,
                 response -> response.data.docs()
         );
@@ -423,7 +546,13 @@ public class FetchAds {
      * @param adSetId    selects the ad set within the campaign.
      * @return List of keyword data.
      */
-    private static List<AdsKeyword> downloadKeywords(Page page, LocalDate date, int campaignId, int adSetId) {
+    private static List<AdsKeyword> downloadKeywords(
+            Page page,
+            Path aliasCacheDirectory,
+            LocalDate date,
+            int campaignId,
+            int adSetId
+    ) {
         return downloadPages(
                 page,
                 pageNumber -> createCommonURI(date, pageNumber)
@@ -431,7 +560,9 @@ public class FetchAds {
                         .setParameter("page", Integer.toString(pageNumber))
                         .setParameter("campaignId", Integer.toString(campaignId))
                         .setParameter("adsetId", Integer.toString(adSetId)),
-                pageNumber -> cacheDirectory.resolve("adsKeywords_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId)),
+                pageNumber -> aliasCacheDirectory.resolve(
+                        "adsKeywords_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId)
+                ),
                 AdsCampaignKeywordsResponse.class,
                 response -> response.data.keywords()
         );
@@ -457,25 +588,112 @@ public class FetchAds {
         int pageNumber = 1;
         int totalPages;
         List<T> result = new ArrayList<>();
-        URI uri = null;
         try {
             do {
-                uri = uriForPage.apply(pageNumber).build();
+                var uri = uriForPage.apply(pageNumber).build();
                 var path = pathForPage.apply(pageNumber);
-                var json = getJSON(page, path, uri.toASCIIString(), pageNumber == 1);
-                var response = decodeJSON(json, responseType);
-                result.addAll(itemsFromResponse.apply(response));
-                totalPages = response.meta.pageCount();
+                var downloadedPage = loadPage(
+                        path,
+                        uri.toASCIIString(),
+                        pageNumber == 1,
+                        isOffline(),
+                        responseType,
+                        itemsFromResponse,
+                        url -> fetch(page, url)
+                );
+                result.addAll(downloadedPage.items());
+                totalPages = downloadedPage.pageCount();
                 pageNumber++;
             } while (pageNumber <= totalPages);
-        } catch (EMAGException e) {
-            logger.log(WARNING, "Skipping over URI %s because of error %s".formatted(uri, e.response));
         } catch (URISyntaxException e) {
             throw new RuntimeException("Unexpected error when building the page URI.", e);
-        } catch (IOException e) {
-            throw new RuntimeException("Error reading JSON from eMag", e);
         }
         return result;
+    }
+
+    static <T, R extends AdsResponse> DownloadedPage<T> loadPage(
+            Path path,
+            String url,
+            boolean doWait,
+            boolean offlineMode,
+            Class<R> responseType,
+            Function<R, List<T>> itemsFromResponse,
+            HttpFetcher fetcher
+    ) {
+        Objects.requireNonNull(path);
+        Objects.requireNonNull(url);
+        Objects.requireNonNull(responseType);
+        Objects.requireNonNull(itemsFromResponse);
+        Objects.requireNonNull(fetcher);
+
+        if (Files.exists(path)) {
+            try {
+                return decodePage(Files.readString(path), responseType, itemsFromResponse);
+            } catch (IOException e) {
+                throw new RuntimeException("Error reading cached eMAG Ads response from %s.".formatted(path), e);
+            } catch (RuntimeException e) {
+                if (offlineMode) {
+                    throw new RuntimeException("Cached eMAG Ads response is invalid: %s".formatted(path), e);
+                }
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException deleteException) {
+                    e.addSuppressed(deleteException);
+                    throw new RuntimeException("Could not remove invalid eMAG Ads cache file %s."
+                            .formatted(path), e);
+                }
+                logger.log(WARNING, "Removed invalid eMAG Ads cache file %s; downloading it again."
+                        .formatted(path));
+            }
+        }
+
+        if (offlineMode) {
+            throw new IllegalStateException("Could not load %s because ads.offline is true and no valid cache exists."
+                    .formatted(url));
+        }
+        if (doWait) {
+            randomWait(0.05, 0.2);
+        }
+        var httpResult = fetcher.fetch(url);
+        if (!httpResult.ok()) {
+            throw new RuntimeException("eMAG Ads request failed with HTTP %d %s for %s."
+                    .formatted(httpResult.status(), httpResult.statusText(), url));
+        }
+
+        var downloadedPage = decodePage(httpResult.body(), responseType, itemsFromResponse);
+        try {
+            Files.createDirectories(path.toAbsolutePath().normalize().getParent());
+            Files.writeString(path, httpResult.body());
+        } catch (IOException e) {
+            throw new RuntimeException("Could not cache eMAG Ads response at %s.".formatted(path), e);
+        }
+        logger.log(INFO, "Retrieved %s and stored to %s.".formatted(url, path));
+        return downloadedPage;
+    }
+
+    private static HttpResult fetch(Page page, String url) {
+        var response = page.request().get(url);
+        try {
+            return new HttpResult(response.ok(), response.status(), response.statusText(), response.text());
+        } finally {
+            response.dispose();
+        }
+    }
+
+    private static <T, R extends AdsResponse> DownloadedPage<T> decodePage(
+            String json,
+            Class<R> responseType,
+            Function<R, List<T>> itemsFromResponse
+    ) {
+        var response = decodeJSON(json, responseType);
+        if (response.meta == null || response.meta.pageCount() == null || response.meta.pageCount() < 0) {
+            throw new IllegalArgumentException("eMAG Ads response has missing or invalid pagination metadata.");
+        }
+        var items = itemsFromResponse.apply(response);
+        if (items == null) {
+            throw new IllegalArgumentException("eMAG Ads response has no data collection.");
+        }
+        return new DownloadedPage<>(items, response.meta.pageCount());
     }
 
     /**
@@ -503,7 +721,7 @@ public class FetchAds {
      * @return decoded value.
      * @throws EMAGException if the response represents an error.
      */
-    private static <T extends AdsResponse> T decodeJSON(String json, Class<T> valueType) throws EMAGException {
+    private static <T extends AdsResponse> T decodeJSON(String json, Class<T> valueType) {
         T response;
         try {
             response = objectMapper.readValue(json, valueType);
@@ -521,29 +739,6 @@ public class FetchAds {
             throw new EMAGException(response);
         }
         return response;
-    }
-
-    /**
-     * Get the JSON either from file or from url
-     *
-     * @param page within the request is executed.
-     * @param path to the cache file.
-     * @param url  from which to fetch the data.
-     * @return JSON read from either the file or url.
-     * @throws IOException when it cannot read or write the cache file.
-     */
-    private static String getJSON(Page page, Path path, String url, boolean doWait) throws IOException {
-        if (Files.exists(path)) {
-            return Files.readString(path);
-        }
-        if (offline) {
-            throw new RuntimeException("Could not proceed with loading %s because offline.".formatted(url));
-        }
-        if (doWait) randomWait(0.05, 0.2);
-        var json = page.request().get(url).text();
-        Files.writeString(path, json);
-        logger.log(INFO, "Retrieved %s and stored to %s.".formatted(url, path));
-        return json;
     }
 
     /**
@@ -598,25 +793,24 @@ public class FetchAds {
      * @param fromSec
      * @param toSec
      */
-    private static void randomWait(Double fromSec, Double toSec) {
+    static void randomWait(Double fromSec, Double toSec) {
         var waitSec = fromSec + (toSec - fromSec) * random.nextDouble();
         try {
             Thread.sleep((long) (waitSec * 1000));
         } catch (InterruptedException e) {
-            logger.log(WARNING, "Sleep was interrupted.", e);
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting to access eMAG Ads.", e);
         }
     }
 
     /**
      * Create the cache directory if it does not exist.
      */
-    private static void setupCacheDirectory() {
-        if (!Files.exists(cacheDirectory)) {
-            try {
-                Files.createDirectories(cacheDirectory);
-            } catch (IOException e) {
-                throw new RuntimeException("Could not create cache directory.", e);
-            }
+    private static void setupCacheDirectory(Path directory) {
+        try {
+            Files.createDirectories(directory);
+        } catch (IOException e) {
+            throw new RuntimeException("Could not create cache directory %s.".formatted(directory), e);
         }
     }
 }

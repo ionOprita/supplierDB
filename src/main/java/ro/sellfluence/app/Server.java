@@ -56,8 +56,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -68,10 +70,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -100,6 +104,9 @@ public class Server {
     private static final String publicOriginConfigName = "ORIGIN";
     private static final String publicHttpsOriginConfigName = "PUBLIC_HTTPS_ORIGIN";
     private static final String logDirectoryConfigName = "LOG_DIRECTORY";
+    private static final String adsAliasesConfigName = "ADS_ALIASES";
+    private static final String defaultAdsAlias = "sellfusion";
+    private static final ZoneId backgroundJobZone = ZoneId.of("Europe/Bucharest");
     private static final String acmeChallengePrefix = "/.well-known/acme-challenge/";
     private static final ObjectMapper mapper = (new ObjectMapper());
     private static final AtomicBoolean serverShutdownRequested = new AtomicBoolean(false);
@@ -226,7 +233,7 @@ public class Server {
     public record CategorySaveError(String error) {
     }
 
-    public record TaskSchedulerStatus(@Nullable String activeTaskName) {
+    public record TaskSchedulerStatus(List<BackgroundJob.LaneStatus> lanes) {
     }
 
     public record TaskRunResponse(
@@ -405,7 +412,7 @@ public class Server {
                 case BUSY -> ctx.status(409).json(new TaskRunResponse(
                         "BUSY",
                         "Task \"" + runResult.blockingTaskName()
-                                + "\" is already running or starting. Wait for it to finish before starting another task.",
+                                + "\" is already running or starting. Wait for it to finish before starting another task in the same lane.",
                         taskName,
                         runResult.blockingTaskName()
                 ));
@@ -658,16 +665,32 @@ public class Server {
         int securePort = Integer.parseInt(System.getProperty(configNameSecurePort,
                 System.getenv().getOrDefault(configNameSecurePort, arguments.getOption("secport", "8443"))));
 
-        // Setup background job
-        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread thread = new Thread(r, "BackgroundJob-Thread");
+        List<String> adsAliases = configuredAdsAliases();
+        ScheduledExecutorService dispatcher = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r, "BackgroundJob-Dispatcher");
             thread.setDaemon(true); // Don't prevent JVM shutdown
             return thread;
         });
-        BackgroundJob backgroundJob = new BackgroundJob(mirrorDB, scheduler);
+        AtomicInteger workerNumber = new AtomicInteger();
+        ExecutorService workers = Executors.newFixedThreadPool(1 + adsAliases.size(), r -> {
+            Thread thread = new Thread(r, "BackgroundJob-Worker-" + workerNumber.incrementAndGet());
+            thread.setDaemon(true); // Don't prevent JVM shutdown
+            return thread;
+        });
+        BackgroundJob backgroundJob = new BackgroundJob(
+                mirrorDB,
+                workers,
+                Clock.system(backgroundJobZone),
+                adsAliases
+        );
 
         // Give administrators time to pause individual tasks before the first dispatcher cycle.
-        scheduler.schedule(() -> scheduleWithRestart(scheduler, backgroundJob), 5, TimeUnit.MINUTES);
+        dispatcher.scheduleWithFixedDelay(
+                () -> performBackgroundWork(backgroundJob),
+                5,
+                1,
+                TimeUnit.MINUTES
+        );
 
         var rp = WebAuthnServer.create(new MyCredentialRepo(mirrorDB));
 
@@ -682,14 +705,10 @@ public class Server {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             //logger.info("Shutting down...");
             backgroundJob.shutdown();
-            scheduler.shutdown();
-            try {
-                if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
-                    scheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                scheduler.shutdownNow();
-            }
+            dispatcher.shutdown();
+            workers.shutdown();
+            awaitTermination(dispatcher, "background-job dispatcher");
+            awaitTermination(workers, "background-job workers");
             app.stop();
         }));
     }
@@ -1264,7 +1283,7 @@ public class Server {
         });
         app.get("/app/tasks/active", ctx -> {
             ctx.header("Cache-Control", "no-store");
-            ctx.json(new TaskSchedulerStatus(backgroundJob.activeTaskName()));
+            ctx.json(new TaskSchedulerStatus(backgroundJob.laneStatuses()));
         });
         app.get("/app/tasks/paused", ctx -> {
             ctx.header("Cache-Control", "no-store");
@@ -2687,22 +2706,40 @@ public class Server {
         );
     }
 
-    /**
-     * Schedule the job immediately and then every minute.
-     *
-     * @param scheduler provided.
-     * @param job       to run.
-     */
-    private static void scheduleWithRestart(ScheduledExecutorService scheduler, BackgroundJob job) {
-        scheduler.schedule(() -> {
-            try {
-                job.performWork();
-            } catch (Exception e) {
-                logger.log(SEVERE, "BackgroundJob failed.", e);
+    private static List<String> configuredAdsAliases() {
+        String configuredAliases = configValue(adsAliasesConfigName);
+        if (configuredAliases == null) {
+            return List.of(defaultAdsAlias);
+        }
+
+        List<String> aliases = Arrays.stream(configuredAliases.split(","))
+                .map(String::trim)
+                .filter(alias -> !alias.isEmpty())
+                .toList();
+        if (aliases.isEmpty()) {
+            throw new IllegalArgumentException(adsAliasesConfigName + " must contain at least one alias");
+        }
+        return aliases;
+    }
+
+    private static void performBackgroundWork(BackgroundJob job) {
+        try {
+            job.performWork();
+        } catch (Exception e) {
+            logger.log(SEVERE, "BackgroundJob failed.", e);
+        }
+    }
+
+    private static void awaitTermination(ExecutorService executor, String description) {
+        try {
+            if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+                logger.log(WARNING, "Forcing shutdown of {0}.", description);
+                executor.shutdownNow();
             }
-            // Schedule the next run in a minute.
-            scheduler.schedule(() -> scheduleWithRestart(scheduler, job), 1, TimeUnit.MINUTES);
-        }, 0, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }
 

@@ -29,6 +29,13 @@ $PublicHttpsOrigin = "https://server.sellfusion.ro"
 $LocalHttpPort = 8080
 $LocalHttpsPort = 8443
 
+# Comma-separated eMAG Ads account aliases scheduled by the application.
+# The current Ads schema supports one production alias.
+$AdsAliases = "sellfusion"
+
+# Keep true for unattended production runs; false opens an interactive Chromium window.
+$AdsHeadless = $true
+
 # Production certificate and ACME HTTP-01 challenge locations.
 # The setup script configures win-acme to write the PFX and challenge files here.
 $CertificateDirectory = "C:\Users\Oprita\Desktop\JavaServer\certs"
@@ -43,6 +50,9 @@ $RestartDelaySeconds = 15
 # This is especially useful if the task runs as SYSTEM.
 $MavenLocalRepository = "C:\Users\Oprita\Desktop\JavaServer\.m2\repository"
 
+# Install Playwright Chromium into this shared location so the SYSTEM scheduled task can use it.
+$PlaywrightBrowsersPath = "C:\Users\Oprita\Desktop\JavaServer\playwright-browsers"
+
 # Maven command. Use "mvn" if Maven is installed system-wide.
 # If your repo has Maven Wrapper, you may use ".\mvnw.cmd" instead.
 $MavenCommand = "mvn"
@@ -52,6 +62,13 @@ $MavenArguments = @(
     "-Dmaven.repo.local=$MavenLocalRepository",
     "compile",
     "exec:java"
+)
+
+$PlaywrightInstallArguments = @(
+    "-Dmaven.repo.local=$MavenLocalRepository",
+    "exec:java",
+    "-Dexec.mainClass=com.microsoft.playwright.CLI",
+    "-Dexec.args=install chromium"
 )
 
 # =====================================================================
@@ -175,12 +192,16 @@ function Set-ApplicationEnvironment {
     Ensure-Directory $CertificateDirectory
     Ensure-Directory $AcmeChallengeWebRoot
     Ensure-Directory $LogDirectory
+    Ensure-Directory $PlaywrightBrowsersPath
 
     $env:PORT = [string] $LocalHttpPort
     $env:PORT_SECURE = [string] $LocalHttpsPort
     $env:ORIGIN = $PublicHttpsOrigin
     $env:PUBLIC_HTTPS_ORIGIN = $PublicHttpsOrigin
     $env:RP_ID = $PublicHostName
+    $env:ADS_ALIASES = $AdsAliases
+    $env:PLAYWRIGHT_BROWSERS_PATH = (Resolve-Path -LiteralPath $PlaywrightBrowsersPath).Path
+    Add-JavaToolOption $(if ($AdsHeadless) { "-Dads.headless=true" } else { "-Dads.headless=false" })
     $env:TLS_KEYSTORE_PATH = $CertificatePath
     $env:TLS_KEYSTORE_PASSWORD_FILE = $CertificatePasswordFile
     $env:ACME_CHALLENGE_WEBROOT = $AcmeChallengeWebRoot
@@ -300,6 +321,9 @@ Write-Log "JavaTempDirectory: $ResolvedJavaTempDirectory"
 Write-Log "PublicHttpsOrigin: $PublicHttpsOrigin"
 Write-Log "LocalHttpPort: $LocalHttpPort"
 Write-Log "LocalHttpsPort: $LocalHttpsPort"
+Write-Log "AdsAliases: $AdsAliases"
+Write-Log "AdsHeadless: $AdsHeadless"
+Write-Log "PlaywrightBrowsersPath: $PlaywrightBrowsersPath"
 Write-Log "CertificatePath: $CertificatePath"
 Write-Log "CertificatePasswordFile: $CertificatePasswordFile"
 Write-Log "AcmeChallengeWebRoot: $AcmeChallengeWebRoot"
@@ -310,6 +334,12 @@ Write-Log "============================================================"
 while ($true) {
     try {
         Sync-Repository
+
+        Write-Log "Ensuring the matching Playwright Chromium binary is installed."
+        $exitCode = Invoke-LoggedCommand -FilePath $MavenCommand -Arguments $PlaywrightInstallArguments -WorkingDirectory $AppDirectory
+        if ($exitCode -ne 0) {
+            throw "Playwright Chromium installation failed with exit code $exitCode"
+        }
 
         Write-Log "Starting Java application via Maven."
         $exitCode = Invoke-ForegroundCommand -FilePath $MavenCommand -Arguments $MavenArguments -WorkingDirectory $AppDirectory

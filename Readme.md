@@ -30,6 +30,30 @@ This split intentionally changes these standalone applications, which are not us
 - `EmagBot.main()` calls only that main product import before `UpdateEmployeeSheetsFromDB`, so its employee-sheet transfer
   can use stale or null tab mappings.
 
+### Background-task lanes and eMAG Ads
+
+The server schedules background work in independent serial lanes. All existing eMAG API and Google Drive transfers use
+the `transfers` lane, while the four Ads dashboard imports use `ads:sellfusion`. Only one task can be active in a lane,
+but one transfer task and one Ads task can run at the same time.
+
+Ads imports run outside office hours in `Europe/Bucharest`, at most once every 24 hours after a successful run. Each run
+uses the completed 31-day interval `[today - 31 days, today)`. Campaigns and ad sets run first; keywords, search phrases,
+and targeted products are eligible only after a newer successful campaigns run. Failed Ads tasks retry after one hour.
+
+Production configuration:
+
+- `ADS_ALIASES` is a comma-separated credential-alias list and defaults to `sellfusion`. The current Ads database schema
+  has no account column, so startup deliberately rejects more than one alias.
+- Chromium is headless by default. Set the Java system property `ads.headless=false` only when an interactive browser is
+  needed for diagnosis. Playwright's Chromium binary must be installed in a location readable by the server account.
+  The Windows run script sets `PLAYWRIGHT_BROWSERS_PATH` to its shared `playwright-browsers` directory and ensures that
+  the matching binary is installed before starting the server. For other launch methods, run
+  `mvn exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install chromium"` under the server account.
+- Set `ads.offline=true` only for cache-backed diagnostic runs. Cache files are read from and written under
+  `AdsJSON/<alias>/`; old flat `AdsJSON/*.json` files are left untouched and are not reused.
+- Missing credentials, HTTP/API errors, malformed responses, and interrupted waits fail the task and are recorded in the
+  task history rather than being reported as successful imports.
+
 # eMAG Mirror to DB
 
 [PostgreSQL](https://www.postgresql.org/) is used as the database system the eMAG mirror DB.
