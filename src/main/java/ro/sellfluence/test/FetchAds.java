@@ -530,7 +530,7 @@ public class FetchAds {
      * @param path to the cache file.
      * @param url  from which to fetch the data.
      * @return JSON read from either the file or url.
-     * @throws IOException on communication errors.
+     * @throws IOException when it cannot read or write the cache file.
      */
     private static String getJSON(Page page, Path path, String url, boolean doWait) throws IOException {
         if (Files.exists(path)) {
@@ -539,7 +539,7 @@ public class FetchAds {
         if (offline) {
             throw new RuntimeException("Could not proceed with loading %s because offline.".formatted(url));
         }
-        if (doWait) randomWait(0.1, 0.5);
+        if (doWait) randomWait(0.05, 0.2);
         var json = page.request().get(url).text();
         Files.writeString(path, json);
         logger.log(INFO, "Retrieved %s and stored to %s.".formatted(url, path));
@@ -592,10 +592,16 @@ public class FetchAds {
         }
     }
 
+    /**
+     * Wait a random time of minimum {@see fromSec} to less than {@see toSetc}.
+     *
+     * @param fromSec
+     * @param toSec
+     */
     private static void randomWait(Double fromSec, Double toSec) {
         var waitSec = fromSec + (toSec - fromSec) * random.nextDouble();
         try {
-            Thread.sleep((long) waitSec * 1000);
+            Thread.sleep((long) (waitSec * 1000));
         } catch (InterruptedException e) {
             logger.log(WARNING, "Sleep was interrupted.", e);
         }
@@ -613,6 +619,4 @@ public class FetchAds {
             }
         }
     }
-
-
 }
