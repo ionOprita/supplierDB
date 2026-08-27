@@ -1,5 +1,7 @@
 package ro.sellfluence.app;
 
+import com.microsoft.playwright.PlaywrightException;
+import com.microsoft.playwright.TimeoutError;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -9,10 +11,13 @@ import ro.sellfluence.emagapi.AdsCampaignsResponse;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -170,6 +175,84 @@ class FetchAdsTest {
         Thread.currentThread().interrupt();
 
         assertThrows(RuntimeException.class, () -> FetchAds.randomWait(0.0, 0.0));
+        assertTrue(Thread.currentThread().isInterrupted());
+    }
+
+    @Test
+    void retriesFourTimeoutsWithEmagExponentialBackoffAndThenSucceeds() {
+        var calls = new AtomicInteger();
+        var delays = new ArrayList<Long>();
+        var expected = new FetchAds.HttpResult(true, 200, "OK", validCampaignsResponse);
+
+        var result = FetchAds.fetchWithRetry("https://advertising.emag.net/test", ignored -> {
+            if (calls.incrementAndGet() <= 4) {
+                throw new TimeoutError("timed out");
+            }
+            return expected;
+        }, delays::add);
+
+        assertSame(expected, result);
+        assertEquals(5, calls.get());
+        assertEquals(List.of(10_000L, 20_000L, 40_000L, 80_000L), delays);
+    }
+
+    @Test
+    void rethrowsTheFinalTimeoutAfterFourRetries() {
+        var calls = new AtomicInteger();
+        var delays = new ArrayList<Long>();
+        var finalTimeout = new TimeoutError("final timeout");
+
+        var thrown = assertThrows(TimeoutError.class, () -> FetchAds.fetchWithRetry(
+                "https://advertising.emag.net/test",
+                ignored -> {
+                    if (calls.incrementAndGet() == 5) {
+                        throw finalTimeout;
+                    }
+                    throw new TimeoutError("timed out");
+                },
+                delays::add
+        ));
+
+        assertSame(finalTimeout, thrown);
+        assertEquals(5, calls.get());
+        assertEquals(List.of(10_000L, 20_000L, 40_000L, 80_000L), delays);
+    }
+
+    @Test
+    void doesNotRetryOtherPlaywrightFailures() {
+        var calls = new AtomicInteger();
+        var delays = new ArrayList<Long>();
+        var failure = new PlaywrightException("browser closed");
+
+        var thrown = assertThrows(PlaywrightException.class, () -> FetchAds.fetchWithRetry(
+                "https://advertising.emag.net/test",
+                ignored -> {
+                    calls.incrementAndGet();
+                    throw failure;
+                },
+                delays::add
+        ));
+
+        assertSame(failure, thrown);
+        assertEquals(1, calls.get());
+        assertTrue(delays.isEmpty());
+    }
+
+    @Test
+    void interruptedRetryDelayRestoresInterruptAndAborts() {
+        var calls = new AtomicInteger();
+
+        var thrown = assertThrows(RuntimeException.class, () -> FetchAds.fetchWithRetry(
+                "https://advertising.emag.net/test",
+                ignored -> {
+                    calls.incrementAndGet();
+                    throw new TimeoutError("timed out");
+                },
+                ignored -> { throw new InterruptedException("stop"); }
+        ));
+
+        assertTrue(thrown.getCause() instanceof InterruptedException);
+        assertEquals(1, calls.get());
         assertTrue(Thread.currentThread().isInterrupted());
     }
 

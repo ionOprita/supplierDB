@@ -6,6 +6,7 @@ import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
+import com.microsoft.playwright.TimeoutError;
 import com.microsoft.playwright.options.AriaRole;
 import org.apache.hc.core5.net.URIBuilder;
 import ro.sellfluence.db.AdsCampaignTable.AdsAdsetKey;
@@ -67,6 +68,9 @@ import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 public class FetchAds {
     private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", INFO, 10, 100_000);
 
+    private static final int MAX_REQUEST_RETRIES = 4;
+    private static final long INITIAL_RETRY_DELAY_MILLISECONDS = 10_000;
+
     private static final Random random = new Random();
 
     private static final Path cacheDirectory = Path.of("AdsJSON");
@@ -104,6 +108,11 @@ public class FetchAds {
     @FunctionalInterface
     interface HttpFetcher {
         HttpResult fetch(String url);
+    }
+
+    @FunctionalInterface
+    interface Sleeper {
+        void sleep(long milliseconds) throws InterruptedException;
     }
 
     record DownloadedPage<T>(List<T> items, int pageCount) {
@@ -672,6 +681,41 @@ public class FetchAds {
     }
 
     private static HttpResult fetch(Page page, String url) {
+        return fetchWithRetry(url, requestUrl -> fetchOnce(page, requestUrl), Thread::sleep);
+    }
+
+    static HttpResult fetchWithRetry(String url, HttpFetcher fetcher, Sleeper sleeper) {
+        Objects.requireNonNull(url);
+        Objects.requireNonNull(fetcher);
+        Objects.requireNonNull(sleeper);
+
+        var retriesRemaining = MAX_REQUEST_RETRIES;
+        var retryDelay = INITIAL_RETRY_DELAY_MILLISECONDS;
+        while (true) {
+            try {
+                return fetcher.fetch(url);
+            } catch (TimeoutError timeout) {
+                if (retriesRemaining == 0) {
+                    throw timeout;
+                }
+                logger.log(WARNING, "eMAG Ads request timed out for %s. Retrying after %d s; retries remaining=%d."
+                        .formatted(url, retryDelay / 1_000, retriesRemaining));
+                retriesRemaining--;
+                try {
+                    sleeper.sleep(retryDelay);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(
+                            "Interrupted while waiting to retry eMAG Ads request for %s.".formatted(url),
+                            interrupted
+                    );
+                }
+                retryDelay *= 2;
+            }
+        }
+    }
+
+    private static HttpResult fetchOnce(Page page, String url) {
         var response = page.request().get(url);
         try {
             return new HttpResult(response.ok(), response.status(), response.statusText(), response.text());
