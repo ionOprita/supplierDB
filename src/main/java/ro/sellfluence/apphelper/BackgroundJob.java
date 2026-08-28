@@ -95,7 +95,9 @@ public class BackgroundJob {
         this(db, executor, Clock.system(BUCHAREST), List.of("sellfusion"));
     }
 
-    /** Injectable construction seam for deterministic scheduler tests. */
+    /**
+     * Injectable construction seam for deterministic scheduler tests.
+     */
     BackgroundJob(TaskStore taskStore, Executor executor, Clock clock, List<TaskDefinition> taskDefinitions) {
         this.taskStore = Objects.requireNonNull(taskStore, "taskStore");
         this.executor = Objects.requireNonNull(executor, "executor");
@@ -125,18 +127,24 @@ public class BackgroundJob {
         SHUTTING_DOWN
     }
 
-    /** Result of a manual run request. */
+    /**
+     * Result of a manual run request.
+     */
     public record RunResult(RunStatus status, @Nullable String blockingTaskName) {
     }
 
-    /** Current state and configured task names for one serial lane. */
+    /**
+     * Current state and configured task names for one serial lane.
+     */
     public record LaneStatus(String lane, @Nullable String activeTaskName, List<String> taskNames) {
         public LaneStatus {
             taskNames = List.copyOf(taskNames);
         }
     }
 
-    /** Return every configured lane in stable configuration order. */
+    /**
+     * Return every configured lane in stable configuration order.
+     */
     public List<LaneStatus> laneStatuses() {
         synchronized (taskControlLock) {
             return taskDefinitionsByLane.entrySet().stream()
@@ -152,7 +160,9 @@ public class BackgroundJob {
         }
     }
 
-    /** Legacy single-task view. Prefer {@link #laneStatuses()}. */
+    /**
+     * Legacy single-task view. Prefer {@link #laneStatuses()}.
+     */
     @Deprecated
     public @Nullable String activeTaskName() {
         synchronized (taskControlLock) {
@@ -170,7 +180,9 @@ public class BackgroundJob {
         void run() throws Exception;
     }
 
-    /** Persistence seam kept package-private so scheduler behavior can be tested without a database. */
+    /**
+     * Persistence seam kept package-private so scheduler behavior can be tested without a database.
+     */
     interface TaskStore {
         int registerTasks(List<String> taskNames) throws SQLException;
 
@@ -183,7 +195,9 @@ public class BackgroundJob {
         int endTask(String name, Throwable error) throws SQLException;
     }
 
-    /** Immutable scheduling definition. Definition order is priority order within a lane. */
+    /**
+     * Immutable scheduling definition. Definition order is priority order within a lane.
+     */
     record TaskDefinition(
             String name,
             String lane,
@@ -334,6 +348,15 @@ public class BackgroundJob {
                 clock,
                 (startDate, endDate) -> FetchAds.fetchTargetedProducts(alias, db, startDate, endDate)
         ));
+        definitions.add(new TaskDefinition(
+                "Delete cached files for " + alias,
+                lane,
+                DAILY,
+                HOURLY,
+                BackgroundJob::afternoon,
+                null,
+                () -> FetchAds.deleteAdsCache(alias)
+        ));
     }
 
     static String adsCampaignsTaskName(String alias) {
@@ -357,7 +380,7 @@ public class BackgroundJob {
                 lane,
                 DAILY,
                 HOURLY,
-                BackgroundJob::outOfOfficeHour,
+                BackgroundJob::morning,
                 prerequisiteTaskName,
                 () -> {
                     var endDate = LocalDate.now(clock);
@@ -389,6 +412,14 @@ public class BackgroundJob {
         return time.getHour() < 7 || time.getHour() > 18;
     }
 
+    private static boolean afternoon(LocalDateTime time) {
+        return time.getHour() > 12 && time.getHour() < 18;
+    }
+
+    private static boolean morning(LocalDateTime time) {
+        return time.getHour() < 7;
+    }
+
     private void registerConfiguredTasks() {
         try {
             taskStore.registerTasks(taskDefinitions.stream().map(TaskDefinition::name).toList());
@@ -397,7 +428,9 @@ public class BackgroundJob {
         }
     }
 
-    /** Load history once and submit at most one eligible task for every idle lane. */
+    /**
+     * Load history once and submit at most one eligible task for every idle lane.
+     */
     public void performWork() {
         if (!running.get()) {
             return;
@@ -497,7 +530,9 @@ public class BackgroundJob {
         return !taskInfo.terminated().plus(retryInterval).isAfter(now);
     }
 
-    /** Pause or resume automatic scheduling. Manual runs remain available while paused. */
+    /**
+     * Pause or resume automatic scheduling. Manual runs remain available while paused.
+     */
     public PauseResult setTaskPaused(String taskName, boolean paused) {
         if (!taskDefinitionsByName.containsKey(taskName)) {
             return PauseResult.UNKNOWN_TASK;
@@ -524,7 +559,9 @@ public class BackgroundJob {
         }
     }
 
-    /** Manual runs bypass timing, pause, and dependency checks, but must claim the task's lane. */
+    /**
+     * Manual runs bypass timing, pause, and dependency checks, but must claim the task's lane.
+     */
     public RunResult requestRun(String taskName) {
         if (!running.get()) {
             logger.info(() -> "Manual run rejected for \"" + taskName + "\": scheduler is shutting down.");
@@ -638,7 +675,9 @@ public class BackgroundJob {
         return lastSuccessfulRun == null ? LocalDateTime.MIN : lastSuccessfulRun;
     }
 
-    /** Prevent new submissions and release scheduler claims. Already-running task bodies may finish normally. */
+    /**
+     * Prevent new submissions and release scheduler claims. Already-running task bodies may finish normally.
+     */
     public void shutdown() {
         synchronized (taskControlLock) {
             running.set(false);

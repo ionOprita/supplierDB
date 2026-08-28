@@ -18,6 +18,7 @@ import ro.sellfluence.emagapi.AdsCampaign;
 import ro.sellfluence.emagapi.AdsCampaignAdSetsResponse;
 import ro.sellfluence.emagapi.AdsCampaignKeywordsResponse;
 import ro.sellfluence.emagapi.AdsCampaignPhrasesResponse;
+import ro.sellfluence.emagapi.AdsCampaignSnapshot;
 import ro.sellfluence.emagapi.AdsCampaignTargetedProductsResponse;
 import ro.sellfluence.emagapi.AdsCampaignsResponse;
 import ro.sellfluence.emagapi.AdsError;
@@ -25,7 +26,6 @@ import ro.sellfluence.emagapi.AdsKeyword;
 import ro.sellfluence.emagapi.AdsResponse;
 import ro.sellfluence.emagapi.AdsSearchPhrase;
 import ro.sellfluence.emagapi.AdsTargetedProduct;
-import ro.sellfluence.emagapi.AdsCampaignSnapshot;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 import ro.sellfluence.support.UserPassword;
@@ -196,6 +196,22 @@ public class FetchAds {
                     transfer.accept(page, aliasCacheDirectory);
                 }
             }
+        }
+    }
+
+    /**
+     * Delete the cache for the given alias.
+     *
+     * @param alias account.
+     */
+    public static void deleteAdsCache(String alias) {
+        var aliasCacheDirectory = cacheDirectoryForAlias(cacheDirectory, alias);
+        try (var stream = Files.newDirectoryStream(aliasCacheDirectory, "*.json")) {
+            for (Path path : stream) {
+                Files.deleteIfExists(path);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -536,6 +552,7 @@ public class FetchAds {
                 pageNumber -> createCommonURI(date, pageNumber)
                         .appendPath("campaigns/%d/adsets/%s/targeted-products".formatted(campaignId, adSetId))
                         .setParameter("page", Integer.toString(pageNumber))
+                        .setParameter("perPage", "100")
                         .setParameter("dateEnd", date.plusDays(1).toString()),
                 pageNumber -> aliasCacheDirectory.resolve(
                         "adsTargetedProducts_%s_%d_%d_%d.json"
