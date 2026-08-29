@@ -1,5 +1,6 @@
 package ro.sellfluence.apphelper;
 
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 import ro.sellfluence.db.Task;
 
@@ -129,13 +130,13 @@ class BackgroundJobTest {
 
     @Test
     void adsTasksUseBucharestOutOfOfficeBoundariesAndAThirtyOneDayWindow() {
-        assertEquals(0, adsSubmissionsAt(LocalDateTime.of(2026, 8, 27, 18, 59)));
-        assertEquals(1, adsSubmissionsAt(LocalDateTime.of(2026, 8, 27, 19, 0)));
+        assertEquals(0, adsSubmissionsAt(LocalDateTime.of(2026, 8, 27, 23, 59)));
+        assertEquals(1, adsSubmissionsAt(LocalDateTime.of(2026, 8, 27, 0, 0)));
         assertEquals(1, adsSubmissionsAt(LocalDateTime.of(2026, 8, 27, 6, 59)));
         assertEquals(0, adsSubmissionsAt(LocalDateTime.of(2026, 8, 27, 7, 0)));
 
         var dateRange = new AtomicReference<List<LocalDate>>();
-        var now = LocalDateTime.of(2026, 8, 27, 19, 0);
+        var now = LocalDateTime.of(2026, 8, 27, 0, 0);
         var executor = new HoldingExecutor();
         var definition = BackgroundJob.adsTask(
                 "ads", "ads:sellfusion", null, clockAt(now),
@@ -390,7 +391,7 @@ class BackgroundJobTest {
         }
 
         @Override
-        public synchronized int registerTasks(List<String> taskNames) {
+        public synchronized int registerTasks(@NonNull List<String> taskNames) {
             registeredTaskNames.addAll(taskNames);
             return taskNames.size();
         }
@@ -402,18 +403,18 @@ class BackgroundJobTest {
         }
 
         @Override
-        public synchronized int startTask(String name) {
+        public synchronized int startTask(@NonNull String name) {
             startedTaskNames.add(name);
             return 1;
         }
 
         @Override
-        public int endTask(String name, String error) {
+        public int endTask(@NonNull String name, @NonNull String error) {
             return 1;
         }
 
         @Override
-        public synchronized int endTask(String name, Throwable error) throws SQLException {
+        public synchronized int endTask(@NonNull String name, @NonNull Throwable error) throws SQLException {
             failedTaskNames.add(name);
             return 1;
         }

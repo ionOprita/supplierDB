@@ -1,5 +1,6 @@
 package ro.sellfluence.apphelper;
 
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import ro.sellfluence.app.EmagDBApp;
@@ -56,7 +57,9 @@ public class BackgroundJob {
     private static final Duration DAILY = Duration.ofDays(1);
     private static final Duration WEEKLY = Duration.ofDays(7);
     private static final Predicate<LocalDateTime> ALWAYS = _ -> true;
-    private static final ZoneId BUCHAREST = ZoneId.of("Europe/Bucharest");
+    private static final Predicate<LocalDateTime> morning = time ->  time.getHour() < 7;
+    private static final Predicate<LocalDateTime> afternoon = time ->  time.getHour() > 12 && time.getHour() < 18;
+    private static final Predicate<LocalDateTime> outOfOfficeHour = time -> time.getHour() < 7 || time.getHour() > 18;
     private static final Pattern SAFE_ALIAS = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_-]{0,63}");
 
     private final AtomicBoolean running = new AtomicBoolean(true);
@@ -81,18 +84,11 @@ public class BackgroundJob {
      */
     public BackgroundJob(EmagMirrorDB db, Executor executor, Clock clock, List<String> adsAliases) {
         this(
-                new MirrorTaskStore(Objects.requireNonNull(db, "db")),
+                new DBTaskStore(Objects.requireNonNull(db, "db")),
                 executor,
                 clock,
                 productionTaskDefinitions(db, clock, validateProductionAliases(adsAliases))
         );
-    }
-
-    /**
-     * Compatibility constructor using the production zone and the default Ads alias.
-     */
-    public BackgroundJob(EmagMirrorDB db, Executor executor) {
-        this(db, executor, Clock.system(BUCHAREST), List.of("sellfusion"));
     }
 
     /**
@@ -233,9 +229,9 @@ public class BackgroundJob {
     }
 
     private static List<TaskDefinition> productionTaskDefinitions(
-            EmagMirrorDB db,
-            Clock clock,
-            List<String> adsAliases
+            @NonNull EmagMirrorDB db,
+            @NonNull Clock clock,
+            @NonNull List<String> adsAliases
     ) {
         Objects.requireNonNull(db, "db");
         Objects.requireNonNull(clock, "clock");
@@ -262,7 +258,7 @@ public class BackgroundJob {
         ));
         definitions.add(new TaskDefinition(
                 "Fetch not finalized orders and update GMV in DB", TRANSFERS_LANE, DAILY,
-                BackgroundJob::outOfOfficeHour,
+                outOfOfficeHour,
                 () -> {
                     EmagDBApp.fetchOrdersNotFinalizedInDB(db, false);
                     db.updateGMVTable();
@@ -307,7 +303,7 @@ public class BackgroundJob {
                 () -> new PopulateDateComenziFromDB(2026).updateSpreadsheets(db)
         ));
         definitions.add(new TaskDefinition(
-                "Transfer to employee sheet", TRANSFERS_LANE, HOURLY, BackgroundJob::outOfOfficeHour,
+                "Transfer to employee sheet", TRANSFERS_LANE, HOURLY, outOfOfficeHour,
                 () -> UpdateEmployeeSheetsFromDB.updateSheets(db)
         ));
 
@@ -353,7 +349,7 @@ public class BackgroundJob {
                 lane,
                 DAILY,
                 HOURLY,
-                BackgroundJob::afternoon,
+                afternoon,
                 null,
                 () -> FetchAds.deleteAdsCache(alias)
         ));
@@ -380,7 +376,7 @@ public class BackgroundJob {
                 lane,
                 DAILY,
                 HOURLY,
-                BackgroundJob::morning,
+                morning,
                 prerequisiteTaskName,
                 () -> {
                     var endDate = LocalDate.now(clock);
@@ -398,7 +394,7 @@ public class BackgroundJob {
         }
         var result = new ArrayList<String>(aliases.size());
         for (var alias : aliases) {
-            if (alias == null || !SAFE_ALIAS.matcher(alias).matches()) {
+            if (!SAFE_ALIAS.matcher(alias).matches()) {
                 throw new IllegalArgumentException(
                         "Invalid Ads alias \"" + alias + "\"; expected 1-64 letters, digits, underscores, or hyphens"
                 );
@@ -406,18 +402,6 @@ public class BackgroundJob {
             result.add(alias);
         }
         return List.copyOf(result);
-    }
-
-    private static boolean outOfOfficeHour(LocalDateTime time) {
-        return time.getHour() < 7 || time.getHour() > 18;
-    }
-
-    private static boolean afternoon(LocalDateTime time) {
-        return time.getHour() > 12 && time.getHour() < 18;
-    }
-
-    private static boolean morning(LocalDateTime time) {
-        return time.getHour() < 7;
     }
 
     private void registerConfiguredTasks() {
@@ -703,7 +687,7 @@ public class BackgroundJob {
     ) {
     }
 
-    private record MirrorTaskStore(EmagMirrorDB db) implements TaskStore {
+    private record DBTaskStore(EmagMirrorDB db) implements TaskStore {
         @Override
         public int registerTasks(List<String> taskNames) throws SQLException {
             return db.registerTasks(taskNames);
