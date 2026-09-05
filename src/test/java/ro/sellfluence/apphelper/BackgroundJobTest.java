@@ -1,6 +1,6 @@
 package ro.sellfluence.apphelper;
 
-import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.NullMarked;
 import org.junit.jupiter.api.Test;
 import ro.sellfluence.db.Task;
 
@@ -43,7 +43,8 @@ class BackgroundJobTest {
         var release = new CountDownLatch(1);
         var definitions = List.of(
                 task("transfer-one", "transfers", () -> waitInTask(entered, release)),
-                task("transfer-two", "transfers", () -> { }),
+                task("transfer-two", "transfers", () -> {
+                }),
                 task("ads-one", "ads:sellfusion", () -> waitInTask(entered, release))
         );
         var store = new FakeTaskStore();
@@ -179,8 +180,10 @@ class BackgroundJobTest {
     void pausedPriorityTaskDoesNotBlockTheNextTaskInItsLane() {
         var executor = new HoldingExecutor();
         var job = new BackgroundJob(new FakeTaskStore(), executor, clockAt(NOW), List.of(
-                task("paused", "transfers", () -> { }),
-                task("next", "transfers", () -> { })
+                task("paused", "transfers", () -> {
+                }),
+                task("next", "transfers", () -> {
+                })
         ));
         job.setTaskPaused("paused", true);
 
@@ -193,9 +196,12 @@ class BackgroundJobTest {
     void releasesAClaimWhenSubmissionIsRejected() {
         var job = new BackgroundJob(
                 new FakeTaskStore(),
-                _ -> { throw new RejectedExecutionException("shut down"); },
+                _ -> {
+                    throw new RejectedExecutionException("shut down");
+                },
                 clockAt(NOW),
-                List.of(task("transfer", "transfers", () -> { }))
+                List.of(task("transfer", "transfers", () -> {
+                }))
         );
 
         assertEquals(SHUTTING_DOWN, job.requestRun("transfer").status());
@@ -206,7 +212,9 @@ class BackgroundJobTest {
     void releasesAClaimWhenTheTaskFails() {
         var store = new FakeTaskStore();
         var job = new BackgroundJob(store, Runnable::run, clockAt(NOW), List.of(
-                task("transfer", "transfers", () -> { throw new IllegalStateException("failed"); })
+                task("transfer", "transfers", () -> {
+                    throw new IllegalStateException("failed");
+                })
         ));
 
         assertEquals(ACCEPTED, job.requestRun("transfer").status());
@@ -219,8 +227,10 @@ class BackgroundJobTest {
     void staleSubmissionCleanupCannotReleaseANewerClaimForTheSameLane() {
         var executor = new ReplaceThenRejectExecutor();
         var job = new BackgroundJob(new FakeTaskStore(), executor, clockAt(NOW), List.of(
-                task("first", "transfers", () -> { }),
-                task("second", "transfers", () -> { })
+                task("first", "transfers", () -> {
+                }),
+                task("second", "transfers", () -> {
+                })
         ));
         executor.job = job;
 
@@ -235,7 +245,8 @@ class BackgroundJobTest {
         var store = new FakeTaskStore();
         var executor = new HoldingExecutor();
         var job = new BackgroundJob(store, executor, clockAt(NOW), List.of(
-                task("transfer", "transfers", () -> { })
+                task("transfer", "transfers", () -> {
+                })
         ));
         assertEquals(ACCEPTED, job.requestRun("transfer").status());
 
@@ -277,7 +288,8 @@ class BackgroundJobTest {
     private static int adsSubmissionsAt(LocalDateTime now) {
         var executor = new HoldingExecutor();
         var clock = clockAt(now);
-        var definition = BackgroundJob.adsTask("ads", "ads:sellfusion", null, clock, (_, _) -> { });
+        var definition = BackgroundJob.adsTask("ads", "ads:sellfusion", null, clock, (_, _) -> {
+        });
         new BackgroundJob(new FakeTaskStore(), executor, clock, List.of(definition)).performWork();
         return executor.queuedCount();
     }
@@ -298,7 +310,8 @@ class BackgroundJobTest {
             String prerequisite
     ) {
         return new BackgroundJob.TaskDefinition(
-                name, lane, interval, retry, _ -> true, prerequisite, () -> { }
+                name, lane, interval, retry, _ -> true, prerequisite, () -> {
+        }
         );
     }
 
@@ -391,7 +404,7 @@ class BackgroundJobTest {
         }
 
         @Override
-        public synchronized int registerTasks(@NonNull List<String> taskNames) {
+        public synchronized int registerTasks(List<String> taskNames) {
             registeredTaskNames.addAll(taskNames);
             return taskNames.size();
         }
@@ -403,18 +416,18 @@ class BackgroundJobTest {
         }
 
         @Override
-        public synchronized int startTask(@NonNull String name) {
+        public synchronized int startTask(String name) {
             startedTaskNames.add(name);
             return 1;
         }
 
         @Override
-        public int endTask(@NonNull String name, @NonNull String error) {
+        public int endTask(String name, String error) {
             return 1;
         }
 
         @Override
-        public synchronized int endTask(@NonNull String name, @NonNull Throwable error) throws SQLException {
+        public synchronized int endTask(String name, Throwable error) {
             failedTaskNames.add(name);
             return 1;
         }

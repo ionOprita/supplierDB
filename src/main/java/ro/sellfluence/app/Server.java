@@ -672,7 +672,7 @@ public class Server {
             return thread;
         });
         AtomicInteger workerNumber = new AtomicInteger();
-        ExecutorService workers = Executors.newFixedThreadPool(1 + adsAliases.size(), r -> {
+        ExecutorService workers = Executors.newFixedThreadPool(2 + adsAliases.size(), r -> {
             Thread thread = new Thread(r, "BackgroundJob-Worker-" + workerNumber.incrementAndGet());
             thread.setDaemon(true); // Don't prevent JVM shutdown
             return thread;

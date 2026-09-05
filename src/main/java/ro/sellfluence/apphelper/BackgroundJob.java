@@ -1,7 +1,5 @@
 package ro.sellfluence.apphelper;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import ro.sellfluence.app.EmagDBApp;
 import ro.sellfluence.app.FetchAds;
@@ -19,7 +17,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -47,19 +44,20 @@ import static java.util.logging.Level.WARNING;
  * claimed before work is submitted to the executor, so queued and already-running work are both represented by
  * {@link #laneStatuses()}.</p>
  */
-@NullMarked
 public class BackgroundJob {
 
-    public static final String TRANSFERS_LANE = "transfers";
+    public static final String emagApiLane = "emagApiLane";
+    public static final String googleApiLane = "googleApiLane";
+    public static final String adsLane = "emagAdsLane";
 
     private static final Logger logger = Logs.getFileLogger("BackgroundJob", Level.INFO, 10, 1_000_000);
-    private static final Duration HOURLY = Duration.ofHours(1);
-    private static final Duration DAILY = Duration.ofDays(1);
-    private static final Duration WEEKLY = Duration.ofDays(7);
-    private static final Predicate<LocalDateTime> ALWAYS = _ -> true;
-    private static final Predicate<LocalDateTime> morning = time ->  time.getHour() < 7;
-    private static final Predicate<LocalDateTime> afternoon = time ->  time.getHour() > 12 && time.getHour() < 18;
-    private static final Predicate<LocalDateTime> outOfOfficeHour = time -> time.getHour() < 7 || time.getHour() > 18;
+    private static final Duration executeHourly = Duration.ofHours(1);
+    private static final Duration executeDaily = Duration.ofDays(1);
+    private static final Duration executeWeekly = Duration.ofDays(7);
+    private static final Predicate<LocalDateTime> runAlways = _ -> true;
+    private static final Predicate<LocalDateTime> runOnlyInTheMorning = time -> time.getHour() < 7;
+    private static final Predicate<LocalDateTime> runOnlyInTheAfternoon = time -> time.getHour() > 12 && time.getHour() < 18;
+    private static final Predicate<LocalDateTime> runOnlyOutOfOfficeHours = time -> time.getHour() < 7 || time.getHour() > 18;
     private static final Pattern SAFE_ALIAS = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_-]{0,63}");
 
     private final AtomicBoolean running = new AtomicBoolean(true);
@@ -155,17 +153,7 @@ public class BackgroundJob {
                     .toList();
         }
     }
-
-    /**
-     * Legacy single-task view. Prefer {@link #laneStatuses()}.
-     */
-    @Deprecated
-    public @Nullable String activeTaskName() {
-        synchronized (taskControlLock) {
-            return activeClaims.values().stream().findFirst().map(claim -> claim.taskName).orElse(null);
-        }
-    }
-
+    
     public enum PauseResult {
         UPDATED,
         UNKNOWN_TASK
@@ -177,7 +165,7 @@ public class BackgroundJob {
     }
 
     /**
-     * Persistence seam kept package-private so scheduler behavior can be tested without a database.
+     * Persistence seam kept package-private so scheduler behaviour can be tested without a database.
      */
     interface TaskStore {
         int registerTasks(List<String> taskNames) throws SQLException;
@@ -229,20 +217,20 @@ public class BackgroundJob {
     }
 
     private static List<TaskDefinition> productionTaskDefinitions(
-            @NonNull EmagMirrorDB db,
-            @NonNull Clock clock,
-            @NonNull List<String> adsAliases
+            EmagMirrorDB db,
+            Clock clock,
+            List<String> adsAliases
     ) {
         Objects.requireNonNull(db, "db");
         Objects.requireNonNull(clock, "clock");
 
         var definitions = new ArrayList<TaskDefinition>();
         definitions.add(new TaskDefinition(
-                "Populate products from sheets", TRANSFERS_LANE, HOURLY, ALWAYS,
+                "Populate products from sheets", googleApiLane, executeHourly, runAlways,
                 () -> PopulateProductsTableFromSheets.updateProductTable(db)
         ));
         definitions.add(new TaskDefinition(
-                "Fetch new orders from eMAG and update GMV in DB", TRANSFERS_LANE, HOURLY, ALWAYS,
+                "Fetch new orders from eMAG and update GMV in DB", emagApiLane, executeHourly, runAlways,
                 () -> {
                     EmagDBApp.fetchNewOrders(db);
                     db.updateGMVTable();
@@ -250,36 +238,36 @@ public class BackgroundJob {
         ));
         definitions.add(new TaskDefinition(
                 "Fetch not finalized orders from last 30 days eMAG and update GMV in DB",
-                TRANSFERS_LANE, HOURLY, ALWAYS,
+                emagApiLane, executeHourly, runAlways,
                 () -> {
                     EmagDBApp.fetchOrdersNotFinalizedInDB(db, true);
                     db.updateGMVTable();
                 }
         ));
         definitions.add(new TaskDefinition(
-                "Fetch not finalized orders and update GMV in DB", TRANSFERS_LANE, DAILY,
-                outOfOfficeHour,
+                "Fetch not finalized orders and update GMV in DB", emagApiLane, executeDaily,
+                runOnlyOutOfOfficeHours,
                 () -> {
                     EmagDBApp.fetchOrdersNotFinalizedInDB(db, false);
                     db.updateGMVTable();
                 }
         ));
         definitions.add(new TaskDefinition(
-                "Fetch storno orders from eMAG and update GMV in DB", TRANSFERS_LANE, HOURLY, ALWAYS,
+                "Fetch storno orders from eMAG and update GMV in DB", emagApiLane, executeHourly, runAlways,
                 () -> {
                     EmagDBApp.fetchStornoOrders(db);
                     db.updateGMVTable();
                 }
         ));
         definitions.add(new TaskDefinition(
-                "Fetch RMAs from eMAG and update GMV in DB", TRANSFERS_LANE, HOURLY, ALWAYS,
+                "Fetch RMAs from eMAG and update GMV in DB", emagApiLane, executeHourly, runAlways,
                 () -> {
                     EmagDBApp.fetchRMAs(db);
                     db.updateGMVTable();
                 }
         ));
         definitions.add(new TaskDefinition(
-                "Refetch some from eMAG and update GMV in DB", TRANSFERS_LANE, WEEKLY, ALWAYS,
+                "Refetch some from eMAG and update GMV in DB", emagApiLane, executeWeekly, runAlways,
                 () -> {
                     EmagDBApp.fetchAndStoreToDBProbabilistic(db);
                     db.updateGMVTable();
@@ -287,23 +275,23 @@ public class BackgroundJob {
         ));
         definitions.add(new TaskDefinition(
                 "Update employee sheet tabs in product table",
-                TRANSFERS_LANE,
-                HOURLY,
-                HOURLY,
-                ALWAYS,
+                googleApiLane,
+                executeHourly,
+                executeHourly,
+                runAlways,
                 null,
                 () -> UpdateProductEmployeeSheetTabsFromSheets.updateEmployeeSheetTabs(db)
         ));
         definitions.add(new TaskDefinition(
-                "Transfer to storno and return sheets", TRANSFERS_LANE, HOURLY, ALWAYS,
+                "Transfer to storno and return sheets", googleApiLane, executeHourly, runAlways,
                 () -> PopulateStornoAndReturns.updateSpreadsheets(db)
         ));
         definitions.add(new TaskDefinition(
-                "Transfer to order and GMV sheets for 2026", TRANSFERS_LANE, HOURLY, ALWAYS,
+                "Transfer to order and GMV sheets for 2026", googleApiLane, executeHourly, runAlways,
                 () -> new PopulateDateComenziFromDB(2026).updateSpreadsheets(db)
         ));
         definitions.add(new TaskDefinition(
-                "Transfer to employee sheet", TRANSFERS_LANE, HOURLY, outOfOfficeHour,
+                "Transfer to employee sheet", googleApiLane, executeHourly, runOnlyOutOfOfficeHours,
                 () -> UpdateEmployeeSheetsFromDB.updateSheets(db)
         ));
 
@@ -314,7 +302,7 @@ public class BackgroundJob {
     }
 
     private static void addAdsTasks(List<TaskDefinition> definitions, EmagMirrorDB db, Clock clock, String alias) {
-        var lane = "ads:" + alias;
+        final var lane = adsLane + ":" + alias;
         var campaignsTaskName = adsCampaignsTaskName(alias);
         definitions.add(adsTask(
                 campaignsTaskName,
@@ -347,9 +335,9 @@ public class BackgroundJob {
         definitions.add(new TaskDefinition(
                 "Delete cached files for " + alias,
                 lane,
-                DAILY,
-                HOURLY,
-                afternoon,
+                executeDaily,
+                executeHourly,
+                runOnlyInTheAfternoon,
                 null,
                 () -> FetchAds.deleteAdsCache(alias)
         ));
@@ -374,9 +362,9 @@ public class BackgroundJob {
         return new TaskDefinition(
                 name,
                 lane,
-                DAILY,
-                HOURLY,
-                morning,
+                executeDaily,
+                executeHourly,
+                runOnlyInTheMorning,
                 prerequisiteTaskName,
                 () -> {
                     var endDate = LocalDate.now(clock);
@@ -670,14 +658,7 @@ public class BackgroundJob {
         logger.info("BackgroundJob: Shutdown requested");
     }
 
-    private static final class LaneClaim {
-        private final String lane;
-        private final String taskName;
-
-        private LaneClaim(String lane, String taskName) {
-            this.lane = lane;
-            this.taskName = taskName;
-        }
+    private record LaneClaim(String lane, String taskName) {
     }
 
     private record ManualClaimAttempt(
