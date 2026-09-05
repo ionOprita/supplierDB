@@ -17,6 +17,7 @@ const BODY = document.getElementById('adsAdsetsBody');
 
 let currentColumns = [];
 let activePeriod = null;
+let latestRequestId = 0;
 
 function setStatus(message) {
   if (STATUS) {
@@ -164,7 +165,8 @@ function setPageTitle(campaignName) {
   document.title = title;
 }
 
-async function loadAdsets(campaignId, period) {
+async function loadAdsets(campaignId, period, errorMessage = 'Failed to load adsets.') {
+  const requestId = ++latestRequestId;
   if (!campaignId) {
     currentColumns = [];
     HEAD.innerHTML = '';
@@ -183,13 +185,27 @@ async function loadAdsets(campaignId, period) {
   const periodPhrase = adsPeriodPhrase(period);
   setStatus(`Loading adsets for campaign ID ${campaignId} ${periodPhrase}...`);
   const params = adsPeriodSearchParams(period, {campaignId});
-  const data = await fetchJSON(`/app/adsAdsets?${params.toString()}`);
-  setPageTitle(data.campaignName);
-  currentColumns = Array.isArray(data.columns) ? data.columns : [];
-  const rows = Array.isArray(data.rows) ? data.rows : [];
-  renderHeader(currentColumns);
-  renderRows(rows, period);
-  setStatus(`${rows.length} adset${rows.length === 1 ? '' : 's'} ${periodPhrase}.`);
+  try {
+    const data = await fetchJSON(`/app/adsAdsets?${params.toString()}`);
+    if (requestId !== latestRequestId) {
+      return;
+    }
+    setPageTitle(data.campaignName);
+    currentColumns = Array.isArray(data.columns) ? data.columns : [];
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    renderHeader(currentColumns);
+    renderRows(rows, period);
+    setStatus(`${rows.length} adset${rows.length === 1 ? '' : 's'} ${periodPhrase}.`);
+  } catch (e) {
+    if (requestId !== latestRequestId) {
+      return;
+    }
+    HEAD.innerHTML = '';
+    currentColumns = [];
+    renderMessageRow(errorMessage);
+    setStatus('');
+    console.error(e);
+  }
 }
 
 async function init() {
@@ -222,12 +238,7 @@ async function init() {
     onApply: (period) => {
       activePeriod = period;
       replaceAdsPeriodInUrl(period, {campaignId});
-      loadAdsets(campaignId, period).catch((e) => {
-        HEAD.innerHTML = '';
-        renderMessageRow('Failed to load adsets.');
-        setStatus('');
-        console.error(e);
-      });
+      loadAdsets(campaignId, period);
     }
   });
 
@@ -237,7 +248,7 @@ async function init() {
     fileNameBuilder: ({datePart}) => `ads-adsets-${campaignId}-${adsPeriodFilePart(activePeriod, datePart)}.csv`
   });
 
-  await loadAdsets(campaignId, activePeriod);
+  await loadAdsets(campaignId, activePeriod, 'Failed to load adset data.');
 }
 
 init().catch((e) => {
