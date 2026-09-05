@@ -1,4 +1,4 @@
-package ro.sellfluence.app;
+package ro.sellfluence.apphelper;
 
 import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.TimeoutError;
@@ -17,6 +17,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -60,7 +62,7 @@ class FetchAdsTest {
 
         assertEquals(tempDirectory.resolve("sellfusion"), sellfusionCache);
         assertEquals(tempDirectory.resolve("second-account"), secondCache);
-        assertFalse(sellfusionCache.equals(secondCache));
+        assertNotEquals(sellfusionCache, secondCache);
         var scopedCache = sellfusionCache.resolve(oldFlatCache.getFileName());
 
         loadCampaignPage(scopedCache, false,
@@ -251,7 +253,7 @@ class FetchAdsTest {
                 ignored -> { throw new InterruptedException("stop"); }
         ));
 
-        assertTrue(thrown.getCause() instanceof InterruptedException);
+        assertInstanceOf(InterruptedException.class, thrown.getCause());
         assertEquals(1, calls.get());
         assertTrue(Thread.currentThread().isInterrupted());
     }

@@ -1,4 +1,4 @@
-package ro.sellfluence.app;
+package ro.sellfluence.apphelper;
 
 import com.bastiaanjansen.otp.TOTPGenerator;
 import com.microsoft.playwright.Browser;
@@ -26,7 +26,6 @@ import ro.sellfluence.emagapi.AdsKeyword;
 import ro.sellfluence.emagapi.AdsResponse;
 import ro.sellfluence.emagapi.AdsSearchPhrase;
 import ro.sellfluence.emagapi.AdsTargetedProduct;
-import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 import ro.sellfluence.support.UserPassword;
 import tools.jackson.core.JacksonException;
@@ -61,8 +60,6 @@ import java.util.stream.Collectors;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
-import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
-import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 
 public class FetchAds {
@@ -116,17 +113,6 @@ public class FetchAds {
     }
 
     record DownloadedPage<T>(List<T> items, int pageCount) {
-    }
-
-    static void main(String... args) throws Exception {
-        var arguments = new Arguments(args);
-        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
-        var endDate = LocalDate.now();
-        var startDate = endDate.minusDays(31);
-        fetchAdsAndCampaigns("sellfusion", mirrorDB, startDate, endDate);
-        fetchKeywords("sellfusion", mirrorDB, startDate, endDate);
-        fetchSearchPhrases("sellfusion", mirrorDB, startDate, endDate);
-        fetchTargetedProducts("sellfusion", mirrorDB, startDate, endDate);
     }
 
     /**
@@ -215,7 +201,7 @@ public class FetchAds {
         }
     }
 
-    static Path cacheDirectoryForAlias(Path root, String alias) {
+    public static Path cacheDirectoryForAlias(Path root, String alias) {
         Objects.requireNonNull(root, "Cache root must not be null.");
         if (alias == null || !safeAlias.matcher(alias).matches()) {
             throw new IllegalArgumentException("Invalid eMAG Ads alias: %s".formatted(alias));
@@ -228,7 +214,7 @@ public class FetchAds {
         return root.resolve(alias);
     }
 
-    static boolean isHeadless() {
+    public static boolean isHeadless() {
         return booleanProperty("ads.headless", true);
     }
 
@@ -250,7 +236,7 @@ public class FetchAds {
         throw new IllegalArgumentException("System property %s must be either true or false.".formatted(name));
     }
 
-    static UserPassword requireCredentials(String alias) {
+    public static UserPassword requireCredentials(String alias) {
         var user = UserPassword.findAlias(alias);
         if (user == null) {
             throw new IllegalArgumentException("Unknown eMAG Ads alias: %s".formatted(alias));
@@ -259,7 +245,7 @@ public class FetchAds {
         return user;
     }
 
-    static void validateCredentials(String alias, String username, String password, String otpAuth) {
+    public static void validateCredentials(String alias, String username, String password, String otpAuth) {
         if (username == null || username.isBlank()
                 || password == null || password.isBlank()
                 || otpAuth == null || otpAuth.isBlank()) {
@@ -311,17 +297,17 @@ public class FetchAds {
             LocalDate startDate,
             LocalDate endDate
     ) {
-        var adsetsByDate = readAdsetsByDate(mirrorDB, startDate, endDate);
+        var adSetsByDate = readAdSetsByDate(mirrorDB, startDate, endDate);
         var currentDate = startDate;
         while (currentDate.isBefore(endDate)) {
             var reports = new ArrayList<AdsAdsetReport<AdsKeyword>>();
             var downloadedRows = 0;
-            for (var adset : adsetsByDate.getOrDefault(currentDate, List.of())) {
+            for (var adSet : adSetsByDate.getOrDefault(currentDate, List.of())) {
                 var keywords = downloadKeywords(
-                        page, aliasCacheDirectory, currentDate, adset.campaignId(), adset.adsetId()
+                        page, aliasCacheDirectory, currentDate, adSet.campaignId(), adSet.adsetId()
                 );
                 downloadedRows += keywords.size();
-                reports.add(new AdsAdsetReport<>(adset, keywords));
+                reports.add(new AdsAdsetReport<>(adSet, keywords));
             }
             try {
                 var changedRows = mirrorDB.addOrUpdateAdsKeywords(reports);
@@ -349,26 +335,26 @@ public class FetchAds {
             LocalDate startDate,
             LocalDate endDate
     ) {
-        var adsetsByDate = readAdsetsByDate(mirrorDB, startDate, endDate);
+        var adSetsByDate = readAdSetsByDate(mirrorDB, startDate, endDate);
         var currentDate = startDate;
         while (currentDate.isBefore(endDate)) {
             var reports = new ArrayList<AdsAdsetReport<AdsSearchPhrase>>();
             var downloadedRows = 0;
             var matchedRows = 0;
-            var adsetsByCampaign = adsetsByDate.getOrDefault(currentDate, List.of()).stream()
+            var adSetsByCampaign = adSetsByDate.getOrDefault(currentDate, List.of()).stream()
                     .collect(Collectors.groupingBy(AdsAdsetKey::campaignId, LinkedHashMap::new, Collectors.toList()));
-            for (var campaignEntry : adsetsByCampaign.entrySet()) {
+            for (var campaignEntry : adSetsByCampaign.entrySet()) {
                 var searchPhrases = downloadSearchPhrases(
                         page, aliasCacheDirectory, currentDate, campaignEntry.getKey()
                 );
                 downloadedRows += searchPhrases.size();
-                var phrasesByAdset = searchPhrases.stream()
+                var phrasesByAdSet = searchPhrases.stream()
                         .filter(phrase -> phrase.adsetId() != null)
                         .collect(Collectors.groupingBy(AdsSearchPhrase::adsetId));
-                for (var adset : campaignEntry.getValue()) {
-                    var phrases = phrasesByAdset.getOrDefault(adset.adsetId(), List.of());
+                for (var adSet : campaignEntry.getValue()) {
+                    var phrases = phrasesByAdSet.getOrDefault(adSet.adsetId(), List.of());
                     matchedRows += phrases.size();
-                    reports.add(new AdsAdsetReport<>(adset, phrases));
+                    reports.add(new AdsAdsetReport<>(adSet, phrases));
                 }
             }
             if (matchedRows != downloadedRows) {
@@ -401,17 +387,17 @@ public class FetchAds {
             LocalDate startDate,
             LocalDate endDate
     ) {
-        var adsetsByDate = readAdsetsByDate(mirrorDB, startDate, endDate);
+        var adSetsByDate = readAdSetsByDate(mirrorDB, startDate, endDate);
         var currentDate = startDate;
         while (currentDate.isBefore(endDate)) {
             var reports = new ArrayList<AdsAdsetReport<AdsTargetedProduct>>();
             var downloadedRows = 0;
-            for (var adset : adsetsByDate.getOrDefault(currentDate, List.of())) {
+            for (var adSet : adSetsByDate.getOrDefault(currentDate, List.of())) {
                 var targetedProducts = downloadTargetedProducts(
-                        page, aliasCacheDirectory, currentDate, adset.campaignId(), adset.adsetId()
+                        page, aliasCacheDirectory, currentDate, adSet.campaignId(), adSet.adsetId()
                 );
                 downloadedRows += targetedProducts.size();
-                reports.add(new AdsAdsetReport<>(adset, targetedProducts));
+                reports.add(new AdsAdsetReport<>(adSet, targetedProducts));
             }
             try {
                 var changedRows = mirrorDB.addOrUpdateAdsTargetedProducts(reports);
@@ -424,7 +410,7 @@ public class FetchAds {
         }
     }
 
-    private static Map<LocalDate, List<AdsAdsetKey>> readAdsetsByDate(
+    private static Map<LocalDate, List<AdsAdsetKey>> readAdSetsByDate(
             EmagMirrorDB mirrorDB,
             LocalDate startDate,
             LocalDate endDate
@@ -532,7 +518,7 @@ public class FetchAds {
     }
 
     /**
-     * Download targeted product information for the given campaign, adset and day.
+     * Download targeted product information for the given campaign, adset, and day.
      *
      * @param page       Playwright session.
      * @param date       for which to download the data.
@@ -564,7 +550,7 @@ public class FetchAds {
     }
 
     /**
-     * Download keywords information for the given campaign, adset and day.
+     * Download keyword information for the given campaign, adset, and day.
      *
      * @param page       Playwright session.
      * @param date       for which to download the data.
@@ -598,8 +584,8 @@ public class FetchAds {
      * Does the actual downloading of data from eMag and handles paging.
      *
      * @param page              Playwright session.
-     * @param uriForPage        method which create the URI.
-     * @param pathForPage       method which create the path for the cache file.
+     * @param uriForPage        method which creates the URI.
+     * @param pathForPage       method which creates the path for the cache file.
      * @param responseType      data type into which to decode the received JSON.
      * @param itemsFromResponse method which extracts the relevant data from the decoded JSON.
      * @return List of campaign data.
@@ -762,7 +748,7 @@ public class FetchAds {
      *
      * @param date       date argument
      * @param pageNumber page number
-     * @return URI builder to which additional argument can be added.
+     * @return URI builder object to which additional argument can be added.
      */
     private static URIBuilder createCommonURI(LocalDate date, int pageNumber) {
         URIBuilder uriBuilder = new URIBuilder(URI.create("https://advertising.emag.net/api/v1"));
@@ -803,7 +789,7 @@ public class FetchAds {
     }
 
     /**
-     * Perform all steps to log into the ads dashboard.
+     * Perform all steps to log into the advertising dashboard.
      *
      * @param page Playwright instance.
      * @param user user information needed for the login.
@@ -851,8 +837,8 @@ public class FetchAds {
     /**
      * Wait a random time of minimum {@see fromSec} to less than {@see toSetc}.
      *
-     * @param fromSec
-     * @param toSec
+     * @param fromSec minimum time to wait for.
+     * @param toSec   maximum time to wait for.
      */
     static void randomWait(Double fromSec, Double toSec) {
         var waitSec = fromSec + (toSec - fromSec) * random.nextDouble();

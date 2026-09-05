@@ -2,7 +2,6 @@ package ro.sellfluence.apphelper;
 
 import org.jspecify.annotations.Nullable;
 import ro.sellfluence.app.EmagDBApp;
-import ro.sellfluence.app.FetchAds;
 import ro.sellfluence.app.PopulateDateComenziFromDB;
 import ro.sellfluence.app.PopulateProductsTableFromSheets;
 import ro.sellfluence.app.PopulateStornoAndReturns;
@@ -207,7 +206,7 @@ public class BackgroundJob {
     }
 
     /**
-     * Immutable scheduling definition. Definition order is priority order within a lane.
+     * Immutable scheduling definition. Definition order is the priority order within a lane.
      */
     record TaskDefinition(
             String name,
@@ -428,7 +427,7 @@ public class BackgroundJob {
     }
 
     /**
-     * Load history once and submit at most one eligible task for every idle lane.
+     * Load the history once and submit at most one eligible task for every idle lane.
      */
     public void performWork() {
         if (!running.get()) {
@@ -559,7 +558,7 @@ public class BackgroundJob {
     }
 
     /**
-     * Manual runs bypass timing, pause, and dependency checks, but must claim the task's lane.
+     * Manual runs bypass timing, pause, and dependency checks but must claim the task's lane.
      */
     public RunResult requestRun(String taskName) {
         if (!running.get()) {
