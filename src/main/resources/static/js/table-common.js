@@ -3,7 +3,7 @@
  * Shared utilities to render a month-matrix table with a sticky header and first two columns,
  * plus a delegated click handler that opens a details window.
  */
-import {fetchJSON, formatDuration, formatLocalDateTime} from "./common.js";
+import {fetchJSON, formatDuration} from "./common.js";
 
 // --- helpers -------------------------------------------------------------
 
@@ -428,9 +428,18 @@ export function initMatrixTable(cfg) {
 export function arrayToDateTime(arr) {
   if (!Array.isArray(arr)) return null;
   const [y, m, d, hh, mm, ss, nano] = arr;
+  // Task timestamps are LocalDateTime fields, not UTC instants. Use UTC only as a
+  // stable container, paired with UTC getters below, to avoid browser timezone/DST shifts.
   // JS Date months are 0-based; nano to millis
   const ms = Math.floor((nano ?? 0) / 1_000_000);
   return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, ss ?? 0, ms));
+}
+
+function formatTaskDateTime(date) {
+  if (!date) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ` +
+      `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
 }
 
 export function toTaskRows(jsonData, pausedTaskNames = []) {
@@ -466,27 +475,46 @@ export function toTaskRows(jsonData, pausedTaskNames = []) {
 
 export function renderTasksBody(tbodyEl, rows, options = {}) {
   const canRunTasks = options.canRunTasks === true;
-  const activeTaskName = typeof options.activeTaskName === 'string' && options.activeTaskName
-    ? options.activeTaskName
-    : null;
-  const pendingTaskName = typeof options.pendingTaskName === 'string' && options.pendingTaskName
-    ? options.pendingTaskName
-    : null;
-  const checkingTaskName = typeof options.checkingTaskName === 'string' && options.checkingTaskName
-    ? options.checkingTaskName
-    : null;
-  const databaseRunningTaskName =
-    rows.find((row) => row.started != null && row.terminated == null)?.name ?? null;
-  const blockingTaskName =
-    activeTaskName ?? pendingTaskName ?? checkingTaskName ?? databaseRunningTaskName;
+  const taskLaneByName = options.taskLaneByName instanceof Map
+    ? options.taskLaneByName
+    : new Map();
+  const activeTaskByLane = options.activeTaskByLane instanceof Map
+    ? options.activeTaskByLane
+    : new Map();
+  const activeTaskNames = new Set(activeTaskByLane.values());
+  const pendingTaskNames = options.pendingTaskNames instanceof Set
+    ? options.pendingTaskNames
+    : new Set();
+  const checkingTaskNames = options.checkingTaskNames instanceof Set
+    ? options.checkingTaskNames
+    : new Set();
+  const databaseRunningTaskNames = options.databaseRunningTaskNames instanceof Set
+    ? options.databaseRunningTaskNames
+    : new Set(rows
+      .filter((row) => row.started != null && row.terminated == null)
+      .map((row) => row.name));
+  const blockingTaskByLane = new Map(activeTaskByLane);
+
+  for (const taskName of [
+    ...pendingTaskNames,
+    ...checkingTaskNames,
+    ...databaseRunningTaskNames
+  ]) {
+    const lane = taskLaneByName.get(taskName);
+    if (lane != null && !blockingTaskByLane.has(lane)) {
+      blockingTaskByLane.set(lane, taskName);
+    }
+  }
 
   function renderRow(row) {
     const tr = document.createElement('tr');
 
     const isRunning = row.started != null && row.terminated == null;
     const isStarting = !isRunning &&
-      (row.name === activeTaskName || row.name === pendingTaskName);
-    const isCheckingResult = !isRunning && !isStarting && row.name === checkingTaskName;
+      (activeTaskNames.has(row.name) || pendingTaskNames.has(row.name));
+    const isCheckingResult = !isRunning && !isStarting && checkingTaskNames.has(row.name);
+    const taskLane = taskLaneByName.get(row.name) ?? null;
+    const blockingTaskName = taskLane == null ? null : blockingTaskByLane.get(taskLane) ?? null;
     const tdAction = document.createElement('td');
     if (canRunTasks) {
       if (!isRunning && !isStarting && !isCheckingResult) {
@@ -494,12 +522,12 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
         runButton.type = 'button';
         runButton.textContent = 'Run';
         runButton.classList.add('task-action-button', 'task-run-button');
+        runButton.dataset.taskName = row.name;
         runButton.disabled = blockingTaskName != null;
         if (blockingTaskName != null) {
-          runButton.title =
-            checkingTaskName != null && activeTaskName == null && pendingTaskName == null
-              ? `Waiting for the result of task "${checkingTaskName}".`
-              : `Task "${blockingTaskName}" is already running or starting.`;
+          runButton.title = checkingTaskNames.has(blockingTaskName)
+            ? `Waiting for the result of task "${blockingTaskName}" in lane "${taskLane}".`
+            : `Task "${blockingTaskName}" is already running or starting in lane "${taskLane}".`;
         }
         runButton.addEventListener('click', () => options.onRun?.(row.name, runButton));
         tdAction.appendChild(runButton);
@@ -521,7 +549,7 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
     tr.appendChild(tdName);
     const tdStatus = document.createElement('td');
     if (isRunning) {
-      tdStatus.textContent = `RUNNING since ${formatLocalDateTime(row.started)}`;
+      tdStatus.textContent = `RUNNING since ${formatTaskDateTime(row.started)}`;
     } else if (isStarting) {
       tdStatus.textContent = 'STARTING (waiting for the background worker)';
     } else if (isCheckingResult) {
@@ -535,13 +563,13 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
     }
     tr.appendChild(tdStatus);
     const tdLastRun = document.createElement('td');
-    tdLastRun.textContent = formatLocalDateTime(row.terminated);
+    tdLastRun.textContent = formatTaskDateTime(row.terminated);
     tr.appendChild(tdLastRun);
     const tdDuration = document.createElement('td');
     tdDuration.textContent = formatDuration(row.durationOfLastRunSeconds);
     tr.appendChild(tdDuration);
     const tdLastSuccess = document.createElement('td');
-    tdLastSuccess.textContent = formatLocalDateTime(row.lastSuccessfulRun);
+    tdLastSuccess.textContent = formatTaskDateTime(row.lastSuccessfulRun);
     tr.appendChild(tdLastSuccess);
     const tdFailures = document.createElement('td');
     tdFailures.textContent = row.unsuccessfulRuns;
@@ -564,7 +592,7 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
  * @param {string} cfg.theadId - DOM id of <thead>
  * @param {string} cfg.tbodyId - DOM id of <tbody>
  * @param {string} cfg.dataUrl - endpoint to load the matrix JSON from
- * @param {string} [cfg.activeDataUrl] - endpoint returning the task which owns the background worker
+ * @param {string} [cfg.activeDataUrl] - endpoint returning scheduler lanes and their active tasks
  * @param {string} [cfg.pausedDataUrl] - endpoint returning the names of paused tasks
  * @param {string} [cfg.actionStatusId] - DOM id used for run-request feedback
  * @param {string} [cfg.schedulerStatusId] - DOM id used for current worker feedback
@@ -580,12 +608,13 @@ export function initTaskTable(cfg) {
   const TABLE = document.getElementById(cfg.tableId);
   const ACTION_STATUS = cfg.actionStatusId ? document.getElementById(cfg.actionStatusId) : null;
   const SCHEDULER_STATUS = cfg.schedulerStatusId ? document.getElementById(cfg.schedulerStatusId) : null;
-  let pendingTaskName = null;
-  let requestInFlight = false;
-  let currentActiveTaskName = null;
-  let currentDatabaseRunningTaskName = null;
+  const pendingTaskNames = new Set();
+  const trackedRuns = new Map();
+  let currentLaneStatuses = [];
+  let currentTaskLaneByName = new Map();
+  let currentActiveTaskByLane = new Map();
+  let currentDatabaseRunningTaskNames = new Set();
   let latestTaskRows = [];
-  let trackedRun = null;
   let latestLoadRequest = 0;
   let activeTaskPollTimer = null;
   let clearRunStatusWhenIdle = false;
@@ -599,11 +628,61 @@ export function initTaskTable(cfg) {
     actionStatusSource = message ? source : null;
   }
 
-  function setSchedulerStatus(activeTaskName) {
+  function setSchedulerStatus(laneStatuses, databaseRunningTaskNames) {
     if (!SCHEDULER_STATUS) return;
-    SCHEDULER_STATUS.textContent = activeTaskName
-      ? `Task "${activeTaskName}" is running or starting. Other tasks are unavailable until it finishes.`
-      : '';
+
+    const activeTasks = laneStatuses
+      .filter((status) => status.activeTaskName != null)
+      .map((status) => ({ lane: status.lane, taskName: status.activeTaskName }));
+    const reportedTaskNames = new Set(activeTasks.map(({ taskName }) => taskName));
+    for (const taskName of databaseRunningTaskNames) {
+      if (!reportedTaskNames.has(taskName)) {
+        activeTasks.push({ lane: currentTaskLaneByName.get(taskName) ?? null, taskName });
+      }
+    }
+
+    if (activeTasks.length === 0) {
+      SCHEDULER_STATUS.textContent = '';
+      return;
+    }
+
+    const taskDescriptions = activeTasks
+      .map(({ lane, taskName }) => `"${taskName}"${lane == null ? '' : ` (${lane})`}`)
+      .join(', ');
+    SCHEDULER_STATUS.textContent = activeTasks.length === 1
+      ? `Task ${taskDescriptions} is running or starting. Other tasks in that lane are unavailable until it finishes.`
+      : `Tasks ${taskDescriptions} are running or starting. Other tasks in those lanes are unavailable until they finish.`;
+  }
+
+  function parseLaneStatuses(payload) {
+    if (!Array.isArray(payload?.lanes)) return [];
+
+    return payload.lanes.flatMap((item) => {
+      const lane = typeof item?.lane === 'string' ? item.lane.trim() : '';
+      if (!lane) return [];
+      const activeTaskName = typeof item?.activeTaskName === 'string' && item.activeTaskName
+        ? item.activeTaskName
+        : null;
+      const taskNames = Array.isArray(item?.taskNames)
+        ? item.taskNames.filter((taskName) => typeof taskName === 'string' && taskName)
+        : [];
+      return [{ lane, activeTaskName, taskNames }];
+    });
+  }
+
+  function buildLaneState(laneStatuses) {
+    const taskLaneByName = new Map();
+    const activeTaskByLane = new Map();
+    for (const { lane, activeTaskName, taskNames } of laneStatuses) {
+      for (const taskName of taskNames) {
+        taskLaneByName.set(taskName, lane);
+      }
+      if (activeTaskName != null) {
+        taskLaneByName.set(activeTaskName, lane);
+        activeTaskByLane.set(lane, activeTaskName);
+      }
+    }
+    return { taskLaneByName, activeTaskByLane };
   }
 
   async function readActionResponse(response, fallback) {
@@ -636,43 +715,55 @@ export function initTaskTable(cfg) {
     return value instanceof Date ? value.getTime() : null;
   }
 
-  function updateTrackedRun(rows) {
-    if (trackedRun == null) return;
+  function updateTrackedRuns(rows) {
+    const activeTaskNames = new Set(currentActiveTaskByLane.values());
+    for (const [taskName, trackedRun] of trackedRuns) {
+      const row = rows.find((candidate) => candidate.name === taskName);
+      const rowIsRunning = row?.started != null && row?.terminated == null;
+      if (activeTaskNames.has(taskName) || rowIsRunning) {
+        continue;
+      }
 
-    const row = rows.find((candidate) => candidate.name === trackedRun.taskName);
-    const rowIsRunning = row?.started != null && row?.terminated == null;
-    if (currentActiveTaskName === trackedRun.taskName || rowIsRunning) {
-      return;
-    }
+      const taskRecordChanged = row != null && (
+        taskTimestamp(row.started) !== trackedRun.previousStarted ||
+        taskTimestamp(row.terminated) !== trackedRun.previousTerminated
+      );
+      if (taskRecordChanged && row.terminated != null) {
+        const error = String(row.error ?? '').trim();
+        if (error) {
+          setActionStatus(
+            `Task "${taskName}" failed. See its Error column and the application logs for details.`,
+            true,
+            false,
+            'run'
+          );
+        } else {
+          setActionStatus(`Task "${taskName}" completed successfully.`, false, false, 'run');
+        }
+        trackedRuns.delete(taskName);
+        continue;
+      }
 
-    const taskRecordChanged = row != null && (
-      taskTimestamp(row.started) !== trackedRun.previousStarted ||
-      taskTimestamp(row.terminated) !== trackedRun.previousTerminated
-    );
-    if (taskRecordChanged && row.terminated != null) {
-      const error = String(row.error ?? '').trim();
-      if (error) {
+      if (Date.now() - trackedRun.acceptedAt >= 2_000) {
         setActionStatus(
-          `Task "${trackedRun.taskName}" failed. See its Error column and the application logs for details.`,
+          `Task "${taskName}" was accepted, but no execution result was recorded. Check the application logs.`,
           true,
           false,
           'run'
         );
-      } else {
-        setActionStatus(`Task "${trackedRun.taskName}" completed successfully.`, false, false, 'run');
+        trackedRuns.delete(taskName);
       }
-      trackedRun = null;
-      return;
     }
+  }
 
-    if (Date.now() - trackedRun.acceptedAt >= 2_000) {
-      setActionStatus(
-        `Task "${trackedRun.taskName}" was accepted, but no execution result was recorded. Check the application logs.`,
-        true,
-        false,
-        'run'
-      );
-      trackedRun = null;
+  function disableRunButtonsInTaskLane(taskName) {
+    const taskLane = currentTaskLaneByName.get(taskName) ?? null;
+    for (const runButton of BODY.querySelectorAll('.task-run-button')) {
+      const buttonTaskName = runButton.dataset.taskName;
+      if (buttonTaskName === taskName ||
+          (taskLane != null && currentTaskLaneByName.get(buttonTaskName) === taskLane)) {
+        runButton.disabled = true;
+      }
     }
   }
 
@@ -681,17 +772,13 @@ export function initTaskTable(cfg) {
 
     const previousRow = latestTaskRows.find((row) => row.name === taskName);
     const trackedRunCandidate = {
-      taskName,
       previousStarted: taskTimestamp(previousRow?.started),
       previousTerminated: taskTimestamp(previousRow?.terminated),
       acceptedAt: 0
     };
-    trackedRun = null;
-    pendingTaskName = taskName;
-    requestInFlight = true;
-    for (const runButton of BODY.querySelectorAll('.task-run-button')) {
-      runButton.disabled = true;
-    }
+    trackedRuns.delete(taskName);
+    pendingTaskNames.add(taskName);
+    disableRunButtonsInTaskLane(taskName);
     button.textContent = 'Starting...';
     setActionStatus(`Starting ${taskName}...`, false, false, 'run');
 
@@ -709,7 +796,7 @@ export function initTaskTable(cfg) {
             : `Could not start task (HTTP ${response.status}).`
       );
       if (response.status !== 202) {
-        pendingTaskName = null;
+        pendingTaskNames.delete(taskName);
         setActionStatus(
           result.message,
           true,
@@ -719,21 +806,20 @@ export function initTaskTable(cfg) {
         await loadTasks();
         return;
       }
-      pendingTaskName = null;
-      trackedRun = {
+      pendingTaskNames.delete(taskName);
+      trackedRuns.set(taskName, {
         ...trackedRunCandidate,
         acceptedAt: Date.now()
-      };
+      });
       setActionStatus(result.message, false, false, 'run');
       await loadTasks();
     } catch (error) {
-      pendingTaskName = null;
-      trackedRun = null;
+      pendingTaskNames.delete(taskName);
+      trackedRuns.delete(taskName);
       setActionStatus(error instanceof Error ? error.message : String(error), true, false, 'run');
       await loadTasks();
     } finally {
-      requestInFlight = false;
-      pendingTaskName = null;
+      pendingTaskNames.delete(taskName);
       scheduleActiveTaskPoll();
     }
   }
@@ -766,30 +852,30 @@ export function initTaskTable(cfg) {
       const [data, pausedTaskNames, activeTaskStatus] = await Promise.all([
         fetchJSON(cfg.dataUrl),
         cfg.pausedDataUrl ? fetchJSON(cfg.pausedDataUrl) : Promise.resolve([]),
-        cfg.activeDataUrl ? fetchJSON(cfg.activeDataUrl) : Promise.resolve({ activeTaskName: null })
+        cfg.activeDataUrl ? fetchJSON(cfg.activeDataUrl) : Promise.resolve({ lanes: [] })
       ]);
       if (loadRequest !== latestLoadRequest) return;
 
       const rows = toTaskRows(data, pausedTaskNames);
       latestTaskRows = rows;
-      currentDatabaseRunningTaskName =
-        rows.find((row) => row.started != null && row.terminated == null)?.name ?? null;
-      currentActiveTaskName =
-        typeof activeTaskStatus?.activeTaskName === 'string' && activeTaskStatus.activeTaskName
-          ? activeTaskStatus.activeTaskName
-          : null;
+      currentDatabaseRunningTaskNames = new Set(rows
+        .filter((row) => row.started != null && row.terminated == null)
+        .map((row) => row.name));
+      currentLaneStatuses = parseLaneStatuses(activeTaskStatus);
+      const laneState = buildLaneState(currentLaneStatuses);
+      currentTaskLaneByName = laneState.taskLaneByName;
+      currentActiveTaskByLane = laneState.activeTaskByLane;
       if (actionStatusSource === 'load') {
         setActionStatus('');
       }
-      if (!requestInFlight) {
-        pendingTaskName = null;
-        if (currentActiveTaskName == null &&
-            currentDatabaseRunningTaskName == null &&
+      if (pendingTaskNames.size === 0) {
+        if (currentActiveTaskByLane.size === 0 &&
+            currentDatabaseRunningTaskNames.size === 0 &&
             clearRunStatusWhenIdle) {
           setActionStatus('');
         }
       }
-      updateTrackedRun(rows);
+      updateTrackedRuns(rows);
       const tr = buildHeaderRow([
         'Action', 'Name', 'Status', 'Last Run', 'Runtime', 'Last Successful', 'Failures', 'Error'
       ]);
@@ -797,16 +883,19 @@ export function initTaskTable(cfg) {
       HEAD.appendChild(tr);
       renderTasksBody(BODY, rows, {
         canRunTasks: cfg.canRunTasks,
-        activeTaskName: currentActiveTaskName,
-        pendingTaskName,
-        checkingTaskName: trackedRun?.taskName ?? null,
+        taskLaneByName: currentTaskLaneByName,
+        activeTaskByLane: currentActiveTaskByLane,
+        pendingTaskNames,
+        checkingTaskNames: new Set(trackedRuns.keys()),
+        databaseRunningTaskNames: currentDatabaseRunningTaskNames,
         onRun: runTask,
         onSetPaused: setTaskPaused
       });
-      setSchedulerStatus(currentActiveTaskName ?? currentDatabaseRunningTaskName);
-      if (currentActiveTaskName != null ||
-          currentDatabaseRunningTaskName != null ||
-          trackedRun != null) {
+      setSchedulerStatus(currentLaneStatuses, currentDatabaseRunningTaskNames);
+      if (currentActiveTaskByLane.size > 0 ||
+          currentDatabaseRunningTaskNames.size > 0 ||
+          pendingTaskNames.size > 0 ||
+          trackedRuns.size > 0) {
         scheduleActiveTaskPoll();
       }
     } catch (e) {
@@ -820,9 +909,10 @@ export function initTaskTable(cfg) {
         'load'
       );
       console.error(e);
-      if (currentActiveTaskName != null ||
-          currentDatabaseRunningTaskName != null ||
-          trackedRun != null) {
+      if (currentActiveTaskByLane.size > 0 ||
+          currentDatabaseRunningTaskNames.size > 0 ||
+          pendingTaskNames.size > 0 ||
+          trackedRuns.size > 0) {
         scheduleActiveTaskPoll();
       }
     }

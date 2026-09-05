@@ -1,0 +1,1841 @@
+{
+  "meta": {
+    "totalCount": 3779,
+    "page": 1,
+    "perPage": 100,
+    "pageCount": 38
+  },
+  "data": {
+    "summary": {
+      "averageCostOfSale": 120.05,
+      "clicks": 148,
+      "ctr": 1.82,
+      "effectiveCpc": 6.03,
+      "impressions": 8126,
+      "sales": 743.76,
+      "salesCount": 5,
+      "soldUnits": 5,
+      "spent": 892.91,
+      "conversionRate": 3.38,
+      "returnOnAdvertisingSpend": 0.83
+    },
+    "campaign": {
+      "id": 174138,
+      "name": "Auto | Trimmer 2.0 | DDHSVQMBM",
+      "dailyBudget": 2000,
+      "status": "active",
+      "targeting": "auto"
+    },
+    "adsets": [
+      {
+        "id": 180461,
+        "name": "DDHSVQMBM",
+        "targeting": "auto",
+        "bid": 6.02,
+        "status": "active"
+      }
+    ],
+    "searchPhrases": [
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips oneblade",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 4,
+          "ctr": 1.13,
+          "effectiveCpc": 6.32,
+          "impressions": 355,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 25.28,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 0.54,
+          "effectiveCpc": 6.42,
+          "impressions": 185,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.42,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips one blade",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 3,
+          "ctr": 2.1,
+          "effectiveCpc": 6.52,
+          "impressions": 143,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 19.56,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "braun",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 2,
+          "ctr": 1.5,
+          "effectiveCpc": 6.42,
+          "impressions": 133,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 12.84,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "trimer",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 5,
+          "ctr": 3.94,
+          "effectiveCpc": 6.1,
+          "impressions": 127,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 30.5,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "shaver facial",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 10,
+          "ctr": 9.17,
+          "effectiveCpc": 6.22,
+          "impressions": 109,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 62.2,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "remington",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 1.18,
+          "effectiveCpc": 6.42,
+          "impressions": 85,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.42,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "oneblade pro",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 3,
+          "ctr": 3.61,
+          "effectiveCpc": 6.02,
+          "impressions": 83,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 18.06,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "barba",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 14.99,
+          "clicks": 4,
+          "ctr": 4.88,
+          "effectiveCpc": 6.2,
+          "impressions": 82,
+          "sales": 165.28,
+          "salesCount": 1,
+          "soldUnits": 1,
+          "spent": 24.78,
+          "conversionRate": 25,
+          "returnOnAdvertisingSpend": 6.67
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips all-in-one",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 2,
+          "ctr": 2.44,
+          "effectiveCpc": 6.02,
+          "impressions": 82,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 12.04,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "jrl",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 2,
+          "ctr": 2.78,
+          "effectiveCpc": 4.38,
+          "impressions": 72,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 8.75,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "braun all in one",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 2,
+          "ctr": 3.08,
+          "effectiveCpc": 6.02,
+          "impressions": 65,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 12.04,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "clipper",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 2,
+          "ctr": 3.77,
+          "effectiveCpc": 6.02,
+          "impressions": 53,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 12.04,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips 7000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 3,
+          "ctr": 5.66,
+          "effectiveCpc": 6.15,
+          "impressions": 53,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 18.46,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips bodygroom 7000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 3,
+          "ctr": 6.12,
+          "effectiveCpc": 6.15,
+          "impressions": 49,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 18.46,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "trimar",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 2.17,
+          "effectiveCpc": 6.02,
+          "impressions": 46,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.02,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "phillips",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 45,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "rovra",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 44,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips all in one",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 40,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips series 7000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 37,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "cositoare stihl",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 37,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "moser",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 2,
+          "ctr": 6.25,
+          "effectiveCpc": 6.02,
+          "impressions": 32,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 12.04,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "one blade pro",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 32,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "vgr",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 31,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "nashi argan",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 31,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips seria 7000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 31,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "waha",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 30,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "kemei",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 30,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "shav 2",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 27,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "contur barba",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 3.7,
+          "effectiveCpc": 6.42,
+          "impressions": 27,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.42,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips series 5000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 27,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "brau",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 26,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "shav",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 26,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips multigroom 7000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 2,
+          "ctr": 8,
+          "effectiveCpc": 4.03,
+          "impressions": 25,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 8.05,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips multigroom 9000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 25,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips one up",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 25,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "disc trimer",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 24,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "hair clipper",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 23,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "timmer",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 23,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "phillips oneblade",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 4.55,
+          "effectiveCpc": 6.02,
+          "impressions": 22,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.02,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips multigroom",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 4.55,
+          "effectiveCpc": 6.42,
+          "impressions": 22,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.42,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips 3000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 4.55,
+          "effectiveCpc": 6.02,
+          "impressions": 22,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.02,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips seria 5000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 21,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips 7000 series",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 21,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "kiepe",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 20,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "body groomer",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 11.17,
+          "clicks": 3,
+          "ctr": 15,
+          "effectiveCpc": 6.15,
+          "impressions": 20,
+          "sales": 165.28,
+          "salesCount": 1,
+          "soldUnits": 1,
+          "spent": 18.46,
+          "conversionRate": 33.33,
+          "returnOnAdvertisingSpend": 8.95
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips series 9000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 19,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "phillips all in one",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 5.26,
+          "effectiveCpc": 6.02,
+          "impressions": 19,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.02,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "magic clip cordless",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 5.56,
+          "effectiveCpc": 6.72,
+          "impressions": 18,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.72,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips bodygroom",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 5.88,
+          "effectiveCpc": 6.42,
+          "impressions": 17,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.42,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips 3000 series",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 17,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "braun seria 9",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 17,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips bodygroom series 7000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 6.25,
+          "effectiveCpc": 6.02,
+          "impressions": 16,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.02,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "vilgain",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 16,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "pierce nas",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 15,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "multigroom",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 2,
+          "ctr": 13.33,
+          "effectiveCpc": 6.02,
+          "impressions": 15,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 12.04,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "skull shaver",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 6.67,
+          "effectiveCpc": 6.02,
+          "impressions": 15,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.02,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "bodygroom",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 7.14,
+          "effectiveCpc": 6.42,
+          "impressions": 14,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.42,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "jrl onyx",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 14,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "sindolor",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 14,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips hq8505",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 14,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips body",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 14,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "barber",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 13,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "inghinal",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 13,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "br\u00e2u",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 13,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "trimer nas",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 13,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "mg redshift",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 13,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "trimer barba",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 7.69,
+          "effectiveCpc": 6.02,
+          "impressions": 13,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.02,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "body shaver",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 8.33,
+          "effectiveCpc": 6.02,
+          "impressions": 12,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.02,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips bodygroom 7025",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 12,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips series 1000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 12,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "henson shaving",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 12,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "kemei 2299",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 12,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "groom",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 11,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "trimmer nas",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 11,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "babyliss pro",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 11,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips one",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 11,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "andis",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 11,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "sintra memo",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 10,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips series 3000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 10,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "hottle",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 2,
+          "ctr": 20,
+          "effectiveCpc": 6.57,
+          "impressions": 10,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 13.14,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "braun seria 7",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 10,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "mantis",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 10,
+          "effectiveCpc": 6.02,
+          "impressions": 10,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.02,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "grooming",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 10,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "rovra pulse",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 10,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "levitra 20 mg",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 9,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "filips",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 9,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips series 8000",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 9,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips nas",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 9,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "braun 9",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 9,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "varfuri despicate",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 9,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips norelco",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 9,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "moser primat",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 9,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "fade",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 9,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "braun 3",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 8,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "trimmer nas urechi",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 8,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "philips one balde",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 8,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "skeleton",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 1,
+          "ctr": 12.5,
+          "effectiveCpc": 6.02,
+          "impressions": 8,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 6.02,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "bodygroomer",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 2,
+          "ctr": 25,
+          "effectiveCpc": 6.02,
+          "impressions": 8,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 12.04,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      },
+      {
+        "adsetId": 180461,
+        "searchPhrase": "set jrl",
+        "isAggregated": false,
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 8,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      }
+    ]
+  }
+}

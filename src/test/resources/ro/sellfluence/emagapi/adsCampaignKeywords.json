@@ -1,0 +1,83 @@
+{
+  "meta": {
+    "totalCount": 2,
+    "page": 1,
+    "perPage": 10,
+    "pageCount": 1
+  },
+  "data": {
+    "summary": {
+      "averageCostOfSale": 12.5,
+      "clicks": 3,
+      "ctr": 2.5,
+      "effectiveCpc": 1.25,
+      "impressions": 120,
+      "sales": 40,
+      "salesCount": 1,
+      "soldUnits": 1,
+      "spent": 3.75,
+      "conversionRate": 33.33,
+      "returnOnAdvertisingSpend": 10.67
+    },
+    "keywords": [
+      {
+        "id": 1001,
+        "bid": 1.25,
+        "status": "active",
+        "keyword": "example exact keyword",
+        "matchType": "exact",
+        "inheritedStatus": "active",
+        "inheritedBid": 1.2,
+        "adset": {
+          "id": 2001,
+          "name": "Example keyword adset",
+          "targeting": "keywords",
+          "bid": 1.2,
+          "status": "active"
+        },
+        "summary": {
+          "averageCostOfSale": 12.5,
+          "clicks": 3,
+          "ctr": 2.5,
+          "effectiveCpc": 1.25,
+          "impressions": 120,
+          "sales": 40,
+          "salesCount": 1,
+          "soldUnits": 1,
+          "spent": 3.75,
+          "conversionRate": 33.33,
+          "returnOnAdvertisingSpend": 10.67
+        }
+      },
+      {
+        "id": 1002,
+        "bid": 0.9,
+        "status": "paused",
+        "keyword": "example broad keyword",
+        "matchType": "broad",
+        "inheritedStatus": "paused",
+        "inheritedBid": 0.85,
+        "adset": {
+          "id": 2001,
+          "name": "Example keyword adset",
+          "targeting": "keywords",
+          "bid": 1.2,
+          "status": "active"
+        },
+        "summary": {
+          "averageCostOfSale": 0,
+          "clicks": 0,
+          "ctr": 0,
+          "effectiveCpc": 0,
+          "impressions": 0,
+          "sales": 0,
+          "salesCount": 0,
+          "soldUnits": 0,
+          "spent": 0,
+          "conversionRate": 0,
+          "returnOnAdvertisingSpend": 0
+        }
+      }
+    ]
+  }
+}

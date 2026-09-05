@@ -28,6 +28,7 @@ import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
 import ro.sellfluence.api.WebAuthnServer;
 import ro.sellfluence.apphelper.BackgroundJob;
+import ro.sellfluence.db.AdsReportPeriod;
 import ro.sellfluence.db.Brand;
 import ro.sellfluence.db.CategoryDataTable.CategoryColumn;
 import ro.sellfluence.db.CategoryDataTable.CategoryInfo;
@@ -55,6 +56,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
@@ -67,6 +69,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -99,6 +102,8 @@ public class Server {
     private static final String publicOriginConfigName = "ORIGIN";
     private static final String publicHttpsOriginConfigName = "PUBLIC_HTTPS_ORIGIN";
     private static final String logDirectoryConfigName = "LOG_DIRECTORY";
+    private static final String adsAliasesConfigName = "ADS_ALIASES";
+    private static final String defaultAdsAlias = "sellfusion";
     private static final String acmeChallengePrefix = "/.well-known/acme-challenge/";
     private static final ObjectMapper mapper = (new ObjectMapper());
     private static final AtomicBoolean serverShutdownRequested = new AtomicBoolean(false);
@@ -225,7 +230,7 @@ public class Server {
     public record CategorySaveError(String error) {
     }
 
-    public record TaskSchedulerStatus(@Nullable String activeTaskName) {
+    public record TaskSchedulerStatus(List<BackgroundJob.LaneStatus> lanes) {
     }
 
     public record TaskRunResponse(
@@ -404,7 +409,7 @@ public class Server {
                 case BUSY -> ctx.status(409).json(new TaskRunResponse(
                         "BUSY",
                         "Task \"" + runResult.blockingTaskName()
-                                + "\" is already running or starting. Wait for it to finish before starting another task.",
+                                + "\" is already running or starting. Wait for it to finish before starting another task in the same lane.",
                         taskName,
                         runResult.blockingTaskName()
                 ));
@@ -657,16 +662,25 @@ public class Server {
         int securePort = Integer.parseInt(System.getProperty(configNameSecurePort,
                 System.getenv().getOrDefault(configNameSecurePort, arguments.getOption("secport", "8443"))));
 
-        // Setup background job
-        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread thread = new Thread(r, "BackgroundJob-Thread");
+        List<String> adsAliases = configuredAdsAliases();
+        ScheduledExecutorService dispatcher = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r, "BackgroundJob-Dispatcher");
             thread.setDaemon(true); // Don't prevent JVM shutdown
             return thread;
         });
-        BackgroundJob backgroundJob = new BackgroundJob(mirrorDB, scheduler);
+        BackgroundJob backgroundJob = new BackgroundJob(
+                mirrorDB,
+                Clock.systemDefaultZone(),
+                adsAliases
+        );
 
         // Give administrators time to pause individual tasks before the first dispatcher cycle.
-        scheduler.schedule(() -> scheduleWithRestart(scheduler, backgroundJob), 5, TimeUnit.MINUTES);
+        dispatcher.scheduleWithFixedDelay(
+                () -> performBackgroundWork(backgroundJob),
+                5,
+                1,
+                TimeUnit.MINUTES
+        );
 
         var rp = WebAuthnServer.create(new MyCredentialRepo(mirrorDB));
 
@@ -680,15 +694,9 @@ public class Server {
         // Graceful shutdown
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             //logger.info("Shutting down...");
+            dispatcher.shutdown();
             backgroundJob.shutdown();
-            scheduler.shutdown();
-            try {
-                if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
-                    scheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                scheduler.shutdownNow();
-            }
+            awaitTermination(dispatcher, "background-job dispatcher");
             app.stop();
         }));
     }
@@ -979,6 +987,129 @@ public class Server {
             }
         });
 
+        app.get("/app/adsCampaignDates", ctx -> {
+            var dates = api.getAdsCampaignReportDates();
+            if (dates == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(dates);
+            }
+        });
+
+        app.get("/app/adsCampaigns", ctx -> {
+            var reportPeriod = parseAdsReportPeriod(ctx);
+            if (reportPeriod == null) {
+                return;
+            }
+            var campaigns = api.getAdsCampaigns(reportPeriod);
+            if (campaigns == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(campaigns);
+            }
+        });
+
+        app.get("/app/adsAdsetDates", ctx -> {
+            var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
+            if (campaignId == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
+                return;
+            }
+            var dates = api.getAdsAdsetReportDates(campaignId);
+            if (dates == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(dates);
+            }
+        });
+
+        app.get("/app/adsAdsets", ctx -> {
+            var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
+            if (campaignId == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
+                return;
+            }
+            var reportPeriod = parseAdsReportPeriod(ctx);
+            if (reportPeriod == null) {
+                return;
+            }
+            var adsets = api.getAdsAdsets(campaignId, reportPeriod);
+            if (adsets == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(adsets);
+            }
+        });
+
+        app.get("/app/adsSearchPhrases", ctx -> {
+            var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
+            var adsetId = parseIntOrNull(ctx.queryParam("adsetId"));
+            if (campaignId == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
+                return;
+            }
+            if (adsetId == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing adsetId\"}");
+                return;
+            }
+            var reportPeriod = parseAdsReportPeriod(ctx);
+            if (reportPeriod == null) {
+                return;
+            }
+            var phrases = api.getAdsSearchPhrases(campaignId, adsetId, reportPeriod);
+            if (phrases == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(phrases);
+            }
+        });
+
+        app.get("/app/adsTargetedProducts", ctx -> {
+            var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
+            var adsetId = parseIntOrNull(ctx.queryParam("adsetId"));
+            if (campaignId == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
+                return;
+            }
+            if (adsetId == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing adsetId\"}");
+                return;
+            }
+            var reportPeriod = parseAdsReportPeriod(ctx);
+            if (reportPeriod == null) {
+                return;
+            }
+            var products = api.getAdsTargetedProducts(campaignId, adsetId, reportPeriod);
+            if (products == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(products);
+            }
+        });
+
+        app.get("/app/adsKeywords", ctx -> {
+            var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
+            var adsetId = parseIntOrNull(ctx.queryParam("adsetId"));
+            if (campaignId == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
+                return;
+            }
+            if (adsetId == null) {
+                ctx.status(400).result("{\"error\":\"Invalid or missing adsetId\"}");
+                return;
+            }
+            var reportPeriod = parseAdsReportPeriod(ctx);
+            if (reportPeriod == null) {
+                return;
+            }
+            var keywords = api.getAdsKeywords(campaignId, adsetId, reportPeriod);
+            if (keywords == null) {
+                ctx.status(500).result("{\"error\":\"Database error\"}");
+            } else {
+                ctx.json(keywords);
+            }
+        });
+
         app.get("/app/rrr/{id}", ctx -> {
             String id = ctx.pathParam("id");
             var rrr = api.getRRR(id);
@@ -1140,7 +1271,7 @@ public class Server {
         });
         app.get("/app/tasks/active", ctx -> {
             ctx.header("Cache-Control", "no-store");
-            ctx.json(new TaskSchedulerStatus(backgroundJob.activeTaskName()));
+            ctx.json(new TaskSchedulerStatus(backgroundJob.laneStatuses()));
         });
         app.get("/app/tasks/paused", ctx -> {
             ctx.header("Cache-Control", "no-store");
@@ -2309,6 +2440,71 @@ public class Server {
         }
     }
 
+    private static LocalDate parseLocalDate(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(text);
+        } catch (DateTimeParseException _) {
+            return null;
+        }
+    }
+
+    private static AdsReportPeriod parseAdsReportPeriod(Context ctx) {
+        try {
+            return parseAdsReportPeriod(
+                    ctx.queryParam("date"),
+                    ctx.queryParam("dateFrom"),
+                    ctx.queryParam("dateTo")
+            );
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+            return null;
+        }
+    }
+
+    static AdsReportPeriod parseAdsReportPeriod(String date, String dateFrom, String dateTo) {
+        boolean hasDate = date != null;
+        boolean hasDateFrom = dateFrom != null;
+        boolean hasDateTo = dateTo != null;
+
+        if (hasDate) {
+            if (hasDateFrom || hasDateTo) {
+                throw new IllegalArgumentException("date cannot be combined with dateFrom or dateTo");
+            }
+            return AdsReportPeriod.singleDay(requireAdsReportDate("date", date));
+        }
+
+        if (!hasDateFrom || !hasDateTo) {
+            throw new IllegalArgumentException("Provide either date or both dateFrom and dateTo");
+        }
+
+        return new AdsReportPeriod(
+                requireAdsReportDate("dateFrom", dateFrom),
+                requireAdsReportDate("dateTo", dateTo)
+        );
+    }
+
+    private static LocalDate requireAdsReportDate(String parameterName, String value) {
+        var date = parseLocalDate(value);
+        if (date == null) {
+            throw new IllegalArgumentException("Invalid or missing " + parameterName);
+        }
+        return date;
+    }
+
+    private static Integer parseIntOrNull(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException _) {
+            return null;
+        }
+    }
+
     private static List<YearMonth> buildSalesDailyMonths(EmagMirrorDB.SalesDailyDateRange range) {
         var start = YearMonth.from(range.startDate());
         var end = YearMonth.from(range.endDate());
@@ -2498,22 +2694,40 @@ public class Server {
         );
     }
 
-    /**
-     * Schedule the job immediately and then every minute.
-     *
-     * @param scheduler provided.
-     * @param job       to run.
-     */
-    private static void scheduleWithRestart(ScheduledExecutorService scheduler, BackgroundJob job) {
-        scheduler.schedule(() -> {
-            try {
-                job.performWork();
-            } catch (Exception e) {
-                logger.log(SEVERE, "BackgroundJob failed.", e);
+    private static List<String> configuredAdsAliases() {
+        String configuredAliases = configValue(adsAliasesConfigName);
+        if (configuredAliases == null) {
+            return List.of(defaultAdsAlias);
+        }
+
+        List<String> aliases = Arrays.stream(configuredAliases.split(","))
+                .map(String::trim)
+                .filter(alias -> !alias.isEmpty())
+                .toList();
+        if (aliases.isEmpty()) {
+            throw new IllegalArgumentException(adsAliasesConfigName + " must contain at least one alias");
+        }
+        return aliases;
+    }
+
+    private static void performBackgroundWork(BackgroundJob job) {
+        try {
+            job.performWork();
+        } catch (Exception e) {
+            logger.log(SEVERE, "BackgroundJob failed.", e);
+        }
+    }
+
+    private static void awaitTermination(ExecutorService executor, String description) {
+        try {
+            if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+                logger.log(WARNING, "Forcing shutdown of {0}.", description);
+                executor.shutdownNow();
             }
-            // Schedule the next run in a minute.
-            scheduler.schedule(() -> scheduleWithRestart(scheduler, job), 1, TimeUnit.MINUTES);
-        }, 0, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }
 

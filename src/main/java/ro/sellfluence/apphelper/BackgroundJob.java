@@ -1,51 +1,144 @@
 package ro.sellfluence.apphelper;
 
-import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import ro.sellfluence.app.EmagDBApp;
+import ro.sellfluence.app.FetchAds;
 import ro.sellfluence.app.PopulateDateComenziFromDB;
 import ro.sellfluence.app.PopulateProductsTableFromSheets;
 import ro.sellfluence.app.PopulateStornoAndReturns;
-import ro.sellfluence.app.UpdateProductEmployeeSheetTabsFromSheets;
 import ro.sellfluence.app.UpdateEmployeeSheetsFromDB;
+import ro.sellfluence.app.UpdateProductEmployeeSheetTabsFromSheets;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.Task;
 import ro.sellfluence.support.Logs;
 
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 import static com.google.common.base.Throwables.getStackTraceAsString;
 import static java.util.logging.Level.WARNING;
 
-@NullMarked
+/**
+ * Schedules database-transfer tasks in independent serial lanes.
+ *
+ * <p>At most one task owns a lane at a time, while tasks in different lanes may execute concurrently. A lane is
+ * claimed before work is submitted to the executor, so queued and already-running work are both represented by
+ * {@link #laneStatuses()}.</p>
+ */
 public class BackgroundJob {
 
+    public static final String emagApiLane = "emagApiLane";
+    public static final String googleApiLane = "googleApiLane";
+    public static final String adsLane = "emagAdsLane";
+
     private static final Logger logger = Logs.getFileLogger("BackgroundJob", Level.INFO, 10, 1_000_000);
-    private static final Duration hourly = Duration.ofHours(1);
-    private static final Duration daily = Duration.ofDays(1);
-    private static final Duration weekly = Duration.ofDays(7);
-    private static final Decider always = (_) -> true;
+    private static final Duration executeHourly = Duration.ofHours(1);
+    private static final Duration executeDaily = Duration.ofDays(1);
+    private static final Duration executeWeekly = Duration.ofDays(7);
+    private static final Predicate<LocalDateTime> runAlways = _ -> true;
+    private static final Predicate<LocalDateTime> runOnlyInTheMorning = time -> time.getHour() < 7;
+    private static final Predicate<LocalDateTime> runOnlyInTheAfternoon = time -> time.getHour() > 12 && time.getHour() < 18;
+    private static final Predicate<LocalDateTime> runOnlyOutOfOfficeHours = time -> time.getHour() < 7 || time.getHour() > 18;
+    private static final Pattern SAFE_ALIAS = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_-]{0,63}");
+
     private final AtomicBoolean running = new AtomicBoolean(true);
-    private final AtomicReference<@Nullable String> activeTaskName = new AtomicReference<>();
     private final Object taskControlLock = new Object();
     private final Set<String> pausedTaskNames = new HashSet<>();
-    private final EmagMirrorDB mirrorDB;
-    private final ScheduledExecutorService scheduler;
+    private final Map<String, LaneClaim> activeClaims = new HashMap<>();
+    private final TaskStore taskStore;
+    private final Executor executor;
+    private final @Nullable ExecutorService ownedWorkers;
+    private final Clock clock;
+    private final List<TaskDefinition> taskDefinitions;
+    private final Map<String, TaskDefinition> taskDefinitionsByName;
+    private final Map<String, List<TaskDefinition>> taskDefinitionsByLane;
 
-    public BackgroundJob(EmagMirrorDB db, ScheduledExecutorService scheduler) {
-        mirrorDB = db;
-        this.scheduler = scheduler;
+    /**
+     * Create the production background-job scheduler with an owned worker pool sized to its configured lanes.
+     *
+     * @param db         application database
+     * @param clock      scheduling clock; its zone must match the database session zone used for task timestamps
+     * @param adsAliases Ads-dashboard account aliases; currently at most one is accepted because Ads rows do not yet
+     *                   carry account provenance
+     */
+    public BackgroundJob(EmagMirrorDB db, Clock clock, List<String> adsAliases) {
+        this(
+                new DBTaskStore(Objects.requireNonNull(db, "db")),
+                clock,
+                productionTaskDefinitions(db, clock, validateProductionAliases(adsAliases))
+        );
+    }
+
+    /**
+     * Construct with an owned worker pool, also allowing lifecycle tests without a database.
+     */
+    BackgroundJob(TaskStore taskStore, Clock clock, List<TaskDefinition> taskDefinitions) {
+        this(taskStore, clock, taskDefinitions, null);
+    }
+
+    /**
+     * Injectable construction seam for deterministic scheduler tests. The caller retains ownership of the executor.
+     */
+    BackgroundJob(TaskStore taskStore, Executor executor, Clock clock, List<TaskDefinition> taskDefinitions) {
+        this(taskStore, clock, taskDefinitions, Objects.requireNonNull(executor, "executor"));
+    }
+
+    private BackgroundJob(TaskStore taskStore, Clock clock, List<TaskDefinition> taskDefinitions,
+                          @Nullable Executor executor) {
+        this.taskStore = Objects.requireNonNull(taskStore, "taskStore");
+        this.clock = Objects.requireNonNull(clock, "clock");
+        this.taskDefinitions = List.copyOf(taskDefinitions);
+
+        var byName = new LinkedHashMap<String, TaskDefinition>();
+        var byLane = new LinkedHashMap<String, List<TaskDefinition>>();
+        for (var taskDefinition : this.taskDefinitions) {
+            if (byName.putIfAbsent(taskDefinition.name(), taskDefinition) != null) {
+                throw new IllegalArgumentException("Duplicate background task name: " + taskDefinition.name());
+            }
+            byLane.computeIfAbsent(taskDefinition.lane(), _ -> new ArrayList<>()).add(taskDefinition);
+        }
+        this.taskDefinitionsByName = Collections.unmodifiableMap(byName);
+        var immutableByLane = new LinkedHashMap<String, List<TaskDefinition>>();
+        byLane.forEach((lane, definitions) -> immutableByLane.put(lane, List.copyOf(definitions)));
+        this.taskDefinitionsByLane = Collections.unmodifiableMap(immutableByLane);
+
+        registerConfiguredTasks();
+
+        if (executor == null) {
+            var workerNumber = new AtomicInteger();
+            this.ownedWorkers = Executors.newFixedThreadPool(Math.max(1, taskDefinitionsByLane.size()), r -> {
+                Thread thread = new Thread(r, "BackgroundJob-Worker-" + workerNumber.incrementAndGet());
+                thread.setDaemon(true); // Don't prevent JVM shutdown
+                return thread;
+            });
+            this.executor = ownedWorkers;
+        } else {
+            this.ownedWorkers = null;
+            this.executor = executor;
+        }
     }
 
     public enum RunStatus {
@@ -56,173 +149,377 @@ public class BackgroundJob {
     }
 
     /**
-     * Result of a manual run request. {@code blockingTaskName} is set only when the status is {@link RunStatus#BUSY}.
+     * Result of a manual run request.
      */
     public record RunResult(RunStatus status, @Nullable String blockingTaskName) {
     }
 
     /**
-     * Name of the task which currently owns the single background-worker slot.
-     * The task may still be waiting for the worker thread and therefore not yet be visible as running in the database.
+     * Current state and configured task names for one serial lane.
      */
-    public @Nullable String activeTaskName() {
-        return activeTaskName.get();
+    public record LaneStatus(String lane, @Nullable String activeTaskName, List<String> taskNames) {
+        public LaneStatus {
+            taskNames = List.copyOf(taskNames);
+        }
     }
 
+    /**
+     * Return every configured lane in stable configuration order.
+     */
+    public List<LaneStatus> laneStatuses() {
+        synchronized (taskControlLock) {
+            return taskDefinitionsByLane.entrySet().stream()
+                    .map(entry -> {
+                        var claim = activeClaims.get(entry.getKey());
+                        return new LaneStatus(
+                                entry.getKey(),
+                                claim == null ? null : claim.taskName,
+                                entry.getValue().stream().map(TaskDefinition::name).toList()
+                        );
+                    })
+                    .toList();
+        }
+    }
+    
     public enum PauseResult {
         UPDATED,
         UNKNOWN_TASK
     }
 
     @FunctionalInterface
-    private interface Transferrer {
-        void transfer(EmagMirrorDB db) throws Exception;
+    interface CheckedAction {
+        void run() throws Exception;
+    }
+
+    /**
+     * Persistence seam kept package-private so scheduler behaviour can be tested without a database.
+     */
+    interface TaskStore {
+        int registerTasks(List<String> taskNames) throws SQLException;
+
+        List<Task> getAllTasks() throws SQLException;
+
+        int startTask(String name) throws SQLException;
+
+        int endTask(String name, String error) throws SQLException;
+
+        int endTask(String name, Throwable error) throws SQLException;
+    }
+
+    /**
+     * Immutable scheduling definition. Definition order is priority order within a lane.
+     */
+    record TaskDefinition(
+            String name,
+            String lane,
+            Duration interval,
+            Duration failureRetryInterval,
+            Predicate<LocalDateTime> timePredicate,
+            @Nullable String prerequisiteTaskName,
+            CheckedAction action
+    ) {
+        TaskDefinition {
+            if (name.isBlank()) {
+                throw new IllegalArgumentException("Task name must not be blank");
+            }
+            if (lane.isBlank()) {
+                throw new IllegalArgumentException("Task lane must not be blank");
+            }
+            if (interval.isNegative() || failureRetryInterval.isNegative()) {
+                throw new IllegalArgumentException("Task intervals must not be negative");
+            }
+            Objects.requireNonNull(timePredicate, "timePredicate");
+            Objects.requireNonNull(action, "action");
+        }
+
+        TaskDefinition(
+                String name,
+                String lane,
+                Duration interval,
+                Predicate<LocalDateTime> timePredicate,
+                CheckedAction action
+        ) {
+            this(name, lane, interval, Duration.ZERO, timePredicate, null, action);
+        }
+    }
+
+    private static List<TaskDefinition> productionTaskDefinitions(
+            EmagMirrorDB db,
+            Clock clock,
+            List<String> adsAliases
+    ) {
+        Objects.requireNonNull(db, "db");
+        Objects.requireNonNull(clock, "clock");
+
+        var definitions = new ArrayList<TaskDefinition>();
+        definitions.add(new TaskDefinition(
+                "Populate products from sheets", googleApiLane, executeHourly, runAlways,
+                () -> PopulateProductsTableFromSheets.updateProductTable(db)
+        ));
+        definitions.add(new TaskDefinition(
+                "Fetch new orders from eMAG and update GMV in DB", emagApiLane, executeHourly, runAlways,
+                () -> {
+                    EmagDBApp.fetchNewOrders(db);
+                    db.updateGMVTable();
+                }
+        ));
+        definitions.add(new TaskDefinition(
+                "Fetch not finalized orders from last 30 days eMAG and update GMV in DB",
+                emagApiLane, executeHourly, runAlways,
+                () -> {
+                    EmagDBApp.fetchOrdersNotFinalizedInDB(db, true);
+                    db.updateGMVTable();
+                }
+        ));
+        definitions.add(new TaskDefinition(
+                "Fetch not finalized orders and update GMV in DB", emagApiLane, executeDaily,
+                runOnlyOutOfOfficeHours,
+                () -> {
+                    EmagDBApp.fetchOrdersNotFinalizedInDB(db, false);
+                    db.updateGMVTable();
+                }
+        ));
+        definitions.add(new TaskDefinition(
+                "Fetch storno orders from eMAG and update GMV in DB", emagApiLane, executeHourly, runAlways,
+                () -> {
+                    EmagDBApp.fetchStornoOrders(db);
+                    db.updateGMVTable();
+                }
+        ));
+        definitions.add(new TaskDefinition(
+                "Fetch RMAs from eMAG and update GMV in DB", emagApiLane, executeHourly, runAlways,
+                () -> {
+                    EmagDBApp.fetchRMAs(db);
+                    db.updateGMVTable();
+                }
+        ));
+        definitions.add(new TaskDefinition(
+                "Refetch some from eMAG and update GMV in DB", emagApiLane, executeWeekly, runAlways,
+                () -> {
+                    EmagDBApp.fetchAndStoreToDBProbabilistic(db);
+                    db.updateGMVTable();
+                }
+        ));
+        definitions.add(new TaskDefinition(
+                "Update employee sheet tabs in product table",
+                googleApiLane,
+                executeHourly,
+                executeHourly,
+                runAlways,
+                null,
+                () -> UpdateProductEmployeeSheetTabsFromSheets.updateEmployeeSheetTabs(db)
+        ));
+        definitions.add(new TaskDefinition(
+                "Transfer to storno and return sheets", googleApiLane, executeHourly, runAlways,
+                () -> PopulateStornoAndReturns.updateSpreadsheets(db)
+        ));
+        definitions.add(new TaskDefinition(
+                "Transfer to order and GMV sheets for 2026", googleApiLane, executeHourly, runAlways,
+                () -> new PopulateDateComenziFromDB(2026).updateSpreadsheets(db)
+        ));
+        definitions.add(new TaskDefinition(
+                "Transfer to employee sheet", googleApiLane, executeHourly, runOnlyOutOfOfficeHours,
+                () -> UpdateEmployeeSheetsFromDB.updateSheets(db)
+        ));
+
+        for (var alias : adsAliases) {
+            addAdsTasks(definitions, db, clock, alias);
+        }
+        return List.copyOf(definitions);
+    }
+
+    private static void addAdsTasks(List<TaskDefinition> definitions, EmagMirrorDB db, Clock clock, String alias) {
+        final var lane = adsLane + ":" + alias;
+        var campaignsTaskName = adsCampaignsTaskName(alias);
+        definitions.add(adsTask(
+                campaignsTaskName,
+                lane,
+                null,
+                clock,
+                (startDate, endDate) -> FetchAds.fetchAdsAndCampaigns(alias, db, startDate, endDate)
+        ));
+        definitions.add(adsTask(
+                "Fetch Ads keywords for " + alias,
+                lane,
+                campaignsTaskName,
+                clock,
+                (startDate, endDate) -> FetchAds.fetchKeywords(alias, db, startDate, endDate)
+        ));
+        definitions.add(adsTask(
+                "Fetch Ads search phrases for " + alias,
+                lane,
+                campaignsTaskName,
+                clock,
+                (startDate, endDate) -> FetchAds.fetchSearchPhrases(alias, db, startDate, endDate)
+        ));
+        definitions.add(adsTask(
+                "Fetch Ads targeted products for " + alias,
+                lane,
+                campaignsTaskName,
+                clock,
+                (startDate, endDate) -> FetchAds.fetchTargetedProducts(alias, db, startDate, endDate)
+        ));
+        definitions.add(new TaskDefinition(
+                "Delete cached files for " + alias,
+                lane,
+                executeDaily,
+                executeHourly,
+                runOnlyInTheAfternoon,
+                null,
+                () -> FetchAds.deleteAdsCache(alias)
+        ));
+    }
+
+    static String adsCampaignsTaskName(String alias) {
+        return "Fetch Ads campaigns and ad sets for " + alias;
     }
 
     @FunctionalInterface
-    private interface Decider {
-        boolean shallIRun(LocalDateTime lastRun);
+    interface DateRangeAction {
+        void run(LocalDate startDate, LocalDate endDate) throws Exception;
     }
 
-    /**
-     * Describes one operation managed by the background-job scheduler.
-     *
-     * @param name                 unique task name used for database history and administrative controls
-     * @param interval             minimum time between successful runs
-     * @param failureRetryInterval minimum time after a failed run before another automatic attempt
-     * @param decider              additional time-based condition that must allow the task to run
-     * @param transferMethod       operation to execute with the application's database
-     */
-    private record TaskRunner(
+    static TaskDefinition adsTask(
             String name,
-            Duration interval,
-            Duration failureRetryInterval,
-            Decider decider,
-            Transferrer transferMethod
+            String lane,
+            @Nullable String prerequisiteTaskName,
+            Clock clock,
+            DateRangeAction action
     ) {
-        private TaskRunner(String name, Duration interval, Decider decider, Transferrer transferMethod) {
-            this(name, interval, Duration.ZERO, decider, transferMethod);
+        return new TaskDefinition(
+                name,
+                lane,
+                executeDaily,
+                executeHourly,
+                runOnlyInTheMorning,
+                prerequisiteTaskName,
+                () -> {
+                    var endDate = LocalDate.now(clock);
+                    action.run(endDate.minusDays(31), endDate);
+                }
+        );
+    }
+
+    static List<String> validateProductionAliases(List<String> aliases) {
+        Objects.requireNonNull(aliases, "adsAliases");
+        if (aliases.size() > 1) {
+            throw new IllegalArgumentException(
+                    "At most one Ads alias is supported until Ads database rows include alias provenance"
+            );
+        }
+        var result = new ArrayList<String>(aliases.size());
+        for (var alias : aliases) {
+            if (!SAFE_ALIAS.matcher(alias).matches()) {
+                throw new IllegalArgumentException(
+                        "Invalid Ads alias \"" + alias + "\"; expected 1-64 letters, digits, underscores, or hyphens"
+                );
+            }
+            result.add(alias);
+        }
+        return List.copyOf(result);
+    }
+
+    private void registerConfiguredTasks() {
+        try {
+            taskStore.registerTasks(taskDefinitions.stream().map(TaskDefinition::name).toList());
+        } catch (SQLException e) {
+            throw new IllegalStateException("Unable to register configured background tasks", e);
         }
     }
 
-
-    private final List<TaskRunner> fetchers = List.of(
-            new TaskRunner("Populate products from sheets", hourly, always, PopulateProductsTableFromSheets::updateProductTable),
-            new TaskRunner("Fetch new orders from eMAG and update GMV in DB", hourly, always, db -> {
-                EmagDBApp.fetchNewOrders(db);
-                db.updateGMVTable();
-            }),
-            new TaskRunner("Fetch not finalized orders from last 30 days eMAG and update GMV in DB", hourly, always, db -> {
-                EmagDBApp.fetchOrdersNotFinalizedInDB(db, true);
-                db.updateGMVTable();
-            }),
-            new TaskRunner("Fetch not finalized orders and update GMV in DB", daily, this::outOfOfficeHour, db -> {
-                EmagDBApp.fetchOrdersNotFinalizedInDB(db, false);
-                db.updateGMVTable();
-            }),
-            new TaskRunner("Fetch storno orders from eMAG and update GMV in DB", hourly, always, db -> {
-                EmagDBApp.fetchStornoOrders(db);
-                db.updateGMVTable();
-            }),
-            new TaskRunner("Fetch RMAs from eMAG and update GMV in DB", hourly, always, db -> {
-                EmagDBApp.fetchRMAs(db);
-                db.updateGMVTable();
-            }),
-            new TaskRunner("Refetch some from eMAG and update GMV in DB", weekly, always, db -> {
-                EmagDBApp.fetchAndStoreToDBProbabilistic(db);
-                db.updateGMVTable();
-            })
-    );
-
-    private final List<TaskRunner> consumers = List.of(
-            new TaskRunner(
-                    "Update employee sheet tabs in product table",
-                    hourly,
-                    hourly,
-                    always,
-                    UpdateProductEmployeeSheetTabsFromSheets::updateEmployeeSheetTabs
-            ),
-            new TaskRunner("Transfer to storno and return sheets", hourly, always, PopulateStornoAndReturns::updateSpreadsheets),
-            new TaskRunner("Transfer to order and GMV sheets for 2026", hourly, always, (new PopulateDateComenziFromDB(2026))::updateSpreadsheets),
-            new TaskRunner("Transfer to employee sheet", hourly, this::outOfOfficeHour, UpdateEmployeeSheetsFromDB::updateSheets)
-    );
-
-    private boolean outOfOfficeHour(LocalDateTime time) {
-        return time.getHour() < 7 || time.getHour() > 18;
-    }
-
     /**
-     * Performs repetitive background work.
-     * This method will be called repeatedly by the scheduler.
+     * Load history once and submit at most one eligible task for every idle lane.
      */
     public void performWork() {
-        if (!running.get() || activeTaskName.get() != null) {
+        if (!running.get()) {
             return;
         }
+
         try {
             logger.info("BackgroundJob: Starting work cycle");
-            selectJobToRun();
+            var taskInfos = taskStore.getAllTasks();
+            var tasksByName = new HashMap<String, Task>();
+            taskInfos.forEach(task -> tasksByName.put(task.name(), task));
+            var now = LocalDateTime.now(clock);
+
+            for (var laneEntry : taskDefinitionsByLane.entrySet()) {
+                submitFirstEligibleTask(laneEntry.getKey(), laneEntry.getValue(), tasksByName, now);
+            }
             logger.info("BackgroundJob: Work cycle completed");
-        } catch (Exception e) {
+        } catch (SQLException e) {
             logger.log(Level.SEVERE, "BackgroundJob encountered an error: " + getStackTraceAsString(e));
             throw new RuntimeException("Background job failed", e);
         }
     }
 
-    private void selectJobToRun() {
-        try {
-            var taskInfos = mirrorDB.getAllTasks();
-            executeRunners(fetchers, taskInfos, LocalDateTime.MAX);
-            var latestFetchTime = findLatestFetchTime(taskInfos);
-            executeRunners(consumers, taskInfos, latestFetchTime);
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
+    private void submitFirstEligibleTask(
+            String lane,
+            List<TaskDefinition> definitions,
+            Map<String, Task> tasksByName,
+            LocalDateTime now
+    ) {
+        if (isLaneClaimed(lane)) {
+            return;
+        }
+        for (var definition : definitions) {
+            if (isTaskPaused(definition.name()) || !isEligible(definition, tasksByName, now)) {
+                continue;
+            }
+            var claim = tryClaim(definition, true);
+            if (claim != null) {
+                submitClaimedRunner(definition, claim, false);
+                return;
+            }
+            if (!running.get() || isLaneClaimed(lane)) {
+                return;
+            }
         }
     }
 
-    private LocalDateTime findLatestFetchTime(List<Task> taskInfos) {
-        var latestFetchTime = LocalDateTime.MIN;
-        for (TaskRunner taskRunner : fetchers) {
-            var taskInfo = findTask(taskInfos, taskRunner.name);
-            var taskTime = getLastRunTime(taskInfo);
-            if (taskTime.isAfter(latestFetchTime)) {
-                latestFetchTime = taskTime;
-            }
+    private boolean isEligible(TaskDefinition definition, Map<String, Task> tasksByName, LocalDateTime now) {
+        var taskInfo = tasksByName.get(definition.name());
+        if (isRunning(taskInfo)) {
+            return false;
         }
-        return latestFetchTime;
+        var lastSuccessfulRun = getLastSuccessfulRun(taskInfo);
+        if (lastSuccessfulRun.plus(definition.interval()).isAfter(now)) {
+            return false;
+        }
+        if (!failureRetryDelayElapsed(taskInfo, definition.failureRetryInterval(), now)) {
+            return false;
+        }
+        if (!definition.timePredicate().test(now)) {
+            return false;
+        }
+        return prerequisiteSatisfied(definition, taskInfo, tasksByName);
     }
 
-
-    /**
-     * Execute the runners in the list according to the schedule.
-     *
-     * @param taskRunners   list of tasks to run.
-     * @param taskInfos     information about all tasks.
-     * @param referenceTime absolute time barrier. A task shall not execute if it already ran after this time.
-     * @throws SQLException if a database access error occurs.
-     */
-    private boolean executeRunners(List<TaskRunner> taskRunners, List<Task> taskInfos, LocalDateTime referenceTime) throws SQLException {
-        for (var taskRunner : taskRunners) {
-            var taskName = taskRunner.name();
-            var taskInfo = findTask(taskInfos, taskName);
-            LocalDateTime lastRun;
-            lastRun = getLastRunTime(taskInfo);
-            var now = LocalDateTime.now();
-            if (
-                    lastRun.isBefore(referenceTime)   // Was not run after dependency
-                            && lastRun.plus(taskRunner.interval).isBefore(now)    // Waited for enough time
-                            && failureRetryDelayElapsed(taskInfo, taskRunner.failureRetryInterval, now)
-                            && taskRunner.decider.shallIRun(now)  // There is no other impediment
-                            && !isTaskPaused(taskName)
-            ) {
-                if (claimScheduledTask(taskName)) {
-                    executeClaimedRunner(taskRunner);
-                    return true;
-                }
-                return false; // Execute only one task from this priority group at a time.
-            }
+    private static boolean prerequisiteSatisfied(
+            TaskDefinition definition,
+            @Nullable Task taskInfo,
+            Map<String, Task> tasksByName
+    ) {
+        var prerequisiteName = definition.prerequisiteTaskName();
+        if (prerequisiteName == null) {
+            return true;
         }
-        return false;
+
+        var prerequisite = tasksByName.get(prerequisiteName);
+        if (prerequisite == null
+                || prerequisite.terminated() == null
+                || prerequisite.lastSuccessfulRun() == null
+                || !wasSuccessful(prerequisite)) {
+            return false;
+        }
+        return prerequisite.lastSuccessfulRun().isAfter(getLastSuccessfulRun(taskInfo));
+    }
+
+    private static boolean wasSuccessful(Task task) {
+        return task.error() == null || task.error().isBlank();
+    }
+
+    private static boolean isRunning(@Nullable Task task) {
+        return task != null && task.started() != null && task.terminated() == null;
     }
 
     static boolean failureRetryDelayElapsed(@Nullable Task taskInfo, Duration retryInterval, LocalDateTime now) {
@@ -233,11 +530,10 @@ public class BackgroundJob {
     }
 
     /**
-     * Pause or resume automatic scheduling for one configured task. Manual runs remain available while paused.
-     * Pausing an already-running task affects only its next scheduled run.
+     * Pause or resume automatic scheduling. Manual runs remain available while paused.
      */
     public PauseResult setTaskPaused(String taskName, boolean paused) {
-        if (findRunner(taskName) == null) {
+        if (!taskDefinitionsByName.containsKey(taskName)) {
             return PauseResult.UNKNOWN_TASK;
         }
         synchronized (taskControlLock) {
@@ -262,16 +558,8 @@ public class BackgroundJob {
         }
     }
 
-    private boolean claimScheduledTask(String taskName) {
-        synchronized (taskControlLock) {
-            return !pausedTaskNames.contains(taskName) && activeTaskName.compareAndSet(null, taskName);
-        }
-    }
-
     /**
-     * Queue a task for immediate execution, bypassing its normal schedule.
-     * Only tasks from the configured runner lists can be started, and the task is reserved before it is queued so
-     * simultaneous requests cannot start more than one task.
+     * Manual runs bypass timing, pause, and dependency checks, but must claim the task's lane.
      */
     public RunResult requestRun(String taskName) {
         if (!running.get()) {
@@ -279,95 +567,171 @@ public class BackgroundJob {
             return new RunResult(RunStatus.SHUTTING_DOWN, null);
         }
 
-        var taskRunner = findRunner(taskName);
-        if (taskRunner == null) {
+        var definition = taskDefinitionsByName.get(taskName);
+        if (definition == null) {
             logger.info(() -> "Manual run rejected for unknown task \"" + taskName + "\".");
             return new RunResult(RunStatus.UNKNOWN_TASK, null);
         }
-        var blockingTaskName = activeTaskName.compareAndExchange(null, taskName);
+
+        var claimAttempt = tryClaimForManualRun(definition);
+        if (claimAttempt.shuttingDown()) {
+            return new RunResult(RunStatus.SHUTTING_DOWN, null);
+        }
+        var blockingTaskName = claimAttempt.blockingTaskName();
         if (blockingTaskName != null) {
             logger.info(() -> "Manual run rejected for \"" + taskName + "\": \"" + blockingTaskName
-                    + "\" is already running or starting.");
+                    + "\" is already running or starting in lane \"" + definition.lane() + "\".");
             return new RunResult(RunStatus.BUSY, blockingTaskName);
         }
+        var claim = Objects.requireNonNull(claimAttempt.claim());
 
-        try {
-            logger.info(() -> "Manual run for \"" + taskName + "\" reserved the background-worker slot.");
-            scheduler.execute(() -> executeClaimedRunner(taskRunner));
+        logger.info(() -> "Manual run for \"" + taskName + "\" reserved lane \"" + definition.lane() + "\".");
+        if (submitClaimedRunner(definition, claim, true)) {
             return new RunResult(RunStatus.ACCEPTED, null);
-        } catch (RejectedExecutionException e) {
-            activeTaskName.compareAndSet(taskName, null);
-            logger.info(() -> "Manual run rejected for \"" + taskName + "\": scheduler did not accept the task.");
-            return new RunResult(RunStatus.SHUTTING_DOWN, null);
-        } catch (RuntimeException e) {
-            activeTaskName.compareAndSet(taskName, null);
-            logger.log(WARNING, "Manual run could not be submitted for \"" + taskName + "\".", e);
-            return new RunResult(RunStatus.SHUTTING_DOWN, null);
+        }
+        return new RunResult(RunStatus.SHUTTING_DOWN, null);
+    }
+
+    private ManualClaimAttempt tryClaimForManualRun(TaskDefinition definition) {
+        synchronized (taskControlLock) {
+            if (!running.get()) {
+                return new ManualClaimAttempt(null, null, true);
+            }
+            var existingClaim = activeClaims.get(definition.lane());
+            if (existingClaim != null) {
+                return new ManualClaimAttempt(null, existingClaim.taskName, false);
+            }
+            var claim = new LaneClaim(definition.lane(), definition.name());
+            activeClaims.put(definition.lane(), claim);
+            return new ManualClaimAttempt(claim, null, false);
         }
     }
 
-    private void executeClaimedRunner(TaskRunner taskRunner) {
-        var taskName = taskRunner.name();
-        logger.info(() -> "Task \"" + taskName + "\" is starting.");
+    private @Nullable LaneClaim tryClaim(TaskDefinition definition, boolean automatic) {
+        synchronized (taskControlLock) {
+            if (!running.get()
+                    || activeClaims.containsKey(definition.lane())
+                    || automatic && pausedTaskNames.contains(definition.name())) {
+                return null;
+            }
+            var claim = new LaneClaim(definition.lane(), definition.name());
+            activeClaims.put(definition.lane(), claim);
+            return claim;
+        }
+    }
+
+    private boolean submitClaimedRunner(TaskDefinition definition, LaneClaim claim, boolean manual) {
         try {
-            mirrorDB.startTask(taskName);
-            taskRunner.transferMethod.transfer(mirrorDB);
-            mirrorDB.endTask(taskName, "");
+            executor.execute(() -> executeClaimedRunner(definition, claim));
+            return true;
+        } catch (RejectedExecutionException e) {
+            releaseClaim(claim);
+            logger.info(() -> (manual ? "Manual run" : "Automatic run") + " rejected for \""
+                    + definition.name() + "\": executor did not accept the task.");
+            return false;
+        } catch (RuntimeException e) {
+            releaseClaim(claim);
+            logger.log(WARNING, (manual ? "Manual run" : "Automatic run")
+                    + " could not be submitted for \"" + definition.name() + "\".", e);
+            return false;
+        }
+    }
+
+    private void executeClaimedRunner(TaskDefinition definition, LaneClaim claim) {
+        var taskName = definition.name();
+        logger.info(() -> "Task \"" + taskName + "\" is starting in lane \"" + definition.lane() + "\".");
+        try {
+            taskStore.startTask(taskName);
+            definition.action().run();
+            taskStore.endTask(taskName, "");
             logger.info(() -> "Task \"" + taskName + "\" completed successfully.");
         } catch (Exception e) {
             try {
-                mirrorDB.endTask(taskName, e);
+                taskStore.endTask(taskName, e);
             } catch (SQLException databaseException) {
                 e.addSuppressed(databaseException);
             }
             logger.log(WARNING, taskName + " ended with an error.", e);
         } finally {
-            activeTaskName.compareAndSet(taskName, null);
+            releaseClaim(claim);
         }
     }
 
-    private @Nullable TaskRunner findRunner(String taskName) {
-        for (var taskRunner : fetchers) {
-            if (taskRunner.name().equals(taskName)) {
-                return taskRunner;
-            }
+    private boolean isLaneClaimed(String lane) {
+        synchronized (taskControlLock) {
+            return activeClaims.containsKey(lane);
         }
-        for (var taskRunner : consumers) {
-            if (taskRunner.name().equals(taskName)) {
-                return taskRunner;
-            }
+    }
+
+    private void releaseClaim(LaneClaim claim) {
+        synchronized (taskControlLock) {
+            activeClaims.remove(claim.lane, claim);
         }
-        return null;
     }
 
-
-    /**
-     * Returns the task information of the task matching the name or null.
-     *
-     * @param taskInfos list of task information.
-     * @param taskName  searched name.
-     * @return task information or null.
-     */
-    private static @Nullable Task findTask(List<Task> taskInfos, String taskName) {
-        return taskInfos.stream().filter(it -> it.name().equals(taskName)).findAny().orElse(null);
+    private static LocalDateTime getLastSuccessfulRun(@Nullable Task taskInfo) {
+        var lastSuccessfulRun = taskInfo == null ? null : taskInfo.lastSuccessfulRun();
+        return lastSuccessfulRun == null ? LocalDateTime.MIN : lastSuccessfulRun;
     }
 
     /**
-     * Return a tasks time of last successful run or <code>LocalDateTime.MIN</code> if the task never ran.
-     *
-     * @param taskInfo or null.
-     * @return last run time.
-     */
-    private static LocalDateTime getLastRunTime(@Nullable Task taskInfo) {
-        LocalDateTime last = taskInfo == null ? LocalDateTime.MIN : taskInfo.lastSuccessfulRun();
-        return last != null ? last : LocalDateTime.MIN;
-    }
-
-    /**
-     * Mark the background job for not running any more.
+     * Prevent new submissions and release scheduler claims. An owned worker pool gets up to ten seconds to finish
+     * before its tasks are interrupted. Injected executors remain the caller's responsibility.
      */
     public void shutdown() {
-        running.set(false);
+        synchronized (taskControlLock) {
+            running.set(false);
+            activeClaims.clear();
+        }
         logger.info("BackgroundJob: Shutdown requested");
+        if (ownedWorkers != null) {
+            ownedWorkers.shutdown();
+            try {
+                if (!ownedWorkers.awaitTermination(10, TimeUnit.SECONDS)) {
+                    logger.warning("Forcing shutdown of background-job workers.");
+                    ownedWorkers.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                ownedWorkers.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    private record LaneClaim(String lane, String taskName) {
+    }
+
+    private record ManualClaimAttempt(
+            @Nullable LaneClaim claim,
+            @Nullable String blockingTaskName,
+            boolean shuttingDown
+    ) {
+    }
+
+    private record DBTaskStore(EmagMirrorDB db) implements TaskStore {
+        @Override
+        public int registerTasks(List<String> taskNames) throws SQLException {
+            return db.registerTasks(taskNames);
+        }
+
+        @Override
+        public List<Task> getAllTasks() throws SQLException {
+            return db.getAllTasks();
+        }
+
+        @Override
+        public int startTask(String name) throws SQLException {
+            return db.startTask(name);
+        }
+
+        @Override
+        public int endTask(String name, String error) throws SQLException {
+            return db.endTask(name, error);
+        }
+
+        @Override
+        public int endTask(String name, Throwable error) throws SQLException {
+            return db.endTask(name, error);
+        }
     }
 }

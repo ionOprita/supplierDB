@@ -1,0 +1,1865 @@
+package ro.sellfluence.db;
+
+import ro.sellfluence.emagapi.AdSet;
+import ro.sellfluence.emagapi.AdsAdset;
+import ro.sellfluence.emagapi.AdsCampaign;
+import ro.sellfluence.emagapi.AdsKeyword;
+import ro.sellfluence.emagapi.AdsPerformanceSummary;
+import ro.sellfluence.emagapi.AdsRecommendedBid;
+import ro.sellfluence.emagapi.AdsSearchPhrase;
+import ro.sellfluence.emagapi.AdsTargetedProduct;
+import ro.sellfluence.emagapi.AdsCampaignSnapshot;
+
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.sql.Connection;
+import java.sql.Date;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Types;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+import static ro.sellfluence.support.UsefulMethods.toTimestamp;
+
+public class AdsCampaignTable {
+
+    /*
+     * Period reports preserve the stored API values for a single day. For longer periods they sum
+     * performance primitives, recompute rates from those totals, and use the latest snapshot in the
+     * period for configuration and descriptive fields.
+     */
+
+    public record AdsCampaignColumn(String key, String label, boolean numeric) {
+    }
+
+    public record AdsCampaignRow(int campaignId, Map<String, String> values) {
+    }
+
+    public record AdsCampaignTableData(List<AdsCampaignColumn> columns, List<AdsCampaignRow> rows) {
+    }
+
+    public record AdsAdsetColumn(String key, String label, boolean numeric) {
+    }
+
+    public record AdsAdsetRow(int campaignId, int adsetId, Map<String, String> values) {
+    }
+
+    public record AdsAdsetTableData(String campaignName, List<AdsAdsetColumn> columns, List<AdsAdsetRow> rows) {
+    }
+
+    /**
+     * Identifies an ad set snapshot stored for one report date.
+     */
+    public record AdsAdsetKey(LocalDate reportDate, int campaignId, int adsetId) {
+        public AdsAdsetKey {
+            Objects.requireNonNull(reportDate, "reportDate");
+        }
+    }
+
+    /**
+     * Associates downloaded detail rows with the ad set snapshot to which they belong.
+     */
+    public record AdsAdsetReport<T>(AdsAdsetKey adset, List<T> rows) {
+        public AdsAdsetReport {
+            Objects.requireNonNull(adset, "adset");
+            rows = List.copyOf(Objects.requireNonNull(rows, "rows"));
+        }
+    }
+
+    public record AdsSearchPhraseColumn(String key, String label, boolean numeric) {
+    }
+
+    public record AdsSearchPhraseRow(Map<String, String> values) {
+    }
+
+    public record AdsSearchPhraseTableData(String campaignName,
+                                           String adsetName,
+                                           String reportDate,
+                                           List<AdsSearchPhraseColumn> columns,
+                                           List<AdsSearchPhraseRow> rows) {
+    }
+
+    public record AdsTargetedProductColumn(String key, String label, boolean numeric) {
+    }
+
+    public record AdsTargetedProductRow(Map<String, String> values) {
+    }
+
+    public record AdsTargetedProductTableData(String campaignName,
+                                              String adsetName,
+                                              String reportDate,
+                                              List<AdsTargetedProductColumn> columns,
+                                              List<AdsTargetedProductRow> rows) {
+    }
+
+    public record AdsKeywordColumn(String key, String label, boolean numeric) {
+    }
+
+    public record AdsKeywordRow(Map<String, String> values) {
+    }
+
+    public record AdsKeywordTableData(String campaignName,
+                                      String adsetName,
+                                      String reportDate,
+                                      List<AdsKeywordColumn> columns,
+                                      List<AdsKeywordRow> rows) {
+    }
+
+    private record AdsNames(String campaignName, String adsetName) {
+    }
+
+    private static final List<AdsCampaignColumn> ADS_CAMPAIGN_COLUMNS = List.of(
+            column("name", "Name", false),
+            column("campaign_id", "Campaign ID", true),
+            column("advertiser_id", "Advertiser ID", true),
+            column("daily_budget", "Daily budget", true),
+            column("effective_daily_budget", "Effective daily budget", true),
+            column("remaining_daily_budget", "Remaining daily budget", true),
+            column("status", "Status", false),
+            column("inherited_status", "Inherited status", false),
+            column("targeting", "Targeting", false),
+            column("date_start", "Date start", false),
+            column("date_end", "Date end", false),
+            column("advertiser_name", "Advertiser name", false),
+            column("summary_average_cost_of_sale", "Average cost of sale", true),
+            column("summary_clicks", "Clicks", true),
+            column("summary_ctr", "CTR", true),
+            column("summary_effective_cpc", "Effective CPC", true),
+            column("summary_impressions", "Impressions", true),
+            column("summary_sales", "Sales", true),
+            column("summary_sales_count", "Sales count", true),
+            column("summary_sold_units", "Sold units", true),
+            column("summary_spent", "Spent", true),
+            column("summary_active_offer_count", "Active offer count", true),
+            column("summary_offer_count", "Offer count", true),
+            column("summary_paused_offer_count", "Paused offer count", true),
+            column("summary_adset_count", "Adset count", true),
+            column("summary_keyword_count", "Keyword count", true),
+            column("summary_product_target_count", "Product target count", true),
+            column("summary_conversion_rate", "Conversion rate", true),
+            column("summary_return_on_advertising_spend", "Return on advertising spend", true),
+            column("last_seen_at", "Last seen at", false)
+    );
+
+    private static final List<AdsAdsetColumn> ADS_ADSET_COLUMNS = List.of(
+            adsetColumn("name", "Name", false),
+            adsetColumn("targeting", "Targeting", false),
+            adsetColumn("bid", "Bid", true),
+            adsetColumn("status", "Status", false),
+            adsetColumn("inherited_status", "Inherited status", false),
+            adsetColumn("recommended_bid", "Recommended bid", true),
+            adsetColumn("summary_average_cost_of_sale", "Summary average cost of sale", true),
+            adsetColumn("summary_clicks", "Clicks", true),
+            adsetColumn("summary_ctr", "CTR", true),
+            adsetColumn("summary_effective_cpc", "Effective CPC", true),
+            adsetColumn("summary_impressions", "Impressions", true),
+            adsetColumn("summary_sales", "Sales", true),
+            adsetColumn("summary_sales_count", "Sales count", true),
+            adsetColumn("summary_sold_units", "Sold units", true),
+            adsetColumn("summary_spent", "Spent", true),
+            adsetColumn("summary_active_offer_count", "Active offer count", true),
+            adsetColumn("summary_offer_count", "Offer count", true),
+            adsetColumn("summary_paused_offer_count", "Paused offer count", true),
+            adsetColumn("summary_adset_count", "Adset count", true),
+            adsetColumn("summary_keyword_count", "Keyword count", true),
+            adsetColumn("summary_product_target_count", "Product target count", true),
+            adsetColumn("summary_conversion_rate", "Conversion rate", true),
+            adsetColumn("summary_return_on_advertising_spend", "Return on advertising spend", true),
+            adsetColumn("last_seen_at", "Last seen at", false)
+    );
+
+    private static final List<AdsSearchPhraseColumn> ADS_SEARCH_PHRASE_COLUMNS = List.of(
+            searchPhraseColumn("search_phrase", "Search phrase", false),
+            searchPhraseColumn("is_aggregated", "Is aggregated", false),
+            searchPhraseColumn("summary_average_cost_of_sale", "Summary average cost of sale", true),
+            searchPhraseColumn("summary_clicks", "Clicks", true),
+            searchPhraseColumn("summary_ctr", "Summary CTR", true),
+            searchPhraseColumn("summary_effective_cpc", "Effective CPC", true),
+            searchPhraseColumn("summary_impressions", "Impressions", true),
+            searchPhraseColumn("summary_sales", "Sales", true),
+            searchPhraseColumn("summary_sales_count", "Sales count", true),
+            searchPhraseColumn("summary_sold_units", "Sold units", true),
+            searchPhraseColumn("summary_spent", "Spent", true),
+            searchPhraseColumn("summary_active_offer_count", "Active offer count", true),
+            searchPhraseColumn("summary_offer_count", "Offer count", true),
+            searchPhraseColumn("summary_paused_offer_count", "Paused offer count", true),
+            searchPhraseColumn("summary_adset_count", "Adset count", true),
+            searchPhraseColumn("summary_keyword_count", "Keyword count", true),
+            searchPhraseColumn("summary_product_target_count", "Product target count", true),
+            searchPhraseColumn("summary_conversion_rate", "Conversion rate", true),
+            searchPhraseColumn("summary_return_on_advertising_spend", "Return on advertising spend", true),
+            searchPhraseColumn("last_seen_at", "Last seen at", false)
+    );
+
+    private static final List<AdsTargetedProductColumn> ADS_TARGETED_PRODUCT_COLUMNS = List.of(
+            targetedProductColumn("product_name", "Produs targetat", false),
+            targetedProductColumn("price", "Pret", true),
+            targetedProductColumn("rating", "Evaluare", true),
+            targetedProductColumn("pnk", "PNK", false),
+            targetedProductColumn("category_name", "Category name", false),
+            targetedProductColumn("brand_name", "Brand name", false),
+            targetedProductColumn("clicks", "Clickuri", true),
+            targetedProductColumn("impressions", "Impressii", true),
+            targetedProductColumn("ctr", "CTR", true),
+            targetedProductColumn("effective_cpc", "CPC mediu", true),
+            targetedProductColumn("spent", "Cost", true),
+            targetedProductColumn("average_cost_of_sale", "ACOS", true),
+            targetedProductColumn("sales", "Valoare comenzi", true),
+            targetedProductColumn("sold_units", "Produse vandute", true),
+            targetedProductColumn("sales_count", "Comenzi", true),
+            targetedProductColumn("image_url", "Image URL", false),
+            targetedProductColumn("return_on_advertising_spend", "ROAS", true),
+            targetedProductColumn("conversion_rate", "Rate de conversie", true),
+            targetedProductColumn("last_seen_at", "Last seen at", false)
+    );
+
+    private static final List<AdsKeywordColumn> ADS_KEYWORD_COLUMNS = List.of(
+            keywordColumn("keyword", "Keyword", false),
+            keywordColumn("match_type", "Tip de potrivire", false),
+            keywordColumn("status", "Status", false),
+            keywordColumn("bid", "Bid", true),
+            keywordColumn("inherited_status", "Inherited status", false),
+            keywordColumn("inherited_bid", "Inherited bid", true),
+            keywordColumn("summary_average_cost_of_sale", "Average cost of sale", true),
+            keywordColumn("summary_clicks", "Clicks", true),
+            keywordColumn("summary_ctr", "CTR", true),
+            keywordColumn("summary_effective_cpc", "Effective CPC", true),
+            keywordColumn("summary_impressions", "Impressions", true),
+            keywordColumn("summary_sales", "Sales", true),
+            keywordColumn("summary_sales_count", "Sales count", true),
+            keywordColumn("summary_sold_units", "Sold units", true),
+            keywordColumn("summary_spent", "Cost", true),
+            keywordColumn("summary_active_offer_count", "Active offer count", true),
+            keywordColumn("summary_offer_count", "Offer count", true),
+            keywordColumn("summary_paused_offer_count", "Paused offer count", true),
+            keywordColumn("summary_adset_count", "Adset count", true),
+            keywordColumn("summary_keyword_count", "Keyword count", true),
+            keywordColumn("summary_product_target_count", "Product target count", true),
+            keywordColumn("summary_conversion_rate", "Conversion rate", true),
+            keywordColumn("summary_return_on_advertising_spend", "Return on advertising spend", true),
+            keywordColumn("last_seen_at", "Last seen at", false)
+    );
+
+    static List<AdsAdsetKey> getAdsetKeys(Connection db, LocalDate startDate, LocalDate endDate) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(startDate);
+        Objects.requireNonNull(endDate);
+
+        var result = new ArrayList<AdsAdsetKey>();
+        try (var s = db.prepareStatement("""
+                SELECT report_date, campaign_id, adset_id
+                FROM ads_adset
+                WHERE report_date >= ?
+                  AND report_date < ?
+                ORDER BY report_date, campaign_id, adset_id
+                """)) {
+            s.setDate(1, Date.valueOf(startDate));
+            s.setDate(2, Date.valueOf(endDate));
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    result.add(new AdsAdsetKey(
+                            rs.getDate("report_date").toLocalDate(),
+                            rs.getInt("campaign_id"),
+                            rs.getInt("adset_id")
+                    ));
+                }
+            }
+        }
+        return result;
+    }
+
+    static List<LocalDate> getCampaignReportDates(Connection db) throws SQLException {
+        Objects.requireNonNull(db);
+
+        var result = new ArrayList<LocalDate>();
+        try (var s = db.prepareStatement("""
+                SELECT DISTINCT report_date
+                FROM ads_campaign
+                ORDER BY report_date DESC
+                """)) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    result.add(rs.getDate("report_date").toLocalDate());
+                }
+            }
+        }
+        return result;
+    }
+
+    static AdsCampaignTableData getCampaignsByReportDate(Connection db, LocalDate reportDate) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reportDate);
+
+        var rows = new ArrayList<AdsCampaignRow>();
+        try (var s = db.prepareStatement("""
+                SELECT
+                    name,
+                    campaign_id,
+                    advertiser_id,
+                    daily_budget,
+                    effective_daily_budget,
+                    remaining_daily_budget,
+                    status,
+                    inherited_status,
+                    targeting,
+                    date_start,
+                    date_end,
+                    advertiser_name,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend,
+                    last_seen_at
+                FROM ads_campaign
+                WHERE report_date = ?
+                ORDER BY lower(name) NULLS LAST, name NULLS LAST, campaign_id
+                """)) {
+            s.setDate(1, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readCampaignRow(rs));
+                }
+            }
+        }
+        return new AdsCampaignTableData(ADS_CAMPAIGN_COLUMNS, rows);
+    }
+
+    static AdsCampaignTableData getCampaigns(Connection db, AdsReportPeriod period) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(period);
+        if (period.isSingleDay()) {
+            return getCampaignsByReportDate(db, period.dateFrom());
+        }
+
+        var rows = new ArrayList<AdsCampaignRow>();
+        try (var s = db.prepareStatement("""
+                WITH ranged AS (
+                    SELECT *
+                    FROM ads_campaign
+                    WHERE report_date BETWEEN ? AND ?
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (campaign_id) *
+                    FROM ranged
+                    ORDER BY campaign_id, report_date DESC
+                ),
+                totals AS (
+                    SELECT
+                        campaign_id,
+                        SUM(summary_clicks) AS summary_clicks,
+                        SUM(summary_impressions) AS summary_impressions,
+                        SUM(summary_sales) AS summary_sales,
+                        SUM(summary_sales_count) AS summary_sales_count,
+                        SUM(summary_sold_units) AS summary_sold_units,
+                        SUM(summary_spent) AS summary_spent,
+                        MAX(last_seen_at) AS last_seen_at
+                    FROM ranged
+                    GROUP BY campaign_id
+                )
+                SELECT
+                    l.name,
+                    l.campaign_id,
+                    l.advertiser_id,
+                    l.daily_budget,
+                    l.effective_daily_budget,
+                    l.remaining_daily_budget,
+                    l.status,
+                    l.inherited_status,
+                    l.targeting,
+                    l.date_start,
+                    l.date_end,
+                    l.advertiser_name,
+                    CASE WHEN t.summary_sales IS NULL THEN NULL
+                         WHEN t.summary_sales = 0 THEN 0
+                         ELSE ROUND(t.summary_spent * 100.0 / t.summary_sales, 2)
+                    END AS summary_average_cost_of_sale,
+                    t.summary_clicks,
+                    CASE WHEN t.summary_impressions IS NULL THEN NULL
+                         WHEN t.summary_impressions = 0 THEN 0
+                         ELSE ROUND(t.summary_clicks * 100.0 / t.summary_impressions, 2)
+                    END AS summary_ctr,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_spent / t.summary_clicks, 2)
+                    END AS summary_effective_cpc,
+                    t.summary_impressions,
+                    t.summary_sales,
+                    t.summary_sales_count,
+                    t.summary_sold_units,
+                    t.summary_spent,
+                    l.summary_active_offer_count,
+                    l.summary_offer_count,
+                    l.summary_paused_offer_count,
+                    l.summary_adset_count,
+                    l.summary_keyword_count,
+                    l.summary_product_target_count,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_sales_count * 100.0 / t.summary_clicks, 2)
+                    END AS summary_conversion_rate,
+                    CASE WHEN t.summary_spent IS NULL THEN NULL
+                         WHEN t.summary_spent = 0 THEN 0
+                         ELSE ROUND(t.summary_sales / t.summary_spent, 2)
+                    END AS summary_return_on_advertising_spend,
+                    t.last_seen_at
+                FROM latest AS l
+                JOIN totals AS t USING (campaign_id)
+                ORDER BY lower(l.name) NULLS LAST, l.name NULLS LAST, l.campaign_id
+                """)) {
+            bindPeriod(s, 1, period);
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readCampaignRow(rs));
+                }
+            }
+        }
+        return new AdsCampaignTableData(ADS_CAMPAIGN_COLUMNS, rows);
+    }
+
+    static List<LocalDate> getAdsetReportDates(Connection db, int campaignId) throws SQLException {
+        Objects.requireNonNull(db);
+
+        var result = new ArrayList<LocalDate>();
+        try (var s = db.prepareStatement("""
+                SELECT DISTINCT report_date
+                FROM ads_campaign
+                WHERE campaign_id = ?
+                ORDER BY report_date DESC
+                """)) {
+            s.setInt(1, campaignId);
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    result.add(rs.getDate("report_date").toLocalDate());
+                }
+            }
+        }
+        return result;
+    }
+
+    static AdsAdsetTableData getAdsetsByReportDate(Connection db, int campaignId, LocalDate reportDate) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reportDate);
+
+        var campaignName = getCampaignName(db, campaignId, reportDate);
+        var rows = new ArrayList<AdsAdsetRow>();
+        try (var s = db.prepareStatement("""
+                SELECT
+                    name,
+                    campaign_id,
+                    adset_id,
+                    targeting,
+                    bid,
+                    status,
+                    inherited_status,
+                    recommended_bid,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend,
+                    last_seen_at
+                FROM ads_adset
+                WHERE campaign_id = ?
+                  AND report_date = ?
+                ORDER BY lower(name) NULLS LAST, name NULLS LAST, adset_id
+                """)) {
+            s.setInt(1, campaignId);
+            s.setDate(2, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readAdsetRow(rs));
+                }
+            }
+        }
+        return new AdsAdsetTableData(campaignName, ADS_ADSET_COLUMNS, rows);
+    }
+
+    static AdsAdsetTableData getAdsets(Connection db, int campaignId, AdsReportPeriod period) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(period);
+        if (period.isSingleDay()) {
+            return getAdsetsByReportDate(db, campaignId, period.dateFrom());
+        }
+
+        var campaignName = getCampaignName(db, campaignId, period);
+        var rows = new ArrayList<AdsAdsetRow>();
+        try (var s = db.prepareStatement("""
+                WITH ranged AS (
+                    SELECT *
+                    FROM ads_adset
+                    WHERE campaign_id = ?
+                      AND report_date BETWEEN ? AND ?
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (adset_id) *
+                    FROM ranged
+                    ORDER BY adset_id, report_date DESC
+                ),
+                totals AS (
+                    SELECT
+                        campaign_id,
+                        adset_id,
+                        SUM(summary_clicks) AS summary_clicks,
+                        SUM(summary_impressions) AS summary_impressions,
+                        SUM(summary_sales) AS summary_sales,
+                        SUM(summary_sales_count) AS summary_sales_count,
+                        SUM(summary_sold_units) AS summary_sold_units,
+                        SUM(summary_spent) AS summary_spent,
+                        MAX(last_seen_at) AS last_seen_at
+                    FROM ranged
+                    GROUP BY campaign_id, adset_id
+                )
+                SELECT
+                    l.name,
+                    l.campaign_id,
+                    l.adset_id,
+                    l.targeting,
+                    l.bid,
+                    l.status,
+                    l.inherited_status,
+                    l.recommended_bid,
+                    CASE WHEN t.summary_sales IS NULL THEN NULL
+                         WHEN t.summary_sales = 0 THEN 0
+                         ELSE ROUND(t.summary_spent * 100.0 / t.summary_sales, 2)
+                    END AS summary_average_cost_of_sale,
+                    t.summary_clicks,
+                    CASE WHEN t.summary_impressions IS NULL THEN NULL
+                         WHEN t.summary_impressions = 0 THEN 0
+                         ELSE ROUND(t.summary_clicks * 100.0 / t.summary_impressions, 2)
+                    END AS summary_ctr,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_spent / t.summary_clicks, 2)
+                    END AS summary_effective_cpc,
+                    t.summary_impressions,
+                    t.summary_sales,
+                    t.summary_sales_count,
+                    t.summary_sold_units,
+                    t.summary_spent,
+                    l.summary_active_offer_count,
+                    l.summary_offer_count,
+                    l.summary_paused_offer_count,
+                    l.summary_adset_count,
+                    l.summary_keyword_count,
+                    l.summary_product_target_count,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_sales_count * 100.0 / t.summary_clicks, 2)
+                    END AS summary_conversion_rate,
+                    CASE WHEN t.summary_spent IS NULL THEN NULL
+                         WHEN t.summary_spent = 0 THEN 0
+                         ELSE ROUND(t.summary_sales / t.summary_spent, 2)
+                    END AS summary_return_on_advertising_spend,
+                    t.last_seen_at
+                FROM latest AS l
+                JOIN totals AS t USING (campaign_id, adset_id)
+                ORDER BY lower(l.name) NULLS LAST, l.name NULLS LAST, l.adset_id
+                """)) {
+            s.setInt(1, campaignId);
+            bindPeriod(s, 2, period);
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readAdsetRow(rs));
+                }
+            }
+        }
+        return new AdsAdsetTableData(campaignName, ADS_ADSET_COLUMNS, rows);
+    }
+
+    static AdsSearchPhraseTableData getSearchPhrases(Connection db,
+                                                     int campaignId,
+                                                     int adsetId,
+                                                     LocalDate reportDate) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reportDate);
+
+        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, reportDate);
+        var rows = new ArrayList<AdsSearchPhraseRow>();
+        try (var s = db.prepareStatement("""
+                SELECT
+                    search_phrase,
+                    is_aggregated,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend,
+                    last_seen_at
+                FROM ads_search_phrase
+                WHERE campaign_id = ?
+                  AND adset_id = ?
+                  AND report_date = ?
+                  AND (summary_clicks > 0 OR summary_impressions > 50)
+                ORDER BY summary_clicks DESC NULLS LAST,
+                         summary_impressions DESC NULLS LAST,
+                         search_phrase ASC
+                """)) {
+            s.setInt(1, campaignId);
+            s.setInt(2, adsetId);
+            s.setDate(3, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readSearchPhraseRow(rs));
+                }
+            }
+        }
+        return new AdsSearchPhraseTableData(
+                names.campaignName(),
+                names.adsetName(),
+                reportDate.toString(),
+                ADS_SEARCH_PHRASE_COLUMNS,
+                rows
+        );
+    }
+
+    static AdsSearchPhraseTableData getSearchPhrases(Connection db,
+                                                     int campaignId,
+                                                     int adsetId,
+                                                     AdsReportPeriod period) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(period);
+        if (period.isSingleDay()) {
+            return getSearchPhrases(db, campaignId, adsetId, period.dateFrom());
+        }
+
+        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, period);
+        var rows = new ArrayList<AdsSearchPhraseRow>();
+        try (var s = db.prepareStatement("""
+                WITH ranged AS (
+                    SELECT *
+                    FROM ads_search_phrase
+                    WHERE campaign_id = ?
+                      AND adset_id = ?
+                      AND report_date BETWEEN ? AND ?
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (search_phrase_hash, is_aggregated) *
+                    FROM ranged
+                    ORDER BY search_phrase_hash, is_aggregated, report_date DESC
+                ),
+                totals AS (
+                    SELECT
+                        search_phrase_hash,
+                        is_aggregated,
+                        SUM(summary_clicks) AS summary_clicks,
+                        SUM(summary_impressions) AS summary_impressions,
+                        SUM(summary_sales) AS summary_sales,
+                        SUM(summary_sales_count) AS summary_sales_count,
+                        SUM(summary_sold_units) AS summary_sold_units,
+                        SUM(summary_spent) AS summary_spent,
+                        MAX(last_seen_at) AS last_seen_at
+                    FROM ranged
+                    GROUP BY search_phrase_hash, is_aggregated
+                )
+                SELECT
+                    l.search_phrase,
+                    l.is_aggregated,
+                    CASE WHEN t.summary_sales IS NULL THEN NULL
+                         WHEN t.summary_sales = 0 THEN 0
+                         ELSE ROUND(t.summary_spent * 100.0 / t.summary_sales, 2)
+                    END AS summary_average_cost_of_sale,
+                    t.summary_clicks,
+                    CASE WHEN t.summary_impressions IS NULL THEN NULL
+                         WHEN t.summary_impressions = 0 THEN 0
+                         ELSE ROUND(t.summary_clicks * 100.0 / t.summary_impressions, 2)
+                    END AS summary_ctr,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_spent / t.summary_clicks, 2)
+                    END AS summary_effective_cpc,
+                    t.summary_impressions,
+                    t.summary_sales,
+                    t.summary_sales_count,
+                    t.summary_sold_units,
+                    t.summary_spent,
+                    l.summary_active_offer_count,
+                    l.summary_offer_count,
+                    l.summary_paused_offer_count,
+                    l.summary_adset_count,
+                    l.summary_keyword_count,
+                    l.summary_product_target_count,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_sales_count * 100.0 / t.summary_clicks, 2)
+                    END AS summary_conversion_rate,
+                    CASE WHEN t.summary_spent IS NULL THEN NULL
+                         WHEN t.summary_spent = 0 THEN 0
+                         ELSE ROUND(t.summary_sales / t.summary_spent, 2)
+                    END AS summary_return_on_advertising_spend,
+                    t.last_seen_at
+                FROM latest AS l
+                JOIN totals AS t USING (search_phrase_hash, is_aggregated)
+                WHERE COALESCE(t.summary_clicks, 0) > 0
+                   OR COALESCE(t.summary_impressions, 0) > 50
+                ORDER BY t.summary_clicks DESC NULLS LAST,
+                         t.summary_impressions DESC NULLS LAST,
+                         l.search_phrase ASC
+                """)) {
+            s.setInt(1, campaignId);
+            s.setInt(2, adsetId);
+            bindPeriod(s, 3, period);
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readSearchPhraseRow(rs));
+                }
+            }
+        }
+        return new AdsSearchPhraseTableData(
+                names.campaignName(),
+                names.adsetName(),
+                period.label(),
+                ADS_SEARCH_PHRASE_COLUMNS,
+                rows
+        );
+    }
+
+    static AdsTargetedProductTableData getTargetedProducts(Connection db,
+                                                           int campaignId,
+                                                           int adsetId,
+                                                           LocalDate reportDate) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reportDate);
+
+        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, reportDate);
+        var rows = new ArrayList<AdsTargetedProductRow>();
+        try (var s = db.prepareStatement("""
+                SELECT
+                    product_name,
+                    price,
+                    rating,
+                    pnk,
+                    category_name,
+                    brand_name,
+                    clicks,
+                    impressions,
+                    ctr,
+                    effective_cpc,
+                    spent,
+                    average_cost_of_sale,
+                    sales,
+                    sold_units,
+                    sales_count,
+                    image_url,
+                    return_on_advertising_spend,
+                    conversion_rate,
+                    last_seen_at
+                FROM ads_targeted_product
+                WHERE campaign_id = ?
+                  AND adset_id = ?
+                  AND report_date = ?
+                  AND (clicks > 0 OR impressions > 50)
+                ORDER BY clicks DESC NULLS LAST,
+                         impressions DESC NULLS LAST,
+                         product_name ASC NULLS LAST
+                """)) {
+            s.setInt(1, campaignId);
+            s.setInt(2, adsetId);
+            s.setDate(3, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readTargetedProductRow(rs));
+                }
+            }
+        }
+        return new AdsTargetedProductTableData(
+                names.campaignName(),
+                names.adsetName(),
+                reportDate.toString(),
+                ADS_TARGETED_PRODUCT_COLUMNS,
+                rows
+        );
+    }
+
+    static AdsTargetedProductTableData getTargetedProducts(Connection db,
+                                                           int campaignId,
+                                                           int adsetId,
+                                                           AdsReportPeriod period) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(period);
+        if (period.isSingleDay()) {
+            return getTargetedProducts(db, campaignId, adsetId, period.dateFrom());
+        }
+
+        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, period);
+        var rows = new ArrayList<AdsTargetedProductRow>();
+        try (var s = db.prepareStatement("""
+                WITH ranged AS (
+                    SELECT *
+                    FROM ads_targeted_product
+                    WHERE campaign_id = ?
+                      AND adset_id = ?
+                      AND report_date BETWEEN ? AND ?
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (doc_id) *
+                    FROM ranged
+                    ORDER BY doc_id, report_date DESC
+                ),
+                totals AS (
+                    SELECT
+                        doc_id,
+                        SUM(clicks) AS clicks,
+                        SUM(impressions) AS impressions,
+                        SUM(sales) AS sales,
+                        SUM(sales_count) AS sales_count,
+                        SUM(sold_units) AS sold_units,
+                        SUM(spent) AS spent,
+                        MAX(last_seen_at) AS last_seen_at
+                    FROM ranged
+                    GROUP BY doc_id
+                )
+                SELECT
+                    l.product_name,
+                    l.price,
+                    l.rating,
+                    l.pnk,
+                    l.category_name,
+                    l.brand_name,
+                    t.clicks,
+                    t.impressions,
+                    CASE WHEN t.impressions IS NULL THEN NULL
+                         WHEN t.impressions = 0 THEN 0
+                         ELSE ROUND(t.clicks * 100.0 / t.impressions, 2)
+                    END AS ctr,
+                    CASE WHEN t.clicks IS NULL THEN NULL
+                         WHEN t.clicks = 0 THEN 0
+                         ELSE ROUND(t.spent / t.clicks, 2)
+                    END AS effective_cpc,
+                    t.spent,
+                    CASE WHEN t.sales IS NULL THEN NULL
+                         WHEN t.sales = 0 THEN 0
+                         ELSE ROUND(t.spent * 100.0 / t.sales, 2)
+                    END AS average_cost_of_sale,
+                    t.sales,
+                    t.sold_units,
+                    t.sales_count,
+                    l.image_url,
+                    CASE WHEN t.spent IS NULL THEN NULL
+                         WHEN t.spent = 0 THEN 0
+                         ELSE ROUND(t.sales / t.spent, 2)
+                    END AS return_on_advertising_spend,
+                    CASE WHEN t.clicks IS NULL THEN NULL
+                         WHEN t.clicks = 0 THEN 0
+                         ELSE ROUND(t.sales_count * 100.0 / t.clicks, 2)
+                    END AS conversion_rate,
+                    t.last_seen_at
+                FROM latest AS l
+                JOIN totals AS t USING (doc_id)
+                WHERE COALESCE(t.clicks, 0) > 0
+                   OR COALESCE(t.impressions, 0) > 50
+                ORDER BY t.clicks DESC NULLS LAST,
+                         t.impressions DESC NULLS LAST,
+                         l.product_name ASC NULLS LAST
+                """)) {
+            s.setInt(1, campaignId);
+            s.setInt(2, adsetId);
+            bindPeriod(s, 3, period);
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readTargetedProductRow(rs));
+                }
+            }
+        }
+        return new AdsTargetedProductTableData(
+                names.campaignName(),
+                names.adsetName(),
+                period.label(),
+                ADS_TARGETED_PRODUCT_COLUMNS,
+                rows
+        );
+    }
+
+    static AdsKeywordTableData getKeywords(Connection db,
+                                           int campaignId,
+                                           int adsetId,
+                                           LocalDate reportDate) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reportDate);
+
+        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, reportDate);
+        var rows = new ArrayList<AdsKeywordRow>();
+        try (var s = db.prepareStatement("""
+                SELECT
+                    keyword,
+                    match_type,
+                    status,
+                    bid,
+                    inherited_status,
+                    inherited_bid,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend,
+                    last_seen_at
+                FROM ads_keyword
+                WHERE campaign_id = ?
+                  AND adset_id = ?
+                  AND report_date = ?
+                ORDER BY summary_clicks DESC NULLS LAST,
+                         summary_impressions DESC NULLS LAST,
+                         keyword ASC
+                """)) {
+            s.setInt(1, campaignId);
+            s.setInt(2, adsetId);
+            s.setDate(3, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readKeywordRow(rs));
+                }
+            }
+        }
+        return new AdsKeywordTableData(
+                names.campaignName(),
+                names.adsetName(),
+                reportDate.toString(),
+                ADS_KEYWORD_COLUMNS,
+                rows
+        );
+    }
+
+    static AdsKeywordTableData getKeywords(Connection db,
+                                           int campaignId,
+                                           int adsetId,
+                                           AdsReportPeriod period) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(period);
+        if (period.isSingleDay()) {
+            return getKeywords(db, campaignId, adsetId, period.dateFrom());
+        }
+
+        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, period);
+        var rows = new ArrayList<AdsKeywordRow>();
+        try (var s = db.prepareStatement("""
+                WITH ranged AS (
+                    SELECT *
+                    FROM ads_keyword
+                    WHERE campaign_id = ?
+                      AND adset_id = ?
+                      AND report_date BETWEEN ? AND ?
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (keyword_id) *
+                    FROM ranged
+                    ORDER BY keyword_id, report_date DESC
+                ),
+                totals AS (
+                    SELECT
+                        keyword_id,
+                        SUM(summary_clicks) AS summary_clicks,
+                        SUM(summary_impressions) AS summary_impressions,
+                        SUM(summary_sales) AS summary_sales,
+                        SUM(summary_sales_count) AS summary_sales_count,
+                        SUM(summary_sold_units) AS summary_sold_units,
+                        SUM(summary_spent) AS summary_spent,
+                        MAX(last_seen_at) AS last_seen_at
+                    FROM ranged
+                    GROUP BY keyword_id
+                )
+                SELECT
+                    l.keyword,
+                    l.match_type,
+                    l.status,
+                    l.bid,
+                    l.inherited_status,
+                    l.inherited_bid,
+                    CASE WHEN t.summary_sales IS NULL THEN NULL
+                         WHEN t.summary_sales = 0 THEN 0
+                         ELSE ROUND(t.summary_spent * 100.0 / t.summary_sales, 2)
+                    END AS summary_average_cost_of_sale,
+                    t.summary_clicks,
+                    CASE WHEN t.summary_impressions IS NULL THEN NULL
+                         WHEN t.summary_impressions = 0 THEN 0
+                         ELSE ROUND(t.summary_clicks * 100.0 / t.summary_impressions, 2)
+                    END AS summary_ctr,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_spent / t.summary_clicks, 2)
+                    END AS summary_effective_cpc,
+                    t.summary_impressions,
+                    t.summary_sales,
+                    t.summary_sales_count,
+                    t.summary_sold_units,
+                    t.summary_spent,
+                    l.summary_active_offer_count,
+                    l.summary_offer_count,
+                    l.summary_paused_offer_count,
+                    l.summary_adset_count,
+                    l.summary_keyword_count,
+                    l.summary_product_target_count,
+                    CASE WHEN t.summary_clicks IS NULL THEN NULL
+                         WHEN t.summary_clicks = 0 THEN 0
+                         ELSE ROUND(t.summary_sales_count * 100.0 / t.summary_clicks, 2)
+                    END AS summary_conversion_rate,
+                    CASE WHEN t.summary_spent IS NULL THEN NULL
+                         WHEN t.summary_spent = 0 THEN 0
+                         ELSE ROUND(t.summary_sales / t.summary_spent, 2)
+                    END AS summary_return_on_advertising_spend,
+                    t.last_seen_at
+                FROM latest AS l
+                JOIN totals AS t USING (keyword_id)
+                ORDER BY t.summary_clicks DESC NULLS LAST,
+                         t.summary_impressions DESC NULLS LAST,
+                         l.keyword ASC
+                """)) {
+            s.setInt(1, campaignId);
+            s.setInt(2, adsetId);
+            bindPeriod(s, 3, period);
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    rows.add(readKeywordRow(rs));
+                }
+            }
+        }
+        return new AdsKeywordTableData(
+                names.campaignName(),
+                names.adsetName(),
+                period.label(),
+                ADS_KEYWORD_COLUMNS,
+                rows
+        );
+    }
+
+    static int upsertCampaigns(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(campaigns);
+
+        int changedRows = 0;
+        changedRows += upsertCampaignRows(db, campaigns);
+        changedRows += upsertAdsetRows(db, campaigns);
+        changedRows += upsertKeywordRows(db, campaigns);
+        changedRows += upsertSearchPhraseRows(db, campaigns);
+        changedRows += upsertTargetedProductRows(db, campaigns);
+        return changedRows;
+    }
+
+    static int upsertCampaignsAndAdsets(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(campaigns);
+
+        return upsertCampaignRows(db, campaigns) + upsertAdsetRows(db, campaigns);
+    }
+
+    private static int upsertCampaignRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+        try (var s = db.prepareStatement("""
+                INSERT INTO ads_campaign (
+                    report_date,
+                    campaign_id,
+                    name,
+                    advertiser_id,
+                    daily_budget,
+                    effective_daily_budget,
+                    remaining_daily_budget,
+                    status,
+                    inherited_status,
+                    targeting,
+                    date_start,
+                    date_end,
+                    advertiser_name,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (report_date, campaign_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    advertiser_id = EXCLUDED.advertiser_id,
+                    daily_budget = EXCLUDED.daily_budget,
+                    effective_daily_budget = EXCLUDED.effective_daily_budget,
+                    remaining_daily_budget = EXCLUDED.remaining_daily_budget,
+                    status = EXCLUDED.status,
+                    inherited_status = EXCLUDED.inherited_status,
+                    targeting = EXCLUDED.targeting,
+                    date_start = EXCLUDED.date_start,
+                    date_end = EXCLUDED.date_end,
+                    advertiser_name = EXCLUDED.advertiser_name,
+                    summary_average_cost_of_sale = EXCLUDED.summary_average_cost_of_sale,
+                    summary_clicks = EXCLUDED.summary_clicks,
+                    summary_ctr = EXCLUDED.summary_ctr,
+                    summary_effective_cpc = EXCLUDED.summary_effective_cpc,
+                    summary_impressions = EXCLUDED.summary_impressions,
+                    summary_sales = EXCLUDED.summary_sales,
+                    summary_sales_count = EXCLUDED.summary_sales_count,
+                    summary_sold_units = EXCLUDED.summary_sold_units,
+                    summary_spent = EXCLUDED.summary_spent,
+                    summary_active_offer_count = EXCLUDED.summary_active_offer_count,
+                    summary_offer_count = EXCLUDED.summary_offer_count,
+                    summary_paused_offer_count = EXCLUDED.summary_paused_offer_count,
+                    summary_adset_count = EXCLUDED.summary_adset_count,
+                    summary_keyword_count = EXCLUDED.summary_keyword_count,
+                    summary_product_target_count = EXCLUDED.summary_product_target_count,
+                    summary_conversion_rate = EXCLUDED.summary_conversion_rate,
+                    summary_return_on_advertising_spend = EXCLUDED.summary_return_on_advertising_spend,
+                    last_seen_at = current_timestamp
+                """)) {
+            for (var campaign : campaigns) {
+                bindCampaign(s, campaign);
+                s.addBatch();
+            }
+            return changedRows(s.executeBatch());
+        }
+    }
+
+    private static int upsertAdsetRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+        try (var s = db.prepareStatement("""
+                INSERT INTO ads_adset (
+                    report_date,
+                    campaign_id,
+                    adset_id,
+                    name,
+                    targeting,
+                    bid,
+                    status,
+                    inherited_status,
+                    recommended_bid,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (report_date, campaign_id, adset_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    targeting = EXCLUDED.targeting,
+                    bid = EXCLUDED.bid,
+                    status = EXCLUDED.status,
+                    inherited_status = EXCLUDED.inherited_status,
+                    recommended_bid = EXCLUDED.recommended_bid,
+                    summary_average_cost_of_sale = EXCLUDED.summary_average_cost_of_sale,
+                    summary_clicks = EXCLUDED.summary_clicks,
+                    summary_ctr = EXCLUDED.summary_ctr,
+                    summary_effective_cpc = EXCLUDED.summary_effective_cpc,
+                    summary_impressions = EXCLUDED.summary_impressions,
+                    summary_sales = EXCLUDED.summary_sales,
+                    summary_sales_count = EXCLUDED.summary_sales_count,
+                    summary_sold_units = EXCLUDED.summary_sold_units,
+                    summary_spent = EXCLUDED.summary_spent,
+                    summary_active_offer_count = EXCLUDED.summary_active_offer_count,
+                    summary_offer_count = EXCLUDED.summary_offer_count,
+                    summary_paused_offer_count = EXCLUDED.summary_paused_offer_count,
+                    summary_adset_count = EXCLUDED.summary_adset_count,
+                    summary_keyword_count = EXCLUDED.summary_keyword_count,
+                    summary_product_target_count = EXCLUDED.summary_product_target_count,
+                    summary_conversion_rate = EXCLUDED.summary_conversion_rate,
+                    summary_return_on_advertising_spend = EXCLUDED.summary_return_on_advertising_spend,
+                    last_seen_at = current_timestamp
+                """)) {
+            for (var campaign : campaigns) {
+                var campaignId = campaignId(campaign);
+                for (var adSet : listOrEmpty(campaign.adSets())) {
+                    bindAdset(s, campaign, campaignId, adSet.adSet());
+                    s.addBatch();
+                }
+            }
+            return changedRows(s.executeBatch());
+        }
+    }
+
+    private static int upsertKeywordRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+        var reports = new ArrayList<AdsAdsetReport<AdsKeyword>>();
+        for (var campaign : campaigns) {
+            var campaignId = campaignId(campaign);
+            for (var adSet : listOrEmpty(campaign.adSets())) {
+                var key = new AdsAdsetKey(campaign.reportDate(), campaignId, adsetId(adSet.adSet()));
+                reports.add(new AdsAdsetReport<>(key, listOrEmpty(adSet.keywords())));
+            }
+        }
+        return upsertKeywordReports(db, reports);
+    }
+
+    static int upsertKeywordReports(Connection db, List<AdsAdsetReport<AdsKeyword>> reports) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reports);
+
+        try (var s = db.prepareStatement("""
+                INSERT INTO ads_keyword (
+                    report_date,
+                    campaign_id,
+                    adset_id,
+                    keyword_id,
+                    bid,
+                    status,
+                    keyword,
+                    match_type,
+                    inherited_status,
+                    inherited_bid,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (report_date, campaign_id, adset_id, keyword_id) DO UPDATE SET
+                    bid = EXCLUDED.bid,
+                    status = EXCLUDED.status,
+                    keyword = EXCLUDED.keyword,
+                    match_type = EXCLUDED.match_type,
+                    inherited_status = EXCLUDED.inherited_status,
+                    inherited_bid = EXCLUDED.inherited_bid,
+                    summary_average_cost_of_sale = EXCLUDED.summary_average_cost_of_sale,
+                    summary_clicks = EXCLUDED.summary_clicks,
+                    summary_ctr = EXCLUDED.summary_ctr,
+                    summary_effective_cpc = EXCLUDED.summary_effective_cpc,
+                    summary_impressions = EXCLUDED.summary_impressions,
+                    summary_sales = EXCLUDED.summary_sales,
+                    summary_sales_count = EXCLUDED.summary_sales_count,
+                    summary_sold_units = EXCLUDED.summary_sold_units,
+                    summary_spent = EXCLUDED.summary_spent,
+                    summary_active_offer_count = EXCLUDED.summary_active_offer_count,
+                    summary_offer_count = EXCLUDED.summary_offer_count,
+                    summary_paused_offer_count = EXCLUDED.summary_paused_offer_count,
+                    summary_adset_count = EXCLUDED.summary_adset_count,
+                    summary_keyword_count = EXCLUDED.summary_keyword_count,
+                    summary_product_target_count = EXCLUDED.summary_product_target_count,
+                    summary_conversion_rate = EXCLUDED.summary_conversion_rate,
+                    summary_return_on_advertising_spend = EXCLUDED.summary_return_on_advertising_spend,
+                    last_seen_at = current_timestamp
+                """)) {
+            for (var report : reports) {
+                for (var keyword : report.rows()) {
+                    bindKeyword(s, report.adset(), keyword);
+                    s.addBatch();
+                }
+            }
+            return changedRows(s.executeBatch());
+        }
+    }
+
+    private static int upsertSearchPhraseRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+        var reports = new ArrayList<AdsAdsetReport<AdsSearchPhrase>>();
+        for (var campaign : campaigns) {
+            var campaignId = campaignId(campaign);
+            for (var adSet : listOrEmpty(campaign.adSets())) {
+                var key = new AdsAdsetKey(campaign.reportDate(), campaignId, adsetId(adSet.adSet()));
+                reports.add(new AdsAdsetReport<>(key, listOrEmpty(adSet.searchPrases())));
+            }
+        }
+        return upsertSearchPhraseReports(db, reports);
+    }
+
+    static int upsertSearchPhraseReports(Connection db, List<AdsAdsetReport<AdsSearchPhrase>> reports) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reports);
+
+        try (var s = db.prepareStatement("""
+                INSERT INTO ads_search_phrase (
+                    report_date,
+                    campaign_id,
+                    adset_id,
+                    search_phrase,
+                    search_phrase_hash,
+                    is_aggregated,
+                    summary_average_cost_of_sale,
+                    summary_clicks,
+                    summary_ctr,
+                    summary_effective_cpc,
+                    summary_impressions,
+                    summary_sales,
+                    summary_sales_count,
+                    summary_sold_units,
+                    summary_spent,
+                    summary_active_offer_count,
+                    summary_offer_count,
+                    summary_paused_offer_count,
+                    summary_adset_count,
+                    summary_keyword_count,
+                    summary_product_target_count,
+                    summary_conversion_rate,
+                    summary_return_on_advertising_spend
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (
+                    report_date,
+                    campaign_id,
+                    adset_id,
+                    is_aggregated,
+                    search_phrase_hash
+                ) DO UPDATE SET
+                    search_phrase = EXCLUDED.search_phrase,
+                    summary_average_cost_of_sale = EXCLUDED.summary_average_cost_of_sale,
+                    summary_clicks = EXCLUDED.summary_clicks,
+                    summary_ctr = EXCLUDED.summary_ctr,
+                    summary_effective_cpc = EXCLUDED.summary_effective_cpc,
+                    summary_impressions = EXCLUDED.summary_impressions,
+                    summary_sales = EXCLUDED.summary_sales,
+                    summary_sales_count = EXCLUDED.summary_sales_count,
+                    summary_sold_units = EXCLUDED.summary_sold_units,
+                    summary_spent = EXCLUDED.summary_spent,
+                    summary_active_offer_count = EXCLUDED.summary_active_offer_count,
+                    summary_offer_count = EXCLUDED.summary_offer_count,
+                    summary_paused_offer_count = EXCLUDED.summary_paused_offer_count,
+                    summary_adset_count = EXCLUDED.summary_adset_count,
+                    summary_keyword_count = EXCLUDED.summary_keyword_count,
+                    summary_product_target_count = EXCLUDED.summary_product_target_count,
+                    summary_conversion_rate = EXCLUDED.summary_conversion_rate,
+                    summary_return_on_advertising_spend = EXCLUDED.summary_return_on_advertising_spend,
+                    last_seen_at = current_timestamp
+                """)) {
+            for (var report : reports) {
+                for (var phrase : report.rows()) {
+                    bindSearchPhrase(s, report.adset(), phrase);
+                    s.addBatch();
+                }
+            }
+            return changedRows(s.executeBatch());
+        }
+    }
+
+    private static int upsertTargetedProductRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+        var reports = new ArrayList<AdsAdsetReport<AdsTargetedProduct>>();
+        for (var campaign : campaigns) {
+            var campaignId = campaignId(campaign);
+            for (var adSet : listOrEmpty(campaign.adSets())) {
+                var key = new AdsAdsetKey(campaign.reportDate(), campaignId, adsetId(adSet.adSet()));
+                reports.add(new AdsAdsetReport<>(key, listOrEmpty(adSet.targetedProducts())));
+            }
+        }
+        return upsertTargetedProductReports(db, reports);
+    }
+
+    static int upsertTargetedProductReports(Connection db, List<AdsAdsetReport<AdsTargetedProduct>> reports) throws SQLException {
+        Objects.requireNonNull(db);
+        Objects.requireNonNull(reports);
+
+        try (var s = db.prepareStatement("""
+                INSERT INTO ads_targeted_product (
+                    report_date,
+                    campaign_id,
+                    adset_id,
+                    doc_id,
+                    product_name,
+                    price,
+                    rating,
+                    pnk,
+                    category_name,
+                    category_id,
+                    brand_name,
+                    brand_id,
+                    clicks,
+                    impressions,
+                    ctr,
+                    effective_cpc,
+                    spent,
+                    average_cost_of_sale,
+                    sales,
+                    sold_units,
+                    sales_count,
+                    image_url,
+                    return_on_advertising_spend,
+                    conversion_rate
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (report_date, campaign_id, adset_id, doc_id) DO UPDATE SET
+                    product_name = EXCLUDED.product_name,
+                    price = EXCLUDED.price,
+                    rating = EXCLUDED.rating,
+                    pnk = EXCLUDED.pnk,
+                    category_name = EXCLUDED.category_name,
+                    category_id = EXCLUDED.category_id,
+                    brand_name = EXCLUDED.brand_name,
+                    brand_id = EXCLUDED.brand_id,
+                    clicks = EXCLUDED.clicks,
+                    impressions = EXCLUDED.impressions,
+                    ctr = EXCLUDED.ctr,
+                    effective_cpc = EXCLUDED.effective_cpc,
+                    spent = EXCLUDED.spent,
+                    average_cost_of_sale = EXCLUDED.average_cost_of_sale,
+                    sales = EXCLUDED.sales,
+                    sold_units = EXCLUDED.sold_units,
+                    sales_count = EXCLUDED.sales_count,
+                    image_url = EXCLUDED.image_url,
+                    return_on_advertising_spend = EXCLUDED.return_on_advertising_spend,
+                    conversion_rate = EXCLUDED.conversion_rate,
+                    last_seen_at = current_timestamp
+                """)) {
+            for (var report : reports) {
+                for (var targetedProduct : report.rows()) {
+                    bindTargetedProduct(s, report.adset(), targetedProduct);
+                    s.addBatch();
+                }
+            }
+            return changedRows(s.executeBatch());
+        }
+    }
+
+    private static void bindCampaign(PreparedStatement s, AdsCampaignSnapshot campaignSnapshot) throws SQLException {
+        var campaign = Objects.requireNonNull(campaignSnapshot.campaign(), "campaign");
+        int index = bindCampaignKey(s, 1, campaignSnapshot, campaignId(campaignSnapshot));
+        s.setString(index++, campaign.name());
+        setInteger(s, index++, campaign.advertiserId());
+        setBigDecimal(s, index++, campaign.dailyBudget());
+        setBigDecimal(s, index++, campaign.effectiveDailyBudget());
+        setBigDecimal(s, index++, campaign.remainingDailyBudget());
+        s.setString(index++, campaign.status());
+        s.setString(index++, campaign.inheritedStatus());
+        s.setString(index++, campaign.targeting());
+        setTimestamp(s, index++, campaign.dateStart());
+        setTimestamp(s, index++, campaign.dateEnd());
+        s.setString(index++, campaign.advertiserName());
+        bindSummary(s, index, campaign.summary());
+    }
+
+    private static void bindAdset(PreparedStatement s, AdsCampaignSnapshot campaign, int campaignId, AdsAdset adset) throws SQLException {
+        Objects.requireNonNull(adset, "adset");
+        int index = bindCampaignKey(s, 1, campaign, campaignId);
+        s.setInt(index++, adsetId(adset));
+        s.setString(index++, adset.name());
+        s.setString(index++, adset.targeting());
+        setBigDecimal(s, index++, adset.bid());
+        s.setString(index++, adset.status());
+        s.setString(index++, adset.inheritedStatus());
+        setBigDecimal(s, index++, recommendedBid(adset.recommendedBid()));
+        bindSummary(s, index, adset.summary());
+    }
+
+    private static void bindKeyword(PreparedStatement s, AdsAdsetKey adset, AdsKeyword keyword) throws SQLException {
+        Objects.requireNonNull(keyword, "keyword");
+        var keywordAdset = Objects.requireNonNull(keyword.adset(), "keyword.adset");
+        var keywordAdsetId = Objects.requireNonNull(keywordAdset.id(), "keyword.adset.id");
+        rejectMismatchedAdsetId(keywordAdsetId, adset.adsetId(), "keyword");
+        int index = bindAdsetKey(s, 1, adset);
+        s.setInt(index++, Objects.requireNonNull(keyword.id(), "keyword.id"));
+        setBigDecimal(s, index++, keyword.bid());
+        s.setString(index++, keyword.status());
+        s.setString(index++, Objects.requireNonNull(keyword.keyword(), "keyword.keyword"));
+        s.setString(index++, keyword.matchType());
+        s.setString(index++, keyword.inheritedStatus());
+        setBigDecimal(s, index++, keyword.inheritedBid());
+        bindSummary(s, index, keyword.summary());
+    }
+
+    private static void bindSearchPhrase(PreparedStatement s, AdsAdsetKey adset, AdsSearchPhrase phrase) throws SQLException {
+        Objects.requireNonNull(phrase, "phrase");
+        rejectMismatchedAdsetId(phrase.adsetId(), adset.adsetId(), "search phrase");
+        int index = bindAdsetKey(s, 1, adset);
+        var searchPhrase = Objects.requireNonNull(phrase.searchPhrase(), "searchPhrase");
+        s.setString(index++, searchPhrase);
+        s.setString(index++, sha256(searchPhrase));
+        setBoolean(s, index++, Objects.requireNonNull(phrase.isAggregated(), "isAggregated"));
+        bindSummary(s, index, phrase.summary());
+    }
+
+    private static void bindTargetedProduct(PreparedStatement s, AdsAdsetKey adset, AdsTargetedProduct product) throws SQLException {
+        Objects.requireNonNull(product, "product");
+        rejectMismatchedAdsetId(product.adsetId(), adset.adsetId(), "targeted product");
+        int index = bindAdsetKey(s, 1, adset);
+        s.setInt(index++, Objects.requireNonNull(product.docId(), "docId"));
+        s.setString(index++, product.productName());
+        setBigDecimal(s, index++, product.price());
+        setBigDecimal(s, index++, product.rating());
+        s.setString(index++, product.pnk());
+        s.setString(index++, product.categoryName());
+        setInteger(s, index++, product.categoryId());
+        s.setString(index++, product.brandName());
+        setInteger(s, index++, product.brandId());
+        setInteger(s, index++, product.clicks());
+        setInteger(s, index++, product.impressions());
+        setBigDecimal(s, index++, product.ctr());
+        setBigDecimal(s, index++, product.effectiveCpc());
+        setBigDecimal(s, index++, product.spent());
+        setBigDecimal(s, index++, product.averageCostOfSale());
+        setBigDecimal(s, index++, product.sales());
+        setInteger(s, index++, product.soldUnits());
+        setInteger(s, index++, product.salesCount());
+        s.setString(index++, product.imageUrl());
+        setBigDecimal(s, index++, product.returnOnAdvertisingSpend());
+        setBigDecimal(s, index, product.conversionRate());
+    }
+
+    private static int bindAdsetKey(PreparedStatement s, int index, AdsAdsetKey adset) throws SQLException {
+        setDate(s, index++, adset.reportDate());
+        s.setInt(index++, adset.campaignId());
+        s.setInt(index++, adset.adsetId());
+        return index;
+    }
+
+    private static int bindCampaignKey(PreparedStatement s, int index, AdsCampaignSnapshot campaign, int campaignId) throws SQLException {
+        setDate(s, index++, Objects.requireNonNull(campaign.reportDate(), "reportDate"));
+        s.setInt(index++, campaignId);
+        return index;
+    }
+
+    private static int bindSummary(PreparedStatement s, int index, AdsPerformanceSummary summary) throws SQLException {
+        setBigDecimal(s, index++, summary == null ? null : summary.averageCostOfSale());
+        setInteger(s, index++, summary == null ? null : summary.clicks());
+        setBigDecimal(s, index++, summary == null ? null : summary.ctr());
+        setBigDecimal(s, index++, summary == null ? null : summary.effectiveCpc());
+        setInteger(s, index++, summary == null ? null : summary.impressions());
+        setBigDecimal(s, index++, summary == null ? null : summary.sales());
+        setInteger(s, index++, summary == null ? null : summary.salesCount());
+        setInteger(s, index++, summary == null ? null : summary.soldUnits());
+        setBigDecimal(s, index++, summary == null ? null : summary.spent());
+        setInteger(s, index++, summary == null ? null : summary.activeOfferCount());
+        setInteger(s, index++, summary == null ? null : summary.offerCount());
+        setInteger(s, index++, summary == null ? null : summary.pausedOfferCount());
+        setInteger(s, index++, summary == null ? null : summary.adsetCount());
+        setInteger(s, index++, summary == null ? null : summary.keywordCount());
+        setInteger(s, index++, summary == null ? null : summary.productTargetCount());
+        setBigDecimal(s, index++, summary == null ? null : summary.conversionRate());
+        setBigDecimal(s, index++, summary == null ? null : summary.returnOnAdvertisingSpend());
+        return index;
+    }
+
+    private static int campaignId(AdsCampaignSnapshot campaign) {
+        return Objects.requireNonNull(Objects.requireNonNull(campaign.campaign(), "campaign").id(), "campaign.id");
+    }
+
+    private static int adsetId(AdsAdset adset) {
+        return Objects.requireNonNull(Objects.requireNonNull(adset, "adset").id(), "adset.id");
+    }
+
+    private static BigDecimal recommendedBid(AdsRecommendedBid recommendedBid) {
+        return recommendedBid == null ? null : recommendedBid.bid();
+    }
+
+    private static void rejectMismatchedAdsetId(Integer rowAdsetId, int expectedAdsetId, String label) throws SQLException {
+        if (rowAdsetId != null && rowAdsetId != expectedAdsetId) {
+            throw new SQLException("Unexpected adset id for " + label + ": expected " + expectedAdsetId + ", got " + rowAdsetId + ".");
+        }
+    }
+
+    private static String sha256(String value) {
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available.", e);
+        }
+    }
+
+    private static <T> List<T> listOrEmpty(List<T> list) {
+        return list == null ? List.of() : list;
+    }
+
+    private static int changedRows(int[] batchResult) {
+        int rows = 0;
+        for (int result : batchResult) {
+            if (result == Statement.SUCCESS_NO_INFO) {
+                rows++;
+            } else if (result > 0) {
+                rows += result;
+            }
+        }
+        return rows;
+    }
+
+    private static AdsCampaignColumn column(String key, String label, boolean numeric) {
+        return new AdsCampaignColumn(key, label, numeric);
+    }
+
+    private static AdsAdsetColumn adsetColumn(String key, String label, boolean numeric) {
+        return new AdsAdsetColumn(key, label, numeric);
+    }
+
+    private static AdsSearchPhraseColumn searchPhraseColumn(String key, String label, boolean numeric) {
+        return new AdsSearchPhraseColumn(key, label, numeric);
+    }
+
+    private static AdsTargetedProductColumn targetedProductColumn(String key, String label, boolean numeric) {
+        return new AdsTargetedProductColumn(key, label, numeric);
+    }
+
+    private static AdsKeywordColumn keywordColumn(String key, String label, boolean numeric) {
+        return new AdsKeywordColumn(key, label, numeric);
+    }
+
+    private static AdsCampaignRow readCampaignRow(ResultSet rs) throws SQLException {
+        var values = new LinkedHashMap<String, String>();
+        for (var column : ADS_CAMPAIGN_COLUMNS) {
+            values.put(column.key(), displayValue(rs.getObject(column.key())));
+        }
+        return new AdsCampaignRow(rs.getInt("campaign_id"), values);
+    }
+
+    private static AdsAdsetRow readAdsetRow(ResultSet rs) throws SQLException {
+        var values = new LinkedHashMap<String, String>();
+        for (var column : ADS_ADSET_COLUMNS) {
+            values.put(column.key(), displayValue(rs.getObject(column.key())));
+        }
+        return new AdsAdsetRow(rs.getInt("campaign_id"), rs.getInt("adset_id"), values);
+    }
+
+    private static AdsSearchPhraseRow readSearchPhraseRow(ResultSet rs) throws SQLException {
+        var values = new LinkedHashMap<String, String>();
+        for (var column : ADS_SEARCH_PHRASE_COLUMNS) {
+            values.put(column.key(), displayValue(rs.getObject(column.key())));
+        }
+        return new AdsSearchPhraseRow(values);
+    }
+
+    private static AdsTargetedProductRow readTargetedProductRow(ResultSet rs) throws SQLException {
+        var values = new LinkedHashMap<String, String>();
+        for (var column : ADS_TARGETED_PRODUCT_COLUMNS) {
+            values.put(column.key(), displayValue(rs.getObject(column.key())));
+        }
+        return new AdsTargetedProductRow(values);
+    }
+
+    private static AdsKeywordRow readKeywordRow(ResultSet rs) throws SQLException {
+        var values = new LinkedHashMap<String, String>();
+        for (var column : ADS_KEYWORD_COLUMNS) {
+            values.put(column.key(), displayValue(rs.getObject(column.key())));
+        }
+        return new AdsKeywordRow(values);
+    }
+
+    private static String getCampaignName(Connection db, int campaignId, LocalDate reportDate) throws SQLException {
+        try (var s = db.prepareStatement("""
+                SELECT name
+                FROM ads_campaign
+                WHERE campaign_id = ?
+                  AND report_date = ?
+                """)) {
+            s.setInt(1, campaignId);
+            s.setDate(2, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return stringOrFallback(rs.getString("name"), "campaign ID " + campaignId);
+                }
+            }
+        }
+        return "campaign ID " + campaignId;
+    }
+
+    private static String getCampaignName(Connection db, int campaignId, AdsReportPeriod period) throws SQLException {
+        try (var s = db.prepareStatement("""
+                SELECT name
+                FROM ads_campaign
+                WHERE campaign_id = ?
+                  AND report_date BETWEEN ? AND ?
+                ORDER BY report_date DESC
+                LIMIT 1
+                """)) {
+            s.setInt(1, campaignId);
+            bindPeriod(s, 2, period);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return stringOrFallback(rs.getString("name"), "campaign ID " + campaignId);
+                }
+            }
+        }
+        return "campaign ID " + campaignId;
+    }
+
+    private static AdsNames getCampaignAndAdsetNames(Connection db,
+                                                     int campaignId,
+                                                     int adsetId,
+                                                     LocalDate reportDate) throws SQLException {
+        try (var s = db.prepareStatement("""
+                SELECT c.name AS campaign_name,
+                       a.name AS adset_name
+                FROM ads_campaign AS c
+                LEFT JOIN ads_adset AS a
+                  ON a.report_date = c.report_date
+                 AND a.campaign_id = c.campaign_id
+                 AND a.adset_id = ?
+                WHERE c.campaign_id = ?
+                  AND c.report_date = ?
+                """)) {
+            s.setInt(1, adsetId);
+            s.setInt(2, campaignId);
+            s.setDate(3, Date.valueOf(reportDate));
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return new AdsNames(
+                            stringOrFallback(rs.getString("campaign_name"), "campaign ID " + campaignId),
+                            stringOrFallback(rs.getString("adset_name"), "adset ID " + adsetId)
+                    );
+                }
+            }
+        }
+        return new AdsNames("campaign ID " + campaignId, "adset ID " + adsetId);
+    }
+
+    private static AdsNames getCampaignAndAdsetNames(Connection db,
+                                                     int campaignId,
+                                                     int adsetId,
+                                                     AdsReportPeriod period) throws SQLException {
+        try (var s = db.prepareStatement("""
+                SELECT
+                    (SELECT c.name
+                     FROM ads_campaign AS c
+                     WHERE c.campaign_id = ?
+                       AND c.report_date BETWEEN ? AND ?
+                     ORDER BY c.report_date DESC
+                     LIMIT 1) AS campaign_name,
+                    (SELECT a.name
+                     FROM ads_adset AS a
+                     WHERE a.campaign_id = ?
+                       AND a.adset_id = ?
+                       AND a.report_date BETWEEN ? AND ?
+                     ORDER BY a.report_date DESC
+                     LIMIT 1) AS adset_name
+                """)) {
+            s.setInt(1, campaignId);
+            bindPeriod(s, 2, period);
+            s.setInt(4, campaignId);
+            s.setInt(5, adsetId);
+            bindPeriod(s, 6, period);
+            try (var rs = s.executeQuery()) {
+                if (rs.next()) {
+                    return new AdsNames(
+                            stringOrFallback(rs.getString("campaign_name"), "campaign ID " + campaignId),
+                            stringOrFallback(rs.getString("adset_name"), "adset ID " + adsetId)
+                    );
+                }
+            }
+        }
+        return new AdsNames("campaign ID " + campaignId, "adset ID " + adsetId);
+    }
+
+    private static String stringOrFallback(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static String displayValue(Object value) {
+        if (value == null) {
+            return "";
+        }
+        if (value instanceof BigDecimal decimal) {
+            return decimal.stripTrailingZeros().toPlainString();
+        }
+        if (value instanceof Date date) {
+            return date.toLocalDate().toString();
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toLocalDateTime().toString().replace('T', ' ');
+        }
+        if (value instanceof LocalDateTime localDateTime) {
+            return localDateTime.toString().replace('T', ' ');
+        }
+        return value.toString();
+    }
+
+    private static void setDate(PreparedStatement s, int index, LocalDate value) throws SQLException {
+        s.setDate(index, Date.valueOf(value));
+    }
+
+    private static void bindPeriod(PreparedStatement s, int startIndex, AdsReportPeriod period) throws SQLException {
+        s.setDate(startIndex, Date.valueOf(period.dateFrom()));
+        s.setDate(startIndex + 1, Date.valueOf(period.dateTo()));
+    }
+
+    private static void setTimestamp(PreparedStatement s, int index, LocalDateTime value) throws SQLException {
+        s.setTimestamp(index, toTimestamp(value));
+    }
+
+    private static void setBigDecimal(PreparedStatement s, int index, BigDecimal value) throws SQLException {
+        if (value == null) {
+            s.setNull(index, Types.NUMERIC);
+        } else {
+            s.setBigDecimal(index, value);
+        }
+    }
+
+    private static void setInteger(PreparedStatement s, int index, Integer value) throws SQLException {
+        if (value == null) {
+            s.setNull(index, Types.INTEGER);
+        } else {
+            s.setInt(index, value);
+        }
+    }
+
+    private static void setBoolean(PreparedStatement s, int index, Boolean value) throws SQLException {
+        if (value == null) {
+            s.setNull(index, Types.BOOLEAN);
+        } else {
+            s.setBoolean(index, value);
+        }
+    }
+}

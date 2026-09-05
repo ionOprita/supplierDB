@@ -16,6 +16,29 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
                    Duration durationOfLastRun, int unsuccessfulRuns, String error) {
 
     /**
+     * Ensure every configured task has a history row, including tasks which have never run.
+     *
+     * @param db        database connection
+     * @param taskNames configured task names
+     * @return number of newly inserted rows
+     * @throws SQLException if task registration fails
+     */
+    public static int registerTasks(Connection db, List<String> taskNames) throws SQLException {
+        try (var s = db.prepareStatement("""
+                INSERT INTO tasks (name)
+                VALUES (?)
+                ON CONFLICT (name) DO NOTHING
+                """)) {
+            var inserted = 0;
+            for (var taskName : taskNames) {
+                s.setString(1, taskName);
+                inserted += s.executeUpdate();
+            }
+            return inserted;
+        }
+    }
+
+    /**
      * Record the start of a task by inserting into the tasks table the name and current timestamp.
      *
      * @param db   the database connection used to execute the SQL statement.

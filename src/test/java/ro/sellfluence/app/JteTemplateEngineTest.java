@@ -51,6 +51,31 @@ class JteTemplateEngineTest {
     }
 
     @Test
+    void rendersAdsPeriodControls() {
+        var templateParameters = Map.<String, Object>of(
+                "userName", "test-user",
+                "userRole", "admin",
+                "pageTitle", "Ads"
+        );
+
+        StringOutput campaignsOutput = new StringOutput();
+        Server.createJteEngine().render("ads-campaigns.jte", templateParameters, campaignsOutput);
+        var campaignsHtml = campaignsOutput.toString();
+        assertTrue(campaignsHtml.contains("id=\"adsCampaignPeriodSelect\""));
+        assertTrue(campaignsHtml.contains("value=\"last7\""));
+        assertTrue(campaignsHtml.contains("id=\"adsCampaignDateFromInput\""));
+        assertTrue(campaignsHtml.contains("id=\"adsCampaignDateToInput\""));
+
+        StringOutput adsetsOutput = new StringOutput();
+        Server.createJteEngine().render("ads-adsets.jte", templateParameters, adsetsOutput);
+        var adsetsHtml = adsetsOutput.toString();
+        assertTrue(adsetsHtml.contains("id=\"adsAdsetPeriodSelect\""));
+        assertTrue(adsetsHtml.contains("value=\"last30\""));
+        assertTrue(adsetsHtml.contains("id=\"adsAdsetDateFromInput\""));
+        assertTrue(adsetsHtml.contains("id=\"adsAdsetDateToInput\""));
+    }
+
+    @Test
     void rendersServerLogFilesTemplate() {
         StringOutput output = new StringOutput();
         var model = new HashMap<String, Object>();
