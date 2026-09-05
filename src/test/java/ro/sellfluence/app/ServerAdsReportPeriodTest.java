@@ -4,11 +4,22 @@ import org.junit.jupiter.api.Test;
 import ro.sellfluence.db.AdsReportPeriod;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ServerAdsReportPeriodTest {
+    @Test
+    void requiresAnExplicitCanonicalVendorUuid() {
+        var vendorId = UUID.randomUUID();
+        assertEquals(vendorId, Server.parseAdsVendorId(vendorId.toString()));
+        assertEquals(vendorId, Server.parseAdsVendorId(vendorId.toString().toUpperCase()));
+        for (var invalid : new String[]{null, "", "sellfusion", "1-1-1-1-1", "not-a-uuid", " " + vendorId}) {
+            assertThrows(IllegalArgumentException.class, () -> Server.parseAdsVendorId(invalid));
+        }
+    }
+
     @Test
     void parsesLegacyDate() {
         assertEquals(

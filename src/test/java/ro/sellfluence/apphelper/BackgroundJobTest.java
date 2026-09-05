@@ -300,16 +300,41 @@ class BackgroundJobTest {
     }
 
     @Test
-    void validatesProductionAdsAliases() {
-        assertEquals(List.of("sellfusion"), BackgroundJob.validateProductionAliases(List.of("sellfusion")));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> BackgroundJob.validateProductionAliases(List.of("../sellfusion"))
-        );
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> BackgroundJob.validateProductionAliases(List.of("sellfusion", "another"))
-        );
+    void registersEveryDiscoveredAdsAccountOnceWithItsOwnPrerequisites() {
+        var definitions = BackgroundJob.adsTaskDefinitions(null, clockAt(NOW),
+                List.of("sellfusion", "another-account", "third.account", "sellfusion"));
+
+        assertEquals(15, definitions.size());
+        assertEquals(15, definitions.stream().map(BackgroundJob.TaskDefinition::name).distinct().count());
+        for (var alias : List.of("sellfusion", "another-account", "third.account")) {
+            var laneTasks = definitions.stream()
+                    .filter(task -> task.lane().equals(BackgroundJob.adsLane + ":" + alias))
+                    .toList();
+            assertEquals(5, laneTasks.size());
+            assertEquals(BackgroundJob.adsCampaignsTaskName(alias), laneTasks.getFirst().name());
+            assertNull(laneTasks.getFirst().prerequisiteTaskName());
+            for (var detail : laneTasks.subList(1, 4)) {
+                assertEquals(laneTasks.getFirst().name(), detail.prerequisiteTaskName());
+            }
+        }
+        assertTrue(BackgroundJob.adsTaskDefinitions(null, clockAt(NOW), List.of()).isEmpty());
+    }
+
+    @Test
+    void oneAdsAccountFailureDoesNotPreventAnotherAccountsTasks() {
+        var store = new FakeTaskStore();
+        var executor = new HoldingExecutor();
+        var secondRuns = new AtomicInteger();
+        var job = new BackgroundJob(store, executor, clockAt(NOW), List.of(
+                task("first", "ads:first", () -> { throw new IllegalStateException("First account failed"); }),
+                task("second", "ads:second", secondRuns::incrementAndGet)
+        ));
+
+        job.performWork();
+        executor.runAll();
+
+        assertEquals(1, secondRuns.get());
+        assertTrue(activeTasks(job).isEmpty());
     }
 
     @Test

@@ -8,6 +8,7 @@ import ro.sellfluence.db.AdsCampaignTable.AdsSearchPhraseTableData;
 import ro.sellfluence.db.AdsCampaignTable.AdsTargetedProductTableData;
 import ro.sellfluence.db.AdsReportPeriod;
 import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.db.Vendor;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
@@ -25,6 +26,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.UUID;
 import java.util.Map;
 import java.util.logging.Logger;
 import java.util.function.Function;
@@ -99,9 +101,39 @@ public class API {
         }
     }
 
-    public List<String> getAdsCampaignReportDates() {
+    public record AdsVendor(UUID vendorId, String name, String account) {
+    }
+
+    public record AdsVendors(List<AdsVendor> vendors, UUID defaultVendorId) {
+    }
+
+    public AdsVendors getAdsVendors() {
         try {
-            return mirrorDB.getAdsCampaignReportDates().stream()
+            return adsVendorOptions(mirrorDB.getAdsVendors());
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load ads vendors.", e);
+            return null;
+        }
+    }
+
+    static AdsVendors adsVendorOptions(List<Vendor> vendors) {
+        var options = vendors.stream()
+                .sorted(Comparator.comparing(Vendor::name, Comparator.nullsLast(String::compareTo))
+                        .thenComparing(Vendor::account, Comparator.nullsLast(String::compareTo))
+                        .thenComparing(Vendor::id))
+                .map(vendor -> new AdsVendor(vendor.id(), vendor.name(), vendor.account()))
+                .toList();
+        var defaultVendorId = options.stream()
+                .filter(vendor -> "sellfusion".equals(vendor.account()))
+                .map(AdsVendor::vendorId)
+                .findFirst()
+                .orElse(options.isEmpty() ? null : options.getFirst().vendorId());
+        return new AdsVendors(options, defaultVendorId);
+    }
+
+    public List<String> getAdsCampaignReportDates(UUID vendorId) {
+        try {
+            return mirrorDB.getAdsCampaignReportDates(vendorId).stream()
                     .map(LocalDate::toString)
                     .toList();
         } catch (SQLException e) {
@@ -110,27 +142,27 @@ public class API {
         }
     }
 
-    public AdsCampaignTableData getAdsCampaignsByReportDate(LocalDate reportDate) {
+    public AdsCampaignTableData getAdsCampaignsByReportDate(UUID vendorId, LocalDate reportDate) {
         try {
-            return mirrorDB.getAdsCampaignsByReportDate(reportDate);
+            return mirrorDB.getAdsCampaignsByReportDate(vendorId, reportDate);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load ads campaigns for report date " + reportDate + ".", e);
             return null;
         }
     }
 
-    public AdsCampaignTableData getAdsCampaigns(AdsReportPeriod period) {
+    public AdsCampaignTableData getAdsCampaigns(UUID vendorId, AdsReportPeriod period) {
         try {
-            return mirrorDB.getAdsCampaigns(period);
+            return mirrorDB.getAdsCampaigns(vendorId, period);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load ads campaigns for report period " + period.label() + ".", e);
             return null;
         }
     }
 
-    public List<String> getAdsAdsetReportDates(int campaignId) {
+    public List<String> getAdsAdsetReportDates(UUID vendorId, int campaignId) {
         try {
-            return mirrorDB.getAdsAdsetReportDates(campaignId).stream()
+            return mirrorDB.getAdsAdsetReportDates(vendorId, campaignId).stream()
                     .map(LocalDate::toString)
                     .toList();
         } catch (SQLException e) {
@@ -139,18 +171,18 @@ public class API {
         }
     }
 
-    public AdsAdsetTableData getAdsAdsetsByReportDate(int campaignId, LocalDate reportDate) {
+    public AdsAdsetTableData getAdsAdsetsByReportDate(UUID vendorId, int campaignId, LocalDate reportDate) {
         try {
-            return mirrorDB.getAdsAdsetsByReportDate(campaignId, reportDate);
+            return mirrorDB.getAdsAdsetsByReportDate(vendorId, campaignId, reportDate);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load ads adsets for campaign " + campaignId + " and report date " + reportDate + ".", e);
             return null;
         }
     }
 
-    public AdsAdsetTableData getAdsAdsets(int campaignId, AdsReportPeriod period) {
+    public AdsAdsetTableData getAdsAdsets(UUID vendorId, int campaignId, AdsReportPeriod period) {
         try {
-            return mirrorDB.getAdsAdsets(campaignId, period);
+            return mirrorDB.getAdsAdsets(vendorId, campaignId, period);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load ads adsets for campaign " + campaignId
                     + " and report period " + period.label() + ".", e);
@@ -158,9 +190,9 @@ public class API {
         }
     }
 
-    public AdsSearchPhraseTableData getAdsSearchPhrases(int campaignId, int adsetId, LocalDate reportDate) {
+    public AdsSearchPhraseTableData getAdsSearchPhrases(UUID vendorId, int campaignId, int adsetId, LocalDate reportDate) {
         try {
-            return mirrorDB.getAdsSearchPhrases(campaignId, adsetId, reportDate);
+            return mirrorDB.getAdsSearchPhrases(vendorId, campaignId, adsetId, reportDate);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load ads search phrases for campaign " + campaignId
                     + ", adset " + adsetId + ", and report date " + reportDate + ".", e);
@@ -168,9 +200,9 @@ public class API {
         }
     }
 
-    public AdsSearchPhraseTableData getAdsSearchPhrases(int campaignId, int adsetId, AdsReportPeriod period) {
+    public AdsSearchPhraseTableData getAdsSearchPhrases(UUID vendorId, int campaignId, int adsetId, AdsReportPeriod period) {
         try {
-            return mirrorDB.getAdsSearchPhrases(campaignId, adsetId, period);
+            return mirrorDB.getAdsSearchPhrases(vendorId, campaignId, adsetId, period);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load ads search phrases for campaign " + campaignId
                     + ", adset " + adsetId + ", and report period " + period.label() + ".", e);
@@ -178,9 +210,9 @@ public class API {
         }
     }
 
-    public AdsTargetedProductTableData getAdsTargetedProducts(int campaignId, int adsetId, LocalDate reportDate) {
+    public AdsTargetedProductTableData getAdsTargetedProducts(UUID vendorId, int campaignId, int adsetId, LocalDate reportDate) {
         try {
-            return mirrorDB.getAdsTargetedProducts(campaignId, adsetId, reportDate);
+            return mirrorDB.getAdsTargetedProducts(vendorId, campaignId, adsetId, reportDate);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load ads targeted products for campaign " + campaignId
                     + ", adset " + adsetId + ", and report date " + reportDate + ".", e);
@@ -188,9 +220,9 @@ public class API {
         }
     }
 
-    public AdsTargetedProductTableData getAdsTargetedProducts(int campaignId, int adsetId, AdsReportPeriod period) {
+    public AdsTargetedProductTableData getAdsTargetedProducts(UUID vendorId, int campaignId, int adsetId, AdsReportPeriod period) {
         try {
-            return mirrorDB.getAdsTargetedProducts(campaignId, adsetId, period);
+            return mirrorDB.getAdsTargetedProducts(vendorId, campaignId, adsetId, period);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load ads targeted products for campaign " + campaignId
                     + ", adset " + adsetId + ", and report period " + period.label() + ".", e);
@@ -198,9 +230,9 @@ public class API {
         }
     }
 
-    public AdsKeywordTableData getAdsKeywords(int campaignId, int adsetId, LocalDate reportDate) {
+    public AdsKeywordTableData getAdsKeywords(UUID vendorId, int campaignId, int adsetId, LocalDate reportDate) {
         try {
-            return mirrorDB.getAdsKeywords(campaignId, adsetId, reportDate);
+            return mirrorDB.getAdsKeywords(vendorId, campaignId, adsetId, reportDate);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load ads keywords for campaign " + campaignId
                     + ", adset " + adsetId + ", and report date " + reportDate + ".", e);
@@ -208,9 +240,9 @@ public class API {
         }
     }
 
-    public AdsKeywordTableData getAdsKeywords(int campaignId, int adsetId, AdsReportPeriod period) {
+    public AdsKeywordTableData getAdsKeywords(UUID vendorId, int campaignId, int adsetId, AdsReportPeriod period) {
         try {
-            return mirrorDB.getAdsKeywords(campaignId, adsetId, period);
+            return mirrorDB.getAdsKeywords(vendorId, campaignId, adsetId, period);
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load ads keywords for campaign " + campaignId
                     + ", adset " + adsetId + ", and report period " + period.label() + ".", e);

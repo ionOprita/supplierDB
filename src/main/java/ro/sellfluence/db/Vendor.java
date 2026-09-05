@@ -22,6 +22,28 @@ public record Vendor (UUID id, String name, boolean isFBE, String companyName, S
     private static final Logger logger = Logger.getLogger(Vendor.class.getName());
 
     /**
+     * Resolve an account to its sole vendor without assuming vendor UUIDs match across databases.
+     */
+    public static @NonNull UUID requireVendorIdByAccount(Connection db, String account) throws SQLException {
+        if (account == null || account.isBlank()) {
+            throw new SQLException("A vendor account is required.");
+        }
+        try (var s = db.prepareStatement("SELECT id FROM vendor WHERE account = ?")) {
+            s.setString(1, account);
+            try (var rs = s.executeQuery()) {
+                if (!rs.next()) {
+                    throw new SQLException("No vendor found for account '" + account + "'.");
+                }
+                var id = rs.getObject("id", UUID.class);
+                if (rs.next()) {
+                    throw new SQLException("More than one vendor found for account '" + account + "'.");
+                }
+                return id;
+            }
+        }
+    }
+
+    /**
      * Add or update vendor.
      *
      * @param db      the database connection.

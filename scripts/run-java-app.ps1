@@ -29,10 +29,6 @@ $PublicHttpsOrigin = "https://server.sellfusion.ro"
 $LocalHttpPort = 8080
 $LocalHttpsPort = 8443
 
-# Comma-separated eMAG Ads account aliases scheduled by the application.
-# The current Ads schema supports one production alias.
-$AdsAliases = "sellfusion"
-
 # Keep true for unattended production runs; false opens an interactive Chromium window.
 $AdsHeadless = $true
 
@@ -199,7 +195,6 @@ function Set-ApplicationEnvironment {
     $env:ORIGIN = $PublicHttpsOrigin
     $env:PUBLIC_HTTPS_ORIGIN = $PublicHttpsOrigin
     $env:RP_ID = $PublicHostName
-    $env:ADS_ALIASES = $AdsAliases
     $env:PLAYWRIGHT_BROWSERS_PATH = (Resolve-Path -LiteralPath $PlaywrightBrowsersPath).Path
     Add-JavaToolOption $(if ($AdsHeadless) { "-Dads.headless=true" } else { "-Dads.headless=false" })
     $env:TLS_KEYSTORE_PATH = $CertificatePath
@@ -321,7 +316,6 @@ Write-Log "JavaTempDirectory: $ResolvedJavaTempDirectory"
 Write-Log "PublicHttpsOrigin: $PublicHttpsOrigin"
 Write-Log "LocalHttpPort: $LocalHttpPort"
 Write-Log "LocalHttpsPort: $LocalHttpsPort"
-Write-Log "AdsAliases: $AdsAliases"
 Write-Log "AdsHeadless: $AdsHeadless"
 Write-Log "PlaywrightBrowsersPath: $PlaywrightBrowsersPath"
 Write-Log "CertificatePath: $CertificatePath"

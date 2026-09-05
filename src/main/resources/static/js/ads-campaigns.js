@@ -1,11 +1,13 @@
 import {fetchJSON} from './common.js';
 import {bindTableCsvDownload} from './table-common.js';
+import {adsVendorErrorMessage, loadAdsVendor} from './ads-vendor.js';
 import {
   adsPeriodFilePart,
   adsPeriodPhrase,
   adsPeriodSearchParams,
   bindAdsPeriodControls,
   isValidAdsPeriod,
+  parseAdsPeriod,
   replaceAdsPeriodInUrl,
   resolveAdsPeriod
 } from './ads-period.js';
@@ -15,6 +17,7 @@ const HEAD = document.getElementById('adsCampaignsHead');
 const BODY = document.getElementById('adsCampaignsBody');
 
 let currentColumns = [];
+let vendorId = '';
 let activePeriod = null;
 let latestRequestId = 0;
 
@@ -64,7 +67,7 @@ function appendCell(tr, row, column, index) {
     td.dataset.campaignId = campaignId;
     if (campaignId && isValidAdsPeriod(activePeriod)) {
       const link = document.createElement('a');
-      const params = adsPeriodSearchParams(activePeriod, {campaignId});
+      const params = adsPeriodSearchParams(activePeriod, {vendorId, campaignId});
       link.href = `/private/ads-adsets?${params.toString()}`;
       link.textContent = displayText;
       td.appendChild(link);
@@ -105,7 +108,7 @@ async function loadCampaigns(period, errorMessage = 'Failed to load campaigns.')
 
   const periodPhrase = adsPeriodPhrase(period);
   setStatus(`Loading campaigns ${periodPhrase}...`);
-  const params = adsPeriodSearchParams(period);
+  const params = adsPeriodSearchParams(period, {vendorId});
   try {
     const data = await fetchJSON(`/app/adsCampaigns?${params.toString()}`);
     if (requestId !== latestRequestId) {
@@ -129,10 +132,22 @@ async function loadCampaigns(period, errorMessage = 'Failed to load campaigns.')
 }
 
 async function init() {
-  const dates = await fetchJSON('/app/adsCampaignDates');
+  activePeriod = parseAdsPeriod(window.location.search);
+  const vendor = await loadAdsVendor({
+    allowDefault: true,
+    selectId: 'adsVendorSelect',
+    getPeriod: () => activePeriod
+  });
+  if (!vendor) {
+    renderMessageRow('No vendors with campaign reports found.');
+    return;
+  }
+  vendorId = vendor.vendorId;
+  const dateParams = new URLSearchParams({vendorId});
+  const dates = await fetchJSON(`/app/adsCampaignDates?${dateParams.toString()}`);
   const reportDates = Array.isArray(dates) ? dates : [];
   activePeriod = resolveAdsPeriod(window.location.search, reportDates);
-  replaceAdsPeriodInUrl(activePeriod);
+  replaceAdsPeriodInUrl(activePeriod, {vendorId});
 
   bindAdsPeriodControls({
     periodSelectId: 'adsCampaignPeriodSelect',
@@ -147,7 +162,7 @@ async function init() {
     initialPeriod: activePeriod,
     onApply: (period) => {
       activePeriod = period;
-      replaceAdsPeriodInUrl(period);
+      replaceAdsPeriodInUrl(period, {vendorId});
       loadCampaigns(period);
     }
   });
@@ -155,7 +170,7 @@ async function init() {
   bindTableCsvDownload({
     buttonId: 'downloadCsvBtn',
     tableId: 'adsCampaignsTable',
-    fileNameBuilder: ({datePart}) => `ads-campaigns-${adsPeriodFilePart(activePeriod, datePart)}.csv`
+    fileNameBuilder: ({datePart}) => `ads-campaigns-${vendorId}-${adsPeriodFilePart(activePeriod, datePart)}.csv`
   });
 
   await loadCampaigns(activePeriod, 'Failed to load campaign data.');
@@ -164,7 +179,7 @@ async function init() {
 init().catch((e) => {
   HEAD.innerHTML = '';
   currentColumns = [];
-  renderMessageRow('Failed to load campaign data.');
+  renderMessageRow(adsVendorErrorMessage(e, 'Failed to load campaign data.'));
   setStatus('');
   console.error(e);
 });

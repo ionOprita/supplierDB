@@ -1,5 +1,6 @@
 import {fetchJSON} from './common.js';
 import {bindTableCsvDownload} from './table-common.js';
+import {adsVendorErrorMessage, loadAdsVendor} from './ads-vendor.js';
 import {
   adsPeriodFilePart,
   adsPeriodPhrase,
@@ -115,7 +116,7 @@ function isNegativeKeyword(row) {
   return String(row?.values?.match_type ?? '').trim().toLowerCase() === 'negative';
 }
 
-async function loadKeywords(campaignId, adsetId, period, negativeOnly) {
+async function loadKeywords(vendorId, campaignId, adsetId, period, negativeOnly) {
   if (!campaignId || !adsetId || !isValidAdsPeriod(period)) {
     HEAD.innerHTML = '';
     currentColumns = [];
@@ -126,7 +127,7 @@ async function loadKeywords(campaignId, adsetId, period, negativeOnly) {
 
   const periodPhrase = adsPeriodPhrase(period);
   setStatus(`${negativeOnly ? 'Loading negative keywords' : 'Loading keywords'} ${periodPhrase}...`);
-  const params = adsPeriodSearchParams(period, {campaignId, adsetId});
+  const params = adsPeriodSearchParams(period, {vendorId, campaignId, adsetId});
   const data = await fetchJSON(`/app/adsKeywords?${params.toString()}`);
   setPageTitle(data, period, negativeOnly);
   currentColumns = Array.isArray(data.columns)
@@ -142,8 +143,10 @@ async function loadKeywords(campaignId, adsetId, period, negativeOnly) {
 }
 
 async function init() {
+  const {vendorId} = await loadAdsVendor();
   const {campaignId, adsetId, period, negativeOnly} = paramsFromUrl();
   replaceAdsPeriodInUrl(period, {
+    vendorId,
     campaignId,
     adsetId,
     negative: negativeOnly ? 'true' : null
@@ -155,17 +158,17 @@ async function init() {
     fileNameBuilder: ({datePart}) => {
       const periodPart = adsPeriodFilePart(period, datePart);
       const prefix = negativeOnly ? 'ads-negative-keywords' : 'ads-keywords';
-      return `${prefix}-${campaignId || 'campaign'}-${adsetId || 'adset'}-${periodPart}.csv`;
+      return `${prefix}-${vendorId}-${campaignId || 'campaign'}-${adsetId || 'adset'}-${periodPart}.csv`;
     }
   });
 
-  await loadKeywords(campaignId, adsetId, period, negativeOnly);
+  await loadKeywords(vendorId, campaignId, adsetId, period, negativeOnly);
 }
 
 init().catch((e) => {
   HEAD.innerHTML = '';
   currentColumns = [];
-  renderMessageRow('Failed to load keyword data.');
+  renderMessageRow(adsVendorErrorMessage(e, 'Failed to load keyword data.'));
   setStatus('');
   console.error(e);
 });

@@ -34,7 +34,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.regex.Pattern;
 
 import static com.google.common.base.Throwables.getStackTraceAsString;
 import static java.util.logging.Level.WARNING;
@@ -60,7 +59,6 @@ public class BackgroundJob {
     private static final Predicate<LocalDateTime> runOnlyInTheMorning = time -> time.getHour() < 7;
     private static final Predicate<LocalDateTime> runOnlyInTheAfternoon = time -> time.getHour() > 12 && time.getHour() < 18;
     private static final Predicate<LocalDateTime> runOnlyOutOfOfficeHours = time -> time.getHour() < 7 || time.getHour() > 18;
-    private static final Pattern SAFE_ALIAS = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_-]{0,63}");
 
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final Object taskControlLock = new Object();
@@ -79,14 +77,13 @@ public class BackgroundJob {
      *
      * @param db         application database
      * @param clock      scheduling clock; its zone must match the database session zone used for task timestamps
-     * @param adsAliases Ads-dashboard account aliases; currently at most one is accepted because Ads rows do not yet
-     *                   carry account provenance
+     * @param adsAliases all Ads-dashboard account aliases discovered from OTP-enabled credentials
      */
     public BackgroundJob(EmagMirrorDB db, Clock clock, List<String> adsAliases) {
         this(
                 new DBTaskStore(Objects.requireNonNull(db, "db")),
                 clock,
-                productionTaskDefinitions(db, clock, validateProductionAliases(adsAliases))
+                productionTaskDefinitions(db, clock, adsAliases)
         );
     }
 
@@ -320,7 +317,13 @@ public class BackgroundJob {
                 () -> UpdateEmployeeSheetsFromDB.updateSheets(db)
         ));
 
-        for (var alias : adsAliases) {
+        definitions.addAll(adsTaskDefinitions(db, clock, adsAliases));
+        return List.copyOf(definitions);
+    }
+
+    static List<TaskDefinition> adsTaskDefinitions(EmagMirrorDB db, Clock clock, List<String> aliases) {
+        var definitions = new ArrayList<TaskDefinition>();
+        for (var alias : aliases.stream().distinct().toList()) {
             addAdsTasks(definitions, db, clock, alias);
         }
         return List.copyOf(definitions);
@@ -396,25 +399,6 @@ public class BackgroundJob {
                     action.run(endDate.minusDays(31), endDate);
                 }
         );
-    }
-
-    static List<String> validateProductionAliases(List<String> aliases) {
-        Objects.requireNonNull(aliases, "adsAliases");
-        if (aliases.size() > 1) {
-            throw new IllegalArgumentException(
-                    "At most one Ads alias is supported until Ads database rows include alias provenance"
-            );
-        }
-        var result = new ArrayList<String>(aliases.size());
-        for (var alias : aliases) {
-            if (!SAFE_ALIAS.matcher(alias).matches()) {
-                throw new IllegalArgumentException(
-                        "Invalid Ads alias \"" + alias + "\"; expected 1-64 letters, digits, underscores, or hyphens"
-                );
-            }
-            result.add(alias);
-        }
-        return List.copyOf(result);
     }
 
     private void registerConfiguredTasks() {
