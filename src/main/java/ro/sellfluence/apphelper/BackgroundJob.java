@@ -80,7 +80,7 @@ public class BackgroundJob {
      * Create the production background-job scheduler with an owned worker pool sized to its configured lanes.
      *
      * @param db         application database
-     * @param clock      scheduling clock, normally using the {@code Europe/Bucharest} zone
+     * @param clock      scheduling clock; its zone must match the database session zone used for task timestamps
      * @param adsAliases Ads-dashboard account aliases; currently at most one is accepted because Ads rows do not yet
      *                   carry account provenance
      */

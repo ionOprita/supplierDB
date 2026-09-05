@@ -32,11 +32,11 @@ This split intentionally changes these standalone applications, which are not us
 
 ### Background-task lanes and eMAG Ads
 
-The server schedules background work in independent serial lanes. All existing eMAG API and Google Drive transfers use
-the `transfers` lane, while the four Ads dashboard imports use `ads:sellfusion`. Only one task can be active in a lane,
-but one transfer task and one Ads task can run at the same time.
+The server schedules background work in independent serial lanes. eMAG API transfers use `emagApiLane`, Google Drive
+and Sheets transfers use `googleApiLane`, and Ads tasks use `emagAdsLane:sellfusion`. Only one task can be active in a lane,
+but tasks in all three lanes can run at the same time.
 
-Ads imports run outside office hours in `Europe/Bucharest`, at most once every 24 hours after a successful run. Each run
+Ads imports start before 07:00 in the server JVM's local timezone, at most once every 24 hours after a successful run. Each run
 uses the completed 31-day interval `[today - 31 days, today)`. Campaigns and ad sets run first; keywords, search phrases,
 and targeted products are eligible only after a newer successful campaigns run. Failed Ads tasks retry after one hour.
 

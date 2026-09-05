@@ -3,7 +3,7 @@
  * Shared utilities to render a month-matrix table with a sticky header and first two columns,
  * plus a delegated click handler that opens a details window.
  */
-import {fetchJSON, formatDuration, formatLocalDateTime} from "./common.js";
+import {fetchJSON, formatDuration} from "./common.js";
 
 // --- helpers -------------------------------------------------------------
 
@@ -428,9 +428,18 @@ export function initMatrixTable(cfg) {
 export function arrayToDateTime(arr) {
   if (!Array.isArray(arr)) return null;
   const [y, m, d, hh, mm, ss, nano] = arr;
+  // Task timestamps are LocalDateTime fields, not UTC instants. Use UTC only as a
+  // stable container, paired with UTC getters below, to avoid browser timezone/DST shifts.
   // JS Date months are 0-based; nano to millis
   const ms = Math.floor((nano ?? 0) / 1_000_000);
   return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, ss ?? 0, ms));
+}
+
+function formatTaskDateTime(date) {
+  if (!date) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ` +
+      `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
 }
 
 export function toTaskRows(jsonData, pausedTaskNames = []) {
@@ -540,7 +549,7 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
     tr.appendChild(tdName);
     const tdStatus = document.createElement('td');
     if (isRunning) {
-      tdStatus.textContent = `RUNNING since ${formatLocalDateTime(row.started)}`;
+      tdStatus.textContent = `RUNNING since ${formatTaskDateTime(row.started)}`;
     } else if (isStarting) {
       tdStatus.textContent = 'STARTING (waiting for the background worker)';
     } else if (isCheckingResult) {
@@ -554,13 +563,13 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
     }
     tr.appendChild(tdStatus);
     const tdLastRun = document.createElement('td');
-    tdLastRun.textContent = formatLocalDateTime(row.terminated);
+    tdLastRun.textContent = formatTaskDateTime(row.terminated);
     tr.appendChild(tdLastRun);
     const tdDuration = document.createElement('td');
     tdDuration.textContent = formatDuration(row.durationOfLastRunSeconds);
     tr.appendChild(tdDuration);
     const tdLastSuccess = document.createElement('td');
-    tdLastSuccess.textContent = formatLocalDateTime(row.lastSuccessfulRun);
+    tdLastSuccess.textContent = formatTaskDateTime(row.lastSuccessfulRun);
     tr.appendChild(tdLastSuccess);
     const tdFailures = document.createElement('td');
     tdFailures.textContent = row.unsuccessfulRuns;

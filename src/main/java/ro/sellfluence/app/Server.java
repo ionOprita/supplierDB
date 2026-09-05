@@ -59,7 +59,6 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -105,7 +104,6 @@ public class Server {
     private static final String logDirectoryConfigName = "LOG_DIRECTORY";
     private static final String adsAliasesConfigName = "ADS_ALIASES";
     private static final String defaultAdsAlias = "sellfusion";
-    private static final ZoneId backgroundJobZone = ZoneId.of("Europe/Bucharest");
     private static final String acmeChallengePrefix = "/.well-known/acme-challenge/";
     private static final ObjectMapper mapper = (new ObjectMapper());
     private static final AtomicBoolean serverShutdownRequested = new AtomicBoolean(false);
@@ -672,7 +670,7 @@ public class Server {
         });
         BackgroundJob backgroundJob = new BackgroundJob(
                 mirrorDB,
-                Clock.system(backgroundJobZone),
+                Clock.systemDefaultZone(),
                 adsAliases
         );
 
