@@ -27,8 +27,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -66,35 +70,45 @@ public class BackgroundJob {
     private final Map<String, LaneClaim> activeClaims = new HashMap<>();
     private final TaskStore taskStore;
     private final Executor executor;
+    private final @Nullable ExecutorService ownedWorkers;
     private final Clock clock;
     private final List<TaskDefinition> taskDefinitions;
     private final Map<String, TaskDefinition> taskDefinitionsByName;
     private final Map<String, List<TaskDefinition>> taskDefinitionsByLane;
 
     /**
-     * Create the production background-job scheduler.
+     * Create the production background-job scheduler with an owned worker pool sized to its configured lanes.
      *
      * @param db         application database
-     * @param executor   executor used for task bodies; it needs enough threads for the desired cross-lane concurrency
      * @param clock      scheduling clock, normally using the {@code Europe/Bucharest} zone
      * @param adsAliases Ads-dashboard account aliases; currently at most one is accepted because Ads rows do not yet
      *                   carry account provenance
      */
-    public BackgroundJob(EmagMirrorDB db, Executor executor, Clock clock, List<String> adsAliases) {
+    public BackgroundJob(EmagMirrorDB db, Clock clock, List<String> adsAliases) {
         this(
                 new DBTaskStore(Objects.requireNonNull(db, "db")),
-                executor,
                 clock,
                 productionTaskDefinitions(db, clock, validateProductionAliases(adsAliases))
         );
     }
 
     /**
-     * Injectable construction seam for deterministic scheduler tests.
+     * Construct with an owned worker pool, also allowing lifecycle tests without a database.
+     */
+    BackgroundJob(TaskStore taskStore, Clock clock, List<TaskDefinition> taskDefinitions) {
+        this(taskStore, clock, taskDefinitions, null);
+    }
+
+    /**
+     * Injectable construction seam for deterministic scheduler tests. The caller retains ownership of the executor.
      */
     BackgroundJob(TaskStore taskStore, Executor executor, Clock clock, List<TaskDefinition> taskDefinitions) {
+        this(taskStore, clock, taskDefinitions, Objects.requireNonNull(executor, "executor"));
+    }
+
+    private BackgroundJob(TaskStore taskStore, Clock clock, List<TaskDefinition> taskDefinitions,
+                          @Nullable Executor executor) {
         this.taskStore = Objects.requireNonNull(taskStore, "taskStore");
-        this.executor = Objects.requireNonNull(executor, "executor");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.taskDefinitions = List.copyOf(taskDefinitions);
 
@@ -112,6 +126,19 @@ public class BackgroundJob {
         this.taskDefinitionsByLane = Collections.unmodifiableMap(immutableByLane);
 
         registerConfiguredTasks();
+
+        if (executor == null) {
+            var workerNumber = new AtomicInteger();
+            this.ownedWorkers = Executors.newFixedThreadPool(Math.max(1, taskDefinitionsByLane.size()), r -> {
+                Thread thread = new Thread(r, "BackgroundJob-Worker-" + workerNumber.incrementAndGet());
+                thread.setDaemon(true); // Don't prevent JVM shutdown
+                return thread;
+            });
+            this.executor = ownedWorkers;
+        } else {
+            this.ownedWorkers = null;
+            this.executor = executor;
+        }
     }
 
     public enum RunStatus {
@@ -648,7 +675,8 @@ public class BackgroundJob {
     }
 
     /**
-     * Prevent new submissions and release scheduler claims. Already-running task bodies may finish normally.
+     * Prevent new submissions and release scheduler claims. An owned worker pool gets up to ten seconds to finish
+     * before its tasks are interrupted. Injected executors remain the caller's responsibility.
      */
     public void shutdown() {
         synchronized (taskControlLock) {
@@ -656,6 +684,18 @@ public class BackgroundJob {
             activeClaims.clear();
         }
         logger.info("BackgroundJob: Shutdown requested");
+        if (ownedWorkers != null) {
+            ownedWorkers.shutdown();
+            try {
+                if (!ownedWorkers.awaitTermination(10, TimeUnit.SECONDS)) {
+                    logger.warning("Forcing shutdown of background-job workers.");
+                    ownedWorkers.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                ownedWorkers.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     private record LaneClaim(String lane, String taskName) {

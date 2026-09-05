@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -36,6 +37,42 @@ class BackgroundJobTest {
 
     private static final ZoneId BUCHAREST = ZoneId.of("Europe/Bucharest");
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 27, 20, 0);
+
+    @Test
+    void ownedWorkersRunAllLanesConcurrentlyAndTerminateOnShutdown() throws Exception {
+        var entered = new CountDownLatch(3);
+        var release = new CountDownLatch(1);
+        var completed = new AtomicInteger();
+        var workerThreads = new ConcurrentLinkedQueue<Thread>();
+        BackgroundJob.CheckedAction action = () -> {
+            workerThreads.add(Thread.currentThread());
+            waitInTask(entered, release);
+            completed.incrementAndGet();
+        };
+        var job = new BackgroundJob(new FakeTaskStore(), clockAt(NOW), List.of(
+                task("orders", "emag", action),
+                task("more-orders", "emag", action),
+                task("sheets", "google", action),
+                task("campaigns", "ads", action)
+        ));
+
+        try {
+            job.performWork();
+
+            assertTrue(entered.await(2, TimeUnit.SECONDS), "Every lane should have a worker available");
+            assertEquals(BUSY, job.requestRun("more-orders").status());
+        } finally {
+            release.countDown();
+            job.shutdown();
+        }
+
+        assertEquals(3, completed.get(), "Shutdown should wait for accepted tasks to finish");
+        assertEquals(SHUTTING_DOWN, job.requestRun("orders").status());
+        for (var thread : workerThreads) {
+            thread.join(2_000);
+            assertFalse(thread.isAlive(), "Owned workers should terminate on shutdown");
+        }
+    }
 
     @Test
     void acceptsDifferentLanesConcurrentlyAndBlocksTheSameLane() throws Exception {
@@ -65,8 +102,11 @@ class BackgroundJobTest {
             );
         } finally {
             release.countDown();
+            job.shutdown();
+            boolean callerExecutorWasShutDown = executor.isShutdown();
             executor.shutdownNow();
             assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS));
+            assertFalse(callerExecutorWasShutDown, "Injected executors should remain owned by their caller");
         }
     }
 

@@ -75,7 +75,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -671,15 +670,8 @@ public class Server {
             thread.setDaemon(true); // Don't prevent JVM shutdown
             return thread;
         });
-        AtomicInteger workerNumber = new AtomicInteger();
-        ExecutorService workers = Executors.newFixedThreadPool(2 + adsAliases.size(), r -> {
-            Thread thread = new Thread(r, "BackgroundJob-Worker-" + workerNumber.incrementAndGet());
-            thread.setDaemon(true); // Don't prevent JVM shutdown
-            return thread;
-        });
         BackgroundJob backgroundJob = new BackgroundJob(
                 mirrorDB,
-                workers,
                 Clock.system(backgroundJobZone),
                 adsAliases
         );
@@ -704,11 +696,9 @@ public class Server {
         // Graceful shutdown
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             //logger.info("Shutting down...");
-            backgroundJob.shutdown();
             dispatcher.shutdown();
-            workers.shutdown();
+            backgroundJob.shutdown();
             awaitTermination(dispatcher, "background-job dispatcher");
-            awaitTermination(workers, "background-job workers");
             app.stop();
         }));
     }
