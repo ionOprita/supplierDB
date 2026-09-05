@@ -2,10 +2,10 @@ package ro.sellfluence.apphelper;
 
 import ro.sellfluence.db.EmagFetchLog;
 import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.emagapi.EmagAccounts;
 import ro.sellfluence.emagapi.EmagApi;
 import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.RMAResult;
-import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 import ro.sellfluence.support.UserPassword;
 
@@ -13,10 +13,8 @@ import java.io.IOException;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.Period;
 import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.Callable;
 import java.util.logging.Logger;
 import java.util.random.RandomGenerator;
 
@@ -24,79 +22,20 @@ import static java.time.temporal.ChronoUnit.DAYS;
 import static java.time.temporal.ChronoUnit.MILLIS;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
-import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.db.EmagFetchLog.isDone;
-import static ro.sellfluence.support.Time.time;
 import static ro.sellfluence.support.Time.timeE;
 
 public class FetchEmagAPI {
 
     private static final Logger warnLogger = Logs.getConsoleAndFileLogger("EmagDBAppWarnings", WARNING, 5, 10_000_000);
     private static final Logger consoleLogger = Logs.getConsoleLogger("EmagDBApp", INFO);
-    private static final List<String> emagAccounts = List.of(
-            "koppel",
-            "koppelfbe",
-            "zoopiesolutions",
-            "judios",
-            "sellfusion"
-    );
 
     private static final RandomGenerator random = RandomGenerator.of("L64X128MixRandom");
     private static final LocalDate today = LocalDate.now();
 
-    public static void fetchFromEmag(EmagMirrorDB mirrorDB, Arguments arguments) {
-        try {
-            if (arguments.hasFlag("refetch_some")) { fetchAndStoreToDBProbabilistic(mirrorDB); }
-            else if (arguments.hasFlag("refetch_all")) { refetchAndStoreToDB(mirrorDB, Period.ofYears(3)); }
-            else if (!arguments.hasFlag("nofetch")) { fetchAndStoreToDB(mirrorDB); }
-            mirrorDB.updateGMVTable();
-            mirrorDB.updateStornoTable();
-        } catch (SQLException e) {
-            throw new RuntimeException("error initializing database", e);
-        } catch (IOException e) {
-            throw new RuntimeException("error connecting to the database", e);
-        } catch (InterruptedException e) {
-            throw new RuntimeException("Unexpected interrupted exception", e);
-        }
-    }
-
-    /**
-     * Logic for fetching data that follows this specification:
-     * <ul>
-     *     <li>Get orders with states 1-4 since the last time we fetched.</li>
-     *     <li>Get orders with states 5 for the last six months.</li>
-     *     <li>Reread all orders having status 0-3 in the database by order ID to see if their value has changed.</li>
-     *     <li>Get returns for the last six months.</li>
-     * </ul>
-     *
-     * @param mirrorDB to which to store the orders.
-     */
-    public static void fetchAndStoreToDB(EmagMirrorDB mirrorDB) throws IOException, InterruptedException, SQLException {
-        time(
-                "Fetch new orders",
-                () -> repeatUntilDone(() -> fetchNewOrders(mirrorDB))
-        );
-        time(
-                "Fetch orders that are not finalised in the database",
-                () -> repeatUntilDone(() -> fetchOrdersNotFinalizedInDB(mirrorDB, false))
-        );
-        time(
-                "Fetch storno orders",
-                () -> repeatUntilDone(() -> fetchStornoOrders(mirrorDB))
-        );
-        time(
-                "Fetch RMAs",
-                () -> repeatUntilDone(() -> fetchRMAs(mirrorDB))
-        );
-        timeE(
-                "Refresh return-rate materialized views",
-                mirrorDB::refreshReturnRateMaterializedViews
-        );
-    }
-
     public static Boolean fetchRMAs(EmagMirrorDB mirrorDB) {
-        for (String emagAccount : emagAccounts) {
+        for (UserPassword emagAccount : EmagAccounts.getAccounts(mirrorDB)) {
             System.out.println(emagAccount);
             try {
                 transferRMAsToDatabase(emagAccount, mirrorDB, LocalDate.now().minusMonths(6).atStartOfDay(), null);
@@ -108,7 +47,7 @@ public class FetchEmagAPI {
     }
 
     public static boolean fetchStornoOrders(EmagMirrorDB mirrorDB) {
-        for (String emagAccount : emagAccounts) {
+        for (UserPassword emagAccount : EmagAccounts.getAccounts(mirrorDB)) {
             System.out.println(emagAccount);
             try {
                 transferOrdersToDatabase(emagAccount, mirrorDB, null, null, LocalDate.now().minusMonths(6).atStartOfDay(), null, List.of(5), null);
@@ -125,21 +64,22 @@ public class FetchEmagAPI {
      * @param mirrorDB to which to store the orders.
      */
     public static boolean fetchNewOrders(EmagMirrorDB mirrorDB) {
-        for (String emagAccount : emagAccounts) {
+        for (UserPassword emagAccount : EmagAccounts.getAccounts(mirrorDB)) {
             try {
                 var startOfFetch = LocalDateTime.now();
                 LocalDateTime lastFetchTime;
+                String alias = emagAccount.getUsername();
                 try {
-                    lastFetchTime = mirrorDB.getLastFetchTimeByAccount(emagAccount);
+                    lastFetchTime = mirrorDB.getLastFetchTimeByAccount(alias);
                 } catch (NullPointerException e) {
                     lastFetchTime = null;
                 }
                 if (lastFetchTime == null) {
                     lastFetchTime = startOfFetch.minusMonths(2);
                 }
-                System.out.printf("%s since %s.%n", emagAccount, lastFetchTime);
+                System.out.printf("%s since %s.%n", alias, lastFetchTime);
                 transferOrdersToDatabase(emagAccount, mirrorDB, lastFetchTime, null, null, null, List.of(1, 2, 3, 4), null);
-                mirrorDB.saveLastFetchTime(emagAccount, startOfFetch);
+                mirrorDB.saveLastFetchTime(alias, startOfFetch);
             } catch (IOException | InterruptedException | SQLException e) {
                 throw new RuntimeException(e);
             }
@@ -150,9 +90,9 @@ public class FetchEmagAPI {
     public static boolean fetchOrdersNotFinalizedInDB(EmagMirrorDB mirrorDB, boolean newOnly) {
         try {
             var ordersInProgress = mirrorDB.readOrderIdForOpenOrdersByVendor(newOnly);
-            for (String emagAccount : emagAccounts) {
-                System.out.println(emagAccount);
-                List<String> orderIds = ordersInProgress.get(emagAccount);
+            for (UserPassword emagAccount : EmagAccounts.getAccounts(mirrorDB)) {
+                consoleLogger.log(INFO, "Fetch not finalized orders for %s.".formatted(emagAccount));
+                List<String> orderIds = ordersInProgress.get(emagAccount.getUsername());
                 if (orderIds != null) {
                     for (String orderId : orderIds) {
                         transferOrdersToDatabase(emagAccount, mirrorDB, null, null, null, null, null, orderId);
@@ -174,68 +114,14 @@ public class FetchEmagAPI {
     public static void fetchAndStoreToDBProbabilistic(EmagMirrorDB mirrorDB) throws SQLException {
         var oldestDay = today.minusYears(2);
         cleanupFetchLogs(mirrorDB, oldestDay);
-        repeatUntilDone(
-                () -> {
-                    boolean result = false;
+
                     var day = today;
                     while (day.isAfter(oldestDay)) {
-                        result = fetchAllForDay(day, mirrorDB);
+                        fetchAllForDay(day, mirrorDB);
                         day = day.minusDays(1);
                     }
-                    return result;
-                }
-        );
-        timeE(
-                "Refresh return-rate materialized views",
-                mirrorDB::refreshReturnRateMaterializedViews
-        );
-    }
 
-    /**
-     * Unconditionally fetch all data for the given period.
-     *
-     * @param mirrorDB the database to use.
-     * @param period how far back from today to fetch.
-     */
-    private static void refetchAndStoreToDB(EmagMirrorDB mirrorDB, Period period) throws SQLException {
-        final var maxRetries = 4;
-        var chunkSize = Period.ofWeeks(1);
-        var endTime = LocalDateTime.now();
-        var startTime = endTime.minus(chunkSize);
-        var limit = endTime.minus(period);
-        var retryCount = maxRetries;
-        while (endTime.isAfter(limit)) {
-            if (startTime.isBefore(limit)) {
-                startTime = limit;
-            }
-            for (String account : emagAccounts) {
-                consoleLogger.log(INFO, "Refetch from %s for %s–%s".formatted(account, startTime, endTime));
-                Exception exception = null;
-                var ordersTransferred = 0;
-                var rmasTransferred = 0;
-                try {
-                    ordersTransferred = transferOrdersToDatabase(account, mirrorDB, startTime, endTime, null, null, null, null);
-                    rmasTransferred = transferRMAsToDatabase(account, mirrorDB, startTime, endTime);
-                } catch (Exception e) {
-                    warnLogger.log(WARNING, "Some error occurred", e);
-                    exception = e;
-                } finally {
-                    if (exception != null) {
-                        if (retryCount == 0) {
-                            warnLogger.log(SEVERE, "No more retries possible for the fetch for %s from %s to %s.".formatted(account, startTime, endTime), exception);
-                        } else {
-                            retryCount--;
-                            warnLogger.log(WARNING, "Retrying fetch for %s from %s to %s, retry count %d.".formatted(account, startTime, endTime, retryCount), exception);
-                        }
-                    } else {
-                        retryCount = maxRetries;
-                        consoleLogger.log(FINE, "Transferred %d orders and %d RMAs".formatted(ordersTransferred, rmasTransferred));
-                    }
-                }
-            }
-            endTime = startTime;
-            startTime = endTime.minus(chunkSize);
-        }
+
         timeE(
                 "Refresh return-rate materialized views",
                 mirrorDB::refreshReturnRateMaterializedViews
@@ -244,7 +130,8 @@ public class FetchEmagAPI {
 
     /**
      * Drop from the emag_fetch_log all entries for days older than the given one.
-     * @param mirrorDB the database to use.
+     *
+     * @param mirrorDB  the database to use.
      * @param oldestDay cutoff date.
      */
     private static void cleanupFetchLogs(EmagMirrorDB mirrorDB, LocalDate oldestDay) {
@@ -256,34 +143,13 @@ public class FetchEmagAPI {
         }
     }
 
-    private static boolean repeatUntilDone(Callable<Boolean> callable) {
-        boolean allFetched;
-        var result = false;
-        do {
-            try {
-                result = callable.call();
-                allFetched = true;
-            } catch (Exception e) {
-                allFetched = false;
-                warnLogger.log(WARNING, "Waiting for a minute because of an exception ", e);
-                e.printStackTrace();
-                try {
-                    Thread.sleep(60_000);
-                } catch (InterruptedException ex) {
-                    // Ignored
-                }
-            }
-        } while (!allFetched);
-        return result;
-    }
-
-    private static boolean fetchAllForDay(LocalDate day, EmagMirrorDB mirrorDB) throws Exception {
+    private static boolean fetchAllForDay(LocalDate day, EmagMirrorDB mirrorDB) throws SQLException {
         var startTime = day.atStartOfDay();
         var endTime = startTime.plusDays(1);
         var dayWasFullyFetched = true;
-        for (String account : emagAccounts) {
+        for (UserPassword account : EmagAccounts.getAccounts(mirrorDB)) {
             // Check in the database when it was last fetched.
-            var fetchStatus = mirrorDB.getFetchStatus(account, day).orElse(null);
+            var fetchStatus = mirrorDB.getFetchStatus(account.getUsername(), day).orElse(null);
             dayWasFullyFetched = dayWasFullyFetched && isDone(fetchStatus);
             if (needsFetch(fetchStatus)) {
                 consoleLogger.log(INFO, "Fetch from %s for %s–%s".formatted(account, startTime, endTime));
@@ -300,9 +166,9 @@ public class FetchEmagAPI {
                 } finally {
                     var fetchEndTime = LocalDateTime.now();
                     var error = (exception != null) ? exception.getMessage() : null;
-                    mirrorDB.addEmagLog(account, day, fetchEndTime, error);
+                    mirrorDB.addEmagLog(account.getUsername(), day, fetchEndTime, error);
                     consoleLogger.log(FINE, "Transferred %d orders and %d RMAs in %.2f seconds".formatted(ordersTransferred, rmasTransferred, fetchStartTime.until(fetchEndTime, MILLIS) / 1000.0));
-                    if (exception != null) throw exception;
+                    if (exception != null) throw new RuntimeException(exception);
                 }
                 // If emag connection issues get high, maybe add in again Thread.sleep(1_000);
             }
@@ -338,7 +204,7 @@ public class FetchEmagAPI {
      * Determine the probability depending on the number of days passed and the number of days since the
      * last time the data for this day was fetched.
      *
-     * @param daysPassed Number of days between order creation and today.
+     * @param daysPassed               Number of days between order creation and today.
      * @param daysPassedSinceLastFetch Number of days since last fetch and today.
      * @return a probability between 0.0 and 1.0, 0.0 meaning `never`, 1.0 meaning 100% aka `will always happen`.
      */
@@ -369,13 +235,13 @@ public class FetchEmagAPI {
         return probability;
     }
 
-    private static int transferOrdersToDatabase(String account, EmagMirrorDB mirrorDB, LocalDateTime createdAfter, LocalDateTime createdBefore, LocalDateTime modifiedAfter, LocalDateTime modifiedBefore, List<Integer> statusList, String orderId) throws IOException, InterruptedException {
+    private static int transferOrdersToDatabase(UserPassword account, EmagMirrorDB mirrorDB, LocalDateTime createdAfter, LocalDateTime createdBefore, LocalDateTime modifiedAfter, LocalDateTime modifiedBefore, List<Integer> statusList, String orderId) throws IOException, InterruptedException {
         var orders = readFromEmag(account, createdAfter, createdBefore, modifiedAfter, modifiedBefore, statusList, orderId);
         if (orders != null) {
             orders.forEach(orderResult ->
                     {
                         try {
-                            mirrorDB.addOrder(orderResult, account);
+                            mirrorDB.addOrder(orderResult, account.getUsername());
                         } catch (SQLException e) {
                             throw new RuntimeException("Error inserting order " + orderResult, e);
                         }
@@ -386,7 +252,7 @@ public class FetchEmagAPI {
         return 0;
     }
 
-    private static int transferRMAsToDatabase(String account, EmagMirrorDB mirrorDB, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
+    private static int transferRMAsToDatabase(UserPassword account, EmagMirrorDB mirrorDB, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
         var rmas = readRMAFromEmag(account, startTime, endTime);
         if (rmas != null) {
             rmas.forEach(rma ->
@@ -403,43 +269,32 @@ public class FetchEmagAPI {
         return 0;
     }
 
-    private static List<OrderResult> readFromEmag(String alias, LocalDateTime createdAfter, LocalDateTime createdBefore, LocalDateTime modifiedAfter, LocalDateTime modifiedBefore, List<Integer> statusList, String id) throws IOException, InterruptedException {
-        var emagCredentials = UserPassword.findAlias(alias);
-        if (emagCredentials == null) {
-            warnLogger.log(WARNING, "Missing credentials for alias " + alias);
-        } else {
-            var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
-            var filter = new HashMap<String, Object>();
-            filter.put("itemsPerPage", 300);
-            if (createdAfter != null) filter.put("createdAfter", createdAfter);
-            if (createdBefore != null) filter.put("createdBefore", createdBefore);
-            if (modifiedAfter != null) filter.put("modifiedAfter", modifiedAfter);
-            if (modifiedBefore != null) filter.put("modifiedBefore", modifiedBefore);
-            if (statusList != null) filter.put("status", statusList);
-            if (id != null) filter.put("id", id);
-            return emag.readRequest("order", filter, null, OrderResult.class);
-        }
-        return null;
+    private static List<OrderResult> readFromEmag(UserPassword emagCredentials, LocalDateTime createdAfter, LocalDateTime createdBefore, LocalDateTime modifiedAfter, LocalDateTime modifiedBefore, List<Integer> statusList, String id) throws IOException, InterruptedException {
+        var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+        var filter = new HashMap<String, Object>();
+        filter.put("itemsPerPage", 300);
+        if (createdAfter != null) filter.put("createdAfter", createdAfter);
+        if (createdBefore != null) filter.put("createdBefore", createdBefore);
+        if (modifiedAfter != null) filter.put("modifiedAfter", modifiedAfter);
+        if (modifiedBefore != null) filter.put("modifiedBefore", modifiedBefore);
+        if (statusList != null) filter.put("status", statusList);
+        if (id != null) filter.put("id", id);
+        return emag.readRequest("order", filter, null, OrderResult.class);
     }
 
-    private static List<RMAResult> readRMAFromEmag(String alias, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
-        var emagCredentials = UserPassword.findAlias(alias);
-        if (emagCredentials == null) {
-            warnLogger.log(WARNING, "Missing credentials for alias " + alias);
-        } else {
-            var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
-            var filter = new HashMap<String, Object>();
-            if (startTime != null) {
-                filter.put("date_start", startTime);
-            }
-            if (endTime != null) {
-                filter.put("date_end", endTime);
-            }
-            return emag.readRequest("rma",
-                    filter,
-                    null,
-                    RMAResult.class);
+    private static List<RMAResult> readRMAFromEmag(UserPassword emagCredentials, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
+        var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+        var filter = new HashMap<String, Object>();
+        if (startTime != null) {
+            filter.put("date_start", startTime);
         }
-        return null;
+        if (endTime != null) {
+            filter.put("date_end", endTime);
+        }
+        return emag.readRequest("rma",
+                filter,
+                null,
+                RMAResult.class);
+
     }
 }
