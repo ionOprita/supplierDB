@@ -1,7 +1,6 @@
 package ro.sellfluence.apphelper;
 
 import org.jspecify.annotations.Nullable;
-import ro.sellfluence.app.EmagDBApp;
 import ro.sellfluence.app.PopulateDateComenziFromDB;
 import ro.sellfluence.app.PopulateProductsTableFromSheets;
 import ro.sellfluence.app.PopulateStornoAndReturns;
@@ -258,7 +257,7 @@ public class BackgroundJob {
         definitions.add(new TaskDefinition(
                 "Fetch new orders from eMAG and update GMV in DB", emagApiLane, executeHourly, runAlways,
                 () -> {
-                    EmagDBApp.fetchNewOrders(db);
+                    FetchEmagAPI.fetchNewOrders(db);
                     db.updateGMVTable();
                 }
         ));
@@ -266,7 +265,7 @@ public class BackgroundJob {
                 "Fetch not finalized orders from last 30 days eMAG and update GMV in DB",
                 emagApiLane, executeHourly, runAlways,
                 () -> {
-                    EmagDBApp.fetchOrdersNotFinalizedInDB(db, true);
+                    FetchEmagAPI.fetchOrdersNotFinalizedInDB(db, true);
                     db.updateGMVTable();
                 }
         ));
@@ -274,28 +273,28 @@ public class BackgroundJob {
                 "Fetch not finalized orders and update GMV in DB", emagApiLane, executeDaily,
                 runOnlyOutOfOfficeHours,
                 () -> {
-                    EmagDBApp.fetchOrdersNotFinalizedInDB(db, false);
+                    FetchEmagAPI.fetchOrdersNotFinalizedInDB(db, false);
                     db.updateGMVTable();
                 }
         ));
         definitions.add(new TaskDefinition(
                 "Fetch storno orders from eMAG and update GMV in DB", emagApiLane, executeHourly, runAlways,
                 () -> {
-                    EmagDBApp.fetchStornoOrders(db);
+                    FetchEmagAPI.fetchStornoOrders(db);
                     db.updateGMVTable();
                 }
         ));
         definitions.add(new TaskDefinition(
                 "Fetch RMAs from eMAG and update GMV in DB", emagApiLane, executeHourly, runAlways,
                 () -> {
-                    EmagDBApp.fetchRMAs(db);
+                    FetchEmagAPI.fetchRMAs(db);
                     db.updateGMVTable();
                 }
         ));
         definitions.add(new TaskDefinition(
                 "Refetch some from eMAG and update GMV in DB", emagApiLane, executeWeekly, runAlways,
                 () -> {
-                    EmagDBApp.fetchAndStoreToDBProbabilistic(db);
+                    FetchEmagAPI.fetchAndStoreToDBProbabilistic(db);
                     db.updateGMVTable();
                 }
         ));

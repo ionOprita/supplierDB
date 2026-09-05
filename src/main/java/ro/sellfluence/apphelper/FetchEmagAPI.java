@@ -1,4 +1,4 @@
-package ro.sellfluence.app;
+package ro.sellfluence.apphelper;
 
 import ro.sellfluence.db.EmagFetchLog;
 import ro.sellfluence.db.EmagMirrorDB;
@@ -26,22 +26,17 @@ import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
-import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
-import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.db.EmagFetchLog.isDone;
 import static ro.sellfluence.support.Time.time;
 import static ro.sellfluence.support.Time.timeE;
 
-public class EmagDBApp {
+public class FetchEmagAPI {
 
     private static final Logger warnLogger = Logs.getConsoleAndFileLogger("EmagDBAppWarnings", WARNING, 5, 10_000_000);
     private static final Logger consoleLogger = Logs.getConsoleLogger("EmagDBApp", INFO);
     private static final List<String> emagAccounts = List.of(
             "koppel",
             "koppelfbe",
-//            "sellfluence",
-//            "zoopieconcept",
-//            "zoopieinvest",
             "zoopiesolutions",
             "judios",
             "sellfusion"
@@ -49,14 +44,6 @@ public class EmagDBApp {
 
     private static final RandomGenerator random = RandomGenerator.of("L64X128MixRandom");
     private static final LocalDate today = LocalDate.now();
-
-    public static void main(String[] args) throws SQLException, IOException {
-        System.setProperty("java.util.logging.SimpleFormatter.format", "%1$tF %1$tT %4$s %5$s (%2$s)%n");
-        EmagApi.setAPILogLevel(INFO);
-        var arguments = new Arguments(args);
-        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
-        fetchFromEmag(mirrorDB, arguments);
-    }
 
     public static void fetchFromEmag(EmagMirrorDB mirrorDB, Arguments arguments) {
         try {

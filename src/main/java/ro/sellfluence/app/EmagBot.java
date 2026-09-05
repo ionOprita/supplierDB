@@ -1,5 +1,6 @@
 package ro.sellfluence.app;
 
+import ro.sellfluence.apphelper.FetchEmagAPI;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
@@ -27,7 +28,7 @@ public class EmagBot {
         logger.log(INFO, "Back up the %s database.%n".formatted(dbAlias));
         backupDB(dbAlias);
         logger.log(INFO, "Syncing the %s database.%n".formatted(dbAlias));
-        EmagDBApp.fetchFromEmag(mirrorDB, arguments);
+        FetchEmagAPI.fetchFromEmag(mirrorDB, arguments);
         logger.log(INFO, "Update the product table of database %s.".formatted(dbAlias));
         try {
             PopulateProductsTableFromSheets.updateProductTable(mirrorDB);
