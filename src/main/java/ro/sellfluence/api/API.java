@@ -26,6 +26,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -48,6 +49,22 @@ public class API {
 
     public API(EmagMirrorDB db) {
         mirrorDB = db;
+    }
+
+    public ProductPerformanceMockData.Response getProductPerformance() {
+        return ProductPerformanceMockData.create();
+    }
+
+    public ProductPerformanceOptions.Response getProductPerformanceOptions() throws SQLException {
+        return ProductPerformanceOptions.create(mirrorDB.getAllVendors(), mirrorDB.readProducts());
+    }
+
+    public Optional<ProductPerformanceMockData.Response> getProductPerformance(UUID vendorId, String productCode)
+            throws SQLException {
+        var vendors = mirrorDB.getAllVendors();
+        return mirrorDB.readProduct(productCode)
+                .flatMap(product -> ProductPerformanceOptions.resolve(vendors, product, vendorId, productCode))
+                .map(ProductPerformanceMockData::create);
     }
 
     record ProductForFrontend(String name, String id) {
