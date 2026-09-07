@@ -7,7 +7,8 @@ import test from 'node:test';
 const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const common = moduleUrl(await readFile(new URL('../../main/resources/static/js/common.js', import.meta.url), 'utf8'));
 const source = await readFile(new URL('../../main/resources/static/js/product-performance.js', import.meta.url), 'utf8');
-const {formatPerformanceValue: format} = await import(moduleUrl(source.replace("'./common.js'", JSON.stringify(common))));
+const {formatPerformanceValue: format, formatPerformancePeriod: formatPeriod,
+  visiblePerformanceRows} = await import(moduleUrl(source.replace("'./common.js'", JSON.stringify(common))));
 
 test('formats numeric values like the spreadsheet, including fractional percentages', () => {
   assert.equal(format(43488, 'integer'), '43,488');
@@ -33,4 +34,17 @@ test('renders ISO calendar dates without time-zone shifts or invalid date rollov
   for (const value of ['2026-02-30', '2026-13-01', '2026-05-01T00:00:00Z', 'bad']) {
     assert.equal(format(value, 'date'), '—');
   }
+});
+
+test('formats weekly ranges and monthly period labels', () => {
+  assert.equal(formatPeriod('2026-05-08'), '08 May 26 - 14 May 26');
+  assert.equal(formatPeriod('2026-05-08', 'month'), 'May 2026');
+  assert.equal(formatPeriod('2026-02-30'), '—');
+});
+
+test('limits visible rows to the latest 20 unless everything is requested', () => {
+  const rows = Array.from({length: 25}, (_, index) => index);
+  assert.deepEqual(visiblePerformanceRows(rows, false), rows.slice(5));
+  assert.deepEqual(visiblePerformanceRows(rows, true), rows);
+  assert.deepEqual(visiblePerformanceRows(rows.slice(0, 3), false), [0, 1, 2]);
 });

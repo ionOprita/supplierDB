@@ -22,7 +22,7 @@ class ProductPerformanceMockDataTest {
         assertEquals(List.of(10, 13, 15, 15, 15, 15),
                 response.groups().stream().map(group -> group.columns().size()).toList());
         assertEquals(List.of("Week", "Stock", "GMV 30", "Clicks", "Sales Price", "Conv.",
-                        "Perform.", "Average price / W.", "# rev.", "rating"),
+                        "Perform.", "Average price", "# rev.", "rating"),
                 response.groups().getFirst().columns().stream()
                         .map(ProductPerformanceMockData.Column::label).toList());
 

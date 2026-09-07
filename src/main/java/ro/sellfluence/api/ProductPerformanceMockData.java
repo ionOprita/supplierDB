@@ -26,7 +26,7 @@ public final class ProductPerformanceMockData {
                     column("salesPrice", "Sales Price", "decimal"),
                     column("conversion", "Conv.", "percent"),
                     column("performance", "Perform.", "text"),
-                    column("averagePrice", "Average price / W.", "decimal"),
+                    column("averagePrice", "Average price", "decimal"),
                     column("reviews", "# rev.", "integer"),
                     column("rating", "rating", "decimal")
             )),
@@ -138,7 +138,7 @@ public final class ProductPerformanceMockData {
 
     private static double sampleDecimal(Column column, Random random) {
         return switch (column.label()) {
-            case "Sales Price", "Average price / W." -> random.nextInt(8000, 30_001) / 100.0;
+            case "Sales Price", "Average price" -> random.nextInt(8000, 30_001) / 100.0;
             case "rating" -> random.nextInt(350, 501) / 100.0;
             case "CPC" -> random.nextInt(25, 801) / 100.0;
             case "ROAS" -> random.nextInt(50, 601) / 100.0;

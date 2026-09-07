@@ -8,19 +8,40 @@ const numberFormats = {
 const dateFormat = new Intl.DateTimeFormat('en-GB', {
   day: '2-digit', month: 'short', year: '2-digit', timeZone: 'UTC'
 });
+const monthFormat = new Intl.DateTimeFormat('en-US', {
+  month: 'long', year: 'numeric', timeZone: 'UTC'
+});
+
+function parsePerformanceDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value ? null : date;
+}
 
 export function formatPerformanceValue(value, type) {
   if (value == null || value === '') return '—';
   if (type === 'date') {
-    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return '—';
-    const date = new Date(`${value}T00:00:00Z`);
-    return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value
-      ? '—' : dateFormat.formatToParts(date)
-        .map(part => part.type === 'month' ? part.value.slice(0, 3) : part.value).join('');
+    const date = parsePerformanceDate(value);
+    return date ? dateFormat.formatToParts(date)
+        .map(part => part.type === 'month' ? part.value.slice(0, 3) : part.value).join('') : '—';
   }
   const formatter = numberFormats[type];
   if (formatter) return typeof value === 'number' && Number.isFinite(value) ? formatter.format(value) : '—';
   return String(value);
+}
+
+export function formatPerformancePeriod(value, mode = 'week') {
+  const date = parsePerformanceDate(value);
+  if (!date) return '—';
+  if (mode === 'month') return monthFormat.format(date);
+  const end = new Date(date.getTime());
+  end.setUTCDate(end.getUTCDate() + 6);
+  return `${formatPerformanceValue(value, 'date')} - ${dateFormat.formatToParts(end)
+    .map(part => part.type === 'month' ? part.value.slice(0, 3) : part.value).join('')}`;
+}
+
+export function visiblePerformanceRows(rows, showEverything) {
+  return showEverything ? rows : rows.slice(-20);
 }
 
 export function initProductPerformance() {
@@ -43,6 +64,8 @@ export function initProductPerformance() {
   let frozenHeaders = [];
   let resizeFrame = 0;
   let tableWidth = 0;
+  let periodMode = 'week';
+  let showEverything = false;
   const resizeObserver = new ResizeObserver(() => {
     if (resizeFrame) return;
     resizeFrame = requestAnimationFrame(() => {
@@ -121,10 +144,41 @@ export function initProductPerformance() {
       const week = group.columns.find(column => column.key === 'week');
       if (week) {
         const header = document.createElement('th');
-        header.textContent = week.label;
         header.scope = 'col';
         header.rowSpan = 2;
         header.className = 'pp-week';
+        const controls = document.createElement('div');
+        controls.className = 'pp-period-controls';
+
+        const periodSelect = document.createElement('select');
+        periodSelect.className = 'pp-period-select';
+        periodSelect.setAttribute('aria-label', 'Performance period');
+        for (const [value, label] of [['week', 'Week'], ['month', 'Month']]) {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = label;
+          periodSelect.appendChild(option);
+        }
+        periodSelect.value = periodMode;
+        periodSelect.addEventListener('change', () => {
+          periodMode = periodSelect.value;
+          renderRows(currentRows);
+          updateStatus(currentRows);
+        });
+
+        const everythingLabel = document.createElement('label');
+        everythingLabel.className = 'pp-everything-label';
+        const everything = document.createElement('input');
+        everything.type = 'checkbox';
+        everything.checked = showEverything;
+        everything.addEventListener('change', () => {
+          showEverything = everything.checked;
+          renderRows(currentRows);
+          updateStatus(currentRows);
+        });
+        everythingLabel.append(everything, document.createTextNode('Show everything'));
+        controls.append(periodSelect, everythingLabel);
+        header.appendChild(controls);
         markFrozen(header, week.key);
         groupRow.appendChild(header);
       }
@@ -162,15 +216,20 @@ export function initProductPerformance() {
     frozenHeaders.forEach(header => resizeObserver.observe(header));
   }
 
+  let currentRows = [];
+
   function renderRows(rows) {
+    currentRows = rows;
     body.replaceChildren();
     const fragment = document.createDocumentFragment();
-    for (const row of rows) {
+    for (const row of visiblePerformanceRows(rows, showEverything)) {
       const tr = document.createElement('tr');
       for (const column of columns) {
         const isWeek = column.key === 'week';
         const cell = document.createElement(isWeek ? 'th' : 'td');
-        cell.textContent = formatPerformanceValue(row.values?.[column.key], column.type);
+        cell.textContent = isWeek
+          ? formatPerformancePeriod(row.values?.[column.key], periodMode)
+          : formatPerformanceValue(row.values?.[column.key], column.type);
         if (isWeek) {
           cell.scope = 'row';
           cell.className = 'pp-week';
@@ -185,6 +244,19 @@ export function initProductPerformance() {
       fragment.appendChild(tr);
     }
     body.appendChild(fragment);
+  }
+
+  function updateStatus(rows) {
+    const visibleRows = visiblePerformanceRows(rows, showEverything);
+    if (!visibleRows.length) {
+      status.textContent = `No ${periodMode} product performance data available.`;
+      retry.hidden = false;
+      return;
+    }
+    const first = formatPerformancePeriod(visibleRows[0].values?.week, periodMode);
+    const last = formatPerformancePeriod(visibleRows[visibleRows.length - 1].values?.week, periodMode);
+    const noun = periodMode === 'week' ? 'week' : 'month';
+    status.textContent = `${visibleRows.length} ${visibleRows.length === 1 ? noun : `${noun}s`} · ${first} – ${last}. Scroll horizontally for all advertising groups.`;
   }
 
   function fillSelect(select, items, emptyLabel, key, label) {
@@ -302,17 +374,11 @@ export function initProductPerformance() {
       if (data.mock === true) table.setAttribute('aria-describedby', 'productPerformancePreview');
       else table.removeAttribute('aria-describedby');
       renderHeaders(data.groups);
+      table.setAttribute('aria-label', `${periodMode === 'week' ? 'Weekly' : 'Monthly'} product and advertising performance`);
       renderRows(data.rows);
       wrap.hidden = false;
       updateFrozenOffsets();
-      if (!data.rows.length) {
-        status.textContent = 'No weekly product performance data available.';
-        retry.hidden = false;
-      } else {
-        const first = formatPerformanceValue(data.rows[0].values?.week, 'date');
-        const last = formatPerformanceValue(data.rows[data.rows.length - 1].values?.week, 'date');
-        status.textContent = `${data.rows.length} ${data.rows.length === 1 ? 'week' : 'weeks'} · ${first} – ${last}. Scroll horizontally for all advertising groups.`;
-      }
+      updateStatus(data.rows);
     } catch (error) {
       if (version !== requestVersion) return;
       status.textContent = 'Unable to load product performance. Please try again.';
