@@ -221,7 +221,7 @@ class FetchAdsTest {
     }
 
     @Test
-    void doesNotRetryOtherPlaywrightFailures() {
+    void retriesPlaywrightFailuresAndRethrowsAfterFourRetries() {
         var calls = new AtomicInteger();
         var delays = new ArrayList<Long>();
         var failure = new PlaywrightException("browser closed");
@@ -236,8 +236,8 @@ class FetchAdsTest {
         ));
 
         assertSame(failure, thrown);
-        assertEquals(1, calls.get());
-        assertTrue(delays.isEmpty());
+        assertEquals(5, calls.get());
+        assertEquals(List.of(10_000L, 20_000L, 40_000L, 80_000L), delays);
     }
 
     @Test

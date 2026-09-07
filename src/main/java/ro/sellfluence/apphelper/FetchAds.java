@@ -6,6 +6,7 @@ import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
+import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.TimeoutError;
 import com.microsoft.playwright.options.AriaRole;
 import org.apache.hc.core5.net.URIBuilder;
@@ -721,6 +722,23 @@ public class FetchAds {
                 }
                 logger.log(WARNING, "eMAG Ads request timed out for %s. Retrying after %d s; retries remaining=%d."
                         .formatted(url, retryDelay / 1_000, retriesRemaining));
+                retriesRemaining--;
+                try {
+                    sleeper.sleep(retryDelay);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(
+                            "Interrupted while waiting to retry eMAG Ads request for %s.".formatted(url),
+                            interrupted
+                    );
+                }
+                retryDelay *= 2;
+            } catch (PlaywrightException playwrightException) {
+                if (retriesRemaining == 0) {
+                    throw playwrightException;
+                }
+                logger.log(WARNING, "eMAG Ads request ended with PlaywrightException %s for %s. Retrying after %d s; retries remaining=%d."
+                        .formatted(playwrightException.getMessage(), url, retryDelay / 1_000, retriesRemaining));
                 retriesRemaining--;
                 try {
                     sleeper.sleep(retryDelay);
