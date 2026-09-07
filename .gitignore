@@ -39,8 +39,9 @@ build/
 ### Do not store generated classes ###
 /jte-classes/
 
-### Package for local experiments. ###
+### Package for local experiments and temporary documents. ###
 /src/main/java/zzz/
+/tmpdocs/
 
 ### API documentation from emag
 /emag-marketplace-api-documentation-*.*
