@@ -54,6 +54,9 @@ export function initProductPerformance() {
   const table = byId('Table');
   const vendorSelect = byId('VendorSelect');
   const productSelect = byId('ProductSelect');
+  const reportErrors = byId('Errors');
+  const errorSummary = byId('ErrorSummary');
+  const errorList = byId('ErrorList');
   let vendors = [];
   let currentVendor = null;
   let currentProduct = null;
@@ -64,7 +67,7 @@ export function initProductPerformance() {
   let frozenHeaders = [];
   let resizeFrame = 0;
   let tableWidth = 0;
-  let periodMode = 'week';
+  let periodMode = new URLSearchParams(window.location.search).get('period') === 'month' ? 'month' : 'week';
   let showEverything = false;
   const resizeObserver = new ResizeObserver(() => {
     if (resizeFrame) return;
@@ -162,8 +165,9 @@ export function initProductPerformance() {
         periodSelect.value = periodMode;
         periodSelect.addEventListener('change', () => {
           periodMode = periodSelect.value;
-          renderRows(currentRows);
-          updateStatus(currentRows);
+          updateSelectionUrl();
+          // Period metrics and ratios are aggregated together on the server.
+          load();
         });
 
         const everythingLabel = document.createElement('label');
@@ -217,6 +221,26 @@ export function initProductPerformance() {
   }
 
   let currentRows = [];
+
+  function renderErrors(errors) {
+    errorList.replaceChildren();
+    reportErrors.hidden = !errors.length;
+    reportErrors.open = false;
+    if (!errors.length) {
+      errorSummary.textContent = '';
+      table.removeAttribute('aria-describedby');
+      return;
+    }
+    errorSummary.textContent = `Partial report: ${errors.length} data ${errors.length === 1 ? 'issue' : 'issues'}. Affected metrics are shown as —.`;
+    table.setAttribute('aria-describedby', 'productPerformanceErrorSummary');
+    for (const error of errors) {
+      const item = document.createElement('li');
+      const matchTypes = Array.isArray(error.matchTypes) && error.matchTypes.length
+        ? error.matchTypes.join(', ') : 'none';
+      item.textContent = `Campaign ${error.campaignId} · Adset ${error.adsetId} · Report date ${error.reportDate} · Match types: ${matchTypes}. ${error.message || ''}`;
+      errorList.appendChild(item);
+    }
+  }
 
   function renderRows(rows) {
     currentRows = rows;
@@ -279,7 +303,9 @@ export function initProductPerformance() {
 
   function clearReport() {
     byId('Product').hidden = true;
+    currentRows = [];
     body.replaceChildren();
+    renderErrors([]);
     wrap.hidden = true;
   }
 
@@ -289,6 +315,7 @@ export function initProductPerformance() {
     else url.searchParams.delete('vendorId');
     if (currentProduct) url.searchParams.set('productCode', currentProduct.productCode);
     else url.searchParams.delete('productCode');
+    url.searchParams.set('period', periodMode);
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
   }
 
@@ -356,7 +383,8 @@ export function initProductPerformance() {
   async function load() {
     if (!currentVendor || !currentProduct) return;
     const version = ++requestVersion;
-    const params = new URLSearchParams({vendorId: currentVendor.vendorId, productCode: currentProduct.productCode});
+    const params = new URLSearchParams({vendorId: currentVendor.vendorId,
+      productCode: currentProduct.productCode, period: periodMode});
     retryAction = load;
     clearReport();
     retry.hidden = true;
@@ -370,11 +398,10 @@ export function initProductPerformance() {
         throw new Error('Invalid product performance response');
       }
       renderProduct(data.product || {});
-      byId('Preview').hidden = data.mock !== true;
-      if (data.mock === true) table.setAttribute('aria-describedby', 'productPerformancePreview');
-      else table.removeAttribute('aria-describedby');
+      renderErrors(Array.isArray(data.errors) ? data.errors : []);
       renderHeaders(data.groups);
       table.setAttribute('aria-label', `${periodMode === 'week' ? 'Weekly' : 'Monthly'} product and advertising performance`);
+      wrap.setAttribute('aria-label', `${periodMode === 'week' ? 'Weekly' : 'Monthly'} product performance; scroll to view all advertising groups`);
       renderRows(data.rows);
       wrap.hidden = false;
       updateFrozenOffsets();

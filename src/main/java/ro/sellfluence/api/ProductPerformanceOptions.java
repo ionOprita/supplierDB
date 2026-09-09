@@ -47,7 +47,7 @@ public final class ProductPerformanceOptions {
         return new Response(options, sortedVendors.defaultVendorId());
     }
 
-    static Optional<ProductPerformanceMockData.Product> resolve(
+    static Optional<ProductPerformanceData.Product> resolve(
             List<Vendor> vendors, ProductInfo product, UUID vendorId, String productCode) {
         if (vendorId == null || productCode == null || productCode.isBlank() || product == null
                 || !vendorId.equals(product.vendor()) || !productCode.equals(product.productCode())) {
@@ -56,7 +56,7 @@ public final class ProductPerformanceOptions {
         return vendors.stream()
                 .filter(vendor -> vendorId.equals(vendor.id()))
                 .findFirst()
-                .map(vendor -> new ProductPerformanceMockData.Product(vendorLabel(vendor), productName(product),
+                .map(vendor -> new ProductPerformanceData.Product(vendorLabel(vendor), productName(product),
                         blankToNull(product.pnk()), productUrl(product)));
     }
 

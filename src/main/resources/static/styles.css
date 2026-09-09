@@ -954,13 +954,22 @@ code {
   text-underline-offset: .2em;
 }
 
-.pp-preview {
-  margin: 0;
-  padding: .3rem .55rem;
+.pp-errors {
+  margin: 0 0 .75rem;
+  padding: .6rem .8rem;
   border: 1px solid var(--border);
   border-radius: 5px;
   background: var(--pp-exact);
-  font-size: .8rem;
+  font-size: .85rem;
+}
+
+.pp-errors summary {
+  cursor: pointer;
+}
+
+.pp-errors li {
+  margin: .35rem 0;
+  overflow-wrap: anywhere;
 }
 
 .pp-status-bar {

@@ -12,6 +12,7 @@ import ro.sellfluence.db.Vendor;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
+import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
 import ro.sellfluence.db.Task;
 import ro.sellfluence.support.DoubleWindow;
 import ro.sellfluence.support.Statistics;
@@ -51,20 +52,28 @@ public class API {
         mirrorDB = db;
     }
 
-    public ProductPerformanceMockData.Response getProductPerformance() {
-        return ProductPerformanceMockData.create();
-    }
-
     public ProductPerformanceOptions.Response getProductPerformanceOptions() throws SQLException {
         return ProductPerformanceOptions.create(mirrorDB.getAllVendors(), mirrorDB.readProducts());
     }
 
-    public Optional<ProductPerformanceMockData.Response> getProductPerformance(UUID vendorId, String productCode)
+    public Optional<ProductPerformanceData.Response> getProductPerformance(UUID vendorId, String productCode)
             throws SQLException {
+        return getProductPerformance(vendorId, productCode, ProductPerformanceData.Period.WEEK);
+    }
+
+    public Optional<ProductPerformanceData.Response> getProductPerformance(
+            UUID vendorId, String productCode, ProductPerformanceData.Period period) throws SQLException {
+        if (vendorId == null || productCode == null || productCode.isBlank()) return Optional.empty();
         var vendors = mirrorDB.getAllVendors();
-        return mirrorDB.readProduct(productCode)
-                .flatMap(product -> ProductPerformanceOptions.resolve(vendors, product, vendorId, productCode))
-                .map(ProductPerformanceMockData::create);
+        var product = mirrorDB.readProduct(productCode)
+                .flatMap(info -> ProductPerformanceOptions.resolve(vendors, info, vendorId, productCode));
+        if (product.isEmpty()) return Optional.empty();
+        // Validate ownership before querying advertising snapshots. Products without a PNK still
+        // have valid metadata, but no available advertising history can be attributed to them.
+        var metadata = product.orElseThrow();
+        var snapshots = metadata.pnk() == null ? List.<DailyAdset>of()
+                : mirrorDB.getProductPerformanceAdsets(vendorId, metadata.pnk());
+        return Optional.of(ProductPerformanceData.create(metadata, period, snapshots));
     }
 
     record ProductForFrontend(String name, String id) {

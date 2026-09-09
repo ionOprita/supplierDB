@@ -167,6 +167,11 @@ public class EmagMirrorDB {
         return database.readTX(AdsCampaignTable::getVendors);
     }
 
+    public List<ProductPerformanceTable.DailyAdset> getProductPerformanceAdsets(UUID vendorId, String pnk)
+            throws SQLException {
+        return database.readTX(db -> ProductPerformanceTable.getDailyAdsets(db, vendorId, pnk));
+    }
+
     public int addOrUpdateAdCampaigns(UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         return database.writeTX(db -> upsertCampaigns(db, vendorId, campaigns));
     }

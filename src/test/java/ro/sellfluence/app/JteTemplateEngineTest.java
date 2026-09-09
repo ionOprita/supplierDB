@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JteTemplateEngineTest {
     @Test
-    void rendersProductPerformancePreviewWithoutDatabaseParameters() {
+    void rendersProductPerformanceWithPartialReportDetails() {
         StringOutput output = new StringOutput();
 
         Server.createJteEngine().render("product-performance.jte", Map.of(
@@ -27,7 +27,10 @@ class JteTemplateEngineTest {
 
         var html = output.toString();
         assertTrue(html.contains("/private/product-performance"));
-        assertTrue(html.contains("Preview — generated mock data"));
+        assertFalse(html.contains("mock data"));
+        assertTrue(html.contains("id=\"productPerformanceErrors\""));
+        assertTrue(html.contains("id=\"productPerformanceErrorSummary\""));
+        assertTrue(html.contains("id=\"productPerformanceErrorList\""));
         assertTrue(html.contains("id=\"productPerformanceTable\""));
         assertTrue(html.contains("src=\"/js/product-performance.js\""));
     }
