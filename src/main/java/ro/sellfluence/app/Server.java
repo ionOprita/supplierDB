@@ -26,6 +26,7 @@ import io.javalin.validation.Validator;
 import org.jspecify.annotations.Nullable;
 import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
+import ro.sellfluence.api.ProductPerformanceData.Period;
 import ro.sellfluence.api.WebAuthnServer;
 import ro.sellfluence.apphelper.BackgroundJob;
 import ro.sellfluence.db.AdsReportPeriod;
@@ -990,20 +991,21 @@ public class Server {
         app.get("/app/productPerformance", ctx -> {
             final ProductPerformanceRequest request;
             try {
-                request = parseProductPerformanceRequest(ctx.queryParam("vendorId"), ctx.queryParam("productCode"));
+                request = parseProductPerformanceRequest(ctx.queryParam("vendorId"), ctx.queryParam("productCode"),
+                        ctx.queryParam("period"));
             } catch (IllegalArgumentException e) {
                 ctx.status(400).json(Map.of("error", e.getMessage()));
                 return;
             }
             try {
-                var response = api.getProductPerformance(request.vendorId(), request.productCode());
+                var response = api.getProductPerformance(request.vendorId(), request.productCode(), request.period());
                 if (response.isEmpty()) {
                     ctx.status(404).json(Map.of("error", "Product not found for the selected vendor"));
                 } else {
                     ctx.json(response.get());
                 }
             } catch (SQLException e) {
-                logger.log(SEVERE, "Failed to load product performance metadata.", e);
+                logger.log(SEVERE, "Failed to load product performance.", e);
                 ctx.status(500).json(Map.of("error", "Database error"));
             }
         });
@@ -2534,15 +2536,15 @@ public class Server {
         return UUID.fromString(value);
     }
 
-    record ProductPerformanceRequest(UUID vendorId, String productCode) {
+    record ProductPerformanceRequest(UUID vendorId, String productCode, Period period) {
     }
 
-    static ProductPerformanceRequest parseProductPerformanceRequest(String vendorId, String productCode) {
+    static ProductPerformanceRequest parseProductPerformanceRequest(String vendorId, String productCode, String period) {
         var parsedVendorId = parseAdsVendorId(vendorId);
         if (productCode == null || productCode.isBlank()) {
             throw new IllegalArgumentException("Invalid or missing productCode");
         }
-        return new ProductPerformanceRequest(parsedVendorId, productCode);
+        return new ProductPerformanceRequest(parsedVendorId, productCode, Period.parse(period));
     }
 
     private static AdsReportPeriod parseAdsReportPeriod(Context ctx) {

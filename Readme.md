@@ -62,6 +62,12 @@ Production configuration:
 - Missing credentials, HTTP/API errors, malformed responses, and interrupted waits fail the task and are recorded in the
   task history rather than being reported as successful imports.
 
+### Product performance
+
+The product-performance dashboard aggregates active daily adset/campaign snapshots into
+Monday–Sunday weeks or calendar months. See [Product performance calculations](doc/ProductPerformance.md)
+for product matching, sources, formulas, unavailable columns, and partial-report errors.
+
 ### Ads database tests
 
 The PostgreSQL migration and storage tests require `ADS_TEST_DB_URL` pointing to a disposable PostgreSQL database,

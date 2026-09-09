@@ -17,14 +17,18 @@
                     <a id="productPerformanceLink" target="_blank" rel="noopener noreferrer" hidden>View on eMAG ↗</a>
                 </div>
             </div>
-            <p id="productPerformancePreview" class="pp-preview">Preview — generated mock data</p>
         </div>
         <div class="pp-status-bar">
             <p id="productPerformanceStatus" class="muted" role="status" aria-live="polite">Loading vendors and products…</p>
             <button id="productPerformanceRetry" type="button" hidden>Retry</button>
         </div>
+        <details id="productPerformanceErrors" class="pp-errors" hidden>
+            <summary id="productPerformanceErrorSummary"></summary>
+            <p>Affected metrics and their dependent totals and shares are unavailable. Unaffected sections and periods remain usable.</p>
+            <ul id="productPerformanceErrorList"></ul>
+        </details>
         <div id="productPerformanceWrap" class="wrap pp-wrap" role="region" aria-label="Weekly product performance; scroll to view all advertising groups" aria-busy="true" tabindex="0" hidden>
-            <table id="productPerformanceTable" class="pp-table" aria-label="Weekly product and advertising performance" aria-describedby="productPerformancePreview">
+            <table id="productPerformanceTable" class="pp-table" aria-label="Weekly product and advertising performance">
                 <thead id="productPerformanceHead"></thead>
                 <tbody id="productPerformanceBody"></tbody>
             </table>

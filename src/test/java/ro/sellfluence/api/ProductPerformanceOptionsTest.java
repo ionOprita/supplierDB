@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -97,23 +98,23 @@ class ProductPerformanceOptionsTest {
     }
 
     @Test
-    void usesActualProductAndVendorMetadataWhileKeepingWeeklyMetricsMocked() {
+    void usesActualProductAndVendorMetadataWithoutManufacturingHistory() {
         var vendor = vendor("Actual vendor", "actual-account");
         var product = product(vendor.id(), "ACTUAL-CODE", "Actual product", "ACTUAL-PNK",
                 "https://www.emag.ro/actual-product/pd/ACTUAL-PNK");
         var metadata = ProductPerformanceOptions.resolve(List.of(vendor), product, vendor.id(), "ACTUAL-CODE")
                 .orElseThrow();
-        var response = ProductPerformanceMockData.create(metadata);
+        var response = ProductPerformanceData.create(metadata, ProductPerformanceData.Period.WEEK, List.of());
 
-        assertTrue(response.mock());
-        assertEquals(new ProductPerformanceMockData.Product("Actual vendor", "Actual product", "ACTUAL-PNK",
+        assertFalse(response.mock());
+        assertEquals(new ProductPerformanceData.Product("Actual vendor", "Actual product", "ACTUAL-PNK",
                 "https://www.emag.ro/actual-product/pd/ACTUAL-PNK"), response.product());
-        assertEquals(ProductPerformanceMockData.create().rows(), response.rows());
-        assertEquals(19, response.rows().size());
+        assertTrue(response.rows().isEmpty());
+        assertTrue(response.errors().isEmpty());
 
         var mapper = new ObjectMapper();
         var json = mapper.readTree(mapper.writeValueAsString(response));
-        assertTrue(json.get("mock").asBoolean());
+        assertFalse(json.get("mock").asBoolean());
         assertEquals("Actual product", json.get("product").get("name").asString());
         assertEquals("Actual vendor", json.get("product").get("label").asString());
     }
