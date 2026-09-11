@@ -9,6 +9,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -187,6 +188,112 @@ class ProductPerformanceDataTest {
     }
 
     @Test
+    void missingKeywordTypesWithKnownZeroMetricsPreserveObservedWeeksAndMonths() {
+        for (var period : List.of(WEEK, MONTH)) {
+            for (var types : List.of(List.<String>of(), List.of("negative", "negative"))) {
+                var response = ProductPerformanceData.create(PRODUCT, period, List.of(
+                        snapshot("2026-08-31", "keywords", types, metrics(0, 0, "0.0000", "0E+3", 0, 0)),
+                        snapshot("2026-09-08", "keywords", types, metrics(0, 0, "0", "0.00", 0, 0))));
+                assertTrue(response.errors().isEmpty(), period + " " + types);
+                assertEquals(period == WEEK ? List.of("2026-08-31", "2026-09-07")
+                                : List.of("2026-08-01", "2026-09-01"),
+                        response.rows().stream().map(row -> row.values().get("week")).toList());
+                for (var row : response.rows()) {
+                    var values = row.values();
+                    assertEquals(66, values.values().stream().filter(Number.class::isInstance).count());
+                    values.forEach((key, value) -> {
+                        if (value instanceof Number) assertNumber(values, key, "0");
+                    });
+                }
+            }
+        }
+    }
+
+    @Test
+    void missingKeywordTypesWithKnownZeroMetricsLeaveExistingTotalsRatesAndSharesUnchanged() {
+        for (var period : List.of(WEEK, MONTH)) {
+            var baseline = ProductPerformanceData.create(PRODUCT, period, weightedSample());
+            var snapshots = new ArrayList<>(weightedSample());
+            snapshots.addFirst(snapshot("2026-09-08", "keywords", List.of(), metrics(0, 0, "0.00", "0", 0, 0)));
+            snapshots.add(snapshot("2026-09-09", "keywords", List.of("negative"), metrics(0, 0, "0", "0.000", 0, 0)));
+            var response = ProductPerformanceData.create(PRODUCT, period, snapshots);
+            assertTrue(response.errors().isEmpty());
+            assertEquals(baseline.rows(), response.rows());
+        }
+    }
+
+    @Test
+    void missingKeywordTypesStillInvalidateMetricsIfAnyPrimitiveIsNonzeroOrUnknown() {
+        var uncertainMetrics = List.of(
+                metrics(5, 0, "0", "0", 0, 0),
+                metrics(0, 1, "0", "0", 0, 0),
+                metrics(0, 0, "0.01", "0", 0, 0),
+                metrics(0, 0, "0", "0.01", 0, 0),
+                metrics(0, 0, "0", "0", 1, 0),
+                metrics(0, 0, "0", "0", 0, 1),
+                metrics(0, 0, "-0.01", "0", 0, 0),
+                new Primitives(null, 0L, BigDecimal.ZERO, BigDecimal.ZERO, 0L, 0L),
+                new Primitives(0L, null, BigDecimal.ZERO, BigDecimal.ZERO, 0L, 0L),
+                new Primitives(0L, 0L, null, BigDecimal.ZERO, 0L, 0L),
+                new Primitives(0L, 0L, BigDecimal.ZERO, null, 0L, 0L),
+                new Primitives(0L, 0L, BigDecimal.ZERO, BigDecimal.ZERO, null, 0L),
+                new Primitives(0L, 0L, BigDecimal.ZERO, BigDecimal.ZERO, 0L, null));
+        for (var types : List.of(List.<String>of(), List.of("negative"))) {
+            for (var metrics : uncertainMetrics) {
+                var response = ProductPerformanceData.create(PRODUCT, WEEK,
+                        List.of(snapshot("2026-06-12", "keywords", types, metrics)));
+                assertEquals(1, response.errors().size(), types + " " + metrics);
+                assertEquals("INVALID_KEYWORD_MATCH_TYPE", response.errors().getFirst().code());
+                assertTrue(response.errors().getFirst().matchTypes().isEmpty());
+                assertKeywordSectionsUnavailable(response.rows().getFirst().values());
+                assertEquals(0L, response.rows().getFirst().values().get("auto_impressions"));
+            }
+        }
+    }
+
+    @Test
+    void allZeroMetricsDoNotExemptConflictingOrUnsupportedKeywordTypes() {
+        for (var types : List.of(List.of("broad", "exact", "negative"), List.of("phrase"),
+                List.of("(missing)"), List.of("broad", "phrase"))) {
+            var response = ProductPerformanceData.create(PRODUCT, WEEK,
+                    List.of(snapshot("2026-09-08", "keywords", types, metrics(0, 0, "0", "0", 0, 0))));
+            assertEquals(1, response.errors().size(), types.toString());
+            assertEquals("INVALID_KEYWORD_MATCH_TYPE", response.errors().getFirst().code());
+            assertKeywordSectionsUnavailable(response.rows().getFirst().values());
+        }
+    }
+
+    @Test
+    void exemptZeroSnapshotsPreserveOtherErrorsAndInvalidationRegardlessOfOrder() {
+        var snapshots = new ArrayList<>(weightedSample());
+        snapshots.add(snapshot("2026-09-08", "keywords", List.of(), metrics(5, 0, "0", "0", 0, 0)));
+        var ambiguous = snapshot("2026-09-09", "auto", List.of(), metrics(100, 10, "10", "50", 4, 2));
+        snapshots.add(new DailyAdset(ambiguous.key(), ambiguous.targeting(), ambiguous.matchTypes(),
+                List.of("ACTUALPNK", "OTHERPNK"), ambiguous.metrics()));
+        for (var period : List.of(WEEK, MONTH)) {
+            var baseline = ProductPerformanceData.create(PRODUCT, period, snapshots);
+            assertEquals(2, baseline.errors().size());
+            var withZeros = new ArrayList<>(snapshots);
+            withZeros.addFirst(snapshot("2026-09-08", "keywords", List.of(), metrics(0, 0, "0", "0", 0, 0)));
+            withZeros.add(snapshot("2026-09-09", "keywords", List.of("negative"), metrics(0, 0, "0", "0", 0, 0)));
+            var response = ProductPerformanceData.create(PRODUCT, period, withZeros);
+            assertEquals(baseline.errors(), response.errors());
+            assertEquals(baseline.rows(), response.rows());
+        }
+    }
+
+    @Test
+    void zeroMetricsWithMissingKeywordTypesStillReportAmbiguousProductAttribution() {
+        var zero = snapshot("2026-09-08", "keywords", List.of(), metrics(0, 0, "0", "0", 0, 0));
+        var ambiguous = new DailyAdset(zero.key(), zero.targeting(), zero.matchTypes(),
+                List.of("ACTUALPNK", "OTHERPNK"), zero.metrics());
+        var response = ProductPerformanceData.create(PRODUCT, WEEK, List.of(ambiguous));
+        assertEquals(1, response.errors().size());
+        assertEquals("AMBIGUOUS_PRODUCT_ATTRIBUTION", response.errors().getFirst().code());
+        assertTrue(response.errors().getFirst().message().contains("OTHERPNK"));
+    }
+
+    @Test
     void invalidKeywordClassificationInvalidatesBothKeywordSectionsTotalsAndEveryShareForItsPeriod() {
         for (var types : List.of(List.<String>of(), List.of("negative"), List.of("broad", "exact", "negative"),
                 List.of("phrase"), List.of("(missing)"), List.of("broad", "phrase"))) {
@@ -323,6 +430,14 @@ class ProductPerformanceDataTest {
     private static DailyAdset snapshot(String date, String targeting, List<String> matchTypes, Primitives metrics) {
         return new DailyAdset(new AdsAdsetKey(VENDOR, LocalDate.parse(date), 17, 23), targeting,
                 matchTypes, List.of("ACTUALPNK"), metrics);
+    }
+
+    private static void assertKeywordSectionsUnavailable(Map<String, Object> values) {
+        values.forEach((key, value) -> {
+            if (key.startsWith("broad_") || key.startsWith("exact_") || key.startsWith("total_") || key.endsWith("_share")) {
+                assertNull(value, key);
+            }
+        });
     }
 
     private static void assertMetrics(Map<String, Object> values, String prefix, long impressions, long clicks,

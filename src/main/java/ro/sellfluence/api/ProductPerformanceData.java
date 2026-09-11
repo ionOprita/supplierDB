@@ -169,6 +169,8 @@ public final class ProductPerformanceData {
             if ("products".equals(snapshot.targeting())) return Category.PRODUCT;
             if ("keywords".equals(snapshot.targeting())) {
                 var types = matchTypes(snapshot);
+                // A known zero contribution needs no category and cannot affect totals or shares.
+                if (types.isEmpty() && allZero(snapshot.metrics())) return null;
                 if (types.size() == 1) {
                     if ("broad".equals(types.getFirst())) return Category.BROAD;
                     if ("exact".equals(types.getFirst())) return Category.EXACT;
@@ -210,6 +212,15 @@ public final class ProductPerformanceData {
             // Map.copyOf rejects nulls, which intentionally represent unavailable cells here.
             return new Row(Collections.unmodifiableMap(values));
         }
+    }
+
+    private static boolean allZero(Primitives metrics) {
+        return metrics.impressions() != null && metrics.impressions() == 0L
+                && metrics.clicks() != null && metrics.clicks() == 0L
+                && metrics.spend() != null && metrics.spend().signum() == 0
+                && metrics.sales() != null && metrics.sales().signum() == 0
+                && metrics.units() != null && metrics.units() == 0L
+                && metrics.salesCount() != null && metrics.salesCount() == 0L;
     }
 
     private static List<String> matchTypes(DailyAdset snapshot) {
