@@ -34,8 +34,16 @@ For a keyword adset, distinct `ads_keyword.match_type` values are collected for 
 same **vendor_id, report_date, campaign_id, adset_id**. `negative` entries are ignored;
 keyword status is not a filter. Exactly one remaining type must exist and must be
 `broad` or `exact`. No remaining type, both types, or any unsupported/null type is an
-error. Classification produces one result per adset snapshot, so joining multiple
-keywords cannot multiply the adset's values.
+error, except for the all-zero case below. Classification produces one result per
+adset snapshot, so joining multiple keywords cannot multiply the adset's values.
+
+When no non-negative match type remains, classification is unnecessary if all six
+adset primitives (impressions, clicks, spend, sales, sold units, and sales count) are
+present and numerically zero. Such a snapshot produces no keyword-classification
+error and preserves its observed week/month without assigning a category or
+invalidating totals and shares. Any nonzero or missing primitive prevents this
+exception. Conflicting or unsupported match types still produce errors, and other
+validations still run.
 
 All numeric advertising inputs come from `ads_adset`. No numeric keyword or targeted
 product values are read, and `ads_search_phrase` is not used at all.
