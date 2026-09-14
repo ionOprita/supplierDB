@@ -1,8 +1,8 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="EmagBot refetch_all" type="Application" factoryName="Application">
-    <option name="MAIN_CLASS_NAME" value="ro.sellfluence.app.EmagBot" />
+  <configuration default="false" name="EmagDBApp nofetch" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="ro.sellfluence.apphelper.FetchEmagAPI" />
     <module name="emagDB" />
-    <option name="PROGRAM_PARAMETERS" value="--refetch_all" />
+    <option name="PROGRAM_PARAMETERS" value="--nofetch" />
     <option name="WORKING_DIRECTORY" value="$ContentRoot$" />
     <extension name="coverage">
       <pattern>

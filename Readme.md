@@ -33,8 +33,8 @@ This split intentionally changes these standalone applications, which are not us
 ### Background-task lanes and eMAG Ads
 
 The server schedules background work in independent serial lanes. eMAG API transfers use `emagApiLane`, Google Drive
-and Sheets transfers use `googleApiLane`, and Ads tasks use `emagAdsLane:sellfusion`. Only one task can be active in a lane,
-but tasks in all three lanes can run at the same time.
+and Sheets transfers use `googleApiLane`, and each Ads account has its own `emagAdsLane:<account>` lane. Only one task
+can be active in a lane, but tasks in different lanes can run at the same time.
 
 Ads imports start before 07:00 in the server JVM's local timezone, at most once every 24 hours after a successful run. Each run
 uses the completed 31-day interval `[today - 31 days, today)`. Campaigns and ad sets run first; keywords, search phrases,
@@ -42,8 +42,16 @@ and targeted products are eligible only after a newer successful campaigns run. 
 
 Production configuration:
 
-- `ADS_ALIASES` is a comma-separated credential-alias list and defaults to `sellfusion`. The current Ads database schema
-  has no account column, so startup deliberately rejects more than one alias.
+- At startup, Ads tasks are registered for every account returned by `EmagAccounts.getOTPAccounts`, with duplicate aliases
+  registered once. There is no account filter; restart the server after changing the available accounts. If no accounts are
+  returned, other background jobs continue without Ads tasks.
+- Each Ads account must match exactly one `vendor.account`. All Ads rows, keys, imports, and reports include that vendor's
+  UUID, so different vendors can use identical campaign and ad-set IDs. Migration 39 assigns historical Ads to the vendor
+  whose account is `sellfusion` in the database being upgraded, and fails atomically if populated Ads cannot be assigned
+  unambiguously.
+- The campaign overview lists vendors with stored campaigns. Its vendor selector sits beside the period controls;
+  drilldowns retain that vendor, and browser Back returns to the selected campaign overview. Report URLs require
+  `vendorId`; old detail bookmarks without it must be reopened from the campaign overview.
 - Chromium is headless by default. Set the Java system property `ads.headless=false` only when an interactive browser is
   needed for diagnosis. Playwright's Chromium binary must be installed in a location readable by the server account.
   The Windows run script sets `PLAYWRIGHT_BROWSERS_PATH` to its shared `playwright-browsers` directory and ensures that
@@ -53,6 +61,13 @@ Production configuration:
   `AdsJSON/<alias>/`; old flat `AdsJSON/*.json` files are left untouched and are not reused.
 - Missing credentials, HTTP/API errors, malformed responses, and interrupted waits fail the task and are recorded in the
   task history rather than being reported as successful imports.
+
+### Ads database tests
+
+The PostgreSQL migration and storage tests require `ADS_TEST_DB_URL` pointing to a disposable PostgreSQL database,
+with optional `ADS_TEST_DB_USER` and `ADS_TEST_DB_PASSWORD`. They create and remove isolated schemas and run with
+`mvn test`; without the URL, these integration tests are skipped. They do not use the application's configured databases.
+Run the Ads browser-script tests with `node --test src/test/js/ads-*.test.mjs`.
 
 # eMAG Mirror to DB
 

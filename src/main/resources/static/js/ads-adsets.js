@@ -1,5 +1,6 @@
 import {fetchJSON} from './common.js';
 import {bindTableCsvDownload} from './table-common.js';
+import {adsVendorErrorMessage, loadAdsVendor} from './ads-vendor.js';
 import {
   adsPeriodFilePart,
   adsPeriodPhrase,
@@ -16,6 +17,7 @@ const HEAD = document.getElementById('adsAdsetsHead');
 const BODY = document.getElementById('adsAdsetsBody');
 
 let currentColumns = [];
+let vendorId = '';
 let activePeriod = null;
 let latestRequestId = 0;
 
@@ -93,7 +95,7 @@ function appendPhrasesCell(tr, row, period) {
   const adsetId = String(row.adsetId ?? row.values?.adset_id ?? '');
   if (campaignId && adsetId && isValidAdsPeriod(period)) {
     const link = document.createElement('a');
-    const params = adsPeriodSearchParams(period, {campaignId, adsetId});
+    const params = adsPeriodSearchParams(period, {vendorId, campaignId, adsetId});
     link.href = `/private/ads-search-phrases?${params.toString()}`;
     link.textContent = 'phrases';
     td.appendChild(link);
@@ -107,7 +109,7 @@ function appendProductsCell(tr, row, period) {
   const adsetId = String(row.adsetId ?? row.values?.adset_id ?? '');
   if (campaignId && adsetId && isValidAdsPeriod(period)) {
     const link = document.createElement('a');
-    const params = adsPeriodSearchParams(period, {campaignId, adsetId});
+    const params = adsPeriodSearchParams(period, {vendorId, campaignId, adsetId});
     link.href = `/private/ads-targeted-products?${params.toString()}`;
     link.textContent = 'products';
     td.appendChild(link);
@@ -121,6 +123,7 @@ function appendKeywordsCell(tr, row, period, negativeOnly = false) {
   const adsetId = String(row.adsetId ?? row.values?.adset_id ?? '');
   if (campaignId && adsetId && isValidAdsPeriod(period)) {
     const params = adsPeriodSearchParams(period, {
+      vendorId,
       campaignId,
       adsetId,
       negative: negativeOnly ? 'true' : null
@@ -184,7 +187,7 @@ async function loadAdsets(campaignId, period, errorMessage = 'Failed to load ads
 
   const periodPhrase = adsPeriodPhrase(period);
   setStatus(`Loading adsets for campaign ID ${campaignId} ${periodPhrase}...`);
-  const params = adsPeriodSearchParams(period, {campaignId});
+  const params = adsPeriodSearchParams(period, {vendorId, campaignId});
   try {
     const data = await fetchJSON(`/app/adsAdsets?${params.toString()}`);
     if (requestId !== latestRequestId) {
@@ -209,6 +212,8 @@ async function loadAdsets(campaignId, period, errorMessage = 'Failed to load ads
 }
 
 async function init() {
+  const vendor = await loadAdsVendor();
+  vendorId = vendor.vendorId;
   const {campaignId} = paramsFromUrl();
   if (!campaignId) {
     currentColumns = [];
@@ -218,11 +223,11 @@ async function init() {
     return;
   }
 
-  const dateParams = new URLSearchParams({campaignId});
+  const dateParams = new URLSearchParams({vendorId, campaignId});
   const dates = await fetchJSON(`/app/adsAdsetDates?${dateParams.toString()}`);
   const reportDates = Array.isArray(dates) ? dates : [];
   activePeriod = resolveAdsPeriod(window.location.search, reportDates);
-  replaceAdsPeriodInUrl(activePeriod, {campaignId});
+  replaceAdsPeriodInUrl(activePeriod, {vendorId, campaignId});
 
   bindAdsPeriodControls({
     periodSelectId: 'adsAdsetPeriodSelect',
@@ -237,7 +242,7 @@ async function init() {
     initialPeriod: activePeriod,
     onApply: (period) => {
       activePeriod = period;
-      replaceAdsPeriodInUrl(period, {campaignId});
+      replaceAdsPeriodInUrl(period, {vendorId, campaignId});
       loadAdsets(campaignId, period);
     }
   });
@@ -245,7 +250,7 @@ async function init() {
   bindTableCsvDownload({
     buttonId: 'downloadCsvBtn',
     tableId: 'adsAdsetsTable',
-    fileNameBuilder: ({datePart}) => `ads-adsets-${campaignId}-${adsPeriodFilePart(activePeriod, datePart)}.csv`
+    fileNameBuilder: ({datePart}) => `ads-adsets-${vendorId}-${campaignId}-${adsPeriodFilePart(activePeriod, datePart)}.csv`
   });
 
   await loadAdsets(campaignId, activePeriod, 'Failed to load adset data.');
@@ -254,7 +259,7 @@ async function init() {
 init().catch((e) => {
   HEAD.innerHTML = '';
   currentColumns = [];
-  renderMessageRow('Failed to load adset data.');
+  renderMessageRow(adsVendorErrorMessage(e, 'Failed to load adset data.'));
   setStatus('');
   console.error(e);
 });

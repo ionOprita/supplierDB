@@ -5,6 +5,7 @@
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
     <div class="page-actions ads-campaigns-actions">
         <div class="ads-campaigns-filter-controls">
+            <span id="adsVendorLabel" class="muted"></span>
             <label for="adsAdsetPeriodSelect">Period:</label>
             <select id="adsAdsetPeriodSelect" class="ads-period-select">
                 <option value="day">Day</option>

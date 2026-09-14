@@ -29,7 +29,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
+import static ro.sellfluence.support.UsefulMethods.toLocalDateTime;
 import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 
 public class AdsCampaignTable {
@@ -59,10 +61,11 @@ public class AdsCampaignTable {
     }
 
     /**
-     * Identifies an ad set snapshot stored for one report date.
+     * Identifies an ad set snapshot for one vendor and report date.
      */
-    public record AdsAdsetKey(LocalDate reportDate, int campaignId, int adsetId) {
+    public record AdsAdsetKey(UUID vendorId, LocalDate reportDate, int campaignId, int adsetId) {
         public AdsAdsetKey {
+            Objects.requireNonNull(vendorId, "vendorId");
             Objects.requireNonNull(reportDate, "reportDate");
         }
     }
@@ -251,8 +254,31 @@ public class AdsCampaignTable {
             keywordColumn("last_seen_at", "Last seen at", false)
     );
 
-    static List<AdsAdsetKey> getAdsetKeys(Connection db, LocalDate startDate, LocalDate endDate) throws SQLException {
+    static List<Vendor> getVendors(Connection db) throws SQLException {
+        var vendors = new ArrayList<Vendor>();
+        try (var s = db.prepareStatement("""
+                SELECT v.id, v.vendor_name, v.isfbe, v.company_name, v.account, v.last_fetch
+                FROM vendor AS v
+                WHERE EXISTS (SELECT 1 FROM ads_campaign AS c WHERE c.vendor_id = v.id)
+                ORDER BY v.vendor_name, v.account, v.id
+                """); var rs = s.executeQuery()) {
+            while (rs.next()) {
+                vendors.add(new Vendor(
+                        rs.getObject("id", UUID.class),
+                        rs.getString("vendor_name"),
+                        rs.getBoolean("isfbe"),
+                        rs.getString("company_name"),
+                        rs.getString("account"),
+                        toLocalDateTime(rs.getTimestamp("last_fetch"))
+                ));
+            }
+        }
+        return vendors;
+    }
+
+    static List<AdsAdsetKey> getAdsetKeys(Connection db, UUID vendorId, LocalDate startDate, LocalDate endDate) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(startDate);
         Objects.requireNonNull(endDate);
 
@@ -260,15 +286,18 @@ public class AdsCampaignTable {
         try (var s = db.prepareStatement("""
                 SELECT report_date, campaign_id, adset_id
                 FROM ads_adset
-                WHERE report_date >= ?
+                WHERE vendor_id = ?
+                  AND report_date >= ?
                   AND report_date < ?
                 ORDER BY report_date, campaign_id, adset_id
                 """)) {
-            s.setDate(1, Date.valueOf(startDate));
-            s.setDate(2, Date.valueOf(endDate));
+            s.setObject(1, vendorId);
+            s.setDate(2, Date.valueOf(startDate));
+            s.setDate(3, Date.valueOf(endDate));
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     result.add(new AdsAdsetKey(
+                            vendorId,
                             rs.getDate("report_date").toLocalDate(),
                             rs.getInt("campaign_id"),
                             rs.getInt("adset_id")
@@ -279,15 +308,18 @@ public class AdsCampaignTable {
         return result;
     }
 
-    static List<LocalDate> getCampaignReportDates(Connection db) throws SQLException {
+    static List<LocalDate> getCampaignReportDates(Connection db, UUID vendorId) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
 
         var result = new ArrayList<LocalDate>();
         try (var s = db.prepareStatement("""
                 SELECT DISTINCT report_date
                 FROM ads_campaign
+                WHERE vendor_id = ?
                 ORDER BY report_date DESC
                 """)) {
+            s.setObject(1, vendorId);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     result.add(rs.getDate("report_date").toLocalDate());
@@ -297,8 +329,9 @@ public class AdsCampaignTable {
         return result;
     }
 
-    static AdsCampaignTableData getCampaignsByReportDate(Connection db, LocalDate reportDate) throws SQLException {
+    static AdsCampaignTableData getCampaignsByReportDate(Connection db, UUID vendorId, LocalDate reportDate) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(reportDate);
 
         var rows = new ArrayList<AdsCampaignRow>();
@@ -335,10 +368,12 @@ public class AdsCampaignTable {
                     summary_return_on_advertising_spend,
                     last_seen_at
                 FROM ads_campaign
-                WHERE report_date = ?
+                WHERE vendor_id = ?
+                  AND report_date = ?
                 ORDER BY lower(name) NULLS LAST, name NULLS LAST, campaign_id
                 """)) {
-            s.setDate(1, Date.valueOf(reportDate));
+            s.setObject(1, vendorId);
+            s.setDate(2, Date.valueOf(reportDate));
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     rows.add(readCampaignRow(rs));
@@ -348,11 +383,12 @@ public class AdsCampaignTable {
         return new AdsCampaignTableData(ADS_CAMPAIGN_COLUMNS, rows);
     }
 
-    static AdsCampaignTableData getCampaigns(Connection db, AdsReportPeriod period) throws SQLException {
+    static AdsCampaignTableData getCampaigns(Connection db, UUID vendorId, AdsReportPeriod period) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(period);
         if (period.isSingleDay()) {
-            return getCampaignsByReportDate(db, period.dateFrom());
+            return getCampaignsByReportDate(db, vendorId, period.dateFrom());
         }
 
         var rows = new ArrayList<AdsCampaignRow>();
@@ -360,7 +396,8 @@ public class AdsCampaignTable {
                 WITH ranged AS (
                     SELECT *
                     FROM ads_campaign
-                    WHERE report_date BETWEEN ? AND ?
+                    WHERE vendor_id = ?
+                      AND report_date BETWEEN ? AND ?
                 ),
                 latest AS (
                     SELECT DISTINCT ON (campaign_id) *
@@ -430,7 +467,8 @@ public class AdsCampaignTable {
                 JOIN totals AS t USING (campaign_id)
                 ORDER BY lower(l.name) NULLS LAST, l.name NULLS LAST, l.campaign_id
                 """)) {
-            bindPeriod(s, 1, period);
+            s.setObject(1, vendorId);
+            bindPeriod(s, 2, period);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     rows.add(readCampaignRow(rs));
@@ -440,17 +478,20 @@ public class AdsCampaignTable {
         return new AdsCampaignTableData(ADS_CAMPAIGN_COLUMNS, rows);
     }
 
-    static List<LocalDate> getAdsetReportDates(Connection db, int campaignId) throws SQLException {
+    static List<LocalDate> getAdsetReportDates(Connection db, UUID vendorId, int campaignId) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
 
         var result = new ArrayList<LocalDate>();
         try (var s = db.prepareStatement("""
                 SELECT DISTINCT report_date
                 FROM ads_campaign
-                WHERE campaign_id = ?
+                WHERE vendor_id = ?
+                  AND campaign_id = ?
                 ORDER BY report_date DESC
                 """)) {
-            s.setInt(1, campaignId);
+            s.setObject(1, vendorId);
+            s.setInt(2, campaignId);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     result.add(rs.getDate("report_date").toLocalDate());
@@ -460,11 +501,12 @@ public class AdsCampaignTable {
         return result;
     }
 
-    static AdsAdsetTableData getAdsetsByReportDate(Connection db, int campaignId, LocalDate reportDate) throws SQLException {
+    static AdsAdsetTableData getAdsetsByReportDate(Connection db, UUID vendorId, int campaignId, LocalDate reportDate) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(reportDate);
 
-        var campaignName = getCampaignName(db, campaignId, reportDate);
+        var campaignName = getCampaignName(db, vendorId, campaignId, reportDate);
         var rows = new ArrayList<AdsAdsetRow>();
         try (var s = db.prepareStatement("""
                 SELECT
@@ -495,12 +537,14 @@ public class AdsCampaignTable {
                     summary_return_on_advertising_spend,
                     last_seen_at
                 FROM ads_adset
-                WHERE campaign_id = ?
+                WHERE vendor_id = ?
+                  AND campaign_id = ?
                   AND report_date = ?
                 ORDER BY lower(name) NULLS LAST, name NULLS LAST, adset_id
                 """)) {
-            s.setInt(1, campaignId);
-            s.setDate(2, Date.valueOf(reportDate));
+            s.setObject(1, vendorId);
+            s.setInt(2, campaignId);
+            s.setDate(3, Date.valueOf(reportDate));
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     rows.add(readAdsetRow(rs));
@@ -510,20 +554,22 @@ public class AdsCampaignTable {
         return new AdsAdsetTableData(campaignName, ADS_ADSET_COLUMNS, rows);
     }
 
-    static AdsAdsetTableData getAdsets(Connection db, int campaignId, AdsReportPeriod period) throws SQLException {
+    static AdsAdsetTableData getAdsets(Connection db, UUID vendorId, int campaignId, AdsReportPeriod period) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(period);
         if (period.isSingleDay()) {
-            return getAdsetsByReportDate(db, campaignId, period.dateFrom());
+            return getAdsetsByReportDate(db, vendorId, campaignId, period.dateFrom());
         }
 
-        var campaignName = getCampaignName(db, campaignId, period);
+        var campaignName = getCampaignName(db, vendorId, campaignId, period);
         var rows = new ArrayList<AdsAdsetRow>();
         try (var s = db.prepareStatement("""
                 WITH ranged AS (
                     SELECT *
                     FROM ads_adset
-                    WHERE campaign_id = ?
+                    WHERE vendor_id = ?
+                      AND campaign_id = ?
                       AND report_date BETWEEN ? AND ?
                 ),
                 latest AS (
@@ -591,8 +637,9 @@ public class AdsCampaignTable {
                 JOIN totals AS t USING (campaign_id, adset_id)
                 ORDER BY lower(l.name) NULLS LAST, l.name NULLS LAST, l.adset_id
                 """)) {
-            s.setInt(1, campaignId);
-            bindPeriod(s, 2, period);
+            s.setObject(1, vendorId);
+            s.setInt(2, campaignId);
+            bindPeriod(s, 3, period);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     rows.add(readAdsetRow(rs));
@@ -602,14 +649,15 @@ public class AdsCampaignTable {
         return new AdsAdsetTableData(campaignName, ADS_ADSET_COLUMNS, rows);
     }
 
-    static AdsSearchPhraseTableData getSearchPhrases(Connection db,
+    static AdsSearchPhraseTableData getSearchPhrases(Connection db, UUID vendorId,
                                                      int campaignId,
                                                      int adsetId,
                                                      LocalDate reportDate) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(reportDate);
 
-        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, reportDate);
+        var names = getCampaignAndAdsetNames(db, vendorId, campaignId, adsetId, reportDate);
         var rows = new ArrayList<AdsSearchPhraseRow>();
         try (var s = db.prepareStatement("""
                 SELECT
@@ -634,7 +682,8 @@ public class AdsCampaignTable {
                     summary_return_on_advertising_spend,
                     last_seen_at
                 FROM ads_search_phrase
-                WHERE campaign_id = ?
+                WHERE vendor_id = ?
+                  AND campaign_id = ?
                   AND adset_id = ?
                   AND report_date = ?
                   AND (summary_clicks > 0 OR summary_impressions > 50)
@@ -642,9 +691,10 @@ public class AdsCampaignTable {
                          summary_impressions DESC NULLS LAST,
                          search_phrase ASC
                 """)) {
-            s.setInt(1, campaignId);
-            s.setInt(2, adsetId);
-            s.setDate(3, Date.valueOf(reportDate));
+            s.setObject(1, vendorId);
+            s.setInt(2, campaignId);
+            s.setInt(3, adsetId);
+            s.setDate(4, Date.valueOf(reportDate));
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     rows.add(readSearchPhraseRow(rs));
@@ -660,23 +710,25 @@ public class AdsCampaignTable {
         );
     }
 
-    static AdsSearchPhraseTableData getSearchPhrases(Connection db,
+    static AdsSearchPhraseTableData getSearchPhrases(Connection db, UUID vendorId,
                                                      int campaignId,
                                                      int adsetId,
                                                      AdsReportPeriod period) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(period);
         if (period.isSingleDay()) {
-            return getSearchPhrases(db, campaignId, adsetId, period.dateFrom());
+            return getSearchPhrases(db, vendorId, campaignId, adsetId, period.dateFrom());
         }
 
-        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, period);
+        var names = getCampaignAndAdsetNames(db, vendorId, campaignId, adsetId, period);
         var rows = new ArrayList<AdsSearchPhraseRow>();
         try (var s = db.prepareStatement("""
                 WITH ranged AS (
                     SELECT *
                     FROM ads_search_phrase
-                    WHERE campaign_id = ?
+                    WHERE vendor_id = ?
+                      AND campaign_id = ?
                       AND adset_id = ?
                       AND report_date BETWEEN ? AND ?
                 ),
@@ -743,9 +795,10 @@ public class AdsCampaignTable {
                          t.summary_impressions DESC NULLS LAST,
                          l.search_phrase ASC
                 """)) {
-            s.setInt(1, campaignId);
-            s.setInt(2, adsetId);
-            bindPeriod(s, 3, period);
+            s.setObject(1, vendorId);
+            s.setInt(2, campaignId);
+            s.setInt(3, adsetId);
+            bindPeriod(s, 4, period);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     rows.add(readSearchPhraseRow(rs));
@@ -761,14 +814,15 @@ public class AdsCampaignTable {
         );
     }
 
-    static AdsTargetedProductTableData getTargetedProducts(Connection db,
+    static AdsTargetedProductTableData getTargetedProducts(Connection db, UUID vendorId,
                                                            int campaignId,
                                                            int adsetId,
                                                            LocalDate reportDate) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(reportDate);
 
-        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, reportDate);
+        var names = getCampaignAndAdsetNames(db, vendorId, campaignId, adsetId, reportDate);
         var rows = new ArrayList<AdsTargetedProductRow>();
         try (var s = db.prepareStatement("""
                 SELECT
@@ -792,7 +846,8 @@ public class AdsCampaignTable {
                     conversion_rate,
                     last_seen_at
                 FROM ads_targeted_product
-                WHERE campaign_id = ?
+                WHERE vendor_id = ?
+                  AND campaign_id = ?
                   AND adset_id = ?
                   AND report_date = ?
                   AND (clicks > 0 OR impressions > 50)
@@ -800,9 +855,10 @@ public class AdsCampaignTable {
                          impressions DESC NULLS LAST,
                          product_name ASC NULLS LAST
                 """)) {
-            s.setInt(1, campaignId);
-            s.setInt(2, adsetId);
-            s.setDate(3, Date.valueOf(reportDate));
+            s.setObject(1, vendorId);
+            s.setInt(2, campaignId);
+            s.setInt(3, adsetId);
+            s.setDate(4, Date.valueOf(reportDate));
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     rows.add(readTargetedProductRow(rs));
@@ -818,23 +874,25 @@ public class AdsCampaignTable {
         );
     }
 
-    static AdsTargetedProductTableData getTargetedProducts(Connection db,
+    static AdsTargetedProductTableData getTargetedProducts(Connection db, UUID vendorId,
                                                            int campaignId,
                                                            int adsetId,
                                                            AdsReportPeriod period) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(period);
         if (period.isSingleDay()) {
-            return getTargetedProducts(db, campaignId, adsetId, period.dateFrom());
+            return getTargetedProducts(db, vendorId, campaignId, adsetId, period.dateFrom());
         }
 
-        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, period);
+        var names = getCampaignAndAdsetNames(db, vendorId, campaignId, adsetId, period);
         var rows = new ArrayList<AdsTargetedProductRow>();
         try (var s = db.prepareStatement("""
                 WITH ranged AS (
                     SELECT *
                     FROM ads_targeted_product
-                    WHERE campaign_id = ?
+                    WHERE vendor_id = ?
+                      AND campaign_id = ?
                       AND adset_id = ?
                       AND report_date BETWEEN ? AND ?
                 ),
@@ -899,9 +957,10 @@ public class AdsCampaignTable {
                          t.impressions DESC NULLS LAST,
                          l.product_name ASC NULLS LAST
                 """)) {
-            s.setInt(1, campaignId);
-            s.setInt(2, adsetId);
-            bindPeriod(s, 3, period);
+            s.setObject(1, vendorId);
+            s.setInt(2, campaignId);
+            s.setInt(3, adsetId);
+            bindPeriod(s, 4, period);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     rows.add(readTargetedProductRow(rs));
@@ -917,14 +976,15 @@ public class AdsCampaignTable {
         );
     }
 
-    static AdsKeywordTableData getKeywords(Connection db,
+    static AdsKeywordTableData getKeywords(Connection db, UUID vendorId,
                                            int campaignId,
                                            int adsetId,
                                            LocalDate reportDate) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(reportDate);
 
-        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, reportDate);
+        var names = getCampaignAndAdsetNames(db, vendorId, campaignId, adsetId, reportDate);
         var rows = new ArrayList<AdsKeywordRow>();
         try (var s = db.prepareStatement("""
                 SELECT
@@ -953,16 +1013,18 @@ public class AdsCampaignTable {
                     summary_return_on_advertising_spend,
                     last_seen_at
                 FROM ads_keyword
-                WHERE campaign_id = ?
+                WHERE vendor_id = ?
+                  AND campaign_id = ?
                   AND adset_id = ?
                   AND report_date = ?
                 ORDER BY summary_clicks DESC NULLS LAST,
                          summary_impressions DESC NULLS LAST,
                          keyword ASC
                 """)) {
-            s.setInt(1, campaignId);
-            s.setInt(2, adsetId);
-            s.setDate(3, Date.valueOf(reportDate));
+            s.setObject(1, vendorId);
+            s.setInt(2, campaignId);
+            s.setInt(3, adsetId);
+            s.setDate(4, Date.valueOf(reportDate));
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     rows.add(readKeywordRow(rs));
@@ -978,23 +1040,25 @@ public class AdsCampaignTable {
         );
     }
 
-    static AdsKeywordTableData getKeywords(Connection db,
+    static AdsKeywordTableData getKeywords(Connection db, UUID vendorId,
                                            int campaignId,
                                            int adsetId,
                                            AdsReportPeriod period) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(period);
         if (period.isSingleDay()) {
-            return getKeywords(db, campaignId, adsetId, period.dateFrom());
+            return getKeywords(db, vendorId, campaignId, adsetId, period.dateFrom());
         }
 
-        var names = getCampaignAndAdsetNames(db, campaignId, adsetId, period);
+        var names = getCampaignAndAdsetNames(db, vendorId, campaignId, adsetId, period);
         var rows = new ArrayList<AdsKeywordRow>();
         try (var s = db.prepareStatement("""
                 WITH ranged AS (
                     SELECT *
                     FROM ads_keyword
-                    WHERE campaign_id = ?
+                    WHERE vendor_id = ?
+                      AND campaign_id = ?
                       AND adset_id = ?
                       AND report_date BETWEEN ? AND ?
                 ),
@@ -1062,9 +1126,10 @@ public class AdsCampaignTable {
                          t.summary_impressions DESC NULLS LAST,
                          l.keyword ASC
                 """)) {
-            s.setInt(1, campaignId);
-            s.setInt(2, adsetId);
-            bindPeriod(s, 3, period);
+            s.setObject(1, vendorId);
+            s.setInt(2, campaignId);
+            s.setInt(3, adsetId);
+            bindPeriod(s, 4, period);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     rows.add(readKeywordRow(rs));
@@ -1080,29 +1145,32 @@ public class AdsCampaignTable {
         );
     }
 
-    static int upsertCampaigns(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+    static int upsertCampaigns(Connection db, UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(campaigns);
 
         int changedRows = 0;
-        changedRows += upsertCampaignRows(db, campaigns);
-        changedRows += upsertAdsetRows(db, campaigns);
-        changedRows += upsertKeywordRows(db, campaigns);
-        changedRows += upsertSearchPhraseRows(db, campaigns);
-        changedRows += upsertTargetedProductRows(db, campaigns);
+        changedRows += upsertCampaignRows(db, vendorId, campaigns);
+        changedRows += upsertAdsetRows(db, vendorId, campaigns);
+        changedRows += upsertKeywordRows(db, vendorId, campaigns);
+        changedRows += upsertSearchPhraseRows(db, vendorId, campaigns);
+        changedRows += upsertTargetedProductRows(db, vendorId, campaigns);
         return changedRows;
     }
 
-    static int upsertCampaignsAndAdsets(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+    static int upsertCampaignsAndAdsets(Connection db, UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         Objects.requireNonNull(db);
+        Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(campaigns);
 
-        return upsertCampaignRows(db, campaigns) + upsertAdsetRows(db, campaigns);
+        return upsertCampaignRows(db, vendorId, campaigns) + upsertAdsetRows(db, vendorId, campaigns);
     }
 
-    private static int upsertCampaignRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+    private static int upsertCampaignRows(Connection db, UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_campaign (
+                    vendor_id,
                     report_date,
                     campaign_id,
                     name,
@@ -1133,8 +1201,8 @@ public class AdsCampaignTable {
                     summary_product_target_count,
                     summary_conversion_rate,
                     summary_return_on_advertising_spend
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT (report_date, campaign_id) DO UPDATE SET
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (vendor_id, report_date, campaign_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     advertiser_id = EXCLUDED.advertiser_id,
                     daily_budget = EXCLUDED.daily_budget,
@@ -1166,16 +1234,17 @@ public class AdsCampaignTable {
                     last_seen_at = current_timestamp
                 """)) {
             for (var campaign : campaigns) {
-                bindCampaign(s, campaign);
+                bindCampaign(s, vendorId, campaign);
                 s.addBatch();
             }
             return changedRows(s.executeBatch());
         }
     }
 
-    private static int upsertAdsetRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+    private static int upsertAdsetRows(Connection db, UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_adset (
+                    vendor_id,
                     report_date,
                     campaign_id,
                     adset_id,
@@ -1202,8 +1271,8 @@ public class AdsCampaignTable {
                     summary_product_target_count,
                     summary_conversion_rate,
                     summary_return_on_advertising_spend
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT (report_date, campaign_id, adset_id) DO UPDATE SET
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (vendor_id, report_date, campaign_id, adset_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     targeting = EXCLUDED.targeting,
                     bid = EXCLUDED.bid,
@@ -1232,7 +1301,7 @@ public class AdsCampaignTable {
             for (var campaign : campaigns) {
                 var campaignId = campaignId(campaign);
                 for (var adSet : listOrEmpty(campaign.adSets())) {
-                    bindAdset(s, campaign, campaignId, adSet.adSet());
+                    bindAdset(s, vendorId, campaign, campaignId, adSet.adSet());
                     s.addBatch();
                 }
             }
@@ -1240,12 +1309,12 @@ public class AdsCampaignTable {
         }
     }
 
-    private static int upsertKeywordRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+    private static int upsertKeywordRows(Connection db, UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         var reports = new ArrayList<AdsAdsetReport<AdsKeyword>>();
         for (var campaign : campaigns) {
             var campaignId = campaignId(campaign);
             for (var adSet : listOrEmpty(campaign.adSets())) {
-                var key = new AdsAdsetKey(campaign.reportDate(), campaignId, adsetId(adSet.adSet()));
+                var key = new AdsAdsetKey(vendorId, campaign.reportDate(), campaignId, adsetId(adSet.adSet()));
                 reports.add(new AdsAdsetReport<>(key, listOrEmpty(adSet.keywords())));
             }
         }
@@ -1258,6 +1327,7 @@ public class AdsCampaignTable {
 
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_keyword (
+                    vendor_id,
                     report_date,
                     campaign_id,
                     adset_id,
@@ -1285,8 +1355,8 @@ public class AdsCampaignTable {
                     summary_product_target_count,
                     summary_conversion_rate,
                     summary_return_on_advertising_spend
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT (report_date, campaign_id, adset_id, keyword_id) DO UPDATE SET
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (vendor_id, report_date, campaign_id, adset_id, keyword_id) DO UPDATE SET
                     bid = EXCLUDED.bid,
                     status = EXCLUDED.status,
                     keyword = EXCLUDED.keyword,
@@ -1322,12 +1392,12 @@ public class AdsCampaignTable {
         }
     }
 
-    private static int upsertSearchPhraseRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+    private static int upsertSearchPhraseRows(Connection db, UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         var reports = new ArrayList<AdsAdsetReport<AdsSearchPhrase>>();
         for (var campaign : campaigns) {
             var campaignId = campaignId(campaign);
             for (var adSet : listOrEmpty(campaign.adSets())) {
-                var key = new AdsAdsetKey(campaign.reportDate(), campaignId, adsetId(adSet.adSet()));
+                var key = new AdsAdsetKey(vendorId, campaign.reportDate(), campaignId, adsetId(adSet.adSet()));
                 reports.add(new AdsAdsetReport<>(key, listOrEmpty(adSet.searchPrases())));
             }
         }
@@ -1340,6 +1410,7 @@ public class AdsCampaignTable {
 
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_search_phrase (
+                    vendor_id,
                     report_date,
                     campaign_id,
                     adset_id,
@@ -1363,8 +1434,9 @@ public class AdsCampaignTable {
                     summary_product_target_count,
                     summary_conversion_rate,
                     summary_return_on_advertising_spend
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT (
+                    vendor_id,
                     report_date,
                     campaign_id,
                     adset_id,
@@ -1401,12 +1473,12 @@ public class AdsCampaignTable {
         }
     }
 
-    private static int upsertTargetedProductRows(Connection db, List<AdsCampaignSnapshot> campaigns) throws SQLException {
+    private static int upsertTargetedProductRows(Connection db, UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         var reports = new ArrayList<AdsAdsetReport<AdsTargetedProduct>>();
         for (var campaign : campaigns) {
             var campaignId = campaignId(campaign);
             for (var adSet : listOrEmpty(campaign.adSets())) {
-                var key = new AdsAdsetKey(campaign.reportDate(), campaignId, adsetId(adSet.adSet()));
+                var key = new AdsAdsetKey(vendorId, campaign.reportDate(), campaignId, adsetId(adSet.adSet()));
                 reports.add(new AdsAdsetReport<>(key, listOrEmpty(adSet.targetedProducts())));
             }
         }
@@ -1419,6 +1491,7 @@ public class AdsCampaignTable {
 
         try (var s = db.prepareStatement("""
                 INSERT INTO ads_targeted_product (
+                    vendor_id,
                     report_date,
                     campaign_id,
                     adset_id,
@@ -1443,8 +1516,8 @@ public class AdsCampaignTable {
                     image_url,
                     return_on_advertising_spend,
                     conversion_rate
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT (report_date, campaign_id, adset_id, doc_id) DO UPDATE SET
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT (vendor_id, report_date, campaign_id, adset_id, doc_id) DO UPDATE SET
                     product_name = EXCLUDED.product_name,
                     price = EXCLUDED.price,
                     rating = EXCLUDED.rating,
@@ -1477,9 +1550,9 @@ public class AdsCampaignTable {
         }
     }
 
-    private static void bindCampaign(PreparedStatement s, AdsCampaignSnapshot campaignSnapshot) throws SQLException {
+    private static void bindCampaign(PreparedStatement s, UUID vendorId, AdsCampaignSnapshot campaignSnapshot) throws SQLException {
         var campaign = Objects.requireNonNull(campaignSnapshot.campaign(), "campaign");
-        int index = bindCampaignKey(s, 1, campaignSnapshot, campaignId(campaignSnapshot));
+        int index = bindCampaignKey(s, 1, vendorId, campaignSnapshot, campaignId(campaignSnapshot));
         s.setString(index++, campaign.name());
         setInteger(s, index++, campaign.advertiserId());
         setBigDecimal(s, index++, campaign.dailyBudget());
@@ -1494,9 +1567,9 @@ public class AdsCampaignTable {
         bindSummary(s, index, campaign.summary());
     }
 
-    private static void bindAdset(PreparedStatement s, AdsCampaignSnapshot campaign, int campaignId, AdsAdset adset) throws SQLException {
+    private static void bindAdset(PreparedStatement s, UUID vendorId, AdsCampaignSnapshot campaign, int campaignId, AdsAdset adset) throws SQLException {
         Objects.requireNonNull(adset, "adset");
-        int index = bindCampaignKey(s, 1, campaign, campaignId);
+        int index = bindCampaignKey(s, 1, vendorId, campaign, campaignId);
         s.setInt(index++, adsetId(adset));
         s.setString(index++, adset.name());
         s.setString(index++, adset.targeting());
@@ -1562,13 +1635,15 @@ public class AdsCampaignTable {
     }
 
     private static int bindAdsetKey(PreparedStatement s, int index, AdsAdsetKey adset) throws SQLException {
+        s.setObject(index++, adset.vendorId());
         setDate(s, index++, adset.reportDate());
         s.setInt(index++, adset.campaignId());
         s.setInt(index++, adset.adsetId());
         return index;
     }
 
-    private static int bindCampaignKey(PreparedStatement s, int index, AdsCampaignSnapshot campaign, int campaignId) throws SQLException {
+    private static int bindCampaignKey(PreparedStatement s, int index, UUID vendorId, AdsCampaignSnapshot campaign, int campaignId) throws SQLException {
+        s.setObject(index++, vendorId);
         setDate(s, index++, Objects.requireNonNull(campaign.reportDate(), "reportDate"));
         s.setInt(index++, campaignId);
         return index;
@@ -1698,15 +1773,17 @@ public class AdsCampaignTable {
         return new AdsKeywordRow(values);
     }
 
-    private static String getCampaignName(Connection db, int campaignId, LocalDate reportDate) throws SQLException {
+    private static String getCampaignName(Connection db, UUID vendorId, int campaignId, LocalDate reportDate) throws SQLException {
         try (var s = db.prepareStatement("""
                 SELECT name
                 FROM ads_campaign
-                WHERE campaign_id = ?
+                WHERE vendor_id = ?
+                  AND campaign_id = ?
                   AND report_date = ?
                 """)) {
-            s.setInt(1, campaignId);
-            s.setDate(2, Date.valueOf(reportDate));
+            s.setObject(1, vendorId);
+            s.setInt(2, campaignId);
+            s.setDate(3, Date.valueOf(reportDate));
             try (var rs = s.executeQuery()) {
                 if (rs.next()) {
                     return stringOrFallback(rs.getString("name"), "campaign ID " + campaignId);
@@ -1716,17 +1793,19 @@ public class AdsCampaignTable {
         return "campaign ID " + campaignId;
     }
 
-    private static String getCampaignName(Connection db, int campaignId, AdsReportPeriod period) throws SQLException {
+    private static String getCampaignName(Connection db, UUID vendorId, int campaignId, AdsReportPeriod period) throws SQLException {
         try (var s = db.prepareStatement("""
                 SELECT name
                 FROM ads_campaign
-                WHERE campaign_id = ?
+                WHERE vendor_id = ?
+                  AND campaign_id = ?
                   AND report_date BETWEEN ? AND ?
                 ORDER BY report_date DESC
                 LIMIT 1
                 """)) {
-            s.setInt(1, campaignId);
-            bindPeriod(s, 2, period);
+            s.setObject(1, vendorId);
+            s.setInt(2, campaignId);
+            bindPeriod(s, 3, period);
             try (var rs = s.executeQuery()) {
                 if (rs.next()) {
                     return stringOrFallback(rs.getString("name"), "campaign ID " + campaignId);
@@ -1736,7 +1815,7 @@ public class AdsCampaignTable {
         return "campaign ID " + campaignId;
     }
 
-    private static AdsNames getCampaignAndAdsetNames(Connection db,
+    private static AdsNames getCampaignAndAdsetNames(Connection db, UUID vendorId,
                                                      int campaignId,
                                                      int adsetId,
                                                      LocalDate reportDate) throws SQLException {
@@ -1745,15 +1824,18 @@ public class AdsCampaignTable {
                        a.name AS adset_name
                 FROM ads_campaign AS c
                 LEFT JOIN ads_adset AS a
-                  ON a.report_date = c.report_date
+                  ON a.vendor_id = c.vendor_id
+                 AND a.report_date = c.report_date
                  AND a.campaign_id = c.campaign_id
                  AND a.adset_id = ?
-                WHERE c.campaign_id = ?
+                WHERE c.vendor_id = ?
+                  AND c.campaign_id = ?
                   AND c.report_date = ?
                 """)) {
             s.setInt(1, adsetId);
-            s.setInt(2, campaignId);
-            s.setDate(3, Date.valueOf(reportDate));
+            s.setObject(2, vendorId);
+            s.setInt(3, campaignId);
+            s.setDate(4, Date.valueOf(reportDate));
             try (var rs = s.executeQuery()) {
                 if (rs.next()) {
                     return new AdsNames(
@@ -1766,7 +1848,7 @@ public class AdsCampaignTable {
         return new AdsNames("campaign ID " + campaignId, "adset ID " + adsetId);
     }
 
-    private static AdsNames getCampaignAndAdsetNames(Connection db,
+    private static AdsNames getCampaignAndAdsetNames(Connection db, UUID vendorId,
                                                      int campaignId,
                                                      int adsetId,
                                                      AdsReportPeriod period) throws SQLException {
@@ -1774,23 +1856,27 @@ public class AdsCampaignTable {
                 SELECT
                     (SELECT c.name
                      FROM ads_campaign AS c
-                     WHERE c.campaign_id = ?
+                     WHERE c.vendor_id = ?
+                       AND c.campaign_id = ?
                        AND c.report_date BETWEEN ? AND ?
                      ORDER BY c.report_date DESC
                      LIMIT 1) AS campaign_name,
                     (SELECT a.name
                      FROM ads_adset AS a
-                     WHERE a.campaign_id = ?
+                     WHERE a.vendor_id = ?
+                       AND a.campaign_id = ?
                        AND a.adset_id = ?
                        AND a.report_date BETWEEN ? AND ?
                      ORDER BY a.report_date DESC
                      LIMIT 1) AS adset_name
                 """)) {
-            s.setInt(1, campaignId);
-            bindPeriod(s, 2, period);
-            s.setInt(4, campaignId);
-            s.setInt(5, adsetId);
-            bindPeriod(s, 6, period);
+            s.setObject(1, vendorId);
+            s.setInt(2, campaignId);
+            bindPeriod(s, 3, period);
+            s.setObject(5, vendorId);
+            s.setInt(6, campaignId);
+            s.setInt(7, adsetId);
+            bindPeriod(s, 8, period);
             try (var rs = s.executeQuery()) {
                 if (rs.next()) {
                     return new AdsNames(

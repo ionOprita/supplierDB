@@ -4,6 +4,7 @@
 
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
     <div class="page-actions ads-campaigns-actions">
+        <span id="adsVendorLabel" class="muted"></span>
         <span id="adsKeywordsStatus" class="muted"></span>
         <button id="downloadCsvBtn" type="button">Download CSV</button>
     </div>

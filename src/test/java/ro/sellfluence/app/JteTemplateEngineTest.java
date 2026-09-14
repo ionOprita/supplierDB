@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JteTemplateEngineTest {
@@ -61,6 +62,7 @@ class JteTemplateEngineTest {
         StringOutput campaignsOutput = new StringOutput();
         Server.createJteEngine().render("ads-campaigns.jte", templateParameters, campaignsOutput);
         var campaignsHtml = campaignsOutput.toString();
+        assertTrue(campaignsHtml.contains("id=\"adsVendorSelect\""));
         assertTrue(campaignsHtml.contains("id=\"adsCampaignPeriodSelect\""));
         assertTrue(campaignsHtml.contains("value=\"last7\""));
         assertTrue(campaignsHtml.contains("id=\"adsCampaignDateFromInput\""));
@@ -69,10 +71,19 @@ class JteTemplateEngineTest {
         StringOutput adsetsOutput = new StringOutput();
         Server.createJteEngine().render("ads-adsets.jte", templateParameters, adsetsOutput);
         var adsetsHtml = adsetsOutput.toString();
+        assertTrue(adsetsHtml.contains("id=\"adsVendorLabel\""));
+        assertFalse(adsetsHtml.contains("id=\"adsVendorSelect\""));
         assertTrue(adsetsHtml.contains("id=\"adsAdsetPeriodSelect\""));
         assertTrue(adsetsHtml.contains("value=\"last30\""));
         assertTrue(adsetsHtml.contains("id=\"adsAdsetDateFromInput\""));
         assertTrue(adsetsHtml.contains("id=\"adsAdsetDateToInput\""));
+
+        for (var template : List.of("ads-search-phrases.jte", "ads-targeted-products.jte", "ads-keywords.jte")) {
+            var output = new StringOutput();
+            Server.createJteEngine().render(template, templateParameters, output);
+            assertTrue(output.toString().contains("id=\"adsVendorLabel\""));
+            assertFalse(output.toString().contains("id=\"adsVendorSelect\""));
+        }
     }
 
     @Test

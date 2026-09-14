@@ -1,4 +1,4 @@
-package ro.sellfluence.app;
+package ro.sellfluence.apphelper;
 
 import com.bastiaanjansen.otp.TOTPGenerator;
 import com.microsoft.playwright.Browser;
@@ -6,6 +6,7 @@ import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
+import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.TimeoutError;
 import com.microsoft.playwright.options.AriaRole;
 import org.apache.hc.core5.net.URIBuilder;
@@ -26,7 +27,6 @@ import ro.sellfluence.emagapi.AdsKeyword;
 import ro.sellfluence.emagapi.AdsResponse;
 import ro.sellfluence.emagapi.AdsSearchPhrase;
 import ro.sellfluence.emagapi.AdsTargetedProduct;
-import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 import ro.sellfluence.support.UserPassword;
 import tools.jackson.core.JacksonException;
@@ -51,6 +51,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
+import java.util.UUID;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.IntFunction;
@@ -61,8 +62,6 @@ import java.util.stream.Collectors;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
-import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
-import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 
 public class FetchAds {
@@ -118,17 +117,6 @@ public class FetchAds {
     record DownloadedPage<T>(List<T> items, int pageCount) {
     }
 
-    static void main(String... args) throws Exception {
-        var arguments = new Arguments(args);
-        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
-        var endDate = LocalDate.now();
-        var startDate = endDate.minusDays(31);
-        fetchAdsAndCampaigns("sellfusion", mirrorDB, startDate, endDate);
-        fetchKeywords("sellfusion", mirrorDB, startDate, endDate);
-        fetchSearchPhrases("sellfusion", mirrorDB, startDate, endDate);
-        fetchTargetedProducts("sellfusion", mirrorDB, startDate, endDate);
-    }
-
     /**
      * Fetch campaigns and their ad sets and store them in the database.
      *
@@ -138,8 +126,9 @@ public class FetchAds {
      * @param endDate   End date not to be included.
      */
     public static void fetchAdsAndCampaigns(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+        var vendorId = requireVendorId(alias, mirrorDB);
         withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
-                transferAdsAndCampaignsToDB(page, aliasCacheDirectory, mirrorDB, startDate, endDate));
+                transferAdsAndCampaignsToDB(page, aliasCacheDirectory, mirrorDB, vendorId, startDate, endDate));
     }
 
     /**
@@ -151,8 +140,9 @@ public class FetchAds {
      * @param endDate   End date not to be included.
      */
     public static void fetchKeywords(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+        var vendorId = requireVendorId(alias, mirrorDB);
         withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
-                transferKeywordsToDB(page, aliasCacheDirectory, mirrorDB, startDate, endDate));
+                transferKeywordsToDB(page, aliasCacheDirectory, mirrorDB, vendorId, startDate, endDate));
     }
 
     /**
@@ -164,8 +154,9 @@ public class FetchAds {
      * @param endDate   End date not to be included.
      */
     public static void fetchSearchPhrases(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+        var vendorId = requireVendorId(alias, mirrorDB);
         withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
-                transferSearchPhrasesToDB(page, aliasCacheDirectory, mirrorDB, startDate, endDate));
+                transferSearchPhrasesToDB(page, aliasCacheDirectory, mirrorDB, vendorId, startDate, endDate));
     }
 
     /**
@@ -177,8 +168,17 @@ public class FetchAds {
      * @param endDate   End date not to be included.
      */
     public static void fetchTargetedProducts(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
+        var vendorId = requireVendorId(alias, mirrorDB);
         withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
-                transferTargetedProductsToDB(page, aliasCacheDirectory, mirrorDB, startDate, endDate));
+                transferTargetedProductsToDB(page, aliasCacheDirectory, mirrorDB, vendorId, startDate, endDate));
+    }
+
+    private static UUID requireVendorId(String alias, EmagMirrorDB mirrorDB) {
+        try {
+            return mirrorDB.requireVendorIdByAccount(alias);
+        } catch (SQLException e) {
+            throw new IllegalStateException("Cannot resolve the Ads vendor for account " + alias + ".", e);
+        }
     }
 
     private static void withPlaywrightSession(String alias, BiConsumer<Page, Path> transfer) {
@@ -215,7 +215,7 @@ public class FetchAds {
         }
     }
 
-    static Path cacheDirectoryForAlias(Path root, String alias) {
+    public static Path cacheDirectoryForAlias(Path root, String alias) {
         Objects.requireNonNull(root, "Cache root must not be null.");
         if (alias == null || !safeAlias.matcher(alias).matches()) {
             throw new IllegalArgumentException("Invalid eMAG Ads alias: %s".formatted(alias));
@@ -228,7 +228,7 @@ public class FetchAds {
         return root.resolve(alias);
     }
 
-    static boolean isHeadless() {
+    public static boolean isHeadless() {
         return booleanProperty("ads.headless", true);
     }
 
@@ -250,7 +250,7 @@ public class FetchAds {
         throw new IllegalArgumentException("System property %s must be either true or false.".formatted(name));
     }
 
-    static UserPassword requireCredentials(String alias) {
+    public static UserPassword requireCredentials(String alias) {
         var user = UserPassword.findAlias(alias);
         if (user == null) {
             throw new IllegalArgumentException("Unknown eMAG Ads alias: %s".formatted(alias));
@@ -259,7 +259,7 @@ public class FetchAds {
         return user;
     }
 
-    static void validateCredentials(String alias, String username, String password, String otpAuth) {
+    public static void validateCredentials(String alias, String username, String password, String otpAuth) {
         if (username == null || username.isBlank()
                 || password == null || password.isBlank()
                 || otpAuth == null || otpAuth.isBlank()) {
@@ -279,6 +279,7 @@ public class FetchAds {
             Page page,
             Path aliasCacheDirectory,
             EmagMirrorDB mirrorDB,
+            UUID vendorId,
             LocalDate startDate,
             LocalDate endDate
     ) {
@@ -286,9 +287,9 @@ public class FetchAds {
         while (currentDate.isBefore(endDate)) {
             var campaigns = downloadAdsAndCampaigns(page, aliasCacheDirectory, currentDate);
             try {
-                var changedRows = mirrorDB.addOrUpdateAdsAndCampaigns(campaigns);
-                logger.log(INFO, "Inserted or updated %d campaign and ad set rows from %d campaigns for %s."
-                        .formatted(changedRows, campaigns.size(), currentDate));
+                var changedRows = mirrorDB.addOrUpdateAdsAndCampaigns(vendorId, campaigns);
+                logger.log(INFO, "Inserted or updated %d campaign and ad set rows from %d campaigns for %s (vendor %s)."
+                        .formatted(changedRows, campaigns.size(), currentDate, vendorId));
             } catch (SQLException e) {
                 throw new RuntimeException("Error storing campaigns and ad sets in the database.", e);
             }
@@ -308,25 +309,26 @@ public class FetchAds {
             Page page,
             Path aliasCacheDirectory,
             EmagMirrorDB mirrorDB,
+            UUID vendorId,
             LocalDate startDate,
             LocalDate endDate
     ) {
-        var adsetsByDate = readAdsetsByDate(mirrorDB, startDate, endDate);
+        var adSetsByDate = readAdSetsByDate(mirrorDB, vendorId, startDate, endDate);
         var currentDate = startDate;
         while (currentDate.isBefore(endDate)) {
             var reports = new ArrayList<AdsAdsetReport<AdsKeyword>>();
             var downloadedRows = 0;
-            for (var adset : adsetsByDate.getOrDefault(currentDate, List.of())) {
+            for (var adSet : adSetsByDate.getOrDefault(currentDate, List.of())) {
                 var keywords = downloadKeywords(
-                        page, aliasCacheDirectory, currentDate, adset.campaignId(), adset.adsetId()
+                        page, aliasCacheDirectory, currentDate, adSet.campaignId(), adSet.adsetId()
                 );
                 downloadedRows += keywords.size();
-                reports.add(new AdsAdsetReport<>(adset, keywords));
+                reports.add(new AdsAdsetReport<>(adSet, keywords));
             }
             try {
                 var changedRows = mirrorDB.addOrUpdateAdsKeywords(reports);
-                logger.log(INFO, "Inserted or updated %d keyword rows from %d downloaded rows for %s."
-                        .formatted(changedRows, downloadedRows, currentDate));
+                logger.log(INFO, "Inserted or updated %d keyword rows from %d downloaded rows for %s (vendor %s)."
+                        .formatted(changedRows, downloadedRows, currentDate, vendorId));
             } catch (SQLException e) {
                 throw new RuntimeException("Error storing keywords in the database.", e);
             }
@@ -346,29 +348,30 @@ public class FetchAds {
             Page page,
             Path aliasCacheDirectory,
             EmagMirrorDB mirrorDB,
+            UUID vendorId,
             LocalDate startDate,
             LocalDate endDate
     ) {
-        var adsetsByDate = readAdsetsByDate(mirrorDB, startDate, endDate);
+        var adSetsByDate = readAdSetsByDate(mirrorDB, vendorId, startDate, endDate);
         var currentDate = startDate;
         while (currentDate.isBefore(endDate)) {
             var reports = new ArrayList<AdsAdsetReport<AdsSearchPhrase>>();
             var downloadedRows = 0;
             var matchedRows = 0;
-            var adsetsByCampaign = adsetsByDate.getOrDefault(currentDate, List.of()).stream()
+            var adSetsByCampaign = adSetsByDate.getOrDefault(currentDate, List.of()).stream()
                     .collect(Collectors.groupingBy(AdsAdsetKey::campaignId, LinkedHashMap::new, Collectors.toList()));
-            for (var campaignEntry : adsetsByCampaign.entrySet()) {
+            for (var campaignEntry : adSetsByCampaign.entrySet()) {
                 var searchPhrases = downloadSearchPhrases(
                         page, aliasCacheDirectory, currentDate, campaignEntry.getKey()
                 );
                 downloadedRows += searchPhrases.size();
-                var phrasesByAdset = searchPhrases.stream()
+                var phrasesByAdSet = searchPhrases.stream()
                         .filter(phrase -> phrase.adsetId() != null)
                         .collect(Collectors.groupingBy(AdsSearchPhrase::adsetId));
-                for (var adset : campaignEntry.getValue()) {
-                    var phrases = phrasesByAdset.getOrDefault(adset.adsetId(), List.of());
+                for (var adSet : campaignEntry.getValue()) {
+                    var phrases = phrasesByAdSet.getOrDefault(adSet.adsetId(), List.of());
                     matchedRows += phrases.size();
-                    reports.add(new AdsAdsetReport<>(adset, phrases));
+                    reports.add(new AdsAdsetReport<>(adSet, phrases));
                 }
             }
             if (matchedRows != downloadedRows) {
@@ -377,8 +380,8 @@ public class FetchAds {
             }
             try {
                 var changedRows = mirrorDB.addOrUpdateAdsSearchPhrases(reports);
-                logger.log(INFO, "Inserted or updated %d search phrase rows from %d downloaded rows for %s."
-                        .formatted(changedRows, downloadedRows, currentDate));
+                logger.log(INFO, "Inserted or updated %d search phrase rows from %d downloaded rows for %s (vendor %s)."
+                        .formatted(changedRows, downloadedRows, currentDate, vendorId));
             } catch (SQLException e) {
                 throw new RuntimeException("Error storing search phrases in the database.", e);
             }
@@ -398,25 +401,26 @@ public class FetchAds {
             Page page,
             Path aliasCacheDirectory,
             EmagMirrorDB mirrorDB,
+            UUID vendorId,
             LocalDate startDate,
             LocalDate endDate
     ) {
-        var adsetsByDate = readAdsetsByDate(mirrorDB, startDate, endDate);
+        var adSetsByDate = readAdSetsByDate(mirrorDB, vendorId, startDate, endDate);
         var currentDate = startDate;
         while (currentDate.isBefore(endDate)) {
             var reports = new ArrayList<AdsAdsetReport<AdsTargetedProduct>>();
             var downloadedRows = 0;
-            for (var adset : adsetsByDate.getOrDefault(currentDate, List.of())) {
+            for (var adSet : adSetsByDate.getOrDefault(currentDate, List.of())) {
                 var targetedProducts = downloadTargetedProducts(
-                        page, aliasCacheDirectory, currentDate, adset.campaignId(), adset.adsetId()
+                        page, aliasCacheDirectory, currentDate, adSet.campaignId(), adSet.adsetId()
                 );
                 downloadedRows += targetedProducts.size();
-                reports.add(new AdsAdsetReport<>(adset, targetedProducts));
+                reports.add(new AdsAdsetReport<>(adSet, targetedProducts));
             }
             try {
                 var changedRows = mirrorDB.addOrUpdateAdsTargetedProducts(reports);
-                logger.log(INFO, "Inserted or updated %d targeted product rows from %d downloaded rows for %s."
-                        .formatted(changedRows, downloadedRows, currentDate));
+                logger.log(INFO, "Inserted or updated %d targeted product rows from %d downloaded rows for %s (vendor %s)."
+                        .formatted(changedRows, downloadedRows, currentDate, vendorId));
             } catch (SQLException e) {
                 throw new RuntimeException("Error storing targeted products in the database.", e);
             }
@@ -424,13 +428,14 @@ public class FetchAds {
         }
     }
 
-    private static Map<LocalDate, List<AdsAdsetKey>> readAdsetsByDate(
+    private static Map<LocalDate, List<AdsAdsetKey>> readAdSetsByDate(
             EmagMirrorDB mirrorDB,
+            UUID vendorId,
             LocalDate startDate,
             LocalDate endDate
     ) {
         try {
-            return mirrorDB.getAdsAdsetKeys(startDate, endDate).stream()
+            return mirrorDB.getAdsAdsetKeys(vendorId, startDate, endDate).stream()
                     .collect(Collectors.groupingBy(AdsAdsetKey::reportDate, LinkedHashMap::new, Collectors.toList()));
         } catch (SQLException e) {
             throw new RuntimeException("Error reading campaign and ad set IDs from the database.", e);
@@ -532,7 +537,7 @@ public class FetchAds {
     }
 
     /**
-     * Download targeted product information for the given campaign, adset and day.
+     * Download targeted product information for the given campaign, adset, and day.
      *
      * @param page       Playwright session.
      * @param date       for which to download the data.
@@ -564,7 +569,7 @@ public class FetchAds {
     }
 
     /**
-     * Download keywords information for the given campaign, adset and day.
+     * Download keyword information for the given campaign, adset, and day.
      *
      * @param page       Playwright session.
      * @param date       for which to download the data.
@@ -598,8 +603,8 @@ public class FetchAds {
      * Does the actual downloading of data from eMag and handles paging.
      *
      * @param page              Playwright session.
-     * @param uriForPage        method which create the URI.
-     * @param pathForPage       method which create the path for the cache file.
+     * @param uriForPage        method which creates the URI.
+     * @param pathForPage       method which creates the path for the cache file.
      * @param responseType      data type into which to decode the received JSON.
      * @param itemsFromResponse method which extracts the relevant data from the decoded JSON.
      * @return List of campaign data.
@@ -728,6 +733,23 @@ public class FetchAds {
                     );
                 }
                 retryDelay *= 2;
+            } catch (PlaywrightException playwrightException) {
+                if (retriesRemaining == 0) {
+                    throw playwrightException;
+                }
+                logger.log(WARNING, "eMAG Ads request ended with PlaywrightException %s for %s. Retrying after %d s; retries remaining=%d."
+                        .formatted(playwrightException.getMessage(), url, retryDelay / 1_000, retriesRemaining));
+                retriesRemaining--;
+                try {
+                    sleeper.sleep(retryDelay);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(
+                            "Interrupted while waiting to retry eMAG Ads request for %s.".formatted(url),
+                            interrupted
+                    );
+                }
+                retryDelay *= 2;
             }
         }
     }
@@ -762,7 +784,7 @@ public class FetchAds {
      *
      * @param date       date argument
      * @param pageNumber page number
-     * @return URI builder to which additional argument can be added.
+     * @return URI builder object to which additional argument can be added.
      */
     private static URIBuilder createCommonURI(LocalDate date, int pageNumber) {
         URIBuilder uriBuilder = new URIBuilder(URI.create("https://advertising.emag.net/api/v1"));
@@ -803,7 +825,7 @@ public class FetchAds {
     }
 
     /**
-     * Perform all steps to log into the ads dashboard.
+     * Perform all steps to log into the advertising dashboard.
      *
      * @param page Playwright instance.
      * @param user user information needed for the login.
@@ -851,8 +873,8 @@ public class FetchAds {
     /**
      * Wait a random time of minimum {@see fromSec} to less than {@see toSetc}.
      *
-     * @param fromSec
-     * @param toSec
+     * @param fromSec minimum time to wait for.
+     * @param toSec   maximum time to wait for.
      */
     static void randomWait(Double fromSec, Double toSec) {
         var waitSec = fromSec + (toSec - fromSec) * random.nextDouble();

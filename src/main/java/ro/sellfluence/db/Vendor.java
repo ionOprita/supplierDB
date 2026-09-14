@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -20,6 +21,28 @@ import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 
 public record Vendor (UUID id, String name, boolean isFBE, String companyName, String account, LocalDateTime lastFetch) {
     private static final Logger logger = Logger.getLogger(Vendor.class.getName());
+
+    /**
+     * Resolve an account to its sole vendor without assuming vendor UUIDs match across databases.
+     */
+    public static @NonNull UUID requireVendorIdByAccount(Connection db, String account) throws SQLException {
+        if (account == null || account.isBlank()) {
+            throw new SQLException("A vendor account is required.");
+        }
+        try (var s = db.prepareStatement("SELECT id FROM vendor WHERE account = ?")) {
+            s.setString(1, account);
+            try (var rs = s.executeQuery()) {
+                if (!rs.next()) {
+                    throw new SQLException("No vendor found for account '" + account + "'.");
+                }
+                var id = rs.getObject("id", UUID.class);
+                if (rs.next()) {
+                    throw new SQLException("More than one vendor found for account '" + account + "'.");
+                }
+                return id;
+            }
+        }
+    }
 
     /**
      * Add or update vendor.
@@ -34,16 +57,24 @@ public record Vendor (UUID id, String name, boolean isFBE, String companyName, S
         UUID id = selectVendorIdByName(db, name);
         if (id == null) {
             id = UUID.randomUUID();
-            try (var s = db.prepareStatement("INSERT INTO vendor (id, vendor_name, isfbe, account) VALUES (?,?,?,?)")) {
+            try (var s = db.prepareStatement("INSERT INTO vendor (id, vendor_name, isfbe, account, vendor_group) VALUES (?,?,?,?,?)")) {
                 s.setObject(1, id);
                 s.setString(2, name);
                 // Zoopie Invest is a special case, it does not contain FBE in the name, but is FBE.
                 s.setBoolean(3, name.contains("FBE") || name.contains("Zoopie Invest"));
                 s.setString(4, account);
+                s.setString(5, vendorGroup(account));
                 s.executeUpdate();
             }
         }
         return id;
+    }
+
+    private static String vendorGroup(String account) throws SQLException {
+        if (account == null || account.isBlank()) {
+            throw new SQLException("A vendor account is required to determine the vendor group.");
+        }
+        return account.substring(0, 1).toUpperCase(Locale.ROOT);
     }
 
 

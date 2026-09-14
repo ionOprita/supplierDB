@@ -31,6 +31,10 @@ public class UserPassword {
             .resolve("Secrets")
             .resolve("userpws.txt");
 
+    public String getAlias() {
+        return alias;
+    }
+
     public String getUsername() {
         return username;
     }

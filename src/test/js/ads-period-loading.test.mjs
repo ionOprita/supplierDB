@@ -55,6 +55,7 @@ const tables = [
   {name: 'adsets', controlPrefix: 'adsAdset', tablePrefix: 'adsAdsets', rowName: 'adset'}
 ];
 const origin = 'https://example.test';
+const vendorId = '2aa401ef-31ad-462a-baa4-993c9e21d006';
 const reportDate = '2026-09-05';
 const week = {dateFrom: '2026-08-30', dateTo: reportDate};
 const custom = {dateFrom: '2026-08-01', dateTo: '2026-09-01'};
@@ -79,12 +80,20 @@ async function openTable(t, table) {
     createDocumentFragment: () => new Element('fragment')
   };
   globalThis.window = {
-    location: new URL(`/private/ads-${table.name}?campaignId=12&date=${reportDate}`, origin),
+    location: new URL(`/private/ads-${table.name}?vendorId=${vendorId}&campaignId=12&date=${reportDate}`, origin),
+    addEventListener() {},
     history: {replaceState(state, title, url) { window.location = new URL(url); }}
   };
   t.mock.method(console, 'error', error => errors.push(error));
   t.mock.method(globalThis, 'fetch', async url => {
     const parsed = new URL(url, origin);
+    if (parsed.pathname === '/app/adsVendors') {
+      return {ok: true, json: async () => ({
+        vendors: [{vendorId, name: 'Example vendor', account: 'sellfusion'}],
+        defaultVendorId: vendorId
+      })};
+    }
+    assert.equal(parsed.searchParams.get('vendorId'), vendorId);
     if (parsed.pathname.endsWith('Dates')) {
       return {ok: true, json: async () => [reportDate, '2026-09-04']};
     }
@@ -134,6 +143,7 @@ async function openTable(t, table) {
       const links = cells.flatMap(cell => cell.children).filter(child => child.tag === 'a');
       assert.equal(links.length, table.name === 'campaigns' ? 1 : 4);
       for (const params of [window.location.searchParams, ...links.map(link => new URL(link.href, origin).searchParams)]) {
+        assert.equal(params.get('vendorId'), vendorId);
         assert.equal(params.get('date'), null);
         assert.equal(params.get('dateFrom'), period.dateFrom);
         assert.equal(params.get('dateTo'), period.dateTo);

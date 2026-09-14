@@ -1,5 +1,6 @@
 import {fetchJSON} from './common.js';
 import {bindTableCsvDownload} from './table-common.js';
+import {adsVendorErrorMessage, loadAdsVendor} from './ads-vendor.js';
 import {
   adsPeriodFilePart,
   adsPeriodPhrase,
@@ -108,7 +109,7 @@ function setPageTitle(data, period) {
   document.title = pageTitle;
 }
 
-async function loadSearchPhrases(campaignId, adsetId, period) {
+async function loadSearchPhrases(vendorId, campaignId, adsetId, period) {
   if (!campaignId || !adsetId || !isValidAdsPeriod(period)) {
     HEAD.innerHTML = '';
     currentColumns = [];
@@ -119,7 +120,7 @@ async function loadSearchPhrases(campaignId, adsetId, period) {
 
   const periodPhrase = adsPeriodPhrase(period);
   setStatus(`Loading search phrases ${periodPhrase}...`);
-  const params = adsPeriodSearchParams(period, {campaignId, adsetId});
+  const params = adsPeriodSearchParams(period, {vendorId, campaignId, adsetId});
   const data = await fetchJSON(`/app/adsSearchPhrases?${params.toString()}`);
   setPageTitle(data, period);
   currentColumns = Array.isArray(data.columns)
@@ -132,25 +133,26 @@ async function loadSearchPhrases(campaignId, adsetId, period) {
 }
 
 async function init() {
+  const {vendorId} = await loadAdsVendor();
   const {campaignId, adsetId, period} = paramsFromUrl();
-  replaceAdsPeriodInUrl(period, {campaignId, adsetId});
+  replaceAdsPeriodInUrl(period, {vendorId, campaignId, adsetId});
 
   bindTableCsvDownload({
     buttonId: 'downloadCsvBtn',
     tableId: 'adsSearchPhrasesTable',
     fileNameBuilder: ({datePart}) => {
       const periodPart = adsPeriodFilePart(period, datePart);
-      return `ads-search-phrases-${campaignId || 'campaign'}-${adsetId || 'adset'}-${periodPart}.csv`;
+      return `ads-search-phrases-${vendorId}-${campaignId || 'campaign'}-${adsetId || 'adset'}-${periodPart}.csv`;
     }
   });
 
-  await loadSearchPhrases(campaignId, adsetId, period);
+  await loadSearchPhrases(vendorId, campaignId, adsetId, period);
 }
 
 init().catch((e) => {
   HEAD.innerHTML = '';
   currentColumns = [];
-  renderMessageRow('Failed to load search phrase data.');
+  renderMessageRow(adsVendorErrorMessage(e, 'Failed to load search phrase data.'));
   setStatus('');
   console.error(e);
 });

@@ -41,6 +41,8 @@ import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.Vendor;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
+import ro.sellfluence.support.UserPassword;
+import ro.sellfluence.emagapi.EmagAccounts;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -102,8 +104,6 @@ public class Server {
     private static final String publicOriginConfigName = "ORIGIN";
     private static final String publicHttpsOriginConfigName = "PUBLIC_HTTPS_ORIGIN";
     private static final String logDirectoryConfigName = "LOG_DIRECTORY";
-    private static final String adsAliasesConfigName = "ADS_ALIASES";
-    private static final String defaultAdsAlias = "sellfusion";
     private static final String acmeChallengePrefix = "/.well-known/acme-challenge/";
     private static final ObjectMapper mapper = (new ObjectMapper());
     private static final AtomicBoolean serverShutdownRequested = new AtomicBoolean(false);
@@ -662,7 +662,9 @@ public class Server {
         int securePort = Integer.parseInt(System.getProperty(configNameSecurePort,
                 System.getenv().getOrDefault(configNameSecurePort, arguments.getOption("secport", "8443"))));
 
-        List<String> adsAliases = configuredAdsAliases();
+        List<String> adsAliases = EmagAccounts.getOTPAccounts(mirrorDB).stream()
+                .map(UserPassword::getAlias)
+                .toList();
         ScheduledExecutorService dispatcher = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread thread = new Thread(r, "BackgroundJob-Dispatcher");
             thread.setDaemon(true); // Don't prevent JVM shutdown
@@ -987,8 +989,21 @@ public class Server {
             }
         });
 
+        app.get("/app/adsVendors", ctx -> {
+            var vendors = api.getAdsVendors();
+            if (vendors == null) {
+                ctx.status(500).json(Map.of("error", "Database error"));
+            } else {
+                ctx.json(vendors);
+            }
+        });
+
         app.get("/app/adsCampaignDates", ctx -> {
-            var dates = api.getAdsCampaignReportDates();
+            var vendorId = parseAdsVendorId(ctx);
+            if (vendorId == null) {
+                return;
+            }
+            var dates = api.getAdsCampaignReportDates(vendorId);
             if (dates == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
@@ -997,11 +1012,15 @@ public class Server {
         });
 
         app.get("/app/adsCampaigns", ctx -> {
+            var vendorId = parseAdsVendorId(ctx);
+            if (vendorId == null) {
+                return;
+            }
             var reportPeriod = parseAdsReportPeriod(ctx);
             if (reportPeriod == null) {
                 return;
             }
-            var campaigns = api.getAdsCampaigns(reportPeriod);
+            var campaigns = api.getAdsCampaigns(vendorId, reportPeriod);
             if (campaigns == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
@@ -1010,12 +1029,16 @@ public class Server {
         });
 
         app.get("/app/adsAdsetDates", ctx -> {
+            var vendorId = parseAdsVendorId(ctx);
+            if (vendorId == null) {
+                return;
+            }
             var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
             if (campaignId == null) {
                 ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
                 return;
             }
-            var dates = api.getAdsAdsetReportDates(campaignId);
+            var dates = api.getAdsAdsetReportDates(vendorId, campaignId);
             if (dates == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
@@ -1024,6 +1047,10 @@ public class Server {
         });
 
         app.get("/app/adsAdsets", ctx -> {
+            var vendorId = parseAdsVendorId(ctx);
+            if (vendorId == null) {
+                return;
+            }
             var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
             if (campaignId == null) {
                 ctx.status(400).result("{\"error\":\"Invalid or missing campaignId\"}");
@@ -1033,7 +1060,7 @@ public class Server {
             if (reportPeriod == null) {
                 return;
             }
-            var adsets = api.getAdsAdsets(campaignId, reportPeriod);
+            var adsets = api.getAdsAdsets(vendorId, campaignId, reportPeriod);
             if (adsets == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
@@ -1042,6 +1069,10 @@ public class Server {
         });
 
         app.get("/app/adsSearchPhrases", ctx -> {
+            var vendorId = parseAdsVendorId(ctx);
+            if (vendorId == null) {
+                return;
+            }
             var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
             var adsetId = parseIntOrNull(ctx.queryParam("adsetId"));
             if (campaignId == null) {
@@ -1056,7 +1087,7 @@ public class Server {
             if (reportPeriod == null) {
                 return;
             }
-            var phrases = api.getAdsSearchPhrases(campaignId, adsetId, reportPeriod);
+            var phrases = api.getAdsSearchPhrases(vendorId, campaignId, adsetId, reportPeriod);
             if (phrases == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
@@ -1065,6 +1096,10 @@ public class Server {
         });
 
         app.get("/app/adsTargetedProducts", ctx -> {
+            var vendorId = parseAdsVendorId(ctx);
+            if (vendorId == null) {
+                return;
+            }
             var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
             var adsetId = parseIntOrNull(ctx.queryParam("adsetId"));
             if (campaignId == null) {
@@ -1079,7 +1114,7 @@ public class Server {
             if (reportPeriod == null) {
                 return;
             }
-            var products = api.getAdsTargetedProducts(campaignId, adsetId, reportPeriod);
+            var products = api.getAdsTargetedProducts(vendorId, campaignId, adsetId, reportPeriod);
             if (products == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
@@ -1088,6 +1123,10 @@ public class Server {
         });
 
         app.get("/app/adsKeywords", ctx -> {
+            var vendorId = parseAdsVendorId(ctx);
+            if (vendorId == null) {
+                return;
+            }
             var campaignId = parseIntOrNull(ctx.queryParam("campaignId"));
             var adsetId = parseIntOrNull(ctx.queryParam("adsetId"));
             if (campaignId == null) {
@@ -1102,7 +1141,7 @@ public class Server {
             if (reportPeriod == null) {
                 return;
             }
-            var keywords = api.getAdsKeywords(campaignId, adsetId, reportPeriod);
+            var keywords = api.getAdsKeywords(vendorId, campaignId, adsetId, reportPeriod);
             if (keywords == null) {
                 ctx.status(500).result("{\"error\":\"Database error\"}");
             } else {
@@ -2451,6 +2490,22 @@ public class Server {
         }
     }
 
+    private static UUID parseAdsVendorId(Context ctx) {
+        try {
+            return parseAdsVendorId(ctx.queryParam("vendorId"));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+            return null;
+        }
+    }
+
+    static UUID parseAdsVendorId(String value) {
+        if (value == null || !value.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")) {
+            throw new IllegalArgumentException("Invalid or missing vendorId");
+        }
+        return UUID.fromString(value);
+    }
+
     private static AdsReportPeriod parseAdsReportPeriod(Context ctx) {
         try {
             return parseAdsReportPeriod(
@@ -2692,22 +2747,6 @@ public class Server {
                 gg.jte.ContentType.Html,
                 Server.class.getClassLoader()
         );
-    }
-
-    private static List<String> configuredAdsAliases() {
-        String configuredAliases = configValue(adsAliasesConfigName);
-        if (configuredAliases == null) {
-            return List.of(defaultAdsAlias);
-        }
-
-        List<String> aliases = Arrays.stream(configuredAliases.split(","))
-                .map(String::trim)
-                .filter(alias -> !alias.isEmpty())
-                .toList();
-        if (aliases.isEmpty()) {
-            throw new IllegalArgumentException(adsAliasesConfigName + " must contain at least one alias");
-        }
-        return aliases;
     }
 
     private static void performBackgroundWork(BackgroundJob job) {
