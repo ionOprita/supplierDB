@@ -270,7 +270,7 @@ public class FetchEmagAPI {
     }
 
     private static List<OrderResult> readFromEmag(UserPassword emagCredentials, LocalDateTime createdAfter, LocalDateTime createdBefore, LocalDateTime modifiedAfter, LocalDateTime modifiedBefore, List<Integer> statusList, String id) throws IOException, InterruptedException {
-        var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+        var emag = new EmagApi(emagCredentials);
         var filter = new HashMap<String, Object>();
         filter.put("itemsPerPage", 300);
         if (createdAfter != null) filter.put("createdAfter", createdAfter);
@@ -283,7 +283,7 @@ public class FetchEmagAPI {
     }
 
     private static List<RMAResult> readRMAFromEmag(UserPassword emagCredentials, LocalDateTime startTime, LocalDateTime endTime) throws IOException, InterruptedException {
-        var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+        var emag = new EmagApi(emagCredentials);
         var filter = new HashMap<String, Object>();
         if (startTime != null) {
             filter.put("date_start", startTime);

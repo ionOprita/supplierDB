@@ -52,7 +52,7 @@ public class GetCustomerData {
      * @param orderedProductsByPNK map into which to store the retrieved orders.
      */
     private static void readFromOneUser(LocalDateTime startTime, LocalDateTime endTime, UserPassword emagCredentials, Map<String, List<EmployeeSheetData>> orderedProductsByPNK) {
-        var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+        var emag = new EmagApi(emagCredentials);
         try {
             var responses = emag.readRequest("order",
                     Map.of("status",

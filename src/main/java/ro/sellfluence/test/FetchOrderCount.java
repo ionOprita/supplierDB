@@ -21,7 +21,7 @@ public class FetchOrderCount {
         EmagApi.setAPILogLevel(FINE);
         for (String emagAccount : emagAccounts) {
             var emagCredentials = UserPassword.findAlias(emagAccount);
-            var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+            var emag = new EmagApi(emagCredentials);
             System.out.println(emagAccount+": "+emag.countOrderRequest());
         }
     }

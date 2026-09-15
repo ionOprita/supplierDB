@@ -44,7 +44,7 @@ public class FetchOneOrder {
     private static void fetchOrder(String vendor, String orderId) {
         System.out.printf("Fetching order %s with user %s%n", orderId, vendor);
         var emagCredentials = UserPassword.findAlias(vendor/*"koppelfbe"*/ /*"zoopiesolutions"*/);
-        var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+        var emag = new EmagApi(emagCredentials);
         try {
             var response = emag.emagRequest("https://marketplace.emag.ro/api/v2/order/"+orderId, false, Map.of(), null, Map.class);
             //var response = emag.readRequest("campaign_proposals", Map.of(), null, Map.class);

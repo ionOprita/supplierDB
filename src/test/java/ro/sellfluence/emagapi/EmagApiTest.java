@@ -4,6 +4,7 @@ import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
+import ro.sellfluence.support.UserPassword;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -43,7 +44,7 @@ class EmagApiTest {
         var server = startServer(responses, requestedPages);
         try {
             var delays = new ArrayList<Long>();
-            var emagApi = new EmagApi("user", "password", delays::add);
+            var emagApi = new EmagApi(new UserPassword("testuser", "user", "password", null), delays::add);
 
             var result = emagApi.emagRequest(endpoint(server), true, Map.of(), null, Map.class);
 
@@ -69,7 +70,7 @@ class EmagApiTest {
         var server = startServer(responses, requestedPages);
         try {
             var delays = new ArrayList<Long>();
-            var emagApi = new EmagApi("user", "password", delays::add);
+            var emagApi = new EmagApi(new UserPassword("testuser", "user", "password", null), delays::add);
 
             var exception = assertThrows(
                     RuntimeException.class,
