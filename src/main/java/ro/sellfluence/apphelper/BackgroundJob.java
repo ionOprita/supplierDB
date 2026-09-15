@@ -306,7 +306,10 @@ public class BackgroundJob {
         ));
         definitions.add(new TaskDefinition(
                 "Transfer to storno and return sheets", googleApiLane, executeHourly, runAlways,
-                () -> PopulateStornoAndReturns.updateSpreadsheets(db)
+                () -> {
+                    db.updateStornoTable();
+                    PopulateStornoAndReturns.updateSpreadsheets(db);
+                }
         ));
         definitions.add(new TaskDefinition(
                 "Transfer to order and GMV sheets for 2026", googleApiLane, executeHourly, runAlways,
