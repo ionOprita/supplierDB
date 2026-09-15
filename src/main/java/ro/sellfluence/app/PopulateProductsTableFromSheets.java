@@ -23,6 +23,7 @@ import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
+import static ro.sellfluence.apphelper.Defaults.mainSpreadsheet;
 import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheetByName;
 
 /**
@@ -31,8 +32,6 @@ import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheetByName;
 public class PopulateProductsTableFromSheets {
 
     private static final Logger logger = Logs.getConsoleLogger("populateProductsTableWarnings", WARNING);
-
-    private static final String productSpreadsheetName = "2025 - Date produse & angajati";
 
     enum ProductColumn {
         NAME("C"),
@@ -133,9 +132,9 @@ public class PopulateProductsTableFromSheets {
      * Find all products that are on the main sheet and add any missing product to our database.
      */
     public static void updateProductTable(EmagMirrorDB mirrorDB) {
-        var sheet = getSpreadSheetByName(defaultGoogleApp, productSpreadsheetName);
+        var sheet = getSpreadSheetByName(defaultGoogleApp, mainSpreadsheet);
         if (sheet == null) {
-            throw new RuntimeException("Spreadsheet %s not found.".formatted(productSpreadsheetName));
+            throw new RuntimeException("Spreadsheet %s not found.".formatted(mainSpreadsheet));
         }
         Map<String, UUID> vendors;
         try {
