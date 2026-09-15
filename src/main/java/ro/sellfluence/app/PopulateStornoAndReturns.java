@@ -29,13 +29,15 @@ import static ro.sellfluence.db.ProductTable.ProductInfo.vendorGroupNumber;
 import static ro.sellfluence.support.UsefulMethods.toColumnName;
 
 public class PopulateStornoAndReturns {
-    private static final Logger logger = Logs.getConsoleLogger("PopulateStornoAndReturns", INFO);
+    private static final Logger logger = Logs.getConsoleAndFileLogger("PopulateStornoAndReturns", INFO, 10, 1_000_000);
     private static final String spreadSheetName = "Cent. - Ret. Sto. Ref. Inl.";
     private static final String stornoSheetName = "(GLB) Sto./M.";
     private static final String returnsSheetName = "(GLB) Ret./M.";
     private static final String percentStornoSheetName = "(GLB) Prod. Sto./M. (%)";
     private static final String percentReturnSheetName = "(GLB) Prod. Ret./M. (%)";
     private static final String overviewsSheetName = "(GLB) Cent. Prod. (%)";
+    private static final int hasProductRetrasColumns = 6;
+    private static final int withoutProductRetras = 5;
 
     private static final int monthRow = 2;
     private static final int firstDataRow = 8;
@@ -53,7 +55,7 @@ public class PopulateStornoAndReturns {
             throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
         }
         var vendors = mirrorDB.readVendorCompanies();
-        var products = mirrorDB.readProducts().stream().filter(prod -> prod.pnk()!=null && !prod.pnk().isBlank()).sorted(ProductTable.ProductInfo.nameComparator).toList();
+        var products = mirrorDB.readProducts().stream().filter(prod -> prod.pnk() != null && !prod.pnk().isBlank()).sorted(ProductTable.ProductInfo.nameComparator).toList();
         var replaceData = readReplacements(products, sheet);
         YearMonth month = YearMonth.now();
         var aggregateMonthsList = List.of(6, 12);
@@ -143,14 +145,14 @@ public class PopulateStornoAndReturns {
             headerRows.add(row);
         }
         var row = List.<Object>of(
-                BigDecimal.valueOf((double)totalStorno / totalOrders),
-                BigDecimal.valueOf((double)totalReturns / totalOrders),
-                BigDecimal.valueOf((double)(totalStorno - totalReturns) / totalOrders)
+                BigDecimal.valueOf((double) totalStorno / totalOrders),
+                BigDecimal.valueOf((double) totalReturns / totalOrders),
+                BigDecimal.valueOf((double) (totalStorno - totalReturns) / totalOrders)
         );
         headerRows.add(row);
         var firstHeaderRow = 3;
         sheet.updateRange("'%s'!%s%d:%s%d".formatted(overviewsSheetName, "G", firstHeaderRow, "I", firstHeaderRow + orderCountByVendorGroup.length), headerRows);
-        sheet.formatPercentage(overviewsSheetName, 6, 10, 2, lastRow+1);
+        sheet.formatPercentage(overviewsSheetName, 6, 10, 2, lastRow + 1);
     }
 
     private static Map<ProductTable.ProductInfo, BigDecimal> readReplacements(List<ProductTable.ProductInfo> products, SheetsAPI sheet) {
@@ -197,13 +199,14 @@ public class PopulateStornoAndReturns {
         if (sheet == null) {
             throw new RuntimeException("Could not find the spreadsheet %s.".formatted(spreadSheetName));
         }
+        logger.log(INFO, "Updating spreadsheet %s with name %s".formatted(sheet.getSpreadSheetId(), sheet.getSpreadSheetName()));
         var vendors = mirrorDB.readVendorCompanies();
         var products = mirrorDB.readProducts().stream().sorted(ProductTable.ProductInfo.nameComparator).toList();
         YearMonth month = YearMonth.now();
-        updateProductColumns(sheet, stornoSheetName, products, vendors);
-        updateProductColumns(sheet, returnsSheetName, products, vendors);
-        updateProductColumns(sheet, percentStornoSheetName, products, vendors);
-        updateProductColumns(sheet, percentReturnSheetName, products, vendors);
+        updateProductColumns(sheet, stornoSheetName, products, vendors, hasProductRetrasColumns);
+        updateProductColumns(sheet, returnsSheetName, products, vendors, withoutProductRetras);
+        updateProductColumns(sheet, percentStornoSheetName, products, vendors, withoutProductRetras);
+        updateProductColumns(sheet, percentReturnSheetName, products, vendors, withoutProductRetras);
         while (month.getYear() >= 2024) {
             Map<String, Integer> orderByPNK = mirrorDB.countOrdersByMonth(month);
             Map<String, Integer> stornoByPNK = mirrorDB.countStornoByMonth(month);
@@ -211,13 +214,13 @@ public class PopulateStornoAndReturns {
             Map<String, Double> percentStornoByPNK = computePercent(stornoByPNK, orderByPNK);
             Map<String, Double> percentReturnByPNK = computePercent(returnByPNK, orderByPNK);
             logger.log(INFO, "--- Update Percentage Storno for month %s ------------------------".formatted(month));
-            updateSheet(sheet, percentStornoSheetName, month, products, percentStornoByPNK);
+            updateSheet(sheet, percentStornoSheetName, month, products, percentStornoByPNK, withoutProductRetras);
             logger.log(INFO, "--- Update Percentage Returns for month %s ------------------------".formatted(month));
-            updateSheet(sheet, percentReturnSheetName, month, products, percentReturnByPNK);
+            updateSheet(sheet, percentReturnSheetName, month, products, percentReturnByPNK, withoutProductRetras);
             logger.log(INFO, "--- Update Storno for month %s --------------------------".formatted(month));
-            updateSheet(sheet, stornoSheetName, month, products, stornoByPNK);
+            updateSheet(sheet, stornoSheetName, month, products, stornoByPNK, hasProductRetrasColumns);
             logger.log(INFO, "--- Update Returns for month %s ------------------------".formatted(month));
-            updateSheet(sheet, returnsSheetName, month, products, returnByPNK);
+            updateSheet(sheet, returnsSheetName, month, products, returnByPNK, withoutProductRetras);
             month = month.minusMonths(1);
         }
     }
@@ -233,26 +236,28 @@ public class PopulateStornoAndReturns {
         return result;
     }
 
-    private static void updateProductColumns(SheetsAPI sheet, String sheetName, List<ProductTable.ProductInfo> products, Map<UUID, String> vendors) {
+    private static void updateProductColumns(SheetsAPI sheet, String sheetName, List<ProductTable.ProductInfo> products, Map<UUID, String> vendors, int productColumns) {
         int lineCount = 0;
         var rows = new ArrayList<List<Object>>();
         for (var product : products) {
             lineCount++;
-            var row = List.<Object>of(
-                    lineCount,
-                    product.name(),
-                    nullToEmpty(vendors.get(product.vendor())),
-                    nullToEmpty(product.pnk()),
-                    nullToEmpty(product.category()),
-                    product.retracted()
-            );
+            List<Object> row = new ArrayList<>();
+            row.add(lineCount);
+            row.add(product.name());
+            row.add(nullToEmpty(vendors.get(product.vendor())));
+            row.add(nullToEmpty(product.pnk()));
+            row.add(nullToEmpty(product.category()));
+            if (productColumns > 5) {
+                row.add(product.retracted());
+            }
             rows.add(row);
         }
-        sheet.updateRange("'%s'!%s%d:%s%d".formatted(sheetName, "A", firstDataRow, "F", firstDataRow + rows.size() - 1), rows);
+        var lastColumn = productColumns > 5 ? "F" : "E";
+        sheet.updateRange("'%s'!%s%d:%s%d".formatted(sheetName, "A", firstDataRow, lastColumn, firstDataRow + rows.size() - 1), rows);
     }
 
-    private static <T> void updateSheet(SheetsAPI sheet, final String sheetName, YearMonth month, @NonNull List<ProductTable.ProductInfo> products, @NonNull final Map<String, T> valuesByPNK) {
-        var columnIdentifier = toColumnName((int) YearMonth.of(2023, 6).until(month, ChronoUnit.MONTHS));
+    private static <T> void updateSheet(SheetsAPI sheet, final String sheetName, YearMonth month, @NonNull List<ProductTable.ProductInfo> products, @NonNull final Map<String, T> valuesByPNK, int productColumns) {
+        var columnIdentifier = toColumnName((int) YearMonth.of(2023, 12).minusMonths(productColumns).until(month, ChronoUnit.MONTHS));
         var columnData = new ArrayList<T>();
         for (var product : products) {
             var pnk = product.pnk();
