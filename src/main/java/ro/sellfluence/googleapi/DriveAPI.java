@@ -20,14 +20,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
+import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
 public class DriveAPI {
-    private static final Logger warnLogger = Logs.getConsoleLogger("DriveAPI", Level.WARNING);
+    private static final Logger logger = Logs.getConsoleAndFileLogger("DriveAPI", INFO, 10, 1_000_000);
 
     private static final JsonFactory jsonFactory = GsonFactory.getDefaultInstance();
     private static final Map<String, DriveAPI> nameToAPI = new HashMap<>();
@@ -42,7 +43,7 @@ public class DriveAPI {
     private final Map<String, CachedFile> driveCache = new HashMap<>();
 
     /**
-     * Initialise the drive API.
+     * Initialize the drive API.
      *
      * @param appName name of the application
      *                as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
@@ -65,7 +66,7 @@ public class DriveAPI {
      * Download a file to a given output stream.
      *
      * @param file file as returned by {@link #findFiles(Pattern, String)}.
-     * @param out output stream.
+     * @param out  output stream.
      * @throws IOException if something goes wrong.
      */
     public void download(FileResult file, OutputStream out) throws IOException {
@@ -77,9 +78,9 @@ public class DriveAPI {
     /**
      * Export a file to a given output stream.
      *
-     * @param file file as returned by {@link #findFiles(Pattern, String)}.
+     * @param file     file as returned by {@link #findFiles(Pattern, String)}.
      * @param mimeType desired mime type.
-     * @param out output stream.
+     * @param out      output stream.
      * @throws IOException if something goes wrong.
      */
     public void exportAs(FileResult file, String mimeType, OutputStream out) throws IOException {
@@ -113,21 +114,23 @@ public class DriveAPI {
                         .forEach(matchingFiles::add);
             } while (pageToken != null);
             if (matchingFiles.isEmpty()) {
+                logger.log(INFO, "Found no file with the name %s.".formatted(name));
                 return null;
             } else if (matchingFiles.size() == 1) {
                 String fileId = matchingFiles.iterator().next().getId();
                 updateCaches(name, fileId);
+                logger.log(INFO, "Found file %s with the ID %s.".formatted(name, fileId));
                 return fileId;
             } else {
                 var myFiles = matchingFiles.stream().filter(File::getOwnedByMe).toList();
                 if (myFiles.size() == 1) {
                     var fileId = myFiles.getFirst().getId();
-                    warnLogger.log(Level.WARNING, "Found more than one file with the name %s, using the single one owned by me with the ID %s.".formatted(name, fileId));
+                    logger.log(WARNING, "Found more than one file with the name %s, using the single one owned by me with the ID %s.".formatted(name, fileId));
                     updateCaches(name, fileId);
                     return fileId;
                 } else {
                     throw new RuntimeException(
-                            "%d files with matches %s, %d files are owned by me."
+                            "%d files which match the name %s, %d files are owned by me."
                                     .formatted(matchingFiles.size(), name, myFiles.size())
                     );
                 }

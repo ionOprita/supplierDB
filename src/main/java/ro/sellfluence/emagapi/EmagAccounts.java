@@ -9,12 +9,15 @@ import java.sql.SQLException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
+import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 
 public class EmagAccounts {
-    private static final java.util.logging.Logger logger = Logs.getConsoleAndFileLogger("EmagAccounts", SEVERE, 10, 1_000_000);
+    private static final Logger logger = Logs.getConsoleAndFileLogger("EmagAccounts", INFO, 10, 1_000_000);
 
     private static final Set<String> invalidAlias = new HashSet<>();
 
@@ -45,7 +48,7 @@ public class EmagAccounts {
      */
     public static List<UserPassword> getAccounts(EmagMirrorDB mirrorDB) {
         try {
-            return mirrorDB.getAllVendors().stream().<UserPassword>mapMulti((vendor, b) -> {
+            List<UserPassword> accounts = mirrorDB.getAllVendors().stream().<UserPassword>mapMulti((vendor, b) -> {
                 if (!invalidAlias.contains(vendor.account())) {
                     var userPW = UserPassword.findAlias(vendor.account());
                     if (userPW != null) {
@@ -53,6 +56,9 @@ public class EmagAccounts {
                     }
                 }
             }).toList();
+            var loginNames = accounts.stream().map(UserPassword::getUsername).collect(Collectors.joining());
+            logger.log(INFO, "Returning accounts %s.".formatted(loginNames));
+            return accounts;
         } catch (SQLException e) {
             logger.log(WARNING, "Error reading vendors. Returning an empty list.");
             return List.of();
@@ -67,7 +73,7 @@ public class EmagAccounts {
      */
     public static List<UserPassword> getOTPAccounts(EmagMirrorDB mirrorDB) {
         try {
-            return mirrorDB.getAllVendors().stream().<UserPassword>mapMulti((vendor, b) -> {
+            List<UserPassword> accounts = mirrorDB.getAllVendors().stream().<UserPassword>mapMulti((vendor, b) -> {
                 if (!invalidAlias.contains(vendor.account())) {
                     var userPW = UserPassword.findAlias(vendor.account());
                     if (userPW != null && !UsefulMethods.isBlank(userPW.getOtpAuth())) {
@@ -75,6 +81,9 @@ public class EmagAccounts {
                     }
                 }
             }).toList();
+            var loginNames = accounts.stream().map(UserPassword::getUsername).collect(Collectors.joining());
+            logger.log(INFO, "Returning OTP accounts %s.".formatted(loginNames));
+            return accounts;
         } catch (SQLException e) {
             logger.log(WARNING, "Error reading vendors. Returning an empty list.");
             return List.of();
