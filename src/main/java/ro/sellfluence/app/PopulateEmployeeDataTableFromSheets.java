@@ -18,6 +18,7 @@ import static java.util.logging.Level.INFO;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
+import static ro.sellfluence.apphelper.Defaults.mainSpreadsheet;
 import static ro.sellfluence.db.EmployeeDataTable.SOURCE_COLUMN_COUNT;
 import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheetByName;
 
@@ -28,21 +29,20 @@ public class PopulateEmployeeDataTableFromSheets {
 
     private static final Logger infos = Logs.getConsoleAndFileLogger("populateEmployeeDataTableInfos", INFO, 10, 1_000_000);
 
-    private static final String employeeSpreadsheetName = "2025 - Date produse & angajati";
     private static final String employeeSheetName = "Date Angajati";
     private static final String lastSourceColumn = "EJ";
 
     public static int updateEmployeeDataTable(EmagMirrorDB mirrorDB) throws SQLException {
         Objects.requireNonNull(mirrorDB);
-        var sheet = getSpreadSheetByName(defaultGoogleApp, employeeSpreadsheetName);
+        var sheet = getSpreadSheetByName(defaultGoogleApp, mainSpreadsheet);
         if (sheet == null) {
-            throw new RuntimeException("Spreadsheet %s not found.".formatted(employeeSpreadsheetName));
+            throw new RuntimeException("Spreadsheet %s not found.".formatted(mainSpreadsheet));
         }
         var employees = populateFrom(sheet, employeeSheetName);
         var inserted = mirrorDB.replaceEmployeeData(employees);
         infos.log(INFO, () -> "Replaced employee_sheet_data with %d rows from %s / %s.".formatted(
                 inserted,
-                employeeSpreadsheetName,
+                mainSpreadsheet,
                 employeeSheetName
         ));
         return inserted;

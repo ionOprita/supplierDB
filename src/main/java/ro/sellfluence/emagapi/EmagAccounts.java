@@ -56,7 +56,7 @@ public class EmagAccounts {
                     }
                 }
             }).toList();
-            var loginNames = accounts.stream().map(UserPassword::getUsername).collect(Collectors.joining());
+            var loginNames = accounts.stream().map(UserPassword::getUsername).collect(Collectors.joining(", "));
             logger.log(INFO, "Returning accounts %s.".formatted(loginNames));
             return accounts;
         } catch (SQLException e) {
@@ -81,7 +81,7 @@ public class EmagAccounts {
                     }
                 }
             }).toList();
-            var loginNames = accounts.stream().map(UserPassword::getUsername).collect(Collectors.joining());
+            var loginNames = accounts.stream().map(UserPassword::getUsername).collect(Collectors.joining(", "));
             logger.log(INFO, "Returning OTP accounts %s.".formatted(loginNames));
             return accounts;
         } catch (SQLException e) {

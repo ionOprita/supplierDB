@@ -18,6 +18,7 @@ import static java.util.logging.Level.INFO;
 import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
 import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
+import static ro.sellfluence.apphelper.Defaults.mainSpreadsheet;
 import static ro.sellfluence.db.CategoryDataTable.SOURCE_COLUMN_COUNT;
 import static ro.sellfluence.db.CategoryDataTable.normalizeIntegerValue;
 import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheetByName;
@@ -29,21 +30,20 @@ public class PopulateCategoryDataTableFromSheets {
 
     private static final Logger infos = Logs.getConsoleAndFileLogger("populateCategoryDataTableInfos", INFO, 10, 1_000_000);
 
-    private static final String categorySpreadsheetName = "2025 - Date produse & angajati";
     private static final String categorySheetName = "Setari Cat.";
     private static final String lastSourceColumn = "O";
 
     public static int updateCategoryDataTable(EmagMirrorDB mirrorDB) throws SQLException {
         Objects.requireNonNull(mirrorDB);
-        var sheet = getSpreadSheetByName(defaultGoogleApp, categorySpreadsheetName);
+        var sheet = getSpreadSheetByName(defaultGoogleApp, mainSpreadsheet);
         if (sheet == null) {
-            throw new RuntimeException("Spreadsheet %s not found.".formatted(categorySpreadsheetName));
+            throw new RuntimeException("Spreadsheet %s not found.".formatted(mainSpreadsheet));
         }
         var categories = populateFrom(sheet, categorySheetName);
         var inserted = mirrorDB.replaceCategoryData(categories);
         infos.log(INFO, () -> "Replaced category_sheet_data with %d rows from %s / %s.".formatted(
                 inserted,
-                categorySpreadsheetName,
+                mainSpreadsheet,
                 categorySheetName
         ));
         return inserted;
