@@ -335,7 +335,7 @@ public class CompareDBWithDataComenzi {
                             //.min(Comparator.comparing(OrderLine::date));
                             .forEach(orderLine -> {
                                 var emagCredentials = UserPassword.findAlias(orderLine.vendor().name());
-                                var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+                                var emag = new EmagApi(emagCredentials);
                                 try {
                                     var response = emag.readRequest("order", Map.of("id", orderLine.orderId()), null, OrderResult.class);
                                     if (response.isEmpty()) {
@@ -361,7 +361,7 @@ public class CompareDBWithDataComenzi {
      */
     private static List<OrderResult> fetchFromEmag(OrderLine orderLine) {
         var emagCredentials = UserPassword.findAlias(orderLine.vendor().name());
-        var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+        var emag = new EmagApi(emagCredentials);
         List<OrderResult> response;
         try {
             response = emag.readRequest("order", Map.of("id", orderLine.orderId()), null, OrderResult.class);

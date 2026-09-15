@@ -56,8 +56,12 @@ public class EmagAccounts {
                     }
                 }
             }).toList();
-            var loginNames = accounts.stream().map(UserPassword::getUsername).collect(Collectors.joining(", "));
-            logger.log(INFO, "Returning accounts %s.".formatted(loginNames));
+            if (accounts.isEmpty()) {
+                logger.log(WARNING, "No accounts found.");
+            } else {
+                var loginNames = accounts.stream().map(UserPassword::getUsername).collect(Collectors.joining(", "));
+                logger.log(INFO, "Returning accounts %s.".formatted(loginNames));
+            }
             return accounts;
         } catch (SQLException e) {
             logger.log(WARNING, "Error reading vendors. Returning an empty list.");
@@ -81,8 +85,12 @@ public class EmagAccounts {
                     }
                 }
             }).toList();
-            var loginNames = accounts.stream().map(UserPassword::getUsername).collect(Collectors.joining(", "));
-            logger.log(INFO, "Returning OTP accounts %s.".formatted(loginNames));
+            if (accounts.isEmpty()) {
+                logger.log(WARNING, "No OTP accounts found.");
+            } else {
+                var loginNames = accounts.stream().map(UserPassword::getUsername).collect(Collectors.joining(", "));
+                logger.log(INFO, "Returning OTP accounts %s.".formatted(loginNames));
+            }
             return accounts;
         } catch (SQLException e) {
             logger.log(WARNING, "Error reading vendors. Returning an empty list.");

@@ -3,10 +3,12 @@ package ro.sellfluence.support;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Objects;
+import java.util.logging.Logger;
 import java.util.stream.Stream;
 
+import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.support.UsefulMethods.homeDirectory;
 
 /**
@@ -27,6 +29,8 @@ public class UserPassword {
     private String password;
     private String otpAuth;
 
+    private static final Logger logger = Logs.getConsoleAndFileLogger("UserPasswords", INFO, 10, 1_000_000);
+
     private static final Path path = homeDirectory()
             .resolve("Secrets")
             .resolve("userpws.txt");
@@ -43,7 +47,9 @@ public class UserPassword {
         return password;
     }
 
-    public String getOtpAuth() { return  otpAuth; }
+    public String getOtpAuth() {
+        return otpAuth;
+    }
 
     /**
      * Read the username associated with the given alias.
@@ -63,6 +69,7 @@ public class UserPassword {
         if (count == 1) {
             return values.getFirst();
         } else if (count == 0) {
+            logger.log(WARNING, "Alias '%s' not found in file '%s'".formatted(alias, path));
             return null;
         } else {
             throw new RuntimeException(
@@ -72,7 +79,7 @@ public class UserPassword {
         }
     }
 
-    private UserPassword(String alias, String username, String password, String otpAuth) {
+    public UserPassword(String alias, String username, String password, String otpAuth) {
         this.alias = alias;
         this.username = username;
         this.password = password;

@@ -8,6 +8,7 @@ import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
 import org.jspecify.annotations.NonNull;
 import ro.sellfluence.support.Logs;
+import ro.sellfluence.support.UserPassword;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.type.TypeReference;
@@ -44,6 +45,7 @@ import static java.net.HttpURLConnection.HTTP_BAD_GATEWAY;
 import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
 import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
 import static java.net.HttpURLConnection.HTTP_OK;
+import static java.net.HttpURLConnection.HTTP_UNAUTHORIZED;
 import static java.util.logging.Level.FINE;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
@@ -76,6 +78,7 @@ public class EmagApi {
 
     private static final String countOrders = orderURI + "/count";
 
+    private final String alias;
     private final String emagUser;
     private final String credentials;
     private final HttpClient httpClient;
@@ -177,13 +180,14 @@ public class EmagApi {
     }
 
 
-    public EmagApi(String username, String password) {
-        this(username, password, Thread::sleep);
+    public EmagApi(UserPassword emagCredentials) {
+        this(emagCredentials, Thread::sleep);
     }
 
-    EmagApi(String username, String password, Sleeper sleeper) {
-        emagUser = username;
-        credentials = Base64.getEncoder().encodeToString((username + ":" + password).getBytes());
+    EmagApi(UserPassword emagCredentials, Sleeper sleeper) {
+        alias = emagCredentials.getAlias();
+        emagUser = emagCredentials.getUsername();
+        credentials = Base64.getEncoder().encodeToString((emagCredentials.getUsername() + ":" + emagCredentials.getPassword()).getBytes());
         httpClient = HttpClient.newHttpClient();
         this.sleeper = sleeper;
     }
@@ -228,6 +232,7 @@ public class EmagApi {
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody)).build();
         var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+        checkAuthenticationError(httpResponse);
         int statusCode = httpResponse.statusCode();
         communicationLogger.log(FINE, "Status code = " + statusCode);
         String receivedJSON = null;
@@ -271,6 +276,7 @@ public class EmagApi {
             communicationLogger.log(INFO, () -> "Sent " + jsonAsString);
             try {
                 var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+                checkAuthenticationError(httpResponse);
                 int statusCode = httpResponse.statusCode();
                 communicationLogger.log(FINE, "Status code = " + statusCode);
                 if (statusCode == HTTP_OK) {
@@ -336,6 +342,14 @@ public class EmagApi {
             }
         }
         return accumulatedResponses;
+    }
+
+    private void checkAuthenticationError(HttpResponse<String> httpResponse) {
+        var status = httpResponse.statusCode();
+        if (status ==HTTP_UNAUTHORIZED || status==HTTP_FORBIDDEN) {
+            logger.log(WARNING, "Authentication error for alias %s user %s, status code %s".formatted(alias, emagUser, status));
+            EmagAccounts.invalidAccount(emagUser);
+        }
     }
 
     public static void setAPILogLevel(Level level) {

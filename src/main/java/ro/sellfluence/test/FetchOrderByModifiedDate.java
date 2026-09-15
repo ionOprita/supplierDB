@@ -45,7 +45,7 @@ public class FetchOrderByModifiedDate {
 
     private static void fetchOrder(String vendor) throws SQLException, IOException {
         var emagCredentials = UserPassword.findAlias(vendor);
-        var emag = new EmagApi(emagCredentials.getUsername(), emagCredentials.getPassword());
+        var emag = new EmagApi(emagCredentials);
         var startTime = LocalDate.of(2023,3,9).atStartOfDay();
         var endTime = LocalDate.of(2025,3,9).atStartOfDay();
         List<Integer> statusList = List.of(5);
