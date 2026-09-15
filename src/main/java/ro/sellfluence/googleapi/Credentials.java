@@ -9,31 +9,36 @@ import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
-import com.google.api.services.drive.DriveScopes;
-import com.google.api.services.sheets.v4.SheetsScopes;
 import com.google.auth.oauth2.GoogleCredentials;
+import ro.sellfluence.support.Logs;
 
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.logging.Logger;
 
 import static com.google.api.services.drive.DriveScopes.DRIVE_METADATA_READONLY;
 import static com.google.api.services.drive.DriveScopes.DRIVE_READONLY;
 import static com.google.api.services.sheets.v4.SheetsScopes.SPREADSHEETS;
+import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.SEVERE;
 import static ro.sellfluence.support.UsefulMethods.homeDirectory;
 
 public class Credentials {
+
+    private static final Logger logger = Logs.getConsoleAndFileLogger("Credentials", INFO, 10, 1_000_000);
     /**
-     * Path to the location of the credentials file. This holds the
+     * Path to the location of the credentials file. This holds the data for a service account.
      */
     private static final Path creddentialsPath = homeDirectory()
             .resolve("Secrets")
             .resolve("googleServiceAccount.json");
-    
+
     private static final Path oauthCreddentialsPath = homeDirectory()
             .resolve("Secrets")
             .resolve("googleOAuth2Credentials.json");
@@ -58,11 +63,16 @@ public class Credentials {
      */
     public static GoogleCredentials getCredentials(final NetHttpTransport httpTransport)
             throws IOException {
-        final InputStream in = new FileInputStream(creddentialsPath.toFile());
-        GoogleCredentials credentials = GoogleCredentials
-                .fromStream(in)
-                .createScoped(List.of(SPREADSHEETS, DRIVE_READONLY));
-        return credentials;
+        GoogleCredentials credentials;
+        try (InputStream in = new FileInputStream(creddentialsPath.toFile())) {
+            credentials = GoogleCredentials
+                    .fromStream(in)
+                    .createScoped(List.of(SPREADSHEETS, DRIVE_READONLY));
+            return credentials;
+        } catch (FileNotFoundException e) {
+            logger.log(SEVERE, "Credentials file %s not found".formatted(creddentialsPath), e);
+            throw e;
+        }
     }
 
     /**
