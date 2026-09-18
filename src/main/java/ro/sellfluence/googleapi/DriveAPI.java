@@ -15,8 +15,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.security.GeneralSecurityException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -141,6 +143,151 @@ public class DriveAPI {
     }
 
     public record FileResult(String name, String fileId) {
+    }
+
+    /**
+     * File information returned by {@link #findFiles()}.
+     *
+     * @param name      file name.
+     * @param fullPath  path including the file name, using {@code /} as the separator.
+     * @param owner     owner's email address or display name.
+     * @param sharedWith users, groups, domains, or public access entries the file is shared with.
+     * @param currentUserPermission the current user's effective permission, such as Owner,
+     *                              Editor, Commenter, Viewer, Organizer, or File organizer.
+     * @param fileId    Drive file ID.
+     */
+    public record DetailedFileResult(String name, String fullPath, String owner,
+                                     List<String> sharedWith, String currentUserPermission,
+                                     String fileId) {
+    }
+
+    /**
+     * Find every non-trashed file visible to the current Drive user.
+     *
+     * <p>This overload deliberately has no name pattern or Drive query filter. In addition to
+     * the file name and ID, it resolves the parent folders and returns ownership and sharing
+     * information.</p>
+     *
+     * @return all visible non-trashed files.
+     * @throws RuntimeException if something goes wrong.
+     */
+    public List<DetailedFileResult> findFiles() {
+        try {
+            var drive = setupDriveService();
+            var currentUser = drive.about().get()
+                    .setFields("user(emailAddress)")
+                    .execute()
+                    .getUser();
+            var currentUserEmail = currentUser == null ? null : currentUser.getEmailAddress();
+            var allFiles = new LinkedHashMap<String, File>();
+            String pageToken = null;
+            do {
+                FileList fileList = drive.files().list()
+                        .setIncludeItemsFromAllDrives(true)
+                        .setSupportsAllDrives(true)
+                        .setFields("nextPageToken, files(id, name, mimeType, parents, trashed, ownedByMe, owners(displayName,emailAddress), permissions(type,role,emailAddress,displayName), capabilities(canEdit,canComment))")
+                        .setPageToken(pageToken)
+                        .execute();
+                pageToken = fileList.getNextPageToken();
+                for (var file : fileList.getFiles()) {
+                    if (!file.getTrashed()) {
+                        allFiles.put(file.getId(), file);
+                    }
+                }
+            } while (pageToken != null);
+
+            return allFiles.values().stream()
+                    .map(file -> new DetailedFileResult(
+                            file.getName(),
+                            buildFullPath(file, allFiles),
+                            ownerOf(file),
+                            sharedWith(file),
+                            currentUserPermission(file, currentUserEmail),
+                            file.getId()))
+                    .toList();
+        } catch (IOException e) {
+            throw new RuntimeException("Couldn't retrieve the list of files.", e);
+        }
+    }
+
+    private String buildFullPath(File file, Map<String, File> filesById) {
+        var path = new ArrayList<String>();
+        var current = file;
+        var visited = new HashSet<String>();
+        while (current != null && visited.add(current.getId())) {
+            path.addFirst(current.getName());
+            var parents = current.getParents();
+            var parentId = parents == null || parents.isEmpty() ? null : parents.getFirst();
+            current = parentId == null ? null : filesById.getOrDefault(parentId, new File()
+                    .setId(parentId)
+                    .setName(parentId));
+        }
+        return "/" + String.join("/", path);
+    }
+
+    private String ownerOf(File file) {
+        var owners = file.getOwners();
+        if (owners == null || owners.isEmpty()) {
+            return null;
+        }
+        return permissionName(owners.getFirst().getEmailAddress(), owners.getFirst().getDisplayName(), "owner");
+    }
+
+    private List<String> sharedWith(File file) {
+        var result = new ArrayList<String>();
+        if (file.getPermissions() != null) {
+            file.getPermissions().stream()
+                    .filter(permission -> !"owner".equals(permission.getRole()))
+                    .map(permission -> permissionName(permission.getEmailAddress(), permission.getDisplayName(), permission.getType()))
+                    .forEach(result::add);
+        }
+        return List.copyOf(result);
+    }
+
+    private String currentUserPermission(File file, String currentUserEmail) {
+        if (Boolean.TRUE.equals(file.getOwnedByMe())) {
+            return "Owner";
+        }
+        if (currentUserEmail != null && file.getPermissions() != null) {
+            var matchingPermission = file.getPermissions().stream()
+                    .filter(permission -> currentUserEmail.equalsIgnoreCase(permission.getEmailAddress()))
+                    .findFirst();
+            if (matchingPermission.isPresent()) {
+                return permissionLabel(matchingPermission.get().getRole());
+            }
+        }
+        var capabilities = file.getCapabilities();
+        if (capabilities != null) {
+            if (Boolean.TRUE.equals(capabilities.getCanEdit())) {
+                return "Editor";
+            }
+            if (Boolean.TRUE.equals(capabilities.getCanComment())) {
+                return "Commenter";
+            }
+        }
+        return "Viewer";
+    }
+
+    private String permissionLabel(String role) {
+        return switch (role == null ? "" : role) {
+            case "owner" -> "Owner";
+            case "organizer" -> "Organizer";
+            case "fileOrganizer" -> "File organizer";
+            case "writer" -> "Editor";
+            case "commenter" -> "Commenter";
+            case "reader" -> "Viewer";
+            default -> role;
+        };
+    }
+
+    private String permissionName(String emailAddress, String displayName, String fallback) {
+        if (emailAddress != null && !emailAddress.isBlank()) {
+            return emailAddress;
+        }
+        if (displayName != null && !displayName.isBlank()) {
+            return displayName;
+        }
+        return fallback;
     }
 
     /**
