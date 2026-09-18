@@ -39,20 +39,14 @@ import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheetByName;
 public class UpdateEmployeeSheetsFromDB {
 
     private static final Logger logger = Logs.getConsoleAndFileLogger("UpdateEmployeeSheetsWarnings", WARNING, 10, 1_000_000);
-    private static final Logger progressLogger = Logs.getConsoleLogger("UpdateEmployeeSheetsProgress", INFO);
+    private static final Logger progressLogger = Logs.getConsoleAndFileLogger("UpdateEmployeeSheetsProgress", INFO, 10, 1_000_000);
 
     private static final String statisticSheetName = "Statistici/luna";
 
     private static final Set<String> suburbsToExclude = Set.of();
 
-    private static final Set<String> citiesToExclude = Set.of("Brasov", "Sectorul 1", "Sectorul 3", "Sectorul 4",
-            "Iasi");
-
-    private static final Set<String> vendorsWithExclusions = Set.of("Zoopie Concept FBE",
-            "Zoopie Invest",
-            "Zoopie Solutions FBE",
-            "Koppel",
-            "Koppel FBE");
+    private static final Set<String> citiesToExclude = Set.of("Brasov", "Braşov", "Sectorul 1", "Sectorul 2", "Sectorul 3", "Sectorul 4", "Sectorul 5", "Sectorul 6",
+            "Iasi", "Popesti-Leordeni", "Popeşti-Leordeni", "Cluj-Napoca");
 
     static void main(String[] args) throws SQLException, IOException {
         var arguments = new Arguments(args);
@@ -222,11 +216,8 @@ public class UpdateEmployeeSheetsFromDB {
                 var filteredOrders = orders.stream()
                         .filter(it ->
                                 !(
-                                        vendorsWithExclusions.contains(it.vendorName()) &&
-                                                (
-                                                        (it.shippingSuburb() != null && suburbsToExclude.contains(it.shippingSuburb()))
-                                                                || (it.shippingCity() != null && citiesToExclude.contains(it.shippingCity()))
-                                                )
+                                        it.shippingSuburb() != null && suburbsToExclude.contains(it.shippingSuburb())
+                                                || it.shippingCity() != null && citiesToExclude.contains(it.shippingCity())
                                 )
                         )
                         .toList();
