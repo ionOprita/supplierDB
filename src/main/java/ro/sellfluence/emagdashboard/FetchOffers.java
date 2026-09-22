@@ -1,4 +1,4 @@
-package ro.sellfluence.test;
+package ro.sellfluence.emagdashboard;
 
 import com.microsoft.playwright.APIResponse;
 import com.microsoft.playwright.Page;
@@ -6,22 +6,20 @@ import com.microsoft.playwright.options.RequestOptions;
 import ro.sellfluence.support.Logs;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.io.IOException;
 import java.net.URI;
-import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
-import static ro.sellfluence.apphelper.FetchAds.randomWait;
-import static ro.sellfluence.apphelper.FetchAds.withPlaywrightSession;
+import static ro.sellfluence.emagdashboard.FetchAds.randomWait;
+import static ro.sellfluence.emagdashboard.FetchAds.withPlaywrightSession;
 
 public class FetchOffers {
     private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", INFO, 10, 100_000);
 
-    static void main(String[] args) throws SQLException, IOException {
+    static void main() {
         System.setProperty("ads.headless", "false");
         withPlaywrightSession("sellfusion", (page, _) -> {
             page.navigate("https://marketplace.emag.ro/offers/list");
@@ -34,7 +32,7 @@ public class FetchOffers {
 
     private static final URI uri = URI.create("https://marketplace.emag.ro/global-listing");
 
-    private static APIResponse sendGarphiQLRequest(Page page, String op, String query, Map<String, ?> variables) {
+    private static APIResponse sendGraphQLRequest(Page page, String op, String query, Map<String, ?> variables) {
         Map<String, Object> requestBody = Map.of(
                 "operationName", op,
                 "variables", variables,
@@ -42,8 +40,8 @@ public class FetchOffers {
         );
         var jsonBody = jsonMapper.writeValueAsString(requestBody);
 
-        IO.println("Sending request with body:\n" + jsonBody + "\n");
-        var response = page.request().post(
+        logger.log(INFO, "Sending request with body:\n" + jsonBody);
+        return page.request().post(
                 uri.toASCIIString(),
                 RequestOptions.create()
                         .setHeader("Content-Type", "application/json")
@@ -51,7 +49,6 @@ public class FetchOffers {
                         .setHeader("X-Requested-With", "XMLHttpRequest")
                         .setData(requestBody)
         );
-        return response;
     }
 
     private static void getOffers(Page page) {
@@ -188,7 +185,7 @@ public class FetchOffers {
                 )
         );
 
-        var response = sendGarphiQLRequest(page, "offers", query, variables);
+        var response = sendGraphQLRequest(page, "offers", query, variables);
         if (response.status() != 200) {
             logger.log(SEVERE, "Response status code: " + response.status());
             logger.log(SEVERE, "Response status text: " + response.statusText());

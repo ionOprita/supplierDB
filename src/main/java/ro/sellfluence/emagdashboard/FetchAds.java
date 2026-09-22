@@ -1,4 +1,4 @@
-package ro.sellfluence.apphelper;
+package ro.sellfluence.emagdashboard;
 
 import com.bastiaanjansen.otp.TOTPGenerator;
 import com.microsoft.playwright.Browser;

@@ -8,6 +8,7 @@ import ro.sellfluence.app.UpdateEmployeeSheetsFromDB;
 import ro.sellfluence.app.UpdateProductEmployeeSheetTabsFromSheets;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.Task;
+import ro.sellfluence.emagdashboard.FetchAds;
 import ro.sellfluence.support.Logs;
 
 import java.sql.SQLException;
@@ -410,7 +411,7 @@ public class BackgroundJob {
     }
 
     /**
-     * Load the history once and submit at most one eligible task for every idle lane.
+     * Load the history and submit at most one eligible task for every idle lane.
      */
     public void performWork() {
         if (!running.get()) {

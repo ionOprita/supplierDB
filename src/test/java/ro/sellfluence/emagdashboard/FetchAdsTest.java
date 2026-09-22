@@ -1,4 +1,4 @@
-package ro.sellfluence.apphelper;
+package ro.sellfluence.emagdashboard;
 
 import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.TimeoutError;
