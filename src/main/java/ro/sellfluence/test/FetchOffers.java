@@ -1,10 +1,9 @@
 package ro.sellfluence.test;
 
+import com.microsoft.playwright.APIResponse;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.RequestOptions;
-import org.jetbrains.annotations.NotNull;
-import ro.sellfluence.db.EmagMirrorDB;
-import ro.sellfluence.support.Arguments;
+import ro.sellfluence.support.Logs;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
@@ -12,21 +11,21 @@ import java.net.URI;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
-import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
-import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
+import static java.util.logging.Level.INFO;
+import static java.util.logging.Level.SEVERE;
 import static ro.sellfluence.apphelper.FetchAds.randomWait;
 import static ro.sellfluence.apphelper.FetchAds.withPlaywrightSession;
 
 public class FetchOffers {
+    private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", INFO, 10, 100_000);
+
     static void main(String[] args) throws SQLException, IOException {
         System.setProperty("ads.headless", "false");
-        var arguments = new Arguments(args);
-        var mirrorDB = EmagMirrorDB.getEmagMirrorDB(arguments.getOption(databaseOptionName, defaultDatabase));
         withPlaywrightSession("sellfusion", (page, _) -> {
             page.navigate("https://marketplace.emag.ro/offers/list");
             randomWait(4.0, 6.0);
-            getSeller(page);
             getOffers(page);
         });
     }
@@ -35,61 +34,7 @@ public class FetchOffers {
 
     private static final URI uri = URI.create("https://marketplace.emag.ro/global-listing");
 
-    private static void getSeller(Page page) {
-        // "query seller($seller: SellerSearchFilterInput!) {\n  sellers(filters: $seller) {\n    items {\n      sellerId\n      sellerName\n      platformId\n    }\n  }\n}"}
-        var variables = Map.of(
-                "seller", Map.of("key", "")
-        );
-        var query = """
-                query seller($seller: SellerSearchFilterInput!) {
-                  sellers(filters: $seller) {
-                    items {
-                      sellerId
-                      sellerName
-                      platformId
-                   }
-                  }
-                }""";
-        sendGarphiQLRequest(page, "seller", query, variables);
-    }
-
-    private static void sendGarphiQLRequestJS(Page page, String op, String query, Map<String, ?> variables) {
-        Map<String, Object> requestBody = Map.of(
-                "operationName", op,
-                "variables", variables,
-                "query", query
-        );
-        var jsonBody = jsonMapper.writeValueAsString(requestBody);
-
-        IO.println("Sending request with body:\n" + jsonBody + "\n");
-        var result = page.evaluate("""
-    async ({ url, body }) => {
-        const response = await fetch(url, {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json, text/plain, */*',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: JSON.stringify(body)
-        });
-
-        return {
-            status: response.status,
-            body: await response.text()
-        };
-    }
-    """,
-                Map.of(
-                        "url", uri.toASCIIString(),
-                        "body", requestBody
-                )
-        );
-        IO.println("Response body:\n" + result + "\n");
-    }
-
-    private static void sendGarphiQLRequest(Page page, String op, String query, Map<String, ?> variables) {
+    private static APIResponse sendGarphiQLRequest(Page page, String op, String query, Map<String, ?> variables) {
         Map<String, Object> requestBody = Map.of(
                 "operationName", op,
                 "variables", variables,
@@ -106,12 +51,13 @@ public class FetchOffers {
                         .setHeader("X-Requested-With", "XMLHttpRequest")
                         .setData(requestBody)
         );
-        IO.println("Status code: " + response.status() + "\n");
-        IO.println("Status test: " + response.statusText() + "\n");
-        IO.println("Response body:\n" + response.text() + "\n");
+        return response;
     }
 
     private static void getOffers(Page page) {
+        // The next two lines should be per
+        page.navigate("https://marketplace.emag.ro/offers/list");
+        randomWait(4.0, 6.0);
         var query = """
                 query offers($filters: OfferFilterInput!) {
                   offers(filters: $filters) {
@@ -237,12 +183,19 @@ public class FetchOffers {
                         "platformType", "ROMANIA",
                         "sort", List.of(
                                 Map.of("field", "extId", "direction", "ASC")
-                        ),
-                        "seller", List.of(182179)
+                        )/*,
+                        "seller", List.of(182179)*/
                 )
         );
 
-        sendGarphiQLRequest(page, "offers", query, variables);
+        var response = sendGarphiQLRequest(page, "offers", query, variables);
+        if (response.status() != 200) {
+            logger.log(SEVERE, "Response status code: " + response.status());
+            logger.log(SEVERE, "Response status text: " + response.statusText());
+            logger.log(SEVERE, "Response body:\n" + response.text() + "\n");
+            throw new RuntimeException("Response status code: " + response.status());
+        }
+
     }
 }
 
