@@ -4,9 +4,17 @@ import com.microsoft.playwright.APIResponse;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.options.RequestOptions;
 import ro.sellfluence.support.Logs;
+import tools.jackson.core.JsonParser;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ValueDeserializer;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.module.SimpleModule;
 
 import java.net.URI;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -24,11 +32,17 @@ public class FetchOffers {
         withPlaywrightSession("sellfusion", (page, _) -> {
             page.navigate("https://marketplace.emag.ro/offers/list");
             randomWait(4.0, 6.0);
-            getOffers(page);
+            var offers = getOffers(page);
+            IO.println(offers);
         });
     }
 
-    private static final JsonMapper jsonMapper = JsonMapper.builder().build();
+    private static final JsonMapper jsonMapper = JsonMapper.builder()
+            .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .addModule(new SimpleModule()
+                    .addDeserializer(LocalDate.class, new LocalDateDeserializer())
+                    .addDeserializer(LocalDateTime.class, new LocalDateTimeDeserializer()))
+            .build();
 
     private static final URI uri = URI.create("https://marketplace.emag.ro/global-listing");
 
@@ -51,7 +65,7 @@ public class FetchOffers {
         );
     }
 
-    private static void getOffers(Page page) {
+    static OffersResponse getOffers(Page page) {
         // The next two lines should be per
         page.navigate("https://marketplace.emag.ro/offers/list");
         randomWait(4.0, 6.0);
@@ -193,6 +207,32 @@ public class FetchOffers {
             throw new RuntimeException("Response status code: " + response.status());
         }
 
+        var responseBody = response.text();
+        try {
+            return jsonMapper.readValue(responseBody, OffersResponse.class);
+        } catch (RuntimeException exception) {
+            logger.log(SEVERE, "Could not deserialize offers response: " + exception.getMessage());
+            logger.log(SEVERE, "Response body:\n" + responseBody + "\n");
+            throw new IllegalStateException("Could not deserialize offers response", exception);
+        }
+    }
+
+    static class LocalDateTimeDeserializer extends ValueDeserializer<LocalDateTime> {
+        private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+        @Override
+        public LocalDateTime deserialize(JsonParser parser, DeserializationContext context) {
+            return LocalDateTime.parse(parser.getString(), FORMATTER);
+        }
+    }
+
+    static class LocalDateDeserializer extends ValueDeserializer<LocalDate> {
+        private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+        @Override
+        public LocalDate deserialize(JsonParser parser, DeserializationContext context) {
+            return LocalDate.parse(parser.getString(), FORMATTER);
+        }
     }
 }
 
