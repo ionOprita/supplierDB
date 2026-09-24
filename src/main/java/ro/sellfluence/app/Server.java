@@ -663,7 +663,7 @@ public class Server {
         int securePort = Integer.parseInt(System.getProperty(configNameSecurePort,
                 System.getenv().getOrDefault(configNameSecurePort, arguments.getOption("secport", "8443"))));
 
-        List<String> adsAliases = EmagAccounts.getOTPAccounts(mirrorDB).stream()
+        List<String> dashboardAliases = EmagAccounts.getOTPAccounts(mirrorDB).stream()
                 .map(UserPassword::getAlias)
                 .toList();
         ScheduledExecutorService dispatcher = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -674,7 +674,7 @@ public class Server {
         BackgroundJob backgroundJob = new BackgroundJob(
                 mirrorDB,
                 Clock.systemDefaultZone(),
-                adsAliases
+                dashboardAliases
         );
 
         // Give administrators time to pause individual tasks before the first dispatcher cycle.

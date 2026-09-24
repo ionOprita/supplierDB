@@ -9,6 +9,7 @@ import ro.sellfluence.app.UpdateProductEmployeeSheetTabsFromSheets;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.Task;
 import ro.sellfluence.emagdashboard.FetchAds;
+import ro.sellfluence.emagdashboard.FetchOffers;
 import ro.sellfluence.support.Logs;
 
 import java.sql.SQLException;
@@ -78,13 +79,13 @@ public class BackgroundJob {
      *
      * @param db         application database
      * @param clock      scheduling clock; its zone must match the database session zone used for task timestamps
-     * @param adsAliases all Ads-dashboard account aliases discovered from OTP-enabled credentials
+     * @param dashboardAliases all dashboard account aliases discovered from OTP-enabled credentials
      */
-    public BackgroundJob(EmagMirrorDB db, Clock clock, List<String> adsAliases) {
+    public BackgroundJob(EmagMirrorDB db, Clock clock, List<String> dashboardAliases) {
         this(
                 new DBTaskStore(Objects.requireNonNull(db, "db")),
                 clock,
-                productionTaskDefinitions(db, clock, adsAliases)
+                productionTaskDefinitions(db, clock, dashboardAliases)
         );
     }
 
@@ -242,7 +243,7 @@ public class BackgroundJob {
     private static List<TaskDefinition> productionTaskDefinitions(
             EmagMirrorDB db,
             Clock clock,
-            List<String> adsAliases
+            List<String> dashboardAliases
     ) {
         Objects.requireNonNull(db, "db");
         Objects.requireNonNull(clock, "clock");
@@ -318,20 +319,22 @@ public class BackgroundJob {
                 () -> UpdateEmployeeSheetsFromDB.updateSheets(db)
         ));
 
-        definitions.addAll(adsTaskDefinitions(db, clock, adsAliases));
+        definitions.addAll(dashboardTaskDefinitions(db, clock, dashboardAliases));
         return List.copyOf(definitions);
     }
 
-    static List<TaskDefinition> adsTaskDefinitions(EmagMirrorDB db, Clock clock, List<String> aliases) {
+    static List<TaskDefinition> dashboardTaskDefinitions(EmagMirrorDB db, Clock clock, List<String> aliases) {
         var definitions = new ArrayList<TaskDefinition>();
         for (var alias : aliases.stream().distinct().toList()) {
-            addAdsTasks(definitions, db, clock, alias);
+            addDashboardTasks(definitions, db, clock, alias);
         }
         return List.copyOf(definitions);
     }
 
-    private static void addAdsTasks(List<TaskDefinition> definitions, EmagMirrorDB db, Clock clock, String alias) {
+    private static void addDashboardTasks(List<TaskDefinition> definitions, EmagMirrorDB db, Clock clock, String alias) {
         final var lane = adsLane + ":" + alias;
+        // Offers have priority when due, while sharing the account's serial lane prevents overlapping logins.
+        definitions.add(offersTask(alias, () -> FetchOffers.fetchOffers(alias, db, clock)));
         var campaignsTaskName = adsCampaignsTaskName(alias);
         definitions.add(adsTask(
                 campaignsTaskName,
@@ -374,6 +377,18 @@ public class BackgroundJob {
 
     static String adsCampaignsTaskName(String alias) {
         return "Fetch Ads campaigns and ad sets for " + alias;
+    }
+
+    static TaskDefinition offersTask(String alias, CheckedAction action) {
+        return new TaskDefinition(
+                "Fetch offers for " + alias,
+                adsLane + ":" + alias,
+                executeHourly,
+                executeHourly,
+                runAlways,
+                null,
+                action
+        );
     }
 
     @FunctionalInterface

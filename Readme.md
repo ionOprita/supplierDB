@@ -30,21 +30,33 @@ This split intentionally changes these standalone applications, which are not us
 - `EmagBot.main()` calls only that main product import before `UpdateEmployeeSheetsFromDB`, so its employee-sheet transfer
   can use stale or null tab mappings.
 
-### Background-task lanes and eMAG Ads
+### Background-task lanes, eMAG Ads, and offers
 
 The server schedules background work in independent serial lanes. eMAG API transfers use `emagApiLane`, Google Drive
-and Sheets transfers use `googleApiLane`, and each Ads account has its own `emagAdsLane:<account>` lane. Only one task
-can be active in a lane, but tasks in different lanes can run at the same time.
+and Sheets transfers use `googleApiLane`, and each dashboard account has its own `emagAdsLane:<account>` lane shared
+by Ads and offers. Only one task can be active in a lane, preventing parallel logins for the same account, while tasks
+in different lanes can run at the same time.
 
 Ads imports start before 07:00 in the server JVM's local timezone, at most once every 24 hours after a successful run. Each run
-uses the completed 31-day interval `[today - 31 days, today)`. Campaigns and ad sets run first; keywords, search phrases,
+uses the completed 31-day interval `[today - 31 days, today)`. Among Ads tasks, campaigns and ad sets run first; keywords, search phrases,
 and targeted products are eligible only after a newer successful campaigns run. Failed Ads tasks retry after one hour.
+
+`Fetch offers for <account>` runs throughout the day, at most once per hour after a successful run, and retries failures
+after one hour. It has priority when the account's lane becomes free; an already-running Ads task can delay it.
+The existing task controls allow pausing automatic runs and requesting a manual run, while still preventing simultaneous
+logins for the same account.
+
+Migration 41 creates the `offers_` tables. An offers fetch downloads every page before atomically replacing the snapshot
+for that vendor and date, including all nested records. The date is captured once when fetching begins using the server
+JVM's local timezone. The last successful fetch of the day wins: absent offers are removed, and a successful empty result
+clears that day's offers. Earlier dates and other vendors remain unchanged. Failed or incomplete fetches preserve the
+previous snapshot. Fetch metadata stores only the date; business dates supplied within offer records are retained.
 
 Production configuration:
 
-- At startup, Ads tasks are registered for every account returned by `EmagAccounts.getOTPAccounts`, with duplicate aliases
+- At startup, Ads and offers tasks are registered for every account returned by `EmagAccounts.getOTPAccounts`, with duplicate aliases
   registered once. There is no account filter; restart the server after changing the available accounts. If no accounts are
-  returned, other background jobs continue without Ads tasks.
+  returned, other background jobs continue without dashboard tasks.
 - Each Ads account must match exactly one `vendor.account`. All Ads rows, keys, imports, and reports include that vendor's
   UUID, so different vendors can use identical campaign and ad-set IDs. Migration 39 assigns historical Ads to the vendor
   whose account is `sellfusion` in the database being upgraded, and fails atomically if populated Ads cannot be assigned
@@ -58,7 +70,8 @@ Production configuration:
   the matching binary is installed before starting the server. For other launch methods, run
   `mvn exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install chromium"` under the server account.
 - Set `ads.offline=true` only for cache-backed diagnostic runs. Cache files are read from and written under
-  `AdsJSON/<alias>/`; old flat `AdsJSON/*.json` files are left untouched and are not reused.
+  `AdsJSON/<alias>/`; old flat `AdsJSON/*.json` files are left untouched and are not reused. Offers always require fresh
+  data and reject offline mode before opening a browser.
 - Missing credentials, HTTP/API errors, malformed responses, and interrupted waits fail the task and are recorded in the
   task history rather than being reported as successful imports.
 
@@ -68,7 +81,7 @@ The product-performance dashboard aggregates active daily adset/campaign snapsho
 Monday–Sunday weeks or calendar months. See [Product performance calculations](doc/ProductPerformance.md)
 for product matching, sources, formulas, unavailable columns, and partial-report errors.
 
-### Ads database tests
+### Ads and offers database tests
 
 The PostgreSQL migration and storage tests require `ADS_TEST_DB_URL` pointing to a disposable PostgreSQL database,
 with optional `ADS_TEST_DB_USER` and `ADS_TEST_DB_PASSWORD`. They create and remove isolated schemas and run with
