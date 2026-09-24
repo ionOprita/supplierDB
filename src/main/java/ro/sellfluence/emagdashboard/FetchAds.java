@@ -1,4 +1,4 @@
-package ro.sellfluence.apphelper;
+package ro.sellfluence.emagdashboard;
 
 import com.bastiaanjansen.otp.TOTPGenerator;
 import com.microsoft.playwright.Browser;
@@ -181,7 +181,7 @@ public class FetchAds {
         }
     }
 
-    private static void withPlaywrightSession(String alias, BiConsumer<Page, Path> transfer) {
+    public static void withPlaywrightSession(String alias, BiConsumer<Page, Path> transfer) {
         var aliasCacheDirectory = cacheDirectoryForAlias(cacheDirectory, alias);
         var user = requireCredentials(alias);
         setupCacheDirectory(aliasCacheDirectory);
@@ -876,7 +876,7 @@ public class FetchAds {
      * @param fromSec minimum time to wait for.
      * @param toSec   maximum time to wait for.
      */
-    static void randomWait(Double fromSec, Double toSec) {
+    public static void randomWait(Double fromSec, Double toSec) {
         var waitSec = fromSec + (toSec - fromSec) * random.nextDouble();
         try {
             Thread.sleep((long) (waitSec * 1000));

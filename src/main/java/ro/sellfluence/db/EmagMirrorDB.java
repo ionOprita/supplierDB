@@ -25,6 +25,7 @@ import ro.sellfluence.emagapi.LockerDetails;
 import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.Product;
 import ro.sellfluence.emagapi.RMAResult;
+import ro.sellfluence.emagdashboard.OffersData;
 import ro.sellfluence.sheetSupport.Conversions;
 import ro.sellfluence.support.Logs;
 
@@ -167,8 +168,23 @@ public class EmagMirrorDB {
         return database.readTX(AdsCampaignTable::getVendors);
     }
 
+    public List<ProductPerformanceTable.DailyAdset> getProductPerformanceAdsets(UUID vendorId, String pnk)
+            throws SQLException {
+        return database.readTX(db -> ProductPerformanceTable.getDailyAdsets(db, vendorId, pnk));
+    }
+
     public int addOrUpdateAdCampaigns(UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         return database.writeTX(db -> upsertCampaigns(db, vendorId, campaigns));
+    }
+
+    /**
+     * Atomically replaces a vendor's complete offers snapshot for the fetch date.
+     * Earlier dates remain available; an empty snapshot clears only the supplied date.
+     *
+     * @return the number of offers stored
+     */
+    public int storeOffersSnapshot(UUID vendorId, LocalDate fetchDate, OffersData data) throws SQLException {
+        return database.writeTX(db -> OffersTable.storeSnapshot(db, vendorId, fetchDate, data));
     }
 
     public int addOrUpdateAdsAndCampaigns(UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {

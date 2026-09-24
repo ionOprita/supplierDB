@@ -300,24 +300,106 @@ class BackgroundJobTest {
     }
 
     @Test
-    void registersEveryDiscoveredAdsAccountOnceWithItsOwnPrerequisites() {
-        var definitions = BackgroundJob.adsTaskDefinitions(null, clockAt(NOW),
+    void registersEveryDiscoveredDashboardAccountOnceWithOffersFirstAndAdsPrerequisites() {
+        var definitions = BackgroundJob.dashboardTaskDefinitions(null, clockAt(NOW),
                 List.of("sellfusion", "another-account", "third.account", "sellfusion"));
 
-        assertEquals(15, definitions.size());
-        assertEquals(15, definitions.stream().map(BackgroundJob.TaskDefinition::name).distinct().count());
+        assertEquals(18, definitions.size());
+        assertEquals(18, definitions.stream().map(BackgroundJob.TaskDefinition::name).distinct().count());
         for (var alias : List.of("sellfusion", "another-account", "third.account")) {
             var laneTasks = definitions.stream()
                     .filter(task -> task.lane().equals(BackgroundJob.adsLane + ":" + alias))
                     .toList();
-            assertEquals(5, laneTasks.size());
-            assertEquals(BackgroundJob.adsCampaignsTaskName(alias), laneTasks.getFirst().name());
+            assertEquals(6, laneTasks.size());
+            assertEquals("Fetch offers for " + alias, laneTasks.getFirst().name());
             assertNull(laneTasks.getFirst().prerequisiteTaskName());
-            for (var detail : laneTasks.subList(1, 4)) {
-                assertEquals(laneTasks.getFirst().name(), detail.prerequisiteTaskName());
+            assertEquals(Duration.ofHours(1), laneTasks.getFirst().interval());
+            assertEquals(Duration.ofHours(1), laneTasks.getFirst().failureRetryInterval());
+            assertEquals(BackgroundJob.adsCampaignsTaskName(alias), laneTasks.get(1).name());
+            assertNull(laneTasks.get(1).prerequisiteTaskName());
+            for (var detail : laneTasks.subList(2, 5)) {
+                assertEquals(laneTasks.get(1).name(), detail.prerequisiteTaskName());
             }
         }
-        assertTrue(BackgroundJob.adsTaskDefinitions(null, clockAt(NOW), List.of()).isEmpty());
+        assertTrue(BackgroundJob.dashboardTaskDefinitions(null, clockAt(NOW), List.of()).isEmpty());
+    }
+
+    @Test
+    void offersAreEligibleAllDayButWaitAnHourAfterSuccessOrFailure() {
+        var definition = BackgroundJob.offersTask("sellfusion", () -> {});
+        for (var hour : List.of(0, 7, 14, 23)) {
+            var now = NOW.withHour(hour);
+            var firstRun = new HoldingExecutor();
+            new BackgroundJob(new FakeTaskStore(), firstRun, clockAt(now), List.of(definition)).performWork();
+            assertEquals(1, firstRun.queuedCount(), "Offers should be eligible at hour " + hour);
+
+            for (var error : List.of("", "login failed")) {
+                var store = new FakeTaskStore();
+                var lastAttempt = now.minusMinutes(59);
+                store.put(completedTask(definition.name(),
+                        error.isEmpty() ? lastAttempt : now.minusDays(1), lastAttempt, error));
+                var tooEarly = new HoldingExecutor();
+                new BackgroundJob(store, tooEarly, clockAt(now), List.of(definition)).performWork();
+                assertEquals(0, tooEarly.queuedCount());
+
+                var due = new HoldingExecutor();
+                new BackgroundJob(store, due, clockAt(now.plusMinutes(1)), List.of(definition)).performWork();
+                assertEquals(1, due.queuedCount());
+            }
+        }
+    }
+
+    @Test
+    void dueOffersTakePriorityOverAdsAndShareTheirLane() {
+        var now = NOW.withHour(3);
+        var definitions = BackgroundJob.dashboardTaskDefinitions(null, clockAt(now), List.of("sellfusion", "second"));
+        var job = new BackgroundJob(new FakeTaskStore(), new HoldingExecutor(), clockAt(now), definitions);
+
+        job.performWork();
+
+        assertEquals(Map.of(
+                BackgroundJob.adsLane + ":sellfusion", "Fetch offers for sellfusion",
+                BackgroundJob.adsLane + ":second", "Fetch offers for second"
+        ), activeTasks(job));
+        var blocked = job.requestRun(BackgroundJob.adsCampaignsTaskName("sellfusion"));
+        assertEquals(BUSY, blocked.status());
+        assertEquals("Fetch offers for sellfusion", blocked.blockingTaskName());
+    }
+
+    @Test
+    void adsCanRunBetweenOffersFetchesAndPreventAnotherLoginForTheSameAccount() {
+        var now = NOW.withHour(3);
+        var definitions = BackgroundJob.dashboardTaskDefinitions(null, clockAt(now), List.of("sellfusion", "second"));
+        var store = new FakeTaskStore();
+        for (var alias : List.of("sellfusion", "second")) {
+            store.put(completedTask("Fetch offers for " + alias, now.minusMinutes(10), now.minusMinutes(10), ""));
+        }
+        var job = new BackgroundJob(store, new HoldingExecutor(), clockAt(now), definitions);
+
+        assertEquals(ACCEPTED, job.requestRun(BackgroundJob.adsCampaignsTaskName("sellfusion")).status());
+        var blocked = job.requestRun("Fetch offers for sellfusion");
+        assertEquals(BUSY, blocked.status());
+        assertEquals(BackgroundJob.adsCampaignsTaskName("sellfusion"), blocked.blockingTaskName());
+        assertEquals(ACCEPTED, job.requestRun("Fetch offers for second").status());
+
+        var automatic = new BackgroundJob(store, new HoldingExecutor(), clockAt(now), definitions);
+        automatic.performWork();
+        assertEquals(BackgroundJob.adsCampaignsTaskName("sellfusion"),
+                activeTasks(automatic).get(BackgroundJob.adsLane + ":sellfusion"));
+    }
+
+    @Test
+    void failedOffersDoNotBlockAdsDuringTheRetryDelay() {
+        var now = NOW.withHour(3);
+        var store = new FakeTaskStore();
+        store.put(completedTask("Fetch offers for sellfusion", now.minusDays(1), now.minusMinutes(10), "timeout"));
+        var job = new BackgroundJob(store, new HoldingExecutor(), clockAt(now),
+                BackgroundJob.dashboardTaskDefinitions(null, clockAt(now), List.of("sellfusion")));
+
+        job.performWork();
+
+        assertEquals(BackgroundJob.adsCampaignsTaskName("sellfusion"),
+                activeTasks(job).get(BackgroundJob.adsLane + ":sellfusion"));
     }
 
     @Test

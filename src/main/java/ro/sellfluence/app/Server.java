@@ -26,6 +26,7 @@ import io.javalin.validation.Validator;
 import org.jspecify.annotations.Nullable;
 import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
+import ro.sellfluence.api.ProductPerformanceData.Period;
 import ro.sellfluence.api.WebAuthnServer;
 import ro.sellfluence.apphelper.BackgroundJob;
 import ro.sellfluence.db.AdsReportPeriod;
@@ -662,7 +663,7 @@ public class Server {
         int securePort = Integer.parseInt(System.getProperty(configNameSecurePort,
                 System.getenv().getOrDefault(configNameSecurePort, arguments.getOption("secport", "8443"))));
 
-        List<String> adsAliases = EmagAccounts.getOTPAccounts(mirrorDB).stream()
+        List<String> dashboardAliases = EmagAccounts.getOTPAccounts(mirrorDB).stream()
                 .map(UserPassword::getAlias)
                 .toList();
         ScheduledExecutorService dispatcher = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -673,7 +674,7 @@ public class Server {
         BackgroundJob backgroundJob = new BackgroundJob(
                 mirrorDB,
                 Clock.systemDefaultZone(),
-                adsAliases
+                dashboardAliases
         );
 
         // Give administrators time to pause individual tasks before the first dispatcher cycle.
@@ -979,6 +980,35 @@ public class Server {
 
     private static void configureAPI(JavalinDefaultRoutingApi app, API api, BackgroundJob backgroundJob) {
         app.before("/app/*", ctx -> checkRole(ctx, user)); // TODO: Need to protect admin calls
+        app.get("/app/productPerformanceOptions", ctx -> {
+            try {
+                ctx.json(api.getProductPerformanceOptions());
+            } catch (SQLException e) {
+                logger.log(SEVERE, "Failed to load product performance options.", e);
+                ctx.status(500).json(Map.of("error", "Database error"));
+            }
+        });
+        app.get("/app/productPerformance", ctx -> {
+            final ProductPerformanceRequest request;
+            try {
+                request = parseProductPerformanceRequest(ctx.queryParam("vendorId"), ctx.queryParam("productCode"),
+                        ctx.queryParam("period"));
+            } catch (IllegalArgumentException e) {
+                ctx.status(400).json(Map.of("error", e.getMessage()));
+                return;
+            }
+            try {
+                var response = api.getProductPerformance(request.vendorId(), request.productCode(), request.period());
+                if (response.isEmpty()) {
+                    ctx.status(404).json(Map.of("error", "Product not found for the selected vendor"));
+                } else {
+                    ctx.json(response.get());
+                }
+            } catch (SQLException e) {
+                logger.log(SEVERE, "Failed to load product performance.", e);
+                ctx.status(500).json(Map.of("error", "Database error"));
+            }
+        });
         app.get("/app/products", ctx -> {
             String json = api.getProducts();
             if (json == null) {
@@ -2504,6 +2534,17 @@ public class Server {
             throw new IllegalArgumentException("Invalid or missing vendorId");
         }
         return UUID.fromString(value);
+    }
+
+    record ProductPerformanceRequest(UUID vendorId, String productCode, Period period) {
+    }
+
+    static ProductPerformanceRequest parseProductPerformanceRequest(String vendorId, String productCode, String period) {
+        var parsedVendorId = parseAdsVendorId(vendorId);
+        if (productCode == null || productCode.isBlank()) {
+            throw new IllegalArgumentException("Invalid or missing productCode");
+        }
+        return new ProductPerformanceRequest(parsedVendorId, productCode, Period.parse(period));
     }
 
     private static AdsReportPeriod parseAdsReportPeriod(Context ctx) {
