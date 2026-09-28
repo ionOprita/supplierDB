@@ -173,6 +173,11 @@ public class EmagMirrorDB {
         return database.readTX(db -> ProductPerformanceTable.getDailyAdsets(db, vendorId, pnk));
     }
 
+    public List<OffersTable.DailyProductOffer> getProductPerformanceOffers(
+            UUID vendorId, String pnk, LocalDate firstDate, LocalDate lastDate) throws SQLException {
+        return database.readTX(db -> OffersTable.getDailyProductOffers(db, vendorId, pnk, firstDate, lastDate));
+    }
+
     public int addOrUpdateAdCampaigns(UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         return database.writeTX(db -> upsertCampaigns(db, vendorId, campaigns));
     }

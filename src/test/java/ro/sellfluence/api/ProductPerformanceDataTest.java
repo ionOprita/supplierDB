@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import ro.sellfluence.db.AdsCampaignTable.AdsAdsetKey;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
 import ro.sellfluence.db.ProductPerformanceTable.Primitives;
+import ro.sellfluence.db.OffersTable.DailyProductOffer;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
@@ -385,6 +386,64 @@ class ProductPerformanceDataTest {
     }
 
     @Test
+    void usesLatestOfferSnapshotInEachExistingWeekOrMonth() {
+        assertEquals(LocalDate.parse("2026-09-13"), WEEK.end(LocalDate.parse("2026-09-07")));
+        assertEquals(LocalDate.parse("2026-09-30"), MONTH.end(LocalDate.parse("2026-09-14")));
+        var ads = List.of(
+                snapshot("2026-09-07", "auto", List.of(), metrics(1, 1, "1", "1", 1, 1)),
+                snapshot("2026-09-14", "auto", List.of(), metrics(2, 2, "2", "2", 2, 2)));
+        var offers = List.of(
+                offer("2026-09-07", 1, 4, "12.25"),
+                offer("2026-09-13", 1, 7, "13.50"),
+                offer("2026-09-14", 1, 8, "14.75"),
+                offer("2026-09-30", 1, 9, "15.125"),
+                offer("2026-10-01", 1, 99, "99"));
+
+        var weeks = ProductPerformanceData.create(PRODUCT, WEEK, ads, offers).rows();
+        assertEquals(2, weeks.size());
+        assertEquals(7, weeks.get(0).values().get("stock"));
+        assertEquals(new BigDecimal("13.50"), weeks.get(0).values().get("salesPrice"));
+        assertEquals(8, weeks.get(1).values().get("stock"));
+        assertEquals(2L, weeks.get(1).values().get("total_clicks"));
+
+        var months = ProductPerformanceData.create(PRODUCT, MONTH, ads, offers).rows();
+        assertEquals(1, months.size(), "An offer-only month must not create an advertising row");
+        assertEquals(9, months.getFirst().values().get("stock"));
+        assertEquals(new BigDecimal("15.125"), months.getFirst().values().get("salesPrice"));
+        assertEquals(3L, months.getFirst().values().get("total_clicks"));
+    }
+
+    @Test
+    void latestEmptyOrAmbiguousSnapshotDoesNotReuseOlderOfferValues() {
+        var ads = List.of(snapshot("2026-09-07", "auto", List.of(), metrics(1, 1, "1", "1", 1, 1)));
+        var old = offer("2026-09-08", 1, 5, "10");
+        var empty = ProductPerformanceData.create(PRODUCT, WEEK, ads,
+                List.of(old, offer("2026-09-13", 0, null, null))).rows().getFirst().values();
+        assertNull(empty.get("stock"));
+        assertNull(empty.get("salesPrice"));
+
+        var ambiguous = ProductPerformanceData.create(PRODUCT, WEEK, ads,
+                List.of(old, offer("2026-09-13", 2, 10, "12"))).rows().getFirst().values();
+        assertEquals("???", ambiguous.get("stock"));
+        assertEquals("???", ambiguous.get("salesPrice"));
+        assertEquals(1L, ambiguous.get("total_clicks"));
+    }
+
+    @Test
+    void distinguishesZeroAndMissingOfferFields() {
+        var ads = List.of(snapshot("2026-09-07", "auto", List.of(), metrics(1, 1, "1", "1", 1, 1)));
+        var zero = ProductPerformanceData.create(PRODUCT, WEEK, ads,
+                List.of(offer("2026-09-08", 1, 0, "0.00"))).rows().getFirst().values();
+        assertEquals(0, zero.get("stock"));
+        assertEquals(new BigDecimal("0.00"), zero.get("salesPrice"));
+
+        var missing = ProductPerformanceData.create(PRODUCT, WEEK, ads,
+                List.of(offer("2026-09-08", 1, null, "4.25"))).rows().getFirst().values();
+        assertNull(missing.get("stock"));
+        assertEquals(new BigDecimal("4.25"), missing.get("salesPrice"));
+    }
+
+    @Test
     void supportsEmptyHistoryAndValidatesPeriodInputs() {
         for (var period : List.of(WEEK, MONTH)) {
             var response = ProductPerformanceData.create(PRODUCT, period, List.of());
@@ -425,6 +484,11 @@ class ProductPerformanceDataTest {
 
     private static Primitives metrics(long impressions, long clicks, String spend, String sales, long units, long salesCount) {
         return new Primitives(impressions, clicks, new BigDecimal(spend), new BigDecimal(sales), units, salesCount);
+    }
+
+    private static DailyProductOffer offer(String date, long count, Integer stock, String price) {
+        return new DailyProductOffer(LocalDate.parse(date), count, stock,
+                price == null ? null : new BigDecimal(price));
     }
 
     private static DailyAdset snapshot(String date, String targeting, List<String> matchTypes, Primitives metrics) {

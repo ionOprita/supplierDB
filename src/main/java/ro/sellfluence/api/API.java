@@ -8,6 +8,7 @@ import ro.sellfluence.db.AdsCampaignTable.AdsSearchPhraseTableData;
 import ro.sellfluence.db.AdsCampaignTable.AdsTargetedProductTableData;
 import ro.sellfluence.db.AdsReportPeriod;
 import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.db.OffersTable.DailyProductOffer;
 import ro.sellfluence.db.Vendor;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
 import ro.sellfluence.db.ProductTable.ProductInfo;
@@ -73,7 +74,15 @@ public class API {
         var metadata = product.orElseThrow();
         var snapshots = metadata.pnk() == null ? List.<DailyAdset>of()
                 : mirrorDB.getProductPerformanceAdsets(vendorId, metadata.pnk());
-        return Optional.of(ProductPerformanceData.create(metadata, period, snapshots));
+        List<DailyProductOffer> offers = List.of();
+        if (!snapshots.isEmpty()) {
+            var dates = snapshots.stream().map(snapshot -> snapshot.key().reportDate()).toList();
+            var first = dates.stream().min(LocalDate::compareTo).orElseThrow();
+            var last = dates.stream().max(LocalDate::compareTo).orElseThrow();
+            offers = mirrorDB.getProductPerformanceOffers(vendorId, metadata.pnk(),
+                    period.start(first), period.end(last));
+        }
+        return Optional.of(ProductPerformanceData.create(metadata, period, snapshots, offers));
     }
 
     record ProductForFrontend(String name, String id) {

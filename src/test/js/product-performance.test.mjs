@@ -29,6 +29,24 @@ test('distinguishes unavailable metrics from real zero values', () => {
   assert.equal(format(0, 'percent'), '0.00%');
 });
 
+test('shows ambiguous offer cells without treating them as numbers', async t => {
+  const page = await openPage(t);
+  const data = report(5);
+  data.groups[0].columns.push({key: 'stock', label: 'Stock', type: 'integer'},
+    {key: 'salesPrice', label: 'Sales Price', type: 'decimal'});
+  data.rows = [
+    {values: {week: '2026-09-07', stock: 0, salesPrice: 19.875, auto_clicks: 5, total_clicks: 5}},
+    {values: {week: '2026-09-14', stock: '???', salesPrice: '???', auto_clicks: 6, total_clicks: 6}},
+    {values: {week: '2026-09-21', stock: null, salesPrice: null, auto_clicks: 7, total_clicks: 7}}
+  ];
+  await page.respond(0, data);
+  const rows = page.byId('Body').children;
+  assert.deepEqual(rows.map(row => row.children[1].textContent), ['0', '???', '—']);
+  assert.deepEqual(rows.map(row => row.children[2].textContent), ['19.88', '???', '—']);
+  assert.equal(rows[1].children[1].getAttribute('aria-label'),
+    'Multiple matching offers in the latest daily snapshot');
+});
+
 test('renders ISO calendar dates without time-zone shifts or invalid date rollover', () => {
   assert.equal(format('2026-05-01', 'date'), '01 May 26');
   assert.equal(format('2026-09-04', 'date'), '04 Sep 26');

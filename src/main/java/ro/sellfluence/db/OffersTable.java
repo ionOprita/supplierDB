@@ -3,11 +3,13 @@ package ro.sellfluence.db;
 import ro.sellfluence.emagdashboard.Offer;
 import ro.sellfluence.emagdashboard.OffersData;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -17,6 +19,44 @@ import java.util.UUID;
 /** Writes the complete record graph of one vendor's daily offers snapshot. */
 public class OffersTable {
     private OffersTable() {
+    }
+
+    /** One complete vendor snapshot day, including days with no offer for the product. */
+    public record DailyProductOffer(LocalDate fetchDate, long matchingOffers, Integer stock, BigDecimal salesPrice) {
+    }
+
+    static List<DailyProductOffer> getDailyProductOffers(Connection db, UUID vendorId, String pnk,
+                                                         LocalDate firstDate, LocalDate lastDate) throws SQLException {
+        Objects.requireNonNull(db, "db");
+        Objects.requireNonNull(vendorId, "vendorId");
+        if (pnk == null || pnk.isBlank()) return List.of();
+
+        var result = new ArrayList<DailyProductOffer>();
+        try (var statement = db.prepareStatement("""
+                SELECT s.fetch_date, COUNT(o.offer_id) AS matching_offers,
+                       MAX(o.ext_stock) AS stock, MAX(o.ext_sale_price) AS sales_price
+                FROM offers_snapshot AS s
+                LEFT JOIN offers_offer AS o ON o.vendor_id = s.vendor_id
+                    AND o.fetch_date = s.fetch_date
+                    AND regexp_replace(o.doc_product_part_number_key,
+                        '^[[:space:]]+|[[:space:]]+$', '', 'g') = ?
+                WHERE s.vendor_id = ? AND s.fetch_date BETWEEN ? AND ?
+                GROUP BY s.fetch_date
+                ORDER BY s.fetch_date
+                """)) {
+            statement.setString(1, pnk.strip());
+            statement.setObject(2, vendorId);
+            statement.setObject(3, firstDate);
+            statement.setObject(4, lastDate);
+            try (var rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    result.add(new DailyProductOffer(rows.getObject("fetch_date", LocalDate.class),
+                            rows.getLong("matching_offers"), rows.getObject("stock", Integer.class),
+                            rows.getBigDecimal("sales_price")));
+                }
+            }
+        }
+        return List.copyOf(result);
     }
 
     /** The caller owns the transaction so a failed replacement preserves the previous snapshot. */
