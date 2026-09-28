@@ -350,6 +350,63 @@ class BackgroundJobTest {
     }
 
     @Test
+    void reviewsRunDailyBeforeSevenAndRetryFailuresAfterAnHour() {
+        var definition = BackgroundJob.reviewsTask(() -> {});
+        assertEquals("Fetch product reviews from eMAG", definition.name());
+        assertEquals(BackgroundJob.emagReviewsLane, definition.lane());
+        assertEquals(Duration.ofDays(1), definition.interval());
+        assertEquals(Duration.ofHours(1), definition.failureRetryInterval());
+        assertNull(definition.prerequisiteTaskName());
+
+        for (var time : List.of(NOW.withHour(0), NOW.withHour(6).withMinute(59),
+                NOW.withHour(7), NOW.withHour(23))) {
+            var executor = new HoldingExecutor();
+            new BackgroundJob(new FakeTaskStore(), executor, clockAt(time), List.of(definition)).performWork();
+            assertEquals(time.getHour() < 7 ? 1 : 0, executor.queuedCount());
+        }
+
+        var now = NOW.withHour(3);
+        var successfulStore = new FakeTaskStore();
+        successfulStore.put(completedTask(definition.name(), now.minusDays(1).plusMinutes(1),
+                now.minusDays(1).plusMinutes(1), ""));
+        var tooEarly = new HoldingExecutor();
+        new BackgroundJob(successfulStore, tooEarly, clockAt(now), List.of(definition)).performWork();
+        assertEquals(0, tooEarly.queuedCount());
+        var due = new HoldingExecutor();
+        new BackgroundJob(successfulStore, due, clockAt(now.plusMinutes(1)), List.of(definition)).performWork();
+        assertEquals(1, due.queuedCount());
+
+        var failedStore = new FakeTaskStore();
+        failedStore.put(completedTask(definition.name(), now.minusDays(7), now.minusMinutes(59), "HTTP error"));
+        var retryTooEarly = new HoldingExecutor();
+        new BackgroundJob(failedStore, retryTooEarly, clockAt(now), List.of(definition)).performWork();
+        assertEquals(0, retryTooEarly.queuedCount());
+        var retryDue = new HoldingExecutor();
+        new BackgroundJob(failedStore, retryDue, clockAt(now.plusMinutes(1)), List.of(definition)).performWork();
+        assertEquals(1, retryDue.queuedCount());
+    }
+
+    @Test
+    void reviewsHaveAnIndependentLaneAndHonorPauseAndManualRunControls() {
+        var reviewTask = BackgroundJob.reviewsTask(() -> {});
+        var job = new BackgroundJob(new FakeTaskStore(), new HoldingExecutor(), clockAt(NOW.withHour(3)), List.of(
+                reviewTask,
+                task("orders", BackgroundJob.emagApiLane, () -> {}),
+                task("sheets", BackgroundJob.googleApiLane, () -> {}),
+                BackgroundJob.offersTask("sellfusion", () -> {})
+        ));
+        assertEquals(BackgroundJob.PauseResult.UPDATED, job.setTaskPaused(reviewTask.name(), true));
+
+        job.performWork();
+        assertEquals(3, activeTasks(job).size());
+        assertFalse(activeTasks(job).containsKey(BackgroundJob.emagReviewsLane));
+        assertEquals(ACCEPTED, job.requestRun(reviewTask.name()).status());
+        assertEquals(4, activeTasks(job).size());
+        assertEquals(reviewTask.name(), activeTasks(job).get(BackgroundJob.emagReviewsLane));
+        assertEquals(BUSY, job.requestRun(reviewTask.name()).status());
+    }
+
+    @Test
     void dueOffersTakePriorityOverAdsAndShareTheirLane() {
         var now = NOW.withHour(3);
         var definitions = BackgroundJob.dashboardTaskDefinitions(null, clockAt(now), List.of("sellfusion", "second"));

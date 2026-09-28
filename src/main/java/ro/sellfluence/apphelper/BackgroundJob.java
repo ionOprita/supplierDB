@@ -52,6 +52,7 @@ public class BackgroundJob {
     public static final String emagApiLane = "emagApiLane";
     public static final String googleApiLane = "googleApiLane";
     public static final String adsLane = "emagAdsLane";
+    public static final String emagReviewsLane = "emagReviewsLane";
 
     private static final Logger logger = Logs.getFileLogger("BackgroundJob", Level.INFO, 10, 1_000_000);
     private static final Duration executeHourly = Duration.ofHours(1);
@@ -322,6 +323,7 @@ public class BackgroundJob {
                 () -> UpdateEmployeeSheetsFromDB.updateSheets(db)
         ));
 
+        definitions.add(reviewsTask(() -> FetchReviews.fetchReviews(db, clock)));
         definitions.addAll(dashboardTaskDefinitions(db, clock, dashboardAliases));
         return List.copyOf(definitions);
     }
@@ -389,6 +391,18 @@ public class BackgroundJob {
                 executeHourly,
                 executeHourly,
                 runAlways,
+                null,
+                action
+        );
+    }
+
+    static TaskDefinition reviewsTask(CheckedAction action) {
+        return new TaskDefinition(
+                "Fetch product reviews from eMAG",
+                emagReviewsLane,
+                executeDaily,
+                executeHourly,
+                runOnlyInTheMorning,
                 null,
                 action
         );
