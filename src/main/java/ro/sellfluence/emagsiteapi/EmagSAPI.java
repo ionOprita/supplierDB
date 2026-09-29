@@ -19,6 +19,7 @@ import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
 import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.util.logging.Level.WARNING;
+import static ro.sellfluence.emagdashboard.FetchAds.randomWait;
 
 public class EmagSAPI {
 
@@ -144,6 +145,7 @@ public class EmagSAPI {
     }
 
     private static HttpResult sendRequest(String url) throws IOException, InterruptedException {
+        randomWait(0.5, 1.5);
         var request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("X-Request-Source", "mobile-app")
