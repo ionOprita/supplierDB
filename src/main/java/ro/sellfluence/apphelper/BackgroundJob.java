@@ -51,7 +51,7 @@ public class BackgroundJob {
 
     public static final String emagApiLane = "emagApiLane";
     public static final String googleApiLane = "googleApiLane";
-    public static final String adsLane = "emagAdsLane";
+    public static final String emagDashboardLane = "emagDashboardLane";
     public static final String emagReviewsLane = "emagReviewsLane";
 
     private static final Logger logger = Logs.getFileLogger("BackgroundJob", Level.INFO, 10, 1_000_000);
@@ -337,7 +337,7 @@ public class BackgroundJob {
     }
 
     private static void addDashboardTasks(List<TaskDefinition> definitions, EmagMirrorDB db, Clock clock, String alias) {
-        final var lane = adsLane + ":" + alias;
+        final var lane = emagDashboardLane + ":" + alias;
         // Offers have priority when due, while sharing the account's serial lane prevents overlapping logins.
         definitions.add(offersTask(alias, () -> FetchOffers.fetchOffers(alias, db, clock)));
         var campaignsTaskName = adsCampaignsTaskName(alias);
@@ -387,7 +387,7 @@ public class BackgroundJob {
     static TaskDefinition offersTask(String alias, CheckedAction action) {
         return new TaskDefinition(
                 "Fetch offers for " + alias,
-                adsLane + ":" + alias,
+                emagDashboardLane + ":" + alias,
                 executeHourly,
                 executeHourly,
                 runAlways,

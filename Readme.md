@@ -33,7 +33,7 @@ This split intentionally changes these standalone applications, which are not us
 ### Background-task lanes, eMAG Ads, and offers
 
 The server schedules background work in independent serial lanes. eMAG API transfers use `emagApiLane`, Google Drive
-and Sheets transfers use `googleApiLane`, and each dashboard account has its own `emagAdsLane:<account>` lane shared
+and Sheets transfers use `googleApiLane`, and each dashboard account has its own `emagDashboardLane:<account>` lane shared
 by Ads and offers. Only one task can be active in a lane, preventing parallel logins for the same account, while tasks
 in different lanes can run at the same time.
 

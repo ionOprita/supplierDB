@@ -1,10 +1,8 @@
 package ro.sellfluence.apphelper;
 
-import org.jspecify.annotations.NullMarked;
 import org.junit.jupiter.api.Test;
 import ro.sellfluence.db.Task;
 
-import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -308,7 +306,7 @@ class BackgroundJobTest {
         assertEquals(18, definitions.stream().map(BackgroundJob.TaskDefinition::name).distinct().count());
         for (var alias : List.of("sellfusion", "another-account", "third.account")) {
             var laneTasks = definitions.stream()
-                    .filter(task -> task.lane().equals(BackgroundJob.adsLane + ":" + alias))
+                    .filter(task -> task.lane().equals(BackgroundJob.emagDashboardLane + ":" + alias))
                     .toList();
             assertEquals(6, laneTasks.size());
             assertEquals("Fetch offers for " + alias, laneTasks.getFirst().name());
@@ -415,8 +413,8 @@ class BackgroundJobTest {
         job.performWork();
 
         assertEquals(Map.of(
-                BackgroundJob.adsLane + ":sellfusion", "Fetch offers for sellfusion",
-                BackgroundJob.adsLane + ":second", "Fetch offers for second"
+                BackgroundJob.emagDashboardLane + ":sellfusion", "Fetch offers for sellfusion",
+                BackgroundJob.emagDashboardLane + ":second", "Fetch offers for second"
         ), activeTasks(job));
         var blocked = job.requestRun(BackgroundJob.adsCampaignsTaskName("sellfusion"));
         assertEquals(BUSY, blocked.status());
@@ -442,7 +440,7 @@ class BackgroundJobTest {
         var automatic = new BackgroundJob(store, new HoldingExecutor(), clockAt(now), definitions);
         automatic.performWork();
         assertEquals(BackgroundJob.adsCampaignsTaskName("sellfusion"),
-                activeTasks(automatic).get(BackgroundJob.adsLane + ":sellfusion"));
+                activeTasks(automatic).get(BackgroundJob.emagDashboardLane + ":sellfusion"));
     }
 
     @Test
@@ -456,7 +454,7 @@ class BackgroundJobTest {
         job.performWork();
 
         assertEquals(BackgroundJob.adsCampaignsTaskName("sellfusion"),
-                activeTasks(job).get(BackgroundJob.adsLane + ":sellfusion"));
+                activeTasks(job).get(BackgroundJob.emagDashboardLane + ":sellfusion"));
     }
 
     @Test
