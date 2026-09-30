@@ -77,9 +77,14 @@ Production configuration:
 
 ### Product reviews
 
-`Fetch product reviews from eMAG` runs in its own `emagReviewsLane` out of office hours, at most once every 24 hours
-after a successful run. Failures retry after one hour.
-The Tasks page provides the usual manual-run and pause/resume controls.
+`Fetch product reviews from eMAG` starts in its own `emagReviewsLane` from 19:00 through 23:59 server-local time.
+`Transfer product reviews to Google Sheets` starts in `googleApiLane` from 00:00 through 06:59 server-local time,
+ahead of the other Google API tasks. Each task runs once per local calendar date after a successful start; failures
+retry after one hour within the same window. The transfer reads the database snapshot available when it starts, so
+a fetch that runs past midnight can overlap it. The Tasks page provides manual-run and pause/resume controls.
+
+The transfer replaces review values in `Date Recenzii` → `Introducere date`, beginning at B3. It preserves column A,
+rows 1–2, and formatting, and clears stale values below the new data when the export shrinks.
 
 The task reads products from the database and selects those with `continueToSell == true`, `retracted == false`,
 and a nonblank PNK. It strips surrounding whitespace, fetches each distinct PNK once, and processes products

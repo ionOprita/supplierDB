@@ -54,6 +54,44 @@ public final class ReviewsTable {
     public record StoreResult(int inserted, int changed, int unchanged, int notReturned) {
     }
 
+    /** One stored review and its review-level user/product values for the sheet export. */
+    public record ExportReview(long reviewId, Long productFamilyId, String pnk, Integer rating,
+                               String optionValue, String created, String content, String clientName,
+                               Long clientId, String clientHash, String clientType, String published,
+                               String moderator) {
+    }
+
+    static List<ExportReview> readReviewExportRows(Connection db) throws SQLException {
+        var export = new ArrayList<ExportReview>();
+        try (var statement = db.prepareStatement("""
+                SELECT r.review_id, r.product_family_id,
+                       COALESCE(NULLIF(BTRIM(p.part_number_key), ''), r.pnk) AS export_pnk,
+                       r.rating, p.family_characteristic_value, r.created, r.content,
+                       u.name AS client_name, u.user_id AS client_id, u.hash AS client_hash,
+                       r.client_type, r.published, r.moderated_by
+                FROM review AS r
+                LEFT JOIN review_product AS p
+                  ON p.pnk = r.pnk AND p.review_id = r.review_id
+                 AND p.owner_type = 'review' AND p.owner_id = r.review_id
+                LEFT JOIN review_user AS u
+                  ON u.pnk = r.pnk AND u.review_id = r.review_id
+                 AND u.owner_type = 'review' AND u.owner_id = r.review_id
+                ORDER BY r.pnk, r.position, r.review_id
+                """); var result = statement.executeQuery()) {
+            while (result.next()) {
+                export.add(new ExportReview(
+                        result.getLong("review_id"), result.getObject("product_family_id", Long.class),
+                        result.getString("export_pnk"), result.getObject("rating", Integer.class),
+                        result.getString("family_characteristic_value"), result.getString("created"),
+                        result.getString("content"), result.getString("client_name"),
+                        result.getObject("client_id", Long.class), result.getString("client_hash"),
+                        result.getString("client_type"), result.getString("published"),
+                        result.getString("moderated_by")));
+            }
+        }
+        return List.copyOf(export);
+    }
+
     private record CommentKey(long reviewId, long commentId) {
     }
 
@@ -206,7 +244,8 @@ public final class ReviewsTable {
     private static void storeReview(BatchRows rows, String pnk, OffsetDateTime timestamp, Review review,
                                     int position, String hash) throws SQLException {
         var values = row(pnk, review.id(), position, review.content(), review.isActive(), review.moderationStatus(),
-                review.created(), review.modified(), review.published(), review.deleted(), review.reportReason());
+                review.moderatedBy(), review.created(), review.modified(), review.published(), review.deleted(),
+                review.reportReason());
         addUrl(values, review.editUrl());
         addUrl(values, review.viewUrl());
         values.addAll(row(review.type(), review.title(), review.contentNoTags(), review.rating(), review.isBought(),
@@ -214,7 +253,8 @@ public final class ReviewsTable {
                 review.clientType(), review.clientTypeInfo(), review.productDocId(), review.productFamilyId(),
                 review.allowCommentsLikes(), review.hasMedia(), hash, timestamp, timestamp, timestamp));
         rows.upsertObserved("review", "pnk, review_id", """
-                pnk, review_id, position, content, is_active, moderation_status, created, modified, published, deleted,
+                pnk, review_id, position, content, is_active, moderation_status, moderated_by,
+                created, modified, published, deleted,
                 report_reason, edit_url_present, edit_url_path, edit_url_desktop_base, edit_url_mobile_base,
                 view_url_present, view_url_path, view_url_desktop_base, view_url_mobile_base,
                 type, title, content_no_tags, rating, is_bought, votes, current_customer_has_voted,
@@ -283,12 +323,14 @@ public final class ReviewsTable {
     private static void storeProduct(BatchRows rows, Owner owner, ReviewProduct product) throws SQLException {
         if (product == null) return;
         var values = owner.values();
-        values.addAll(row(product.id(), product.name(), product.partNumberKey(), product.sefName()));
+        values.addAll(row(product.id(), product.name(), product.partNumberKey(), product.sefName(),
+                product.firstFamilyCharacteristicValue()));
         addUrl(values, product.url());
         var offer = product.offer();
         values.addAll(row(offer != null, offer == null ? null : offer.id()));
         rows.insert("review_product", OWNER_COLUMNS + """
-                , product_id, name, part_number_key, sef_name, url_present, url_path, url_desktop_base, url_mobile_base,
+                , product_id, name, part_number_key, sef_name, family_characteristic_value,
+                url_present, url_path, url_desktop_base, url_mobile_base,
                 offer_present, offer_id
                 """, values);
         if (offer != null) storePrice(rows, owner, offer.price());

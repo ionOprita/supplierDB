@@ -348,29 +348,40 @@ class BackgroundJobTest {
     }
 
     @Test
-    void reviewsRunDailyOutOfOfficeHourAndRetryFailuresAfterAnHour() {
+    void reviewsRunOncePerEveningWindowAndRetryFailuresAfterAnHour() {
         var definition = BackgroundJob.reviewsTask(() -> {});
         assertEquals("Fetch product reviews from eMAG", definition.name());
         assertEquals(BackgroundJob.emagReviewsLane, definition.lane());
         assertEquals(Duration.ofDays(1), definition.interval());
         assertEquals(Duration.ofHours(1), definition.failureRetryInterval());
+        assertEquals(BackgroundJob.Cadence.LOCAL_CALENDAR_DAY, definition.cadence());
         assertNull(definition.prerequisiteTaskName());
 
-        for (var time : List.of(NOW.withHour(0), NOW.withHour(6).withMinute(59), NOW.withHour(19), NOW.withHour(23))) {
+        for (var time : List.of(NOW.withHour(19).withMinute(0), NOW.withHour(23).withMinute(59))) {
             var executor = new HoldingExecutor();
             new BackgroundJob(new FakeTaskStore(), executor, clockAt(time), List.of(definition)).performWork();
             assertEquals(1, executor.queuedCount(), "Reviews should be eligible at hour " + time.getHour());
         }
+        for (var time : List.of(NOW.withHour(0), NOW.withHour(6).withMinute(59),
+                NOW.withHour(18).withMinute(59))) {
+            var executor = new HoldingExecutor();
+            new BackgroundJob(new FakeTaskStore(), executor, clockAt(time), List.of(definition)).performWork();
+            assertEquals(0, executor.queuedCount(), "Reviews should be outside the window at " + time);
+        }
 
-        var now = NOW.withHour(3);
+        var now = NOW.withHour(19);
         var successfulStore = new FakeTaskStore();
-        successfulStore.put(completedTask(definition.name(), now.minusHours(23).minusMinutes(59),
-                now.minusHours(23).minusMinutes(59), ""));
+        successfulStore.put(completedTask(definition.name(), now.minusMinutes(1), now.minusMinutes(1), ""));
         var tooEarly = new HoldingExecutor();
         new BackgroundJob(successfulStore, tooEarly, clockAt(now), List.of(definition)).performWork();
         assertEquals(0, tooEarly.queuedCount());
+
+        // The prior evening's run completed after midnight; its start date still governs the next window.
+        var followingEvening = now.plusDays(1);
+        successfulStore.put(completedTask(definition.name(), followingEvening.withHour(0).withMinute(30),
+                now.withHour(23).withMinute(30), followingEvening.withHour(0).withMinute(30), ""));
         var due = new HoldingExecutor();
-        new BackgroundJob(successfulStore, due, clockAt(now.plusMinutes(1)), List.of(definition)).performWork();
+        new BackgroundJob(successfulStore, due, clockAt(followingEvening), List.of(definition)).performWork();
         assertEquals(1, due.queuedCount());
 
         var failedStore = new FakeTaskStore();
@@ -381,6 +392,69 @@ class BackgroundJobTest {
         var retryDue = new HoldingExecutor();
         new BackgroundJob(failedStore, retryDue, clockAt(now.plusMinutes(1)), List.of(definition)).performWork();
         assertEquals(1, retryDue.queuedCount());
+    }
+
+    @Test
+    void reviewTransferRunsOncePerMorningWindowWithCalendarRolloverAndRetry() {
+        var definition = BackgroundJob.transferReviewsTask(() -> {});
+        assertEquals("Transfer product reviews to Google Sheets", definition.name());
+        assertEquals(BackgroundJob.googleApiLane, definition.lane());
+        assertEquals(BackgroundJob.Cadence.LOCAL_CALENDAR_DAY, definition.cadence());
+        assertEquals(Duration.ofHours(1), definition.failureRetryInterval());
+        assertNull(definition.prerequisiteTaskName());
+
+        for (var time : List.of(NOW.withHour(0), NOW.withHour(6).withMinute(59))) {
+            var executor = new HoldingExecutor();
+            new BackgroundJob(new FakeTaskStore(), executor, clockAt(time), List.of(definition)).performWork();
+            assertEquals(1, executor.queuedCount(), "Transfer should be eligible at " + time);
+        }
+        for (var time : List.of(NOW.withHour(7), NOW.withHour(23).withMinute(59))) {
+            var executor = new HoldingExecutor();
+            new BackgroundJob(new FakeTaskStore(), executor, clockAt(time), List.of(definition)).performWork();
+            assertEquals(0, executor.queuedCount(), "Transfer should be outside the window at " + time);
+        }
+
+        var morning = NOW.withHour(0);
+        var store = new FakeTaskStore();
+        store.put(completedTask(definition.name(), morning.minusDays(1).withHour(7).withMinute(30),
+                morning.minusDays(1).withHour(6).withMinute(59),
+                morning.minusDays(1).withHour(7).withMinute(30), ""));
+        var nextDay = new HoldingExecutor();
+        new BackgroundJob(store, nextDay, clockAt(morning), List.of(definition)).performWork();
+        assertEquals(1, nextDay.queuedCount(), "A new local date is eligible before 24 hours elapsed");
+
+        store.put(completedTask(definition.name(), morning.plusHours(1), morning,
+                morning.plusHours(1), ""));
+        var sameDay = new HoldingExecutor();
+        new BackgroundJob(store, sameDay, clockAt(morning.plusHours(6)), List.of(definition)).performWork();
+        assertEquals(0, sameDay.queuedCount());
+
+        store.put(completedTask(definition.name(), morning.minusDays(1), morning.plusMinutes(1), "HTTP error"));
+        var tooEarly = new HoldingExecutor();
+        new BackgroundJob(store, tooEarly, clockAt(morning.plusHours(1)), List.of(definition)).performWork();
+        assertEquals(0, tooEarly.queuedCount());
+        var due = new HoldingExecutor();
+        new BackgroundJob(store, due, clockAt(morning.plusHours(1).plusMinutes(1)), List.of(definition)).performWork();
+        assertEquals(1, due.queuedCount());
+    }
+
+    @Test
+    void reviewTransferHasPriorityInGoogleLaneAndManualRunBypassesItsWindow() {
+        var transfer = BackgroundJob.transferReviewsTask(() -> {});
+        var hourly = task("hourly sheets", BackgroundJob.googleApiLane, () -> {});
+        var job = new BackgroundJob(new FakeTaskStore(), new HoldingExecutor(), clockAt(NOW.withHour(0)),
+                List.of(transfer, hourly));
+
+        job.performWork();
+        assertEquals(transfer.name(), activeTasks(job).get(BackgroundJob.googleApiLane));
+        assertEquals(BUSY, job.requestRun(hourly.name()).status());
+
+        var manualStore = new FakeTaskStore();
+        manualStore.put(completedTask(transfer.name(), NOW.withHour(1), NOW.withHour(1), ""));
+        var manual = new BackgroundJob(manualStore, new HoldingExecutor(), clockAt(NOW.withHour(12)),
+                List.of(transfer));
+        manual.setTaskPaused(transfer.name(), true);
+        assertEquals(ACCEPTED, manual.requestRun(transfer.name()).status());
     }
 
     @Test
@@ -522,11 +596,22 @@ class BackgroundJobTest {
             LocalDateTime terminated,
             String error
     ) {
+        return completedTask(name, lastSuccessfulRun, lastSuccessfulRun, terminated, error);
+    }
+
+    private static Task completedTask(
+            String name,
+            LocalDateTime lastSuccessfulRun,
+            LocalDateTime lastSuccessfulStart,
+            LocalDateTime terminated,
+            String error
+    ) {
         return new Task(
                 name,
                 terminated.minusMinutes(5),
                 terminated,
                 lastSuccessfulRun,
+                lastSuccessfulStart,
                 Duration.ofMinutes(5),
                 null,
                 error.isBlank() ? 0 : 1,

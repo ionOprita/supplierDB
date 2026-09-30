@@ -39,6 +39,7 @@ class TaskRuntimeIntegrationTest {
                                 started TIMESTAMP,
                                 terminated TIMESTAMP,
                                 last_successful_run TIMESTAMP,
+                                last_successful_start TIMESTAMP,
                                 duration_of_last_run INTERVAL,
                                 unsuccessful_runs INTEGER,
                                 error TEXT
@@ -55,6 +56,7 @@ class TaskRuntimeIntegrationTest {
                         .filter(task -> task.name().equals("new")).findFirst().orElseThrow();
                 assertNull(neverRun.durationOfLastRun());
                 assertNull(neverRun.currentRunSeconds());
+                assertNull(neverRun.lastSuccessfulStart());
 
                 Task.startTask(db, "previous");
                 var running = Task.getAllTasks(db).stream()
@@ -79,6 +81,14 @@ class TaskRuntimeIntegrationTest {
                         .filter(task -> task.name().equals("previous")).findFirst().orElseThrow();
                 assertNull(completed.currentRunSeconds());
                 assertNotNull(completed.durationOfLastRun());
+                assertEquals(completed.started(), completed.lastSuccessfulStart());
+
+                Task.startTask(db, "previous");
+                Task.endTask(db, "previous", "failed");
+                var failed = Task.getAllTasks(db).stream()
+                        .filter(task -> task.name().equals("previous")).findFirst().orElseThrow();
+                assertEquals(completed.lastSuccessfulRun(), failed.lastSuccessfulRun());
+                assertEquals(completed.lastSuccessfulStart(), failed.lastSuccessfulStart());
             } finally {
                 db.rollback();
             }

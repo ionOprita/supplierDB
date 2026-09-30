@@ -169,7 +169,7 @@ class ReviewsTableIntegrationTest {
                 new ReviewPrice.RecommendedRetailPrice(null, null, null, null),
                 new ReviewPrice.LowestPrice30Days(null, null, null, null), null);
         var emptyProduct = new ReviewProduct(null, null, null, new ReviewImage(null, List.of()),
-                new ReviewProduct.ReviewOffer(null, emptyPrice), emptyUrl, null);
+                new ReviewProduct.ReviewOffer(null, emptyPrice), emptyUrl, null, null);
         var comment = copyRecord(original.comments().getFirst(), Map.of("content", "Comment remains"));
         var replacements = new LinkedHashMap<String, Object>();
         replacements.put("user", emptyUser);
@@ -330,6 +330,36 @@ class ReviewsTableIntegrationTest {
     }
 
     @Test
+    void exportIncludesRetainedReviewsAndUsesOnlyReviewLevelOwnerData() throws Exception {
+        var first = fullReview(11, 1);
+        var option = new ReviewProduct.FamilyCharacteristics(List.of(
+                new ReviewProduct.Characteristic(new ReviewProduct.CharacteristicValue("Blue"))));
+        var firstProduct = copyRecord(first.product(), Map.of(
+                "partNumberKey", "NESTED-PNK", "familyCharacteristics", option));
+        first = copyRecord(first, Map.of("product", firstProduct, "moderatedBy", "Moderator A"));
+        var second = fullReview(11, 2);
+        var absentFields = new LinkedHashMap<String, Object>();
+        absentFields.put("product", null);
+        absentFields.put("user", null);
+        absentFields.put("moderatedBy", null);
+        second = copyRecord(second, absentFields);
+
+        ReviewsTable.storeReviews(db, PNK, FIRST_FETCH, response(first));
+        ReviewsTable.storeReviews(db, "PNK-2", FIRST_FETCH, response(second));
+        ReviewsTable.storeReviews(db, PNK, SECOND_FETCH, response());
+
+        var rows = ReviewsTable.readReviewExportRows(db);
+        assertEquals(2, rows.size());
+        assertEquals(new ReviewsTable.ExportReview(11, first.productFamilyId(), "NESTED-PNK", first.rating(),
+                firstProduct.firstFamilyCharacteristicValue(), first.created(), first.content(), first.user().name(),
+                first.user().id(), first.user().hash(), first.clientType(), first.published(), "Moderator A"),
+                rows.get(0));
+        assertEquals(new ReviewsTable.ExportReview(11, second.productFamilyId(), "PNK-2", second.rating(),
+                null, second.created(), second.content(), null, null, null, second.clientType(),
+                second.published(), null), rows.get(1));
+    }
+
+    @Test
     void rejectsIncompleteMissingIdAndDuplicateResponsesBeforeChangingStoredData() throws Exception {
         var original = fullReview(11, 1);
         ReviewsTable.storeReviews(db, PNK, FIRST_FETCH, response(original));
@@ -484,7 +514,9 @@ class ReviewsTableIntegrationTest {
         }
         try (var statement = db.createStatement(); var rows = statement.executeQuery("SELECT * FROM review_product" + owner)) {
             assertTrue(rows.next());
-            assertRecordColumns(rows, product, "", Map.of("id", "product_id"), Set.of("image", "price"));
+            assertRecordColumns(rows, product, "", Map.of("id", "product_id"),
+                    Set.of("image", "price", "familyCharacteristics"));
+            assertEquals(product.firstFamilyCharacteristicValue(), rows.getString("family_characteristic_value"));
             assertFalse(rows.next());
         }
         try (var statement = db.createStatement(); var rows = statement.executeQuery("SELECT * FROM review_price" + owner)) {
@@ -625,6 +657,16 @@ class ReviewsTableIntegrationTest {
         method.setAccessible(true);
         try {
             method.invoke(null, db);
+            execute("""
+                    CREATE TABLE tasks (
+                        name VARCHAR(255) PRIMARY KEY, started TIMESTAMP, terminated TIMESTAMP,
+                        last_successful_run TIMESTAMP, error TEXT
+                    )
+                    """);
+            var extension = Class.forName("ro.sellfluence.db.versions.EmagMirrorDBVersion43")
+                    .getDeclaredMethod("version43", Connection.class);
+            extension.setAccessible(true);
+            extension.invoke(null, db);
         } catch (InvocationTargetException exception) {
             if (exception.getCause() instanceof Exception failure) throw failure;
             throw exception;

@@ -33,7 +33,8 @@ public record Review(
         Long productFamilyId,
         Boolean allowCommentsLikes,
         Boolean hasMedia,
-        List<ReviewImage> pictures
+        List<ReviewImage> pictures,
+        String moderatedBy
 ) {
     public Review {
         comments = comments == null ? List.of() : List.copyOf(comments);

@@ -199,6 +199,11 @@ public class EmagMirrorDB {
         return database.writeTX(db -> ReviewsTable.storeReviews(db, pnk, fetchedAt, response));
     }
 
+    /** Reads all retained and current reviews as a consistent snapshot for the review sheet. */
+    public List<ReviewsTable.ExportReview> readReviewExportRows() throws SQLException {
+        return database.readTX(ReviewsTable::readReviewExportRows);
+    }
+
     public int addOrUpdateAdsAndCampaigns(UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         return database.writeTX(db -> upsertCampaignsAndAdsets(db, vendorId, campaigns));
     }

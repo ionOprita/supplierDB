@@ -4,6 +4,7 @@ import org.jspecify.annotations.Nullable;
 import ro.sellfluence.app.PopulateDateComenziFromDB;
 import ro.sellfluence.app.PopulateProductsTableFromSheets;
 import ro.sellfluence.app.PopulateStornoAndReturns;
+import ro.sellfluence.app.TransferReviews;
 import ro.sellfluence.app.UpdateEmployeeSheetsFromDB;
 import ro.sellfluence.app.UpdateProductEmployeeSheetTabsFromSheets;
 import ro.sellfluence.db.EmagMirrorDB;
@@ -60,6 +61,7 @@ public class BackgroundJob {
     private static final Duration executeWeekly = Duration.ofDays(7);
     private static final Predicate<LocalDateTime> runAlways = _ -> true;
     private static final Predicate<LocalDateTime> runOnlyInTheMorning = time -> time.getHour() < 7;
+    private static final Predicate<LocalDateTime> runReviewsInTheEvening = time -> time.getHour() >= 19;
     private static final Predicate<LocalDateTime> runOnlyInTheAfternoon = time -> time.getHour() > 12 && time.getHour() < 18;
     private static final Predicate<LocalDateTime> runOnlyOutOfOfficeHours = time -> time.getHour() < 7 || time.getHour() > 18;
 
@@ -189,6 +191,11 @@ public class BackgroundJob {
         void run() throws Exception;
     }
 
+    enum Cadence {
+        ELAPSED_INTERVAL,
+        LOCAL_CALENDAR_DAY
+    }
+
     /**
      * Persistence seam kept package-private so scheduler behaviour can be tested without a database.
      */
@@ -214,6 +221,7 @@ public class BackgroundJob {
             Duration failureRetryInterval,
             Predicate<LocalDateTime> timePredicate,
             @Nullable String prerequisiteTaskName,
+            Cadence cadence,
             CheckedAction action
     ) {
         TaskDefinition {
@@ -227,7 +235,21 @@ public class BackgroundJob {
                 throw new IllegalArgumentException("Task intervals must not be negative");
             }
             Objects.requireNonNull(timePredicate, "timePredicate");
+            Objects.requireNonNull(cadence, "cadence");
             Objects.requireNonNull(action, "action");
+        }
+
+        TaskDefinition(
+                String name,
+                String lane,
+                Duration interval,
+                Duration failureRetryInterval,
+                Predicate<LocalDateTime> timePredicate,
+                @Nullable String prerequisiteTaskName,
+                CheckedAction action
+        ) {
+            this(name, lane, interval, failureRetryInterval, timePredicate, prerequisiteTaskName,
+                    Cadence.ELAPSED_INTERVAL, action);
         }
 
         TaskDefinition(
@@ -237,7 +259,7 @@ public class BackgroundJob {
                 Predicate<LocalDateTime> timePredicate,
                 CheckedAction action
         ) {
-            this(name, lane, interval, Duration.ZERO, timePredicate, null, action);
+            this(name, lane, interval, Duration.ZERO, timePredicate, null, Cadence.ELAPSED_INTERVAL, action);
         }
     }
 
@@ -250,6 +272,7 @@ public class BackgroundJob {
         Objects.requireNonNull(clock, "clock");
 
         var definitions = new ArrayList<TaskDefinition>();
+        definitions.add(transferReviewsTask(() -> TransferReviews.transferReviews(db, clock)));
         definitions.add(new TaskDefinition(
                 "Populate products from sheets", googleApiLane, executeHourly, runAlways,
                 () -> PopulateProductsTableFromSheets.updateProductTable(db)
@@ -402,8 +425,22 @@ public class BackgroundJob {
                 emagReviewsLane,
                 executeDaily,
                 executeHourly,
-                runOnlyOutOfOfficeHours,
+                runReviewsInTheEvening,
                 null,
+                Cadence.LOCAL_CALENDAR_DAY,
+                action
+        );
+    }
+
+    static TaskDefinition transferReviewsTask(CheckedAction action) {
+        return new TaskDefinition(
+                "Transfer product reviews to Google Sheets",
+                googleApiLane,
+                executeDaily,
+                executeHourly,
+                runOnlyInTheMorning,
+                null,
+                Cadence.LOCAL_CALENDAR_DAY,
                 action
         );
     }
@@ -496,8 +533,7 @@ public class BackgroundJob {
         if (isRunning(taskInfo)) {
             return false;
         }
-        var lastSuccessfulRun = getLastSuccessfulRun(taskInfo);
-        if (lastSuccessfulRun.plus(definition.interval()).isAfter(now)) {
+        if (!cadenceElapsed(definition, taskInfo, now)) {
             return false;
         }
         if (!failureRetryDelayElapsed(taskInfo, definition.failureRetryInterval(), now)) {
@@ -507,6 +543,14 @@ public class BackgroundJob {
             return false;
         }
         return prerequisiteSatisfied(definition, taskInfo, tasksByName);
+    }
+
+    private static boolean cadenceElapsed(TaskDefinition definition, @Nullable Task taskInfo, LocalDateTime now) {
+        if (definition.cadence() == Cadence.LOCAL_CALENDAR_DAY) {
+            var lastSuccessfulStart = taskInfo == null ? null : taskInfo.lastSuccessfulStart();
+            return lastSuccessfulStart == null || lastSuccessfulStart.toLocalDate().isBefore(now.toLocalDate());
+        }
+        return !getLastSuccessfulRun(taskInfo).plus(definition.interval()).isAfter(now);
     }
 
     private static boolean prerequisiteSatisfied(

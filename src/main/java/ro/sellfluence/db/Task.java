@@ -13,7 +13,8 @@ import static com.google.common.base.Throwables.getStackTraceAsString;
 import static ro.sellfluence.support.UsefulMethods.toDuration;
 
 public record Task(String name, LocalDateTime started, LocalDateTime terminated, LocalDateTime lastSuccessfulRun,
-                   Duration durationOfLastRun, Long currentRunSeconds, int unsuccessfulRuns, String error) {
+                   LocalDateTime lastSuccessfulStart, Duration durationOfLastRun, Long currentRunSeconds,
+                   int unsuccessfulRuns, String error) {
 
     /**
      * Ensure every configured task has a history row, including tasks which have never run.
@@ -78,6 +79,10 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
                       WHEN i.new_error IS NULL OR i.new_error = '' THEN CURRENT_TIMESTAMP
                       ELSE t.last_successful_run
                     END,
+                    last_successful_start = CASE
+                      WHEN i.new_error IS NULL OR i.new_error = '' THEN t.started
+                      ELSE t.last_successful_start
+                    END,
                     unsuccessful_runs = CASE
                       WHEN i.new_error IS NULL OR i.new_error = '' THEN 0
                       ELSE COALESCE(t.unsuccessful_runs, 0) + 1
@@ -136,7 +141,7 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
      */
     public static List<Task> getAllTasks(Connection db) throws SQLException {
         try (var s = db.prepareStatement("""
-                SELECT name, started, terminated, last_successful_run, duration_of_last_run,
+                SELECT name, started, terminated, last_successful_run, last_successful_start, duration_of_last_run,
                        CASE WHEN started IS NOT NULL AND terminated IS NULL
                             THEN GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (clock_timestamp()::timestamp - started))))::bigint
                             ELSE NULL
@@ -153,6 +158,7 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
                                 rs.getObject("started", LocalDateTime.class),
                                 rs.getObject("terminated", LocalDateTime.class),
                                 rs.getObject("last_successful_run", LocalDateTime.class),
+                                rs.getObject("last_successful_start", LocalDateTime.class),
                                 toDuration(rs.getObject("duration_of_last_run", PGInterval.class)),
                                 rs.getObject("current_run_seconds", Long.class),
                                 rs.getInt("unsuccessful_runs"),

@@ -17,11 +17,17 @@ import com.google.api.services.sheets.v4.model.CellData;
 import com.google.api.services.sheets.v4.model.CellFormat;
 import com.google.api.services.sheets.v4.model.DataValidationRule;
 import com.google.api.services.sheets.v4.model.ExtendedValue;
+import com.google.api.services.sheets.v4.model.GridCoordinate;
+import com.google.api.services.sheets.v4.model.GridProperties;
 import com.google.api.services.sheets.v4.model.GridRange;
 import com.google.api.services.sheets.v4.model.NumberFormat;
 import com.google.api.services.sheets.v4.model.ProtectedRange;
 import com.google.api.services.sheets.v4.model.RepeatCellRequest;
 import com.google.api.services.sheets.v4.model.Request;
+import com.google.api.services.sheets.v4.model.RowData;
+import com.google.api.services.sheets.v4.model.SheetProperties;
+import com.google.api.services.sheets.v4.model.UpdateCellsRequest;
+import com.google.api.services.sheets.v4.model.UpdateSheetPropertiesRequest;
 import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.ValueRange;
 import com.google.auth.http.HttpCredentialsAdapter;
@@ -38,6 +44,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -393,6 +400,200 @@ public class SheetsAPI {
                 "updateRanges(%s,%s)".formatted(rows, Arrays.toString(ranges)),
                 update::execute
         );
+    }
+
+    private static final long MAX_REPLACEMENT_BATCH_BYTES = 1_000_000;
+
+    /**
+     * Replace all cell values from a starting cell through the end of a tab's grid. Cells above
+     * {@code startRow} and to the left of {@code startColumn} are untouched. Only cell values are
+     * cleared or written; existing formatting is kept, apart from the requested date columns.
+     * Strings supplied in {@link CellData#getUserEnteredValue()} are written literally, including
+     * strings beginning with {@code =}.
+     *
+     * @param tabName name of the destination tab
+     * @param startRow first row to replace, numbered from 1
+     * @param startColumn first column to replace, numbered from 1
+     * @param rows replacement data, one list of cells per row
+     * @param dateColumnFormats date number formats keyed by absolute, 1-based column number
+     */
+    public void replaceCellValuesFrom(
+            String tabName,
+            int startRow,
+            int startColumn,
+            List<List<CellData>> rows,
+            Map<Integer, String> dateColumnFormats
+    ) {
+        requireNonNull(tabName);
+        requireNonNull(rows);
+        requireNonNull(dateColumnFormats);
+        if (startRow < 1 || startColumn < 1) {
+            throw new IllegalArgumentException("Sheet row and column numbers must start at 1");
+        }
+        if (rows.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalArgumentException("Sheet rows must not be null");
+        }
+
+        int width = rows.stream().mapToInt(List::size).max().orElse(0);
+        for (var entry : dateColumnFormats.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null || entry.getValue().isBlank()) {
+                throw new IllegalArgumentException("Date columns and format patterns must be present");
+            }
+            if (!rows.isEmpty() && (entry.getKey() < startColumn || entry.getKey() >= (long) startColumn + width)) {
+                throw new IllegalArgumentException("Date column is outside the replacement data: " + entry.getKey());
+            }
+        }
+
+        var sheets = getSheetsService();
+        var spreadsheet = repeatCellRequest(
+                5,
+                "get grid for %s!%s".formatted(spreadSheetName, tabName),
+                () -> sheets.spreadsheets().get(spreadSheetId)
+                        .setFields("sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))")
+                        .execute()
+        );
+        var target = spreadsheet.getSheets().stream()
+                .filter(sheet -> tabName.equals(sheet.getProperties().getTitle()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Sheet tab not found: " + tabName));
+        var properties = target.getProperties();
+        int sheetId = properties.getSheetId();
+        int existingRows = requireNonNull(properties.getGridProperties().getRowCount());
+        int existingColumns = requireNonNull(properties.getGridProperties().getColumnCount());
+        int neededRows = Math.max(startRow, Math.addExact(startRow - 1, rows.size()));
+        int neededColumns = Math.max(startColumn, Math.addExact(startColumn - 1, width));
+        int gridRows = Math.max(existingRows, neededRows);
+        int gridColumns = Math.max(existingColumns, neededColumns);
+
+        var growth = new ArrayList<Request>();
+        if (gridRows > existingRows || gridColumns > existingColumns) {
+            // Absolute sizes make a retry safe if the first response was lost after Google applied it.
+            growth.add(new Request().setUpdateSheetProperties(new UpdateSheetPropertiesRequest()
+                    .setProperties(new SheetProperties().setSheetId(sheetId)
+                            .setGridProperties(new GridProperties()
+                                    .setRowCount(gridRows).setColumnCount(gridColumns)))
+                    .setFields("gridProperties.rowCount,gridProperties.columnCount")));
+        }
+
+        if (estimatedPayloadBytes(rows) <= MAX_REPLACEMENT_BATCH_BYTES) {
+            var requests = new ArrayList<>(growth);
+            requests.add(clearValues(sheetId, startRow - 1, null, startColumn - 1, null));
+            if (!rows.isEmpty() && width > 0) {
+                requests.add(writeValues(sheetId, startRow - 1, startColumn - 1, rows, 0, rows.size(), width));
+                requests.addAll(dateFormats(sheetId, startRow - 1, rows.size(), dateColumnFormats));
+            }
+            updateSpreadsheet(sheets, tabName, requests);
+            return;
+        }
+
+        // Large exports are written in bounded requests. Clear the old tail and extra columns only
+        // after all replacement rows have been accepted, so a failed run can be retried safely.
+        if (!growth.isEmpty()) {
+            updateSpreadsheet(sheets, tabName, growth);
+        }
+        int from = 0;
+        while (from < rows.size()) {
+            int to = from;
+            long batchSize = 0;
+            while (to < rows.size() && (to == from || batchSize + estimatedRowBytes(rows.get(to)) <= MAX_REPLACEMENT_BATCH_BYTES)) {
+                batchSize += estimatedRowBytes(rows.get(to));
+                to++;
+            }
+            updateSpreadsheet(sheets, tabName, List.of(
+                    writeValues(sheetId, startRow - 1 + from, startColumn - 1, rows, from, to, width)
+            ));
+            from = to;
+        }
+
+        var finish = new ArrayList<Request>();
+        int firstTailRow = startRow - 1 + rows.size();
+        if (firstTailRow < gridRows) {
+            finish.add(clearValues(sheetId, firstTailRow, null, startColumn - 1, null));
+        }
+        int firstExtraColumn = startColumn - 1 + width;
+        if (!rows.isEmpty() && firstExtraColumn < gridColumns) {
+            finish.add(clearValues(sheetId, startRow - 1, firstTailRow, firstExtraColumn, null));
+        }
+        finish.addAll(dateFormats(sheetId, startRow - 1, rows.size(), dateColumnFormats));
+        if (!finish.isEmpty()) {
+            updateSpreadsheet(sheets, tabName, finish);
+        }
+    }
+
+    private void updateSpreadsheet(Sheets sheets, String tabName, List<Request> requests) {
+        var body = new BatchUpdateSpreadsheetRequest().setRequests(requests);
+        repeatCellRequest(
+                5,
+                "replace cell values in %s!%s".formatted(spreadSheetName, tabName),
+                () -> sheets.spreadsheets().batchUpdate(spreadSheetId, body).execute()
+        );
+    }
+
+    static Request clearValues(
+            int sheetId, int startRowIndex, Integer endRowIndex, int startColumnIndex, Integer endColumnIndex
+    ) {
+        var range = new GridRange().setSheetId(sheetId)
+                .setStartRowIndex(startRowIndex).setEndRowIndex(endRowIndex)
+                .setStartColumnIndex(startColumnIndex).setEndColumnIndex(endColumnIndex);
+        return new Request().setRepeatCell(new RepeatCellRequest()
+                .setRange(range).setCell(new CellData()).setFields("userEnteredValue"));
+    }
+
+    static Request writeValues(
+            int sheetId, int startRowIndex, int startColumnIndex,
+            List<List<CellData>> rows, int from, int to, int width
+    ) {
+        var data = new ArrayList<RowData>(to - from);
+        for (int rowIndex = from; rowIndex < to; rowIndex++) {
+            var values = new ArrayList<CellData>(width);
+            var source = rows.get(rowIndex);
+            for (int column = 0; column < width; column++) {
+                var cell = column < source.size() ? source.get(column) : null;
+                values.add(cell == null ? new CellData() : new CellData().setUserEnteredValue(cell.getUserEnteredValue()));
+            }
+            data.add(new RowData().setValues(values));
+        }
+        return new Request().setUpdateCells(new UpdateCellsRequest()
+                .setStart(new GridCoordinate().setSheetId(sheetId)
+                        .setRowIndex(startRowIndex).setColumnIndex(startColumnIndex))
+                .setRows(data).setFields("userEnteredValue"));
+    }
+
+    static List<Request> dateFormats(
+            int sheetId, int startRowIndex, int numberOfRows, Map<Integer, String> dateColumnFormats
+    ) {
+        if (numberOfRows == 0) {
+            return List.of();
+        }
+        var requests = new ArrayList<Request>();
+        for (var entry : new TreeMap<>(dateColumnFormats).entrySet()) {
+            var range = new GridRange().setSheetId(sheetId)
+                    .setStartRowIndex(startRowIndex).setEndRowIndex(startRowIndex + numberOfRows)
+                    .setStartColumnIndex(entry.getKey() - 1).setEndColumnIndex(entry.getKey());
+            var format = new CellFormat().setNumberFormat(new NumberFormat()
+                    .setType("DATE").setPattern(entry.getValue()));
+            requests.add(new Request().setRepeatCell(new RepeatCellRequest()
+                    .setRange(range).setCell(new CellData().setUserEnteredFormat(format))
+                    .setFields("userEnteredFormat.numberFormat")));
+        }
+        return requests;
+    }
+
+    private static long estimatedPayloadBytes(List<List<CellData>> rows) {
+        return rows.stream().mapToLong(SheetsAPI::estimatedRowBytes).sum();
+    }
+
+    private static long estimatedRowBytes(List<CellData> row) {
+        long bytes = 80;
+        for (var cell : row) {
+            bytes += 100;
+            if (cell != null && cell.getUserEnteredValue() != null
+                    && cell.getUserEnteredValue().getStringValue() != null) {
+                // Four bytes per character also covers UTF-8 and JSON escaping conservatively.
+                bytes += 4L * cell.getUserEnteredValue().getStringValue().length();
+            }
+        }
+        return bytes;
     }
 
     /**
