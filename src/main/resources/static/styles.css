@@ -844,6 +844,38 @@ code {
 }
 
 /* Task controls share a cell; keep adjacent actions visually distinct. */
+#tasksTable .task-sort-button {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  text-align: left;
+  white-space: nowrap;
+}
+
+#tasksTable .task-sort-button::after {
+  content: '↕';
+  margin-left: 0.35rem;
+  opacity: 0.55;
+}
+
+#tasksTable th[aria-sort='ascending'] .task-sort-button::after {
+  content: '↑';
+  opacity: 1;
+}
+
+#tasksTable th[aria-sort='descending'] .task-sort-button::after {
+  content: '↓';
+  opacity: 1;
+}
+
+#tasksTable .task-sort-button:hover {
+  text-decoration: underline;
+}
+
 .task-action-button + .task-action-button {
   margin-left: 0.4rem;
 }

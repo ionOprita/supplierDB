@@ -564,15 +564,21 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
     tr.appendChild(tdStatus);
     const tdLastRun = document.createElement('td');
     tdLastRun.textContent = formatTaskDateTime(row.terminated);
+    if (row.terminated) tdLastRun.dataset.sortValue = String(row.terminated.getTime());
     tr.appendChild(tdLastRun);
     const tdDuration = document.createElement('td');
     tdDuration.textContent = formatDuration(row.durationOfLastRunSeconds);
+    if (row.durationOfLastRunSeconds != null) {
+      tdDuration.dataset.sortValue = String(row.durationOfLastRunSeconds);
+    }
     tr.appendChild(tdDuration);
     const tdLastSuccess = document.createElement('td');
     tdLastSuccess.textContent = formatTaskDateTime(row.lastSuccessfulRun);
+    if (row.lastSuccessfulRun) tdLastSuccess.dataset.sortValue = String(row.lastSuccessfulRun.getTime());
     tr.appendChild(tdLastSuccess);
     const tdFailures = document.createElement('td');
     tdFailures.textContent = row.unsuccessfulRuns;
+    tdFailures.dataset.sortValue = String(row.unsuccessfulRuns);
     tr.appendChild(tdFailures);
     const tdError = document.createElement('td');
     tdError.textContent = row.error;
@@ -582,6 +588,40 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
   }
 
   renderTbody(tbodyEl, rows, renderRow);
+}
+
+const TASK_COLUMNS = [
+  { label: 'Action', type: 'text' },
+  { label: 'Name', type: 'text' },
+  { label: 'Status', type: 'text' },
+  { label: 'Last Run', type: 'number' },
+  { label: 'Runtime', type: 'number' },
+  { label: 'Last Successful', type: 'number' },
+  { label: 'Failures', type: 'number' },
+  { label: 'Error', type: 'text' }
+];
+
+export function sortTaskTableBody(tbody, columnIndex, direction) {
+  const type = TASK_COLUMNS[columnIndex].type;
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+  const valueOf = (row) => {
+    const cell = row.cells[columnIndex];
+    const value = type === 'number' ? cell.dataset.sortValue : cell.textContent.trim();
+    return value == null || value === '' ? null : type === 'number' ? Number(value) : value;
+  };
+
+  const sorted = Array.from(tbody.rows).map((row, index) => ({ row, index, value: valueOf(row) }));
+  sorted.sort((a, b) => {
+    // Keep empty dates, durations, and errors at the bottom in both directions.
+    if (a.value == null || b.value == null) {
+      return (a.value == null) - (b.value == null) || a.index - b.index;
+    }
+    const comparison = type === 'number'
+      ? a.value - b.value
+      : collator.compare(a.value, b.value);
+    return (direction === 'descending' ? -comparison : comparison) || a.index - b.index;
+  });
+  tbody.replaceChildren(...sorted.map(({ row }) => row));
 }
 
 
@@ -618,6 +658,39 @@ export function initTaskTable(cfg) {
   let latestLoadRequest = 0;
   let clearRunStatusWhenIdle = false;
   let actionStatusSource = null;
+  let sortColumnIndex = null;
+  let sortDirection = 'ascending';
+
+  function renderTaskHeader() {
+    const tr = document.createElement('tr');
+    TASK_COLUMNS.forEach(({ label }, index) => {
+      const th = document.createElement('th');
+      th.scope = 'col';
+      if (index === 0) {
+        th.textContent = label;
+        tr.appendChild(th);
+        return;
+      }
+      if (sortColumnIndex === index) th.setAttribute('aria-sort', sortDirection);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'task-sort-button';
+      button.textContent = label;
+      button.setAttribute('aria-label', `Sort by ${label}`);
+      button.addEventListener('click', () => {
+        sortDirection = sortColumnIndex === index && sortDirection === 'ascending'
+          ? 'descending'
+          : 'ascending';
+        sortColumnIndex = index;
+        for (const header of tr.cells) header.removeAttribute('aria-sort');
+        th.setAttribute('aria-sort', sortDirection);
+        sortTaskTableBody(BODY, sortColumnIndex, sortDirection);
+      });
+      th.appendChild(button);
+      tr.appendChild(th);
+    });
+    HEAD.replaceChildren(tr);
+  }
 
   function setActionStatus(message, isError = false, clearWhenIdle = false, source = 'action') {
     if (!ACTION_STATUS) return;
@@ -866,11 +939,7 @@ export function initTaskTable(cfg) {
         }
       }
       updateTrackedRuns(rows);
-      const tr = buildHeaderRow([
-        'Action', 'Name', 'Status', 'Last Run', 'Runtime', 'Last Successful', 'Failures', 'Error'
-      ]);
-      HEAD.innerHTML = '';
-      HEAD.appendChild(tr);
+      if (HEAD.rows.length === 0) renderTaskHeader();
       renderTasksBody(BODY, rows, {
         canRunTasks: cfg.canRunTasks,
         taskLaneByName: currentTaskLaneByName,
@@ -881,6 +950,7 @@ export function initTaskTable(cfg) {
         onRun: runTask,
         onSetPaused: setTaskPaused
       });
+      if (sortColumnIndex != null) sortTaskTableBody(BODY, sortColumnIndex, sortDirection);
       setSchedulerStatus(currentLaneStatuses, currentDatabaseRunningTaskNames);
     } catch (e) {
       if (loadRequest !== latestLoadRequest) return;
