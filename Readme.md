@@ -77,14 +77,17 @@ Production configuration:
 
 ### Product reviews
 
-`Fetch product reviews from eMAG` runs in its own `emagReviewsLane`, before 07:00 in the server's timezone,
-at most once every 24 hours after a successful run. Failures retry after one hour within that morning window.
+`Fetch product reviews from eMAG` runs in its own `emagReviewsLane` out of office hours, at most once every 24 hours
+after a successful run. Failures retry after one hour.
 The Tasks page provides the usual manual-run and pause/resume controls.
 
 The task reads products from the database and selects those with `continueToSell == true`, `retracted == false`,
 and a nonblank PNK. It strips surrounding whitespace, fetches each distinct PNK once, and processes products
-sequentially. Each complete response is committed independently; an individual failure is reported after the
-remaining products have been attempted. Fetches use the existing HTTP retries and exponential delays.
+sequentially. A refresh with eligible products opens one fresh headless Chromium session, navigates to `https://emag.ro/`
+once, and uses Playwright API requests for review pages. Each complete response is committed independently; an
+individual failure is reported after the remaining products have been attempted. Fetches use the existing retries and
+exponential delays for retryable HTTP statuses and Playwright transport failures. Chromium must be installed for the
+server account as described above.
 
 Migration 42 creates the `review` and `review_` tables. Reviews are identified by `(pnk, review_id)` and store
 the latest observed contents, including related comments, users, products, prices, and images in relational tables.

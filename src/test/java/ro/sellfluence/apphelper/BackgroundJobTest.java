@@ -348,7 +348,7 @@ class BackgroundJobTest {
     }
 
     @Test
-    void reviewsRunDailyBeforeSevenAndRetryFailuresAfterAnHour() {
+    void reviewsRunDailyOutOfOfficeHourAndRetryFailuresAfterAnHour() {
         var definition = BackgroundJob.reviewsTask(() -> {});
         assertEquals("Fetch product reviews from eMAG", definition.name());
         assertEquals(BackgroundJob.emagReviewsLane, definition.lane());
@@ -356,17 +356,16 @@ class BackgroundJobTest {
         assertEquals(Duration.ofHours(1), definition.failureRetryInterval());
         assertNull(definition.prerequisiteTaskName());
 
-        for (var time : List.of(NOW.withHour(0), NOW.withHour(6).withMinute(59),
-                NOW.withHour(7), NOW.withHour(23))) {
+        for (var time : List.of(NOW.withHour(0), NOW.withHour(6).withMinute(59), NOW.withHour(19), NOW.withHour(23))) {
             var executor = new HoldingExecutor();
             new BackgroundJob(new FakeTaskStore(), executor, clockAt(time), List.of(definition)).performWork();
-            assertEquals(time.getHour() < 7 ? 1 : 0, executor.queuedCount());
+            assertEquals(1, executor.queuedCount(), "Reviews should be eligible at hour " + time.getHour());
         }
 
         var now = NOW.withHour(3);
         var successfulStore = new FakeTaskStore();
-        successfulStore.put(completedTask(definition.name(), now.minusDays(1).plusMinutes(1),
-                now.minusDays(1).plusMinutes(1), ""));
+        successfulStore.put(completedTask(definition.name(), now.minusHours(23).minusMinutes(59),
+                now.minusHours(23).minusMinutes(59), ""));
         var tooEarly = new HoldingExecutor();
         new BackgroundJob(successfulStore, tooEarly, clockAt(now), List.of(definition)).performWork();
         assertEquals(0, tooEarly.queuedCount());

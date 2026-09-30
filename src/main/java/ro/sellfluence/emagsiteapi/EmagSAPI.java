@@ -1,14 +1,15 @@
 package ro.sellfluence.emagsiteapi;
 
+import com.microsoft.playwright.APIResponse;
+import com.microsoft.playwright.Page;
+import com.microsoft.playwright.PlaywrightException;
+import com.microsoft.playwright.options.RequestOptions;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
@@ -26,6 +27,7 @@ public class EmagSAPI {
     private static final Logger logger = Logger.getLogger(EmagSAPI.class.getName());
     private static final int PAGE_LIMIT = 100;
     private static final int MAX_REQUEST_RETRIES = 4;
+    private static final int MAX_LOGGED_RESPONSE_CHARS = 8_000;
     private static final long INITIAL_RETRY_DELAY_MILLISECONDS = 10_000;
     private static final Set<Integer> RETRYABLE_STATUS_CODES =
             Set.of(HTTP_INTERNAL_ERROR, HTTP_BAD_GATEWAY, HTTP_GATEWAY_TIMEOUT);
@@ -37,7 +39,6 @@ public class EmagSAPI {
                     + "&page%%5Blimit%%5D=" + PAGE_LIMIT
                     + "&page%%5Boffset%%5D=%d";
 
-    private static final HttpClient client = HttpClient.newHttpClient();
     private static final JsonMapper objectMapper = JsonMapper.builder()
             .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -46,14 +47,20 @@ public class EmagSAPI {
     /**
      * Fetches and combines every page of reviews for a product.
      */
-    public static ReviewsResponse getReviews(String pnk) throws IOException, InterruptedException {
+    public static ReviewsResponse getReviews(Page page, String pnk) throws IOException, InterruptedException {
         return getReviews(
-                offset -> sendRequest(BASE_URL.formatted(pnk, offset)),
+                pnk,
+                offset -> sendRequest(page, BASE_URL.formatted(pnk, offset)),
                 Thread::sleep
         );
     }
 
     static ReviewsResponse getReviews(PageFetcher pageFetcher, Sleeper sleeper)
+            throws IOException, InterruptedException {
+        return getReviews(null, pageFetcher, sleeper);
+    }
+
+    private static ReviewsResponse getReviews(String pnk, PageFetcher pageFetcher, Sleeper sleeper)
             throws IOException, InterruptedException {
         var reviews = new ArrayList<Review>();
         var reviewIds = new HashSet<Long>();
@@ -64,7 +71,7 @@ public class EmagSAPI {
             if (Thread.currentThread().isInterrupted()) {
                 throw new InterruptedException("Interrupted while fetching eMAG reviews");
             }
-            var response = fetchPageWithRetry(offset, pageFetcher, sleeper);
+            var response = fetchPageWithRetry(offset, pnk, pageFetcher, sleeper);
             validateResponse(response);
 
             if (firstResponse == null) {
@@ -101,6 +108,7 @@ public class EmagSAPI {
 
     private static ReviewsResponse fetchPageWithRetry(
             int offset,
+            String pnk,
             PageFetcher pageFetcher,
             Sleeper sleeper
     ) throws IOException, InterruptedException {
@@ -111,7 +119,19 @@ public class EmagSAPI {
             try {
                 var httpResponse = pageFetcher.fetch(offset);
                 if (httpResponse.statusCode() == HTTP_OK) {
-                    return objectMapper.readValue(httpResponse.body(), ReviewsResponse.class);
+                    try {
+                        return objectMapper.readValue(httpResponse.body(), ReviewsResponse.class);
+                    } catch (JacksonException exception) {
+                        var body = httpResponse.body();
+                        var excerpt = body.length() > MAX_LOGGED_RESPONSE_CHARS
+                                ? body.substring(0, MAX_LOGGED_RESPONSE_CHARS) + "… [truncated]"
+                                : body;
+                        logger.log(WARNING,
+                                "Unable to parse eMAG reviews for PNK {0} at offset {1}; response body "
+                                        + "({2} characters, excerpt follows): {3}",
+                                new Object[]{pnk == null ? "(unknown)" : pnk, offset, body.length(), excerpt});
+                        throw exception;
+                    }
                 }
                 if (!RETRYABLE_STATUS_CODES.contains(httpResponse.statusCode()) || retriesRemaining == 0) {
                     throw new IllegalStateException("eMAG returned HTTP " + httpResponse.statusCode());
@@ -120,7 +140,7 @@ public class EmagSAPI {
                 logger.log(WARNING,
                         "eMAG returned HTTP {0}; retrying offset {1} after {2} seconds ({3} retries remain)",
                         new Object[]{httpResponse.statusCode(), offset, retryDelay / 1_000, retriesRemaining});
-            } catch (IOException exception) {
+            } catch (IOException | PlaywrightException exception) {
                 if (retriesRemaining == 0) {
                     throw exception;
                 }
@@ -144,20 +164,20 @@ public class EmagSAPI {
         }
     }
 
-    private static HttpResult sendRequest(String url) throws IOException, InterruptedException {
+    private static HttpResult sendRequest(Page page, String url) throws InterruptedException {
         randomWait(1.5, 2.5);
-        var request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("X-Request-Source", "mobile-app")
-                .GET()
-                .build();
-        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        return new HttpResult(response.statusCode(), response.body());
+        APIResponse response = page.request().get(url, RequestOptions.create()
+                .setHeader("X-Request-Source", "mobile-app"));
+        try {
+            return new HttpResult(response.status(), response.text());
+        } finally {
+            response.dispose();
+        }
     }
 
     @FunctionalInterface
     interface PageFetcher {
-        HttpResult fetch(int offset) throws IOException, InterruptedException;
+        HttpResult fetch(int offset) throws IOException, InterruptedException, PlaywrightException;
     }
 
     @FunctionalInterface

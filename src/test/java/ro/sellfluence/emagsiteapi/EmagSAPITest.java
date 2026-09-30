@@ -1,5 +1,6 @@
 package ro.sellfluence.emagsiteapi;
 
+import com.microsoft.playwright.PlaywrightException;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -68,6 +69,24 @@ class EmagSAPITest {
     }
 
     @Test
+    void retriesPlaywrightTransportFailures() throws Exception {
+        var calls = new AtomicInteger();
+        var delays = new ArrayList<Long>();
+
+        var response = EmagSAPI.getReviews(offset -> {
+            assertEquals(0, offset);
+            if (calls.getAndIncrement() == 0) {
+                throw new PlaywrightException("connection reset");
+            }
+            return new EmagSAPI.HttpResult(HTTP_OK, page(0));
+        }, delays::add);
+
+        assertEquals(0, response.data().count());
+        assertEquals(2, calls.get());
+        assertEquals(List.of(10_000L), delays);
+    }
+
+    @Test
     void acceptsAnExplicitlyEmptyResponseWithoutAnotherRequest() throws Exception {
         var requestedOffsets = new ArrayList<Integer>();
         var response = EmagSAPI.getReviews(offset -> {
@@ -82,12 +101,24 @@ class EmagSAPITest {
 
     @Test
     void rejectsMissingPaginationFieldsInsteadOfReportingAnEmptyFetch() {
-        for (var data : List.of("{}", "{\"items\":[]}", "{\"count\":0}", "{\"count\":0,\"items\":null}")) {
+        for (var data : List.of("{}", "{\"items\":[]}")) {
             assertThrows(RuntimeException.class, () -> EmagSAPI.getReviews(
                     offset -> new EmagSAPI.HttpResult(HTTP_OK, "{\"code\":200,\"data\":" + data + "}"),
                     ignored -> { throw new AssertionError("Invalid payload should not be retried"); }
             ), data);
         }
+    }
+
+    @Test
+    void treatsMissingItemsAsEmptyButStillRejectsAnIncompleteNonemptyPage() throws Exception {
+        var emptyResponse = EmagSAPI.getReviews(
+                offset -> new EmagSAPI.HttpResult(HTTP_OK, "{\"code\":200,\"data\":{\"count\":0}}"),
+                ignored -> { throw new AssertionError("Unexpected retry"); });
+        assertEquals(List.of(), emptyResponse.data().items());
+
+        assertThrows(IllegalStateException.class, () -> EmagSAPI.getReviews(
+                offset -> new EmagSAPI.HttpResult(HTTP_OK, "{\"code\":200,\"data\":{\"count\":1}}"),
+                ignored -> { throw new AssertionError("Unexpected retry"); }));
     }
 
     @Test

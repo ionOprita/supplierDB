@@ -400,9 +400,9 @@ public class BackgroundJob {
         return new TaskDefinition(
                 "Fetch product reviews from eMAG",
                 emagReviewsLane,
+                executeDaily,
                 executeHourly,
-                executeHourly,
-                runAlways,
+                runOnlyOutOfOfficeHours,
                 null,
                 action
         );

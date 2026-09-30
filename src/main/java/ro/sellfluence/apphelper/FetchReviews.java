@@ -1,5 +1,8 @@
 package ro.sellfluence.apphelper;
 
+import com.microsoft.playwright.Browser;
+import com.microsoft.playwright.BrowserType;
+import com.microsoft.playwright.Playwright;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.ReviewsTable.StoreResult;
@@ -28,14 +31,32 @@ public final class FetchReviews {
 
     public static void fetchReviews(EmagMirrorDB db, Clock clock) throws SQLException, InterruptedException {
         Objects.requireNonNull(db, "db");
-        fetchReviews(clock, db::readProducts, EmagSAPI::getReviews, db::storeReviews);
+        Objects.requireNonNull(clock, "clock");
+        checkInterrupted();
+        var pnks = eligiblePnks(db.readProducts());
+        if (pnks.isEmpty()) {
+            logger.info("Fetching reviews for 0 products");
+            return;
+        }
+        try (var playwright = Playwright.create();
+             Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
+             var context = browser.newContext()) {
+            var page = context.newPage();
+            page.navigate("https://emag.ro/");
+            processReviews(clock, pnks, pnk -> EmagSAPI.getReviews(page, pnk), db::storeReviews);
+        }
     }
 
     static void fetchReviews(Clock clock, ProductReader reader, ReviewFetcher fetcher, ReviewStore store)
             throws SQLException, InterruptedException {
         Objects.requireNonNull(clock, "clock");
         checkInterrupted();
-        var pnks = reader.read().stream()
+        var pnks = eligiblePnks(reader.read());
+        processReviews(clock, pnks, fetcher, store);
+    }
+
+    private static List<String> eligiblePnks(List<ProductInfo> products) {
+        return products.stream()
                 .filter(product -> product.continueToSell() && !product.retracted())
                 .map(ProductInfo::pnk)
                 .filter(pnk -> pnk != null && !pnk.isBlank())
@@ -43,6 +64,11 @@ public final class FetchReviews {
                 .distinct()
                 .sorted()
                 .toList();
+    }
+
+    private static void processReviews(Clock clock, List<String> pnks, ReviewFetcher fetcher, ReviewStore store)
+            throws SQLException, InterruptedException {
+        checkInterrupted();
         var failures = new ArrayList<Exception>();
         int succeeded = 0;
         int inserted = 0;
