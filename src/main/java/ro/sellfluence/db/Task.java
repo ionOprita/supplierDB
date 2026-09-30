@@ -13,7 +13,7 @@ import static com.google.common.base.Throwables.getStackTraceAsString;
 import static ro.sellfluence.support.UsefulMethods.toDuration;
 
 public record Task(String name, LocalDateTime started, LocalDateTime terminated, LocalDateTime lastSuccessfulRun,
-                   Duration durationOfLastRun, int unsuccessfulRuns, String error) {
+                   Duration durationOfLastRun, Long currentRunSeconds, int unsuccessfulRuns, String error) {
 
     /**
      * Ensure every configured task has a history row, including tasks which have never run.
@@ -50,7 +50,7 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
                 INSERT INTO tasks (name, started)
                 VALUES (?, CURRENT_TIMESTAMP)
                 ON CONFLICT (name)
-                DO UPDATE SET started = CURRENT_TIMESTAMP, terminated = NULL, duration_of_last_run = NULL
+                DO UPDATE SET started = CURRENT_TIMESTAMP, terminated = NULL
                 """;
 
         try (var s = db.prepareStatement(sql)) {
@@ -135,7 +135,15 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
      * @throws SQLException if a database access error occurs or the SQL statement fails.
      */
     public static List<Task> getAllTasks(Connection db) throws SQLException {
-        try (var s = db.prepareStatement("SELECT name, started, terminated, last_successful_run, duration_of_last_run, unsuccessful_runs, error FROM tasks ORDER BY name");
+        try (var s = db.prepareStatement("""
+                SELECT name, started, terminated, last_successful_run, duration_of_last_run,
+                       CASE WHEN started IS NOT NULL AND terminated IS NULL
+                            THEN GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (clock_timestamp()::timestamp - started))))::bigint
+                            ELSE NULL
+                       END AS current_run_seconds,
+                       unsuccessful_runs, error
+                FROM tasks ORDER BY name
+                """);
              var rs = s.executeQuery()) {
             List<Task> tasks = new ArrayList<>();
             while (rs.next()) {
@@ -146,6 +154,7 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
                                 rs.getObject("terminated", LocalDateTime.class),
                                 rs.getObject("last_successful_run", LocalDateTime.class),
                                 toDuration(rs.getObject("duration_of_last_run", PGInterval.class)),
+                                rs.getObject("current_run_seconds", Long.class),
                                 rs.getInt("unsuccessful_runs"),
                                 rs.getString("error")
                         )

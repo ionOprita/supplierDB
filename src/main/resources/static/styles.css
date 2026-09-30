@@ -843,6 +843,11 @@ code {
   margin-left: .6rem;
 }
 
+.task-runtime-estimate {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* Task controls share a cell; keep adjacent actions visually distinct. */
 #tasksTable .task-sort-button {
   padding: 0;

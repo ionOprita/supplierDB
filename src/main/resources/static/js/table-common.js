@@ -442,6 +442,10 @@ function formatTaskDateTime(date) {
       `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
 }
 
+function formatTaskRuntime(seconds) {
+  return seconds === 0 ? '0 sec' : formatDuration(seconds);
+}
+
 export function toTaskRows(jsonData, pausedTaskNames = []) {
   if (!Array.isArray(jsonData)) return [];
   const pausedNames = new Set(Array.isArray(pausedTaskNames) ? pausedTaskNames : []);
@@ -453,6 +457,7 @@ export function toTaskRows(jsonData, pausedTaskNames = []) {
       terminated,
       lastSuccessfulRun,
       durationOfLastRun,
+      currentRunSeconds,
       unsuccessfulRuns,
       error,
     } = item || {};
@@ -464,6 +469,7 @@ export function toTaskRows(jsonData, pausedTaskNames = []) {
       lastSuccessfulRun: arrayToDateTime(lastSuccessfulRun),
       durationOfLastRunSeconds:
           typeof durationOfLastRun === "number" ? durationOfLastRun : null,
+      currentRunSeconds: typeof currentRunSeconds === "number" ? currentRunSeconds : null,
       unsuccessfulRuns: typeof unsuccessfulRuns === "number" ? unsuccessfulRuns : 0,
       error: typeof error === "string" ? error : "",
       paused: pausedNames.has(name),
@@ -567,11 +573,24 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
     if (row.terminated) tdLastRun.dataset.sortValue = String(row.terminated.getTime());
     tr.appendChild(tdLastRun);
     const tdDuration = document.createElement('td');
-    tdDuration.textContent = formatDuration(row.durationOfLastRunSeconds);
+    tdDuration.textContent = formatTaskRuntime(row.durationOfLastRunSeconds);
     if (row.durationOfLastRunSeconds != null) {
       tdDuration.dataset.sortValue = String(row.durationOfLastRunSeconds);
     }
     tr.appendChild(tdDuration);
+    const tdCurrentRuntime = document.createElement('td');
+    if (isRunning && row.currentRunSeconds != null) {
+      tdCurrentRuntime.textContent = formatTaskRuntime(row.currentRunSeconds);
+      tdCurrentRuntime.dataset.sortValue = String(row.currentRunSeconds);
+      if (row.durationOfLastRunSeconds > 0) {
+        const estimate = document.createElement('small');
+        estimate.className = 'task-runtime-estimate';
+        estimate.title = 'Estimated progress based on the previous run';
+        estimate.textContent = ` (≈${Math.round(row.currentRunSeconds / row.durationOfLastRunSeconds * 100)}%)`;
+        tdCurrentRuntime.appendChild(estimate);
+      }
+    }
+    tr.appendChild(tdCurrentRuntime);
     const tdLastSuccess = document.createElement('td');
     tdLastSuccess.textContent = formatTaskDateTime(row.lastSuccessfulRun);
     if (row.lastSuccessfulRun) tdLastSuccess.dataset.sortValue = String(row.lastSuccessfulRun.getTime());
@@ -595,7 +614,8 @@ const TASK_COLUMNS = [
   { label: 'Name', type: 'text' },
   { label: 'Status', type: 'text' },
   { label: 'Last Run', type: 'number' },
-  { label: 'Runtime', type: 'number' },
+  { label: 'Last runtime', type: 'number' },
+  { label: 'Current runtime', type: 'number' },
   { label: 'Last Successful', type: 'number' },
   { label: 'Failures', type: 'number' },
   { label: 'Error', type: 'text' }

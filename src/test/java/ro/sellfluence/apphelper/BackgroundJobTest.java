@@ -528,6 +528,7 @@ class BackgroundJobTest {
                 terminated,
                 lastSuccessfulRun,
                 Duration.ofMinutes(5),
+                null,
                 error.isBlank() ? 0 : 1,
                 error
         );
