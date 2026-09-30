@@ -146,12 +146,13 @@ function Invoke-LoggedCommand {
         $previousErrorActionPreference = $ErrorActionPreference
         try {
             $ErrorActionPreference = "Continue"
-            $LASTEXITCODE = $null
+            # Native commands update the global exit code; a local assignment would hide it.
+            $global:LASTEXITCODE = $null
             & $FilePath @Arguments 2>&1 | ForEach-Object {
                 Write-Log $_.ToString()
             }
 
-            $exitCode = $LASTEXITCODE
+            $exitCode = $global:LASTEXITCODE
         }
         finally {
             $ErrorActionPreference = $previousErrorActionPreference

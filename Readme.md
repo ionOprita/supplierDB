@@ -360,6 +360,8 @@ Start-ScheduledTask -TaskName $taskName
 (Get-ScheduledTask -TaskName $taskName).Actions | Format-List Execute,Arguments,WorkingDirectory
 ```
 
+If the supervisor fails before it can pull an update, stop the task, run `git -C 'C:\Users\Oprita\Desktop\JavaServer\app' pull --ff-only` in Administrator PowerShell, and start the task after the pull succeeds. A running PowerShell process continues using the script version it loaded at startup.
+
 If public port `80` cannot be forwarded, this HTTP-01 setup will not work. Use a DNS-01 win-acme plugin for your DNS provider instead, or use a TLS-ALPN-01 setup that can temporarily answer public port `443`.
 
 ### Local development certificate
