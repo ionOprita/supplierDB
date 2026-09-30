@@ -53,10 +53,15 @@ $PlaywrightBrowsersPath = "C:\Users\Oprita\Desktop\JavaServer\playwright-browser
 # If your repo has Maven Wrapper, you may use ".\mvnw.cmd" instead.
 $MavenCommand = "mvn"
 
-# The Maven command line to run your app.
+# Compile the updated sources before either exec:java invocation.
+$MavenCompileArguments = @(
+    "-Dmaven.repo.local=$MavenLocalRepository",
+    "compile"
+)
+
+# The Maven command line to run your app after compilation.
 $MavenArguments = @(
     "-Dmaven.repo.local=$MavenLocalRepository",
-    "compile",
     "exec:java"
 )
 
@@ -134,13 +139,26 @@ function Invoke-LoggedCommand {
 
     Push-Location -LiteralPath $WorkingDirectory
     try {
-        & $FilePath @Arguments 2>&1 | ForEach-Object {
-            Write-Log $_.ToString()
+        Get-Command -Name $FilePath -ErrorAction Stop | Out-Null
+
+        # Windows PowerShell treats redirected native stderr as an error record.
+        # Keep it in the log and use the process exit code to decide success.
+        $previousErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            $LASTEXITCODE = $null
+            & $FilePath @Arguments 2>&1 | ForEach-Object {
+                Write-Log $_.ToString()
+            }
+
+            $exitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
         }
 
-        $exitCode = $LASTEXITCODE
         if ($null -eq $exitCode) {
-            $exitCode = 0
+            throw "Command did not return an exit code: $FilePath"
         }
 
         Write-Log ("Command exited with code {0}: {1}" -f $exitCode, $FilePath)
@@ -322,12 +340,19 @@ Write-Log "CertificatePath: $CertificatePath"
 Write-Log "CertificatePasswordFile: $CertificatePasswordFile"
 Write-Log "AcmeChallengeWebRoot: $AcmeChallengeWebRoot"
 Write-Log "MavenCommand: $MavenCommand"
+Write-Log "MavenCompileArguments: $($MavenCompileArguments -join ' ')"
 Write-Log "MavenArguments: $($MavenArguments -join ' ')"
 Write-Log "============================================================"
 
 while ($true) {
     try {
         Sync-Repository
+
+        Write-Log "Compiling Java application via Maven."
+        $exitCode = Invoke-LoggedCommand -FilePath $MavenCommand -Arguments $MavenCompileArguments -WorkingDirectory $AppDirectory
+        if ($exitCode -ne 0) {
+            throw "Java application compilation failed with exit code $exitCode"
+        }
 
         Write-Log "Ensuring the matching Playwright Chromium binary is installed."
         $exitCode = Invoke-LoggedCommand -FilePath $MavenCommand -Arguments $PlaywrightInstallArguments -WorkingDirectory $AppDirectory

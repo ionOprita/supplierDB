@@ -9,6 +9,7 @@
     <description>Extract from eMAG accounts to google sheets</description>
     <properties>
         <maven.compiler.release>25</maven.compiler.release>
+        <exec.mainClass>ro.sellfluence.app.Server</exec.mainClass>
         <encoding>UTF-8</encoding>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jackson-version>3.1.0</jackson-version>
@@ -361,7 +362,8 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.6.3</version>
                 <configuration>
-                    <mainClass>ro.sellfluence.app.Server</mainClass>
+                    <!-- The Playwright install command overrides this without starting the server. -->
+                    <mainClass>${exec.mainClass}</mainClass>
                 </configuration>
             </plugin>
         </plugins>
