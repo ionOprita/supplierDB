@@ -244,7 +244,14 @@ public class Server {
 
     private static void configure(JavalinConfig config, int port, int securePort) {
         configureSsl(config, port, securePort);
-        config.bundledPlugins.enableDevLogging();
+        config.requestLogger.http((ctx, elapsedMs) -> {
+            int status = ctx.statusCode();
+            if (status >= 400) {
+                logger.log(status >= 500 ? SEVERE : WARNING,
+                        "HTTP {0} {1} ({2} ms)",
+                        new Object[]{status, ctx.fullUrl(), elapsedMs});
+            }
+        });
         config.fileRenderer(new JavalinJte(createJteEngine()));
         config.http.defaultContentType = "application/json";
         config.staticFiles.add("/static");
