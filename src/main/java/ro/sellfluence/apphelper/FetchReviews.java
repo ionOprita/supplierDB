@@ -57,7 +57,7 @@ public final class FetchReviews {
 
     private static List<String> eligiblePnks(List<ProductInfo> products) {
         return products.stream()
-                .filter(product -> product.continueToSell() && !product.retracted())
+                .filter(product -> !product.retracted())
                 .map(ProductInfo::pnk)
                 .filter(pnk -> pnk != null && !pnk.isBlank())
                 .map(String::strip)

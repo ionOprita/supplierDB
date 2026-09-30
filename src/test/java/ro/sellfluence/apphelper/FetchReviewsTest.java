@@ -62,7 +62,7 @@ class FetchReviewsTest {
         });
 
         assertEquals(1, reads.get());
-        assertEquals(List.of("fetch:A", "store:A", "fetch:B", "store:B"), events);
+        assertEquals(List.of("fetch:A", "store:A", "fetch:B", "store:B", "fetch:not-for-sale", "store:not-for-sale"), events);
     }
 
     @Test
