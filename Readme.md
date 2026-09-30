@@ -339,6 +339,26 @@ The setup script automatically looks for `wacs.exe` in `PATH`, `C:\Program Files
 
 The setup script starts the Java scheduled task first, waits for `http://localhost:8080/health`, then asks win-acme to create `C:\Users\Oprita\Desktop\JavaServer\certs\server.sellfusion.ro.pfx`. win-acme also creates its own renewal task and runs `scripts/restart-java-task.ps1` after successful issuance or renewal so Jetty reloads the new PFX on process restart.
 
+The scheduled task runs `C:\Users\Oprita\Desktop\JavaServer\app\scripts\run-java-app.ps1`, in the checkout that it updates. Restart the task after changing that script so PowerShell loads its new contents.
+
+Tasks registered by an older setup script may still run the separate `Desktop\supplierDB` copy. After the `JavaServer\app` checkout has the updated runner, change the existing task action once from an Administrator PowerShell session:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$taskName = 'Java Web App'
+$workDirectory = 'C:\Users\Oprita\Desktop\JavaServer'
+$scriptPath = Join-Path $workDirectory 'app\scripts\run-java-app.ps1'
+if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) { throw "Missing script: $scriptPath" }
+if (-not (Select-String -LiteralPath $scriptPath -SimpleMatch 'Compiling Java application via Maven.' -Quiet)) { throw "Script is still old: $scriptPath" }
+$task = Get-ScheduledTask -TaskName $taskName
+if (@($task.Actions).Count -ne 1) { throw 'Expected exactly one task action.' }
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -WorkingDirectory $workDirectory
+Set-ScheduledTask -TaskName $taskName -Action $action | Out-Null
+Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+Start-ScheduledTask -TaskName $taskName
+(Get-ScheduledTask -TaskName $taskName).Actions | Format-List Execute,Arguments,WorkingDirectory
+```
+
 If public port `80` cannot be forwarded, this HTTP-01 setup will not work. Use a DNS-01 win-acme plugin for your DNS provider instead, or use a TLS-ALPN-01 setup that can temporarily answer public port `443`.
 
 ### Local development certificate

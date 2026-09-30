@@ -1,6 +1,8 @@
 $TaskName = "Java Web App"
-$ScriptPath = Join-Path $PSScriptRoot "run-java-app.ps1"
 $WorkingDirectory = "C:\Users\Oprita\Desktop\JavaServer"
+$AppDirectory = Join-Path $WorkingDirectory "app"
+$RepositoryUrl = "https://github.com/ionOprita/supplierDB.git"
+$ScriptPath = Join-Path $AppDirectory "scripts\run-java-app.ps1"
 
 # Let's Encrypt / win-acme setup.
 # Public 443 must forward to local 8443.
@@ -17,7 +19,7 @@ $WinAcmeExecutable = ""
 $WinAcmeFriendlyName = "sellfusion-java-server"
 $ForceLetsEncryptSetup = $false
 $WaitForAppTimeoutSeconds = 120
-$RestartScriptPath = Join-Path $PSScriptRoot "restart-java-task.ps1"
+$RestartScriptPath = Join-Path $AppDirectory "scripts\restart-java-task.ps1"
 
 $ErrorActionPreference = "Stop"
 
@@ -196,6 +198,28 @@ function Invoke-LetsEncryptSetup {
 }
 
 Ensure-Directory $WorkingDirectory
+
+# Run the supervisor from the checkout it updates, so task restarts load its latest version.
+if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
+    $existingItem = Get-ChildItem -LiteralPath $AppDirectory -Force -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $existingItem) {
+        throw "The application directory exists but the supervisor script is missing: $ScriptPath"
+    }
+
+    & git clone --quiet $RepositoryUrl $AppDirectory
+    if ($LASTEXITCODE -ne 0) {
+        throw "git clone failed with exit code $LASTEXITCODE"
+    }
+}
+if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
+    throw "The application checkout does not contain the supervisor script: $ScriptPath"
+}
+if ($EnableLetsEncrypt -and -not (Test-Path -LiteralPath $RestartScriptPath -PathType Leaf)) {
+    throw "The application checkout does not contain the certificate restart script: $RestartScriptPath"
+}
+if (-not (Test-Path -LiteralPath (Join-Path $AppDirectory ".git") -PathType Container)) {
+    throw "The application directory is not a Git checkout: $AppDirectory"
+}
 
 $Action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
