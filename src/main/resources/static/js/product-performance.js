@@ -253,7 +253,8 @@ export function initProductPerformance() {
         const cell = document.createElement(isWeek ? 'th' : 'td');
         cell.textContent = isWeek
           ? formatPerformancePeriod(row.values?.[column.key], periodMode)
-          : formatPerformanceValue(row.values?.[column.key], column.type);
+          : (['stock', 'salesPrice'].includes(column.key) && row.values?.[column.key] === '???'
+              ? '???' : formatPerformanceValue(row.values?.[column.key], column.type));
         if (isWeek) {
           cell.scope = 'row';
           cell.className = 'pp-week';
@@ -262,6 +263,10 @@ export function initProductPerformance() {
           if (column.groupStart) cell.classList.add('pp-group-start');
         }
         cell.dataset.type = column.type;
+        if (['stock', 'salesPrice'].includes(column.key) && row.values?.[column.key] === '???') {
+          cell.title = 'Multiple matching offers in the latest daily snapshot';
+          cell.setAttribute('aria-label', cell.title);
+        }
         markFrozen(cell, column.key);
         tr.appendChild(cell);
       }

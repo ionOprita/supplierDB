@@ -56,10 +56,19 @@ including in month mode. Rows are sorted oldest to newest. The UI initially show
 latest 20 rows; “Show everything” reveals all returned periods. Switching period mode
 requests new aggregates rather than relabelling existing rows.
 
-Only periods containing eligible snapshots are returned. Partial periods sum the
-available daily reports, including the first/last stored period; missing dates are not
+Only periods containing eligible advertising snapshots are returned. Partial periods sum
+the available daily reports, including the first/last stored period; missing dates are not
 filled with invented observations. The category accumulators are combined to produce
 Total, and the same calculator derives all rates after aggregation.
+
+Stock and Sales Price come from `offers_offer.ext_stock` and `ext_sale_price`. Offers are
+matched on vendor and the selected product's PNK (`doc_product_part_number_key`), with
+surrounding whitespace removed. For each displayed period, the latest `offers_snapshot`
+day for that vendor supplies the values. A day with exactly one matching offer supplies
+both fields; a missing snapshot, no matching offer, or a null field displays as “—”.
+A day with multiple matching offers displays “???” in both cells until a rule for
+combining them is established. An empty latest snapshot does not reuse older values.
+Offer snapshots do not create extra periods or affect advertising totals and errors.
 
 | Displayed metric | Primitive or calculation within the period |
 |---|---|
@@ -90,8 +99,8 @@ distinct from a measured zero.
 
 ## Unsupported columns and errors
 
-The current sources support 66 advertising columns. Stock, GMV 30, overall product
-clicks/conversion, sales price, performance classification, average price, review count,
+The current sources support 66 advertising columns. GMV 30, overall product
+clicks/conversion, performance classification, average price, review count,
 and rating remain null. TACOS and Total's advertising shares of overall product clicks
 and sales also remain null: advertising summaries do not supply the required overall
 product denominators. These columns retain their positions without fabricated values.

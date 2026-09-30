@@ -26,6 +26,7 @@ import ro.sellfluence.emagapi.OrderResult;
 import ro.sellfluence.emagapi.Product;
 import ro.sellfluence.emagapi.RMAResult;
 import ro.sellfluence.emagdashboard.OffersData;
+import ro.sellfluence.emagsiteapi.ReviewsResponse;
 import ro.sellfluence.sheetSupport.Conversions;
 import ro.sellfluence.support.Logs;
 
@@ -173,6 +174,11 @@ public class EmagMirrorDB {
         return database.readTX(db -> ProductPerformanceTable.getDailyAdsets(db, vendorId, pnk));
     }
 
+    public List<OffersTable.DailyProductOffer> getProductPerformanceOffers(
+            UUID vendorId, String pnk, LocalDate firstDate, LocalDate lastDate) throws SQLException {
+        return database.readTX(db -> OffersTable.getDailyProductOffers(db, vendorId, pnk, firstDate, lastDate));
+    }
+
     public int addOrUpdateAdCampaigns(UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         return database.writeTX(db -> upsertCampaigns(db, vendorId, campaigns));
     }
@@ -185,6 +191,12 @@ public class EmagMirrorDB {
      */
     public int storeOffersSnapshot(UUID vendorId, LocalDate fetchDate, OffersData data) throws SQLException {
         return database.writeTX(db -> OffersTable.storeSnapshot(db, vendorId, fetchDate, data));
+    }
+
+    /** Stores a complete product fetch atomically, retaining reviews and comments no longer returned by eMAG. */
+    public ReviewsTable.StoreResult storeReviews(String pnk, Instant fetchedAt, ReviewsResponse response)
+            throws SQLException {
+        return database.writeTX(db -> ReviewsTable.storeReviews(db, pnk, fetchedAt, response));
     }
 
     public int addOrUpdateAdsAndCampaigns(UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {

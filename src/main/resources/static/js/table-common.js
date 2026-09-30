@@ -616,7 +616,6 @@ export function initTaskTable(cfg) {
   let currentDatabaseRunningTaskNames = new Set();
   let latestTaskRows = [];
   let latestLoadRequest = 0;
-  let activeTaskPollTimer = null;
   let clearRunStatusWhenIdle = false;
   let actionStatusSource = null;
 
@@ -701,14 +700,6 @@ export function initTaskTable(cfg) {
     } catch {
       return { message: responseText, code: null };
     }
-  }
-
-  function scheduleActiveTaskPoll() {
-    if (activeTaskPollTimer != null) return;
-    activeTaskPollTimer = window.setTimeout(async () => {
-      activeTaskPollTimer = null;
-      await loadTasks();
-    }, 1_000);
   }
 
   function taskTimestamp(value) {
@@ -820,7 +811,6 @@ export function initTaskTable(cfg) {
       await loadTasks();
     } finally {
       pendingTaskNames.delete(taskName);
-      scheduleActiveTaskPoll();
     }
   }
 
@@ -892,12 +882,6 @@ export function initTaskTable(cfg) {
         onSetPaused: setTaskPaused
       });
       setSchedulerStatus(currentLaneStatuses, currentDatabaseRunningTaskNames);
-      if (currentActiveTaskByLane.size > 0 ||
-          currentDatabaseRunningTaskNames.size > 0 ||
-          pendingTaskNames.size > 0 ||
-          trackedRuns.size > 0) {
-        scheduleActiveTaskPoll();
-      }
     } catch (e) {
       if (loadRequest !== latestLoadRequest) return;
       HEAD.innerHTML = '';
@@ -909,12 +893,6 @@ export function initTaskTable(cfg) {
         'load'
       );
       console.error(e);
-      if (currentActiveTaskByLane.size > 0 ||
-          currentDatabaseRunningTaskNames.size > 0 ||
-          pendingTaskNames.size > 0 ||
-          trackedRuns.size > 0) {
-        scheduleActiveTaskPoll();
-      }
     }
   };
 

@@ -2,6 +2,7 @@ package ro.sellfluence.api;
 
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
 import ro.sellfluence.db.ProductPerformanceTable.Primitives;
+import ro.sellfluence.db.OffersTable.DailyProductOffer;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -20,11 +21,11 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 /**
- * Product advertising performance, computed from eligible daily adset snapshots.
+ * Product and advertising performance, computed from eligible daily adset and offer snapshots.
  *
  * <p>The database supplies vendor/product attribution and same-day active campaign/adset filtering.
- * This class classifies each snapshot, sums only the six source primitives, and derives all rates
- * from those sums. Stored daily rates are deliberately unused: averaging them would weight a
+ * This class classifies each adset snapshot, sums only the six advertising source primitives,
+ * and derives all rates from those sums. Stored daily rates are deliberately unused: averaging them would weight a
  * one-click adset as heavily as a thousand-click adset. See doc/ProductPerformance.md
  * for the complete data selection and calculation rules.</p>
  */
@@ -70,6 +71,11 @@ public final class ProductPerformanceData {
             return this == WEEK ? date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
                     : date.withDayOfMonth(1);
         }
+
+        LocalDate end(LocalDate date) {
+            var first = start(date);
+            return this == WEEK ? first.plusDays(6) : first.plusMonths(1).minusDays(1);
+        }
     }
 
     public record Product(String label, String name, String pnk, String url) {
@@ -95,13 +101,24 @@ public final class ProductPerformanceData {
 
     /** Only observed periods are emitted; available reports also contribute to partial weeks/months. */
     public static Response create(Product product, Period period, List<DailyAdset> snapshots) {
+        return create(product, period, snapshots, List.of());
+    }
+
+    public static Response create(Product product, Period period, List<DailyAdset> snapshots,
+                                  List<DailyProductOffer> offers) {
         var periods = new TreeMap<LocalDate, PeriodTotals>();
         var errors = new ArrayList<DataError>();
         for (var snapshot : snapshots) {
             var totals = periods.computeIfAbsent(period.start(snapshot.key().reportDate()), ignored -> new PeriodTotals());
             totals.add(snapshot, errors);
         }
-        var rows = periods.entrySet().stream().map(entry -> entry.getValue().row(entry.getKey())).toList();
+        var latestOffers = new TreeMap<LocalDate, DailyProductOffer>();
+        for (var offer : offers) {
+            latestOffers.merge(period.start(offer.fetchDate()), offer,
+                    (previous, current) -> previous.fetchDate().isAfter(current.fetchDate()) ? previous : current);
+        }
+        var rows = periods.entrySet().stream()
+                .map(entry -> entry.getValue().row(entry.getKey(), latestOffers.get(entry.getKey()))).toList();
         return new Response(false, product, GROUPS, rows, List.copyOf(errors));
     }
 
@@ -188,13 +205,22 @@ public final class ProductPerformanceData {
             return null;
         }
 
-        private Row row(LocalDate start) {
+        private Row row(LocalDate start, DailyProductOffer offer) {
             var values = new LinkedHashMap<String, Object>();
-            // Unsupported overview, TACOS, and shares of overall product activity remain null.
+            // Unsupported overview columns, TACOS, and shares of overall product activity remain null.
             for (var group : GROUPS) {
                 for (var column : group.columns()) values.put(column.key(), null);
             }
             values.put("week", start.toString());
+            if (offer != null) {
+                if (offer.matchingOffers() == 1) {
+                    values.put("stock", offer.stock());
+                    values.put("salesPrice", offer.salesPrice());
+                } else if (offer.matchingOffers() > 1) {
+                    values.put("stock", "???");
+                    values.put("salesPrice", "???");
+                }
+            }
             var total = new Accumulator();
             for (var category : Category.values()) {
                 if (!invalid.contains(category)) {

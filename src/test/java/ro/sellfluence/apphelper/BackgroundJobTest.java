@@ -1,10 +1,8 @@
 package ro.sellfluence.apphelper;
 
-import org.jspecify.annotations.NullMarked;
 import org.junit.jupiter.api.Test;
 import ro.sellfluence.db.Task;
 
-import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -308,7 +306,7 @@ class BackgroundJobTest {
         assertEquals(18, definitions.stream().map(BackgroundJob.TaskDefinition::name).distinct().count());
         for (var alias : List.of("sellfusion", "another-account", "third.account")) {
             var laneTasks = definitions.stream()
-                    .filter(task -> task.lane().equals(BackgroundJob.adsLane + ":" + alias))
+                    .filter(task -> task.lane().equals(BackgroundJob.emagDashboardLane + ":" + alias))
                     .toList();
             assertEquals(6, laneTasks.size());
             assertEquals("Fetch offers for " + alias, laneTasks.getFirst().name());
@@ -350,6 +348,62 @@ class BackgroundJobTest {
     }
 
     @Test
+    void reviewsRunDailyOutOfOfficeHourAndRetryFailuresAfterAnHour() {
+        var definition = BackgroundJob.reviewsTask(() -> {});
+        assertEquals("Fetch product reviews from eMAG", definition.name());
+        assertEquals(BackgroundJob.emagReviewsLane, definition.lane());
+        assertEquals(Duration.ofDays(1), definition.interval());
+        assertEquals(Duration.ofHours(1), definition.failureRetryInterval());
+        assertNull(definition.prerequisiteTaskName());
+
+        for (var time : List.of(NOW.withHour(0), NOW.withHour(6).withMinute(59), NOW.withHour(19), NOW.withHour(23))) {
+            var executor = new HoldingExecutor();
+            new BackgroundJob(new FakeTaskStore(), executor, clockAt(time), List.of(definition)).performWork();
+            assertEquals(1, executor.queuedCount(), "Reviews should be eligible at hour " + time.getHour());
+        }
+
+        var now = NOW.withHour(3);
+        var successfulStore = new FakeTaskStore();
+        successfulStore.put(completedTask(definition.name(), now.minusHours(23).minusMinutes(59),
+                now.minusHours(23).minusMinutes(59), ""));
+        var tooEarly = new HoldingExecutor();
+        new BackgroundJob(successfulStore, tooEarly, clockAt(now), List.of(definition)).performWork();
+        assertEquals(0, tooEarly.queuedCount());
+        var due = new HoldingExecutor();
+        new BackgroundJob(successfulStore, due, clockAt(now.plusMinutes(1)), List.of(definition)).performWork();
+        assertEquals(1, due.queuedCount());
+
+        var failedStore = new FakeTaskStore();
+        failedStore.put(completedTask(definition.name(), now.minusDays(7), now.minusMinutes(59), "HTTP error"));
+        var retryTooEarly = new HoldingExecutor();
+        new BackgroundJob(failedStore, retryTooEarly, clockAt(now), List.of(definition)).performWork();
+        assertEquals(0, retryTooEarly.queuedCount());
+        var retryDue = new HoldingExecutor();
+        new BackgroundJob(failedStore, retryDue, clockAt(now.plusMinutes(1)), List.of(definition)).performWork();
+        assertEquals(1, retryDue.queuedCount());
+    }
+
+    @Test
+    void reviewsHaveAnIndependentLaneAndHonorPauseAndManualRunControls() {
+        var reviewTask = BackgroundJob.reviewsTask(() -> {});
+        var job = new BackgroundJob(new FakeTaskStore(), new HoldingExecutor(), clockAt(NOW.withHour(3)), List.of(
+                reviewTask,
+                task("orders", BackgroundJob.emagApiLane, () -> {}),
+                task("sheets", BackgroundJob.googleApiLane, () -> {}),
+                BackgroundJob.offersTask("sellfusion", () -> {})
+        ));
+        assertEquals(BackgroundJob.PauseResult.UPDATED, job.setTaskPaused(reviewTask.name(), true));
+
+        job.performWork();
+        assertEquals(3, activeTasks(job).size());
+        assertFalse(activeTasks(job).containsKey(BackgroundJob.emagReviewsLane));
+        assertEquals(ACCEPTED, job.requestRun(reviewTask.name()).status());
+        assertEquals(4, activeTasks(job).size());
+        assertEquals(reviewTask.name(), activeTasks(job).get(BackgroundJob.emagReviewsLane));
+        assertEquals(BUSY, job.requestRun(reviewTask.name()).status());
+    }
+
+    @Test
     void dueOffersTakePriorityOverAdsAndShareTheirLane() {
         var now = NOW.withHour(3);
         var definitions = BackgroundJob.dashboardTaskDefinitions(null, clockAt(now), List.of("sellfusion", "second"));
@@ -358,8 +412,8 @@ class BackgroundJobTest {
         job.performWork();
 
         assertEquals(Map.of(
-                BackgroundJob.adsLane + ":sellfusion", "Fetch offers for sellfusion",
-                BackgroundJob.adsLane + ":second", "Fetch offers for second"
+                BackgroundJob.emagDashboardLane + ":sellfusion", "Fetch offers for sellfusion",
+                BackgroundJob.emagDashboardLane + ":second", "Fetch offers for second"
         ), activeTasks(job));
         var blocked = job.requestRun(BackgroundJob.adsCampaignsTaskName("sellfusion"));
         assertEquals(BUSY, blocked.status());
@@ -385,7 +439,7 @@ class BackgroundJobTest {
         var automatic = new BackgroundJob(store, new HoldingExecutor(), clockAt(now), definitions);
         automatic.performWork();
         assertEquals(BackgroundJob.adsCampaignsTaskName("sellfusion"),
-                activeTasks(automatic).get(BackgroundJob.adsLane + ":sellfusion"));
+                activeTasks(automatic).get(BackgroundJob.emagDashboardLane + ":sellfusion"));
     }
 
     @Test
@@ -399,7 +453,7 @@ class BackgroundJobTest {
         job.performWork();
 
         assertEquals(BackgroundJob.adsCampaignsTaskName("sellfusion"),
-                activeTasks(job).get(BackgroundJob.adsLane + ":sellfusion"));
+                activeTasks(job).get(BackgroundJob.emagDashboardLane + ":sellfusion"));
     }
 
     @Test

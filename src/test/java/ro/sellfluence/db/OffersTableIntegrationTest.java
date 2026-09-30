@@ -143,6 +143,47 @@ class OffersTableIntegrationTest {
     }
 
     @Test
+    void readsDailyProductValuesWithoutMixingVendorsOrTreatingEmptySnapshotsAsOldValues() throws Exception {
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(
+                offer("""
+                        {"id":"selected", "docProductPartNumberKey":" PNK-1 ", "extStock":0,
+                         "stock2p":99, "extSalePrice":19.87654321}
+                        """),
+                offer("""
+                        {"id":"other", "docProductPartNumberKey":"PNK-2", "extStock":75,
+                         "extSalePrice":5}
+                        """)));
+        OffersTable.storeSnapshot(db, secondVendor, FIRST_DAY, snapshot(offer("""
+                {"id":"foreign", "docProductPartNumberKey":"PNK-1", "extStock":999,
+                 "extSalePrice":1}
+                """)));
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY, snapshot(
+                offer("""
+                        {"id":"first", "docProductPartNumberKey":"PNK-1", "extStock":2,
+                         "extSalePrice":20}
+                        """),
+                offer("""
+                        {"id":"second", "docProductPartNumberKey":"PNK-1", "extStock":3,
+                         "extSalePrice":21}
+                        """)));
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY.plusDays(1), snapshot());
+
+        var days = OffersTable.getDailyProductOffers(db, firstVendor, " PNK-1 ",
+                FIRST_DAY, SECOND_DAY.plusDays(1));
+        assertEquals(3, days.size());
+        assertEquals(new OffersTable.DailyProductOffer(FIRST_DAY, 1, 0,
+                new BigDecimal("19.87654321")), days.getFirst());
+        assertEquals(2, days.get(1).matchingOffers());
+        assertEquals(0, days.getLast().matchingOffers());
+        assertNull(days.getLast().stock());
+        assertNull(days.getLast().salesPrice());
+        assertEquals(List.of(), OffersTable.getDailyProductOffers(db, firstVendor, " ", FIRST_DAY,
+                SECOND_DAY.plusDays(1)));
+        assertEquals(1, OffersTable.getDailyProductOffers(db, secondVendor, "PNK-1", FIRST_DAY, FIRST_DAY)
+                .getFirst().matchingOffers());
+    }
+
+    @Test
     void matchingOfferIdsRemainIndependentAcrossVendorsAndDatesIncludingEmptySnapshots() throws Exception {
         var full = snapshot(fullOffer("shared-id"));
         OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, full);

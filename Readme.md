@@ -33,7 +33,7 @@ This split intentionally changes these standalone applications, which are not us
 ### Background-task lanes, eMAG Ads, and offers
 
 The server schedules background work in independent serial lanes. eMAG API transfers use `emagApiLane`, Google Drive
-and Sheets transfers use `googleApiLane`, and each dashboard account has its own `emagAdsLane:<account>` lane shared
+and Sheets transfers use `googleApiLane`, and each dashboard account has its own `emagDashboardLane:<account>` lane shared
 by Ads and offers. Only one task can be active in a lane, preventing parallel logins for the same account, while tasks
 in different lanes can run at the same time.
 
@@ -75,13 +75,40 @@ Production configuration:
 - Missing credentials, HTTP/API errors, malformed responses, and interrupted waits fail the task and are recorded in the
   task history rather than being reported as successful imports.
 
+### Product reviews
+
+`Fetch product reviews from eMAG` runs in its own `emagReviewsLane` out of office hours, at most once every 24 hours
+after a successful run. Failures retry after one hour.
+The Tasks page provides the usual manual-run and pause/resume controls.
+
+The task reads products from the database and selects those with `continueToSell == true`, `retracted == false`,
+and a nonblank PNK. It strips surrounding whitespace, fetches each distinct PNK once, and processes products
+sequentially. A refresh with eligible products opens one fresh headless Chromium session, navigates to `https://emag.ro/`
+once, and uses Playwright API requests for review pages. Each complete response is committed independently; an
+individual failure is reported after the remaining products have been attempted. Fetches use the existing retries and
+exponential delays for retryable HTTP statuses and Playwright transport failures. Chromium must be installed for the
+server account as described above.
+
+Migration 42 creates the `review` and `review_` tables. Reviews are identified by `(pnk, review_id)` and store
+the latest observed contents, including related comments, users, products, prices, and images in relational tables.
+`first_fetched_at` records the first observation, `last_fetched_at` the latest observation, and `last_changed_at`
+the latest detected content change. A fingerprint of the complete parsed record detects changes, including votes
+and comments, independently of eMAG's `modified` and `deleted` fields. Previous versions of edited content are
+not archived.
+
+Reviews and comments absent from later responses are retained. Compare `review.last_fetched_at` with
+`review_fetch.last_successful_fetch_at` for the same PNK to identify reviews absent from the latest successful
+fetch. For comments, compare their timestamp with their parent review's `last_fetched_at`. Successful empty
+responses advance product fetch status; failed or incomplete responses preserve existing data and timestamps.
+The main review PNK is the queried product, which may differ from a nested product PNK returned by eMAG.
+
 ### Product performance
 
 The product-performance dashboard aggregates active daily adset/campaign snapshots into
 Monday–Sunday weeks or calendar months. See [Product performance calculations](doc/ProductPerformance.md)
 for product matching, sources, formulas, unavailable columns, and partial-report errors.
 
-### Ads and offers database tests
+### Ads, offers, and reviews database tests
 
 The PostgreSQL migration and storage tests require `ADS_TEST_DB_URL` pointing to a disposable PostgreSQL database,
 with optional `ADS_TEST_DB_USER` and `ADS_TEST_DB_PASSWORD`. They create and remove isolated schemas and run with
