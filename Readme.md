@@ -352,7 +352,8 @@ if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) { throw "Missing s
 if (-not (Select-String -LiteralPath $scriptPath -SimpleMatch 'Compiling Java application via Maven.' -Quiet)) { throw "Script is still old: $scriptPath" }
 $task = Get-ScheduledTask -TaskName $taskName
 if (@($task.Actions).Count -ne 1) { throw 'Expected exactly one task action.' }
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -WorkingDirectory $workDirectory
+$taskArguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $scriptPath
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $taskArguments -WorkingDirectory $workDirectory
 Set-ScheduledTask -TaskName $taskName -Action $action | Out-Null
 Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 Start-ScheduledTask -TaskName $taskName

@@ -221,9 +221,10 @@ if (-not (Test-Path -LiteralPath (Join-Path $AppDirectory ".git") -PathType Cont
     throw "The application directory is not a Git checkout: $AppDirectory"
 }
 
+$TaskArguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $ScriptPath
 $Action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`"" `
+    -Argument $TaskArguments `
     -WorkingDirectory $WorkingDirectory
 
 $Trigger = New-ScheduledTaskTrigger -AtStartup
