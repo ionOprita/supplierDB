@@ -571,7 +571,7 @@ public class SheetsAPI {
                     .setStartRowIndex(startRowIndex).setEndRowIndex(startRowIndex + numberOfRows)
                     .setStartColumnIndex(entry.getKey() - 1).setEndColumnIndex(entry.getKey());
             var format = new CellFormat().setNumberFormat(new NumberFormat()
-                    .setType("DATE").setPattern(entry.getValue()));
+                    .setType(entry.getValue().contains("h") ? "DATE_TIME" : "DATE").setPattern(entry.getValue()));
             requests.add(new Request().setRepeatCell(new RepeatCellRequest()
                     .setRange(range).setCell(new CellData().setUserEnteredFormat(format))
                     .setFields("userEnteredFormat.numberFormat")));

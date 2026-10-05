@@ -43,6 +43,26 @@ class SheetsAPITest {
     }
 
     @Test
+    void formatsReviewTimestampsAndExtractionDateInTheirNewColumns() {
+        var formats = SheetsAPI.dateFormats(42, 2, 2, Map.of(
+                7, "dd/MM/yyyy hh:mm:ss", 13, "dd/MM/yyyy hh:mm:ss", 14, "dd/MM/yyyy"
+        ));
+
+        assertEquals(3, formats.size());
+        var columns = List.of(7, 13, 14);
+        for (int index = 0; index < formats.size(); index++) {
+            var format = formats.get(index).getRepeatCell();
+            assertEquals(columns.get(index) - 1, format.getRange().getStartColumnIndex());
+            assertEquals(columns.get(index), format.getRange().getEndColumnIndex());
+            assertEquals("userEnteredFormat.numberFormat", format.getFields());
+            var numberFormat = format.getCell().getUserEnteredFormat().getNumberFormat();
+            assertEquals(index < 2 ? "DATE_TIME" : "DATE", numberFormat.getType());
+            assertEquals(index < 2 ? "dd/MM/yyyy hh:mm:ss" : "dd/MM/yyyy", numberFormat.getPattern());
+            assertNull(format.getCell().getUserEnteredValue());
+        }
+    }
+
+    @Test
     void emptyCellsClearOldValuesWithoutChangingFormatting() {
         List<List<CellData>> rows = List.of(List.of(new CellData()));
 

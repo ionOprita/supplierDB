@@ -9,10 +9,9 @@ import ro.sellfluence.support.Logs;
 
 import java.sql.SQLException;
 import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -29,14 +28,14 @@ import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 public final class TransferReviews {
     private static final Logger logger = Logs.getConsoleAndFileLogger("TransferReviews", INFO, 10, 1_000_000);
     private static final String SPREADSHEET_NAME = "Date Recenzii";
-    private static final String TAB_NAME = "Introducere date";
+    private static final String TAB_NAME = "Test Introducere date";
     private static final int FIRST_DATA_ROW = 3;
     private static final int FIRST_DATA_COLUMN = 2;
     private static final LocalDate SHEETS_EPOCH = LocalDate.of(1899, 12, 30);
     private static final Pattern BR_TAG = Pattern.compile("<br\\s*/?>", Pattern.CASE_INSENSITIVE);
     private static final Pattern CONTENT_WHITESPACE = Pattern.compile("[\\r\\n\\t]+");
     private static final Map<Integer, String> DATE_FORMATS = Map.of(
-            7, "dd/MM/yyyy", 14, "dd/MM/yyyy", 17, "dd/MM/yyyy"
+            7, "dd/MM/yyyy hh:mm:ss", 13, "dd/MM/yyyy hh:mm:ss", 14, "dd/MM/yyyy"
     );
 
     private TransferReviews() {
@@ -66,41 +65,34 @@ public final class TransferReviews {
         Objects.requireNonNull(extractionDate, "extractionDate");
         var rows = new ArrayList<List<CellData>>(reviews.size());
         for (var review : reviews) {
-            var created = parseUtc(review.created(), "created", review.reviewId());
-            var published = parseUtc(review.published(), "published", review.reviewId());
+            var created = parseEmagDateTime(review.created(), "created", review.reviewId());
+            var published = parseEmagDateTime(review.published(), "published", review.reviewId());
             rows.add(List.of(
-                    textCell(Long.toString(review.reviewId())),
-                    textCell(review.productFamilyId() == null ? null : review.productFamilyId().toString()),
+                    numberCell(review.reviewId()),
+                    numberCell(review.productFamilyId()),
                     textCell(review.pnk()),
                     numberCell(review.rating()),
                     textCell(cleanOption(review.optionValue())),
-                    dateCell(created == null ? null : created.atZone(ZoneOffset.UTC).toLocalDate()),
+                    dateTimeCell(created),
                     textCell(cleanContent(review.content())),
                     textCell(cleanName(review.clientName())),
-                    textCell(review.clientId() == null ? null : review.clientId().toString()),
+                    numberCell(review.clientId()),
                     textCell(review.clientHash()),
                     textCell(review.clientType()),
-                    numberCell(created == null ? null : created.atZone(ZoneOffset.UTC).getHour()),
-                    dateCell(published == null ? null : published.atZone(ZoneOffset.UTC).toLocalDate()),
-                    numberCell(published == null ? null : published.atZone(ZoneOffset.UTC).getHour()),
-                    textCell(review.moderator()),
+                    dateTimeCell(published),
                     dateCell(extractionDate)
             ));
         }
         return rows;
     }
 
-    private static Instant parseUtc(String value, String field, long reviewId) {
+    private static LocalDateTime parseEmagDateTime(String value, String field, long reviewId) {
         if (value == null || value.isBlank()) return null;
         try {
-            return OffsetDateTime.parse(value).toInstant();
+            // Preserve eMag's wall-clock time; Sheets serial dates do not carry a timezone.
+            return OffsetDateTime.parse(value).toLocalDateTime();
         } catch (DateTimeParseException e) {
-            try {
-                return Instant.parse(value);
-            } catch (DateTimeParseException alsoInvalid) {
-                throw new IllegalArgumentException("Invalid " + field + " timestamp for review " + reviewId + ": " + value,
-                        alsoInvalid);
-            }
+            throw new IllegalArgumentException("Invalid " + field + " timestamp for review " + reviewId + ": " + value, e);
         }
     }
 
@@ -130,5 +122,11 @@ public final class TransferReviews {
     private static CellData dateCell(LocalDate date) {
         return date == null ? new CellData()
                 : numberCell(ChronoUnit.DAYS.between(SHEETS_EPOCH, date));
+    }
+
+    private static CellData dateTimeCell(LocalDateTime dateTime) {
+        return dateTime == null ? new CellData()
+                : numberCell(ChronoUnit.DAYS.between(SHEETS_EPOCH, dateTime.toLocalDate())
+                + dateTime.toLocalTime().toNanoOfDay() / (double) ChronoUnit.DAYS.getDuration().toNanos());
     }
 }
