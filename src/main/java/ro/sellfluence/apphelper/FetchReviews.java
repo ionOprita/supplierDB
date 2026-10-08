@@ -39,7 +39,7 @@ public final class FetchReviews {
             return;
         }
         try (var playwright = Playwright.create();
-             Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
+             Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setChannel("chromium").setHeadless(true));
              var context = browser.newContext()) {
             var page = context.newPage();
             page.navigate("https://emag.ro/");
