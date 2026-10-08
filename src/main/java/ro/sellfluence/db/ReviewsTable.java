@@ -76,7 +76,7 @@ public final class ReviewsTable {
                 LEFT JOIN review_user AS u
                   ON u.pnk = r.pnk AND u.review_id = r.review_id
                  AND u.owner_type = 'review' AND u.owner_id = r.review_id
-                ORDER BY r.pnk, r.position, r.review_id
+                ORDER BY r.published, r.pnk
                 """); var result = statement.executeQuery()) {
             while (result.next()) {
                 export.add(new ExportReview(
