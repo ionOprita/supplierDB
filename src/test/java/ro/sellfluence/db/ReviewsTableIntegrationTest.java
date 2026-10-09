@@ -24,6 +24,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -32,6 +33,11 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -168,8 +174,8 @@ class ReviewsTableIntegrationTest {
                 new ReviewPrice.Currency(null, new ReviewPrice.Currency.Name(null, null)), null,
                 new ReviewPrice.RecommendedRetailPrice(null, null, null, null),
                 new ReviewPrice.LowestPrice30Days(null, null, null, null), null);
-        var emptyProduct = new ReviewProduct(null, null, null, new ReviewImage(null, List.of()),
-                new ReviewProduct.ReviewOffer(null, emptyPrice), emptyUrl, null);
+        var emptyProduct = new ReviewProduct(null, null, PNK, new ReviewImage(null, List.of()),
+                new ReviewProduct.ReviewOffer(null, emptyPrice), emptyUrl, null, null);
         var comment = copyRecord(original.comments().getFirst(), Map.of("content", "Comment remains"));
         var replacements = new LinkedHashMap<String, Object>();
         replacements.put("user", emptyUser);
@@ -196,14 +202,19 @@ class ReviewsTableIntegrationTest {
         assertEquals(0, count("SELECT count(*) FROM review_image_size WHERE owner_type = 'review'"));
 
         replacements.put("user", null);
-        replacements.put("product", null);
+        replacements.put("product", new ReviewProduct(null, null, PNK, null, null, null, null, null));
         replacements.put("editUrl", null);
+        var missingCommentObjects = new LinkedHashMap<String, Object>();
+        missingCommentObjects.put("user", null);
+        missingCommentObjects.put("product", null);
+        replacements.put("comments", List.of(copyRecord(comment, missingCommentObjects)));
         var absentObjects = copyRecord(original, replacements);
         ReviewsTable.storeReviews(db, PNK, THIRD_FETCH, response(absentObjects));
 
         for (var table : List.of("review_user", "review_product", "review_price", "review_image", "review_image_size")) {
-            assertEquals(0, count("SELECT count(*) FROM " + table + " WHERE owner_type = 'review'"), table);
-            assertTrue(count("SELECT count(*) FROM " + table + " WHERE owner_type = 'comment'") > 0, table);
+            assertEquals(table.equals("review_product") ? 1 : 0,
+                    count("SELECT count(*) FROM " + table + " WHERE owner_type = 'review'"), table);
+            assertEquals(0, count("SELECT count(*) FROM " + table + " WHERE owner_type = 'comment'"), table);
         }
         assertEquals(1, count("SELECT count(*) FROM review WHERE NOT edit_url_present AND NOT view_url_present"));
     }
@@ -315,9 +326,141 @@ class ReviewsTableIntegrationTest {
     }
 
     @Test
+    void mixedResponseStoresOnlyMatchingReviewsAndTheirChildrenInAcceptedOrder() throws Exception {
+        var unrelatedFirst = fullReview(11, 1, "OTHER-PNK");
+        var firstMatch = fullReview(12, 2);
+        var unrelatedLater = fullReview(13, 3, "OTHER-PNK");
+        var secondMatch = fullReview(14, 4);
+        var fetched = response(unrelatedFirst, firstMatch, unrelatedLater, secondMatch);
+        assertNotEquals(PNK, firstMatch.comments().getFirst().product().partNumberKey(),
+                "A comment's product PNK does not determine whether its parent review belongs to this product");
+
+        assertResult(ReviewsTable.storeReviews(db, " \t" + PNK + "\n", FIRST_FETCH, fetched), 2, 0, 0, 0);
+        db.commit();
+
+        assertEquals("12,14", text("SELECT string_agg(review_id::text, ',' ORDER BY position) FROM review"));
+        assertEquals("0,1", text("SELECT string_agg(position::text, ',' ORDER BY position) FROM review"));
+        assertEquals(2, count("SELECT count(*) FROM review_comment"));
+        assertEquals(2, count("SELECT count(*) FROM review_product WHERE owner_type = 'comment'"));
+        for (var table : List.of("review", "review_comment", "review_user", "review_product", "review_price",
+                "review_image", "review_image_size")) {
+            assertEquals(0, count("SELECT count(*) FROM " + table + " WHERE review_id IN (11, 13)"), table);
+        }
+        assertEquals(fetched.data().count(), count("SELECT total_count FROM review_fetch"));
+        assertEquals(fetched.data().summary(), text("SELECT summary FROM review_fetch"));
+        assertNull(text("SELECT first_review_id FROM review_fetch"),
+                "An excluded source firstItem must not leave a foreign key to a review that was skipped");
+        assertOrderedStrings("review_fetch_metadata", "value", fetched.metadata());
+        assertOrderedStrings("review_suggested_question", "question", fetched.data().suggestedQuestions());
+        assertEquals(0, count("""
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_schema = current_schema() AND table_name = 'review_product'
+                    AND column_name = 'part_number_key'
+                """));
+
+        assertResult(ReviewsTable.storeReviews(db, PNK, SECOND_FETCH, fetched), 0, 0, 2, 0);
+        assertEquals(2, count("SELECT count(*) FROM review"));
+    }
+
+    @Test
+    void missingOrBlankProductIdentifiersAreSkippedWithWarningsButKnownMismatchesAreQuiet() throws Exception {
+        var missingProduct = copyRecord(fullReview(11, 1), Collections.singletonMap("product", null));
+        var nullPnk = fullReview(12, 2, null);
+        var emptyPnk = fullReview(13, 3, "");
+        var blankPnk = fullReview(14, 4, " \t\n");
+        var unrelated = fullReview(15, 5, "OTHER-PNK");
+        var paddedPnk = fullReview(16, 6, " " + PNK + " ");
+        var differentCase = fullReview(17, 7, PNK.toLowerCase(java.util.Locale.ROOT));
+        var matched = fullReview(18, 8);
+        var warnings = new ArrayList<LogRecord>();
+        var logger = Logger.getLogger(ReviewsTable.class.getName());
+        var handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                if (record.getLevel().intValue() >= Level.WARNING.intValue()) warnings.add(record);
+            }
+
+            @Override
+            public void flush() {}
+
+            @Override
+            public void close() {}
+        };
+        logger.addHandler(handler);
+        try {
+            assertResult(ReviewsTable.storeReviews(db, PNK, FIRST_FETCH,
+                    response(missingProduct, nullPnk, emptyPnk, blankPnk, unrelated, paddedPnk, differentCase, matched)),
+                    1, 0, 0, 0);
+            db.commit();
+        } finally {
+            logger.removeHandler(handler);
+        }
+
+        assertEquals(4, warnings.size());
+        var formatter = new SimpleFormatter();
+        for (long reviewId : List.of(11L, 12L, 13L, 14L)) {
+            assertTrue(warnings.stream().map(formatter::formatMessage)
+                    .anyMatch(message -> message.contains(Long.toString(reviewId)) && message.contains(PNK)),
+                    "Warning identifies skipped review " + reviewId + " and the queried PNK");
+        }
+        assertEquals("18", text("SELECT string_agg(review_id::text, ',') FROM review"));
+        assertEquals(8, count("SELECT total_count FROM review_fetch"));
+        assertNull(text("SELECT first_review_id FROM review_fetch"));
+    }
+
+    @Test
+    void entirelyFilteredFetchAdvancesStatusWithoutRemovingPreviouslyStoredGenuineReviews() throws Exception {
+        var original = fullReview(11, 1);
+        ReviewsTable.storeReviews(db, PNK, FIRST_FETCH, response(original));
+        var before = tableCounts();
+        var unrelated = response(fullReview(12, 2, "OTHER-PNK"), fullReview(13, 3, "OTHER-PNK"));
+
+        assertResult(ReviewsTable.storeReviews(db, PNK, SECOND_FETCH, unrelated), 0, 0, 0, 1);
+        db.commit();
+
+        assertEquals(before, tableCounts());
+        assertEquals(original.content(), text("SELECT content FROM review"));
+        assertEquals(2, count("SELECT total_count FROM review_fetch"));
+        assertNull(text("SELECT first_review_id FROM review_fetch"));
+        assertEquals(SECOND_FETCH, instant("SELECT last_successful_fetch_at FROM review_fetch"));
+        assertTimes("review", FIRST_FETCH, FIRST_FETCH, FIRST_FETCH);
+        assertTimes("review_comment", FIRST_FETCH, FIRST_FETCH, FIRST_FETCH);
+
+        assertResult(ReviewsTable.storeReviews(db, "NEVER-HAD-REVIEWS", SECOND_FETCH, unrelated), 0, 0, 0, 0);
+        db.commit();
+        assertEquals(1, count("SELECT count(*) FROM review"));
+        assertEquals(2, count("SELECT count(*) FROM review_fetch"));
+        assertNull(text("SELECT first_review_id FROM review_fetch WHERE pnk = 'NEVER-HAD-REVIEWS'"));
+    }
+
+    @Test
+    void validatesTheCompleteSourceResponseBeforeFilteringUnrelatedReviews() throws Exception {
+        var original = fullReview(11, 1);
+        ReviewsTable.storeReviews(db, PNK, FIRST_FETCH, response(original));
+        var before = tableCounts();
+        var unrelated = fullReview(12, 2, "OTHER-PNK");
+        var fetched = response(original, unrelated);
+        var wrongCount = new ReviewsResponse(200, copyRecord(fetched.data(), Map.of("count", 1)),
+                fetched.metadata(), fetched.notifications());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> ReviewsTable.storeReviews(db, PNK, SECOND_FETCH, wrongCount));
+        assertThrows(IllegalArgumentException.class,
+                () -> ReviewsTable.storeReviews(db, PNK, SECOND_FETCH, response(unrelated, unrelated)));
+        assertEquals(before, tableCounts());
+        assertEquals(FIRST_FETCH, instant("SELECT last_successful_fetch_at FROM review_fetch"));
+
+        assertResult(ReviewsTable.storeReviews(db, PNK, SECOND_FETCH, fetched), 0, 0, 1, 0);
+        db.commit();
+        assertEquals(2, count("SELECT total_count FROM review_fetch"));
+        assertEquals(11, count("SELECT first_review_id FROM review_fetch"));
+        assertEquals(1, count("SELECT count(*) FROM review"));
+    }
+
+    @Test
     void matchingReviewIdsRemainIndependentForDifferentRequestedPnks() throws Exception {
         var first = fullReview(11, 1);
-        var second = copyRecord(fullReview(11, 2), Map.of("content", "Other requested product"));
+        var second = copyRecord(fullReview(11, 2, "PNK-2"), Map.of("content", "Other requested product"));
         ReviewsTable.storeReviews(db, PNK, FIRST_FETCH, response(first));
         ReviewsTable.storeReviews(db, "PNK-2", SECOND_FETCH, response(second));
 
@@ -327,6 +470,35 @@ class ReviewsTableIntegrationTest {
         assertResult(ReviewsTable.storeReviews(db, PNK, THIRD_FETCH, response()), 0, 0, 0, 1);
         assertEquals(1, count("SELECT total_count FROM review_fetch WHERE pnk = 'PNK-2'"));
         assertEquals(SECOND_FETCH, instant("SELECT last_fetched_at FROM review WHERE pnk = 'PNK-2'"));
+    }
+
+    @Test
+    void exportIncludesRetainedReviewsAndUsesOnlyReviewLevelOwnerData() throws Exception {
+        var first = fullReview(11, 1);
+        var option = new ReviewProduct.FamilyCharacteristics(List.of(
+                new ReviewProduct.Characteristic(new ReviewProduct.CharacteristicValue("Blue"))));
+        var firstProduct = copyRecord(first.product(), Map.of("familyCharacteristics", option));
+        first = copyRecord(first, Map.of("product", firstProduct, "moderatedBy", "Moderator A"));
+        var second = fullReview(11, 2, "PNK-2");
+        var absentFields = new LinkedHashMap<String, Object>();
+        absentFields.put("product", copyRecord(second.product(), Collections.singletonMap("familyCharacteristics", null)));
+        absentFields.put("user", null);
+        absentFields.put("moderatedBy", null);
+        second = copyRecord(second, absentFields);
+
+        ReviewsTable.storeReviews(db, PNK, FIRST_FETCH, response(first));
+        ReviewsTable.storeReviews(db, "PNK-2", FIRST_FETCH, response(second));
+        ReviewsTable.storeReviews(db, PNK, SECOND_FETCH, response());
+
+        var rows = ReviewsTable.readReviewExportRows(db);
+        assertEquals(2, rows.size());
+        assertEquals(new ReviewsTable.ExportReview(11, first.productFamilyId(), PNK, first.rating(),
+                firstProduct.firstFamilyCharacteristicValue(), first.created(), first.content(), first.user().name(),
+                first.user().id(), first.user().hash(), first.clientType(), first.published(), "Moderator A"),
+                rows.get(0));
+        assertEquals(new ReviewsTable.ExportReview(11, second.productFamilyId(), "PNK-2", second.rating(),
+                null, second.created(), second.content(), null, null, null, second.clientType(),
+                second.published(), null), rows.get(1));
     }
 
     @Test
@@ -412,9 +584,15 @@ class ReviewsTableIntegrationTest {
     }
 
     private static Review fullReview(long id, int seed) throws ReflectiveOperationException {
+        return fullReview(id, seed, PNK);
+    }
+
+    private static Review fullReview(long id, int seed, String pnk) throws ReflectiveOperationException {
         var comment = sampleRecord(ReviewComment.class, seed + 1, Map.of("id", id + 1_000,
                 "parentId", id, "deleted", SOURCE_DELETED));
-        return sampleRecord(Review.class, seed, Map.of("id", id, "comments", List.of(comment)));
+        var product = sampleRecord(ReviewProduct.class, seed + 1,
+                Collections.singletonMap("partNumberKey", pnk));
+        return sampleRecord(Review.class, seed, Map.of("id", id, "comments", List.of(comment), "product", product));
     }
 
     /** Distinct values catch omitted fields and shifted prepared-statement parameters. */
@@ -484,7 +662,9 @@ class ReviewsTableIntegrationTest {
         }
         try (var statement = db.createStatement(); var rows = statement.executeQuery("SELECT * FROM review_product" + owner)) {
             assertTrue(rows.next());
-            assertRecordColumns(rows, product, "", Map.of("id", "product_id"), Set.of("image", "price"));
+            assertRecordColumns(rows, product, "", Map.of("id", "product_id"),
+                    Set.of("image", "price", "familyCharacteristics", "partNumberKey"));
+            assertEquals(product.firstFamilyCharacteristicValue(), rows.getString("family_characteristic_value"));
             assertFalse(rows.next());
         }
         try (var statement = db.createStatement(); var rows = statement.executeQuery("SELECT * FROM review_price" + owner)) {
@@ -625,6 +805,20 @@ class ReviewsTableIntegrationTest {
         method.setAccessible(true);
         try {
             method.invoke(null, db);
+            execute("""
+                    CREATE TABLE tasks (
+                        name VARCHAR(255) PRIMARY KEY, started TIMESTAMP, terminated TIMESTAMP,
+                        last_successful_run TIMESTAMP, error TEXT
+                    )
+                    """);
+            var extension = Class.forName("ro.sellfluence.db.versions.EmagMirrorDBVersion43")
+                    .getDeclaredMethod("version43", Connection.class);
+            extension.setAccessible(true);
+            extension.invoke(null, db);
+            var reviewFilter = Class.forName("ro.sellfluence.db.versions.EmagMirrorDBVersion44")
+                    .getDeclaredMethod("version44", Connection.class);
+            reviewFilter.setAccessible(true);
+            reviewFilter.invoke(null, db);
         } catch (InvocationTargetException exception) {
             if (exception.getCause() instanceof Exception failure) throw failure;
             throw exception;

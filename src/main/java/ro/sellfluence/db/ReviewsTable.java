@@ -32,9 +32,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.logging.Logger;
 
-/** Stores the latest observed review content while retaining missing reviews and comments. */
+/** Stores reviews for their actual product while retaining missing reviews and comments. */
 public final class ReviewsTable {
+    private static final Logger logger = Logger.getLogger(ReviewsTable.class.getName());
     private static final JsonMapper FINGERPRINT_MAPPER = JsonMapper.builder()
             .enable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
             .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
@@ -52,6 +54,44 @@ public final class ReviewsTable {
 
     /** Counts refer to reviews; retained comments do not contribute to these totals. */
     public record StoreResult(int inserted, int changed, int unchanged, int notReturned) {
+    }
+
+    /** One stored review and its review-level user/product values for the sheet export. */
+    public record ExportReview(long reviewId, Long productFamilyId, String pnk, Integer rating,
+                               String optionValue, String created, String content, String clientName,
+                               Long clientId, String clientHash, String clientType, String published,
+                               String moderator) {
+    }
+
+    static List<ExportReview> readReviewExportRows(Connection db) throws SQLException {
+        var export = new ArrayList<ExportReview>();
+        try (var statement = db.prepareStatement("""
+                SELECT r.review_id, r.product_family_id,
+                       r.pnk AS export_pnk,
+                       r.rating, p.family_characteristic_value, r.created, r.content,
+                       u.name AS client_name, u.user_id AS client_id, u.hash AS client_hash,
+                       r.client_type, r.published, r.moderated_by
+                FROM review AS r
+                LEFT JOIN review_product AS p
+                  ON p.pnk = r.pnk AND p.review_id = r.review_id
+                 AND p.owner_type = 'review' AND p.owner_id = r.review_id
+                LEFT JOIN review_user AS u
+                  ON u.pnk = r.pnk AND u.review_id = r.review_id
+                 AND u.owner_type = 'review' AND u.owner_id = r.review_id
+                ORDER BY r.published, r.pnk
+                """); var result = statement.executeQuery()) {
+            while (result.next()) {
+                export.add(new ExportReview(
+                        result.getLong("review_id"), result.getObject("product_family_id", Long.class),
+                        result.getString("export_pnk"), result.getObject("rating", Integer.class),
+                        result.getString("family_characteristic_value"), result.getString("created"),
+                        result.getString("content"), result.getString("client_name"),
+                        result.getObject("client_id", Long.class), result.getString("client_hash"),
+                        result.getString("client_type"), result.getString("published"),
+                        result.getString("moderated_by")));
+            }
+        }
+        return List.copyOf(export);
     }
 
     private record CommentKey(long reviewId, long commentId) {
@@ -78,16 +118,27 @@ public final class ReviewsTable {
         if (db.getAutoCommit()) throw new SQLException("Storing reviews requires an active transaction");
         // PostgreSQL stores microseconds. Normalize before comparisons and all writes.
         var timestamp = fetchedAt.truncatedTo(ChronoUnit.MICROS).atOffset(ZoneOffset.UTC);
+        var matchingReviews = new ArrayList<Review>();
         var reviewFingerprints = new HashMap<Long, String>();
         var commentFingerprints = new HashMap<CommentKey, String>();
         for (var review : response.data().items()) {
+            var productPnk = review.product() == null ? null : review.product().partNumberKey();
+            if (productPnk == null || productPnk.isBlank()) {
+                logger.warning("Skipping review %d for PNK %s because its product PNK is missing"
+                        .formatted(review.id(), pnk));
+                continue;
+            }
+            if (!pnk.equals(productPnk)) continue;
+            matchingReviews.add(review);
             reviewFingerprints.put(review.id(), fingerprint(review));
             for (var comment : review.comments()) {
                 commentFingerprints.put(new CommentKey(review.id(), comment.id()), fingerprint(comment));
             }
         }
 
-        lockFetch(db, pnk, timestamp, response);
+        Long firstReviewId = response.data().firstItem() == null ? null : response.data().firstItem().id();
+        if (!reviewFingerprints.containsKey(firstReviewId)) firstReviewId = null;
+        lockFetch(db, pnk, timestamp, response, firstReviewId);
         var previousReviews = readReviewFingerprints(db, pnk);
         var previousComments = readCommentFingerprints(db, pnk);
         var changedOwners = new ArrayList<ChangedOwner>();
@@ -96,7 +147,7 @@ public final class ReviewsTable {
         int unchanged = 0;
         try (var rows = new BatchRows(db)) {
             int reviewPosition = 0;
-            for (var review : response.data().items()) {
+            for (var review : matchingReviews) {
                 String hash = reviewFingerprints.get(review.id());
                 String previous = previousReviews.remove(review.id());
                 if (previous == null) inserted++;
@@ -121,7 +172,7 @@ public final class ReviewsTable {
             rows.flush();
         }
         replaceChangedChildren(db, changedOwners);
-        replaceFetchDetails(db, pnk, timestamp, response);
+        replaceFetchDetails(db, pnk, timestamp, response, firstReviewId);
         return new StoreResult(inserted, changed, unchanged, previousReviews.size());
     }
 
@@ -159,11 +210,12 @@ public final class ReviewsTable {
         }
     }
 
-    private static void lockFetch(Connection db, String pnk, OffsetDateTime fetchedAt, ReviewsResponse response)
+    private static void lockFetch(Connection db, String pnk, OffsetDateTime fetchedAt, ReviewsResponse response,
+                                  Long firstReviewId)
             throws SQLException {
         // The parent insert or row lock serializes concurrent fetches of the same PNK.
         try (var rows = new BatchRows(db)) {
-            storeFetch(rows, pnk, fetchedAt, response, "ON CONFLICT (pnk) DO NOTHING");
+            storeFetch(rows, pnk, fetchedAt, response, firstReviewId, "ON CONFLICT (pnk) DO NOTHING");
             rows.flush();
         }
         try (var statement = db.prepareStatement(
@@ -206,7 +258,8 @@ public final class ReviewsTable {
     private static void storeReview(BatchRows rows, String pnk, OffsetDateTime timestamp, Review review,
                                     int position, String hash) throws SQLException {
         var values = row(pnk, review.id(), position, review.content(), review.isActive(), review.moderationStatus(),
-                review.created(), review.modified(), review.published(), review.deleted(), review.reportReason());
+                review.moderatedBy(), review.created(), review.modified(), review.published(), review.deleted(),
+                review.reportReason());
         addUrl(values, review.editUrl());
         addUrl(values, review.viewUrl());
         values.addAll(row(review.type(), review.title(), review.contentNoTags(), review.rating(), review.isBought(),
@@ -214,7 +267,8 @@ public final class ReviewsTable {
                 review.clientType(), review.clientTypeInfo(), review.productDocId(), review.productFamilyId(),
                 review.allowCommentsLikes(), review.hasMedia(), hash, timestamp, timestamp, timestamp));
         rows.upsertObserved("review", "pnk, review_id", """
-                pnk, review_id, position, content, is_active, moderation_status, created, modified, published, deleted,
+                pnk, review_id, position, content, is_active, moderation_status, moderated_by,
+                created, modified, published, deleted,
                 report_reason, edit_url_present, edit_url_path, edit_url_desktop_base, edit_url_mobile_base,
                 view_url_present, view_url_path, view_url_desktop_base, view_url_mobile_base,
                 type, title, content_no_tags, rating, is_bought, votes, current_customer_has_voted,
@@ -283,12 +337,14 @@ public final class ReviewsTable {
     private static void storeProduct(BatchRows rows, Owner owner, ReviewProduct product) throws SQLException {
         if (product == null) return;
         var values = owner.values();
-        values.addAll(row(product.id(), product.name(), product.partNumberKey(), product.sefName()));
+        values.addAll(row(product.id(), product.name(), product.sefName(),
+                product.firstFamilyCharacteristicValue()));
         addUrl(values, product.url());
         var offer = product.offer();
         values.addAll(row(offer != null, offer == null ? null : offer.id()));
         rows.insert("review_product", OWNER_COLUMNS + """
-                , product_id, name, part_number_key, sef_name, url_present, url_path, url_desktop_base, url_mobile_base,
+                , product_id, name, sef_name, family_characteristic_value,
+                url_present, url_path, url_desktop_base, url_mobile_base,
                 offer_present, offer_id
                 """, values);
         if (offer != null) storePrice(rows, owner, offer.price());
@@ -346,14 +402,15 @@ public final class ReviewsTable {
         }
     }
 
-    private static void replaceFetchDetails(Connection db, String pnk, OffsetDateTime timestamp, ReviewsResponse response)
+    private static void replaceFetchDetails(Connection db, String pnk, OffsetDateTime timestamp, ReviewsResponse response,
+                                            Long firstReviewId)
             throws SQLException {
         try (var deletes = new BatchRows(db)) {
             for (String table : FETCH_CHILD_TABLES) deletes.statement("DELETE FROM " + table + " WHERE pnk = ?", row(pnk));
             deletes.flush();
         }
         try (var rows = new BatchRows(db)) {
-            storeFetch(rows, pnk, timestamp, response, null);
+            storeFetch(rows, pnk, timestamp, response, firstReviewId, null);
             if (response.metadata() != null) {
                 for (int i = 0; i < response.metadata().size(); i++) {
                     rows.insert("review_fetch_metadata", "pnk, position, value", row(pnk, i, response.metadata().get(i)));
@@ -381,9 +438,9 @@ public final class ReviewsTable {
     }
 
     private static void storeFetch(BatchRows rows, String pnk, OffsetDateTime timestamp,
-                                   ReviewsResponse response, String conflictClause) throws SQLException {
+                                   ReviewsResponse response, Long firstReviewId, String conflictClause) throws SQLException {
         var data = response.data();
-        var values = row(pnk, timestamp, response.code(), data.count(), data.firstItem() == null ? null : data.firstItem().id(),
+        var values = row(pnk, timestamp, response.code(), data.count(), firstReviewId,
                 data.summary(), data.family_id(), response.notifications(), response.metadata() != null);
         addUrl(values, data.addUrl());
         addUrl(values, data.viewUrl());

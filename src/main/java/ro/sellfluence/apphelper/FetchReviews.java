@@ -39,7 +39,7 @@ public final class FetchReviews {
             return;
         }
         try (var playwright = Playwright.create();
-             Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setHeadless(true));
+             Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setChannel("chromium").setHeadless(true));
              var context = browser.newContext()) {
             var page = context.newPage();
             page.navigate("https://emag.ro/");
@@ -57,7 +57,7 @@ public final class FetchReviews {
 
     private static List<String> eligiblePnks(List<ProductInfo> products) {
         return products.stream()
-                .filter(product -> !product.retracted())
+                //.filter(product -> !product.retracted())
                 .map(ProductInfo::pnk)
                 .filter(pnk -> pnk != null && !pnk.isBlank())
                 .map(String::strip)
@@ -67,7 +67,7 @@ public final class FetchReviews {
     }
 
     private static void processReviews(Clock clock, List<String> pnks, ReviewFetcher fetcher, ReviewStore store)
-            throws SQLException, InterruptedException {
+            throws InterruptedException {
         checkInterrupted();
         var failures = new ArrayList<Exception>();
         int succeeded = 0;

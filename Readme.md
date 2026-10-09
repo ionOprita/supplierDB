@@ -77,9 +77,14 @@ Production configuration:
 
 ### Product reviews
 
-`Fetch product reviews from eMAG` runs in its own `emagReviewsLane` out of office hours, at most once every 24 hours
-after a successful run. Failures retry after one hour.
-The Tasks page provides the usual manual-run and pause/resume controls.
+`Fetch product reviews from eMAG` starts in its own `emagReviewsLane` from 19:00 through 23:59 server-local time.
+`Transfer product reviews to Google Sheets` starts in `googleApiLane` from 00:00 through 06:59 server-local time,
+ahead of the other Google API tasks. Each task runs once per local calendar date after a successful start; failures
+retry after one hour within the same window. The transfer reads the database snapshot available when it starts, so
+a fetch that runs past midnight can overlap it. The Tasks page provides manual-run and pause/resume controls.
+
+The transfer replaces review values in `Date Recenzii` → `Introducere date`, beginning at B3. It preserves column A,
+rows 1–2, and formatting, and clears stale values below the new data when the export shrinks.
 
 The task reads products from the database and selects those with `continueToSell == true`, `retracted == false`,
 and a nonblank PNK. It strips surrounding whitespace, fetches each distinct PNK once, and processes products
@@ -91,6 +96,10 @@ server account as described above.
 
 Migration 42 creates the `review` and `review_` tables. Reviews are identified by `(pnk, review_id)` and store
 the latest observed contents, including related comments, users, products, prices, and images in relational tables.
+Only reviews whose nested product PNK exactly matches the queried PNK are stored. Reviews shared from similar
+products are skipped; reviews with a missing product or null/blank product PNK are skipped with a warning containing
+the review ID and queried PNK. Migration 44 removes existing reviews without a matching product PNK, together with
+their dependent data, and drops the redundant `review_product.part_number_key` column. Review exports use `pnk`.
 `first_fetched_at` records the first observation, `last_fetched_at` the latest observation, and `last_changed_at`
 the latest detected content change. A fingerprint of the complete parsed record detects changes, including votes
 and comments, independently of eMAG's `modified` and `deleted` fields. Previous versions of edited content are
@@ -100,7 +109,8 @@ Reviews and comments absent from later responses are retained. Compare `review.l
 `review_fetch.last_successful_fetch_at` for the same PNK to identify reviews absent from the latest successful
 fetch. For comments, compare their timestamp with their parent review's `last_fetched_at`. Successful empty
 responses advance product fetch status; failed or incomplete responses preserve existing data and timestamps.
-The main review PNK is the queried product, which may differ from a nested product PNK returned by eMAG.
+Fetch totals and summary metadata describe the complete API response, including reviews excluded by the PNK filter.
+The first-review reference is cleared when that review is excluded.
 
 ### Product performance
 

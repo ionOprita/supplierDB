@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static java.net.HttpURLConnection.HTTP_BAD_GATEWAY;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -41,6 +42,8 @@ class EmagSAPITest {
         assertEquals("review 11", response.data().items().getFirst().contentNoTags());
         assertEquals("Alice", response.data().items().getFirst().user().name());
         assertEquals("PNK", response.data().items().getFirst().product().partNumberKey());
+        assertNull(response.data().items().getFirst().product().firstFamilyCharacteristicValue());
+        assertNull(response.data().items().getFirst().moderatedBy());
         var price = response.data().items().getFirst().product().offer().price();
         assertEquals(new BigDecimal("199.99"), price.current());
         assertEquals(new BigDecimal("90"), price.discount().absolute());
@@ -51,6 +54,29 @@ class EmagSAPITest {
         assertEquals(1, response.data().items().getFirst().comments().size());
         assertEquals(5, response.data().ratingDistribution().get(5));
         assertEquals(true, response.data().sortOptions().getFirst().selected());
+    }
+
+    @Test
+    void parsesModeratorAndFirstFamilyCharacteristicWhenPresent() throws Exception {
+        var review = review(11)
+                .replace("\"part_number_key\": \"PNK\",", """
+                        "part_number_key": "PNK",
+                        "family_characteristics": {
+                          "display_name": "Options",
+                          "characteristics": [
+                            {"name": "Colour", "value": {"value": "Blue", "label": "Blue colour"}},
+                            {"name": "Size", "value": {"value": "Large"}}
+                          ]
+                        },
+                        """)
+                .replace("\"rating\": 5,", "\"moderated_by\": \"Moderator A\", \"rating\": 5,");
+        var response = EmagSAPI.getReviews(
+                offset -> new EmagSAPI.HttpResult(HTTP_OK, page(1, review)),
+                ignored -> { throw new AssertionError("Unexpected retry"); });
+
+        var parsed = response.data().items().getFirst();
+        assertEquals("Moderator A", parsed.moderatedBy());
+        assertEquals("Blue", parsed.product().firstFamilyCharacteristicValue());
     }
 
     @Test
