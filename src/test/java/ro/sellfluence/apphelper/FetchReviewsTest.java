@@ -62,7 +62,7 @@ class FetchReviewsTest {
         });
 
         assertEquals(1, reads.get());
-        assertEquals(List.of("fetch:A", "store:A", "fetch:B", "store:B", "fetch:not-for-sale", "store:not-for-sale"), events);
+        assertEquals(List.of("fetch:A", "store:A", "fetch:B", "store:B", "fetch:both-excluded", "store:both-excluded", "fetch:not-for-sale", "store:not-for-sale", "fetch:retracted", "store:retracted"), events);
     }
 
     @Test
@@ -131,7 +131,9 @@ class FetchReviewsTest {
     void productReadFailurePreventsFetching() {
         var failure = new SQLException("Read failed");
         var exception = assertThrows(SQLException.class, () -> FetchReviews.fetchReviews(CLOCK,
-                () -> { throw failure; },
+                () -> {
+                    throw failure;
+                },
                 _ -> fail("Products could not be read"), (_, _, _) -> fail("No response to store")));
 
         assertSame(failure, exception);

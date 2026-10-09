@@ -12,11 +12,13 @@
         <exec.mainClass>ro.sellfluence.app.Server</exec.mainClass>
         <encoding>UTF-8</encoding>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <jackson-version>3.1.0</jackson-version>
-        <jte.version>3.2.3</jte.version>
-        <javalin.version>7.2.2</javalin.version>
+        <bouncycastle.version>1.86</bouncycastle.version>
+        <jackson-version>3.2.3</jackson-version>
+        <javalin.version>7.2.3</javalin.version>
+        <jte.version>3.2.4</jte.version>
+        <log4j.version>2.26.1</log4j.version>
         <poi.version>5.5.1</poi.version>
-        <protobuf.version>4.35.1</protobuf.version>
+        <protobuf.version>4.36.2</protobuf.version>
     </properties>
 
     <dependencies>
@@ -24,14 +26,14 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>42.7.8</version>
+            <version>42.7.14</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.google.api-client/google-api-client -->
         <dependency>
             <groupId>com.google.api-client</groupId>
             <artifactId>google-api-client</artifactId>
-            <version>2.8.1</version>
+            <version>2.9.1</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.google.oauth-client/google-oauth-client-jetty -->
@@ -45,28 +47,28 @@
         <dependency>
             <groupId>com.google.apis</groupId>
             <artifactId>google-api-services-sheets</artifactId>
-            <version>v4-rev20250616-2.0.0</version>
+            <version>v4-rev20260930-2.0.0</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.google.apis/google-api-services-drive -->
         <dependency>
             <groupId>com.google.apis</groupId>
             <artifactId>google-api-services-drive</artifactId>
-            <version>v3-rev20250910-2.0.0</version>
+            <version>v3-rev20260916-2.0.0</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.google.code.gson/gson -->
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
-            <version>2.13.2</version>
+            <version>2.14.0</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.google.auth/google-auth-library-oauth2-http -->
         <dependency>
             <groupId>com.google.auth</groupId>
             <artifactId>google-auth-library-oauth2-http</artifactId>
-            <version>1.40.0</version>
+            <version>1.54.0</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/org.schemaspy/schemaspy -->
@@ -90,7 +92,7 @@
         <dependency>
             <groupId>org.jspecify</groupId>
             <artifactId>jspecify</artifactId>
-            <version>1.0.0</version>
+            <version>1.0.1</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/tools.jackson.core/jackson-core -->
@@ -111,41 +113,41 @@
         <dependency>
             <groupId>com.zaxxer</groupId>
             <artifactId>HikariCP</artifactId>
-            <version>7.0.2</version>
+            <version>7.1.0</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/org.bouncycastle/bcprov-jdk18on -->
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
-            <version>1.84</version>
+            <version>${bouncycastle.version}</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/org.apache.commons/commons-collections4 -->
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-collections4</artifactId>
-            <version>4.5.0</version>
+            <version>4.6.0</version>
         </dependency>
-        <!-- Source: https://mvnrepository.com/artifact/org.apache.commons/commons-statistics-distribution -->
+        <!-- https://mvnrepository.com/artifact/org.apache.commons/commons-statistics-distribution -->
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-statistics-distribution</artifactId>
-            <version>1.2</version>
+            <version>1.3</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.google.guava/guava -->
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
-            <version>33.5.0-jre</version>
+            <version>33.7.2-jre</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/org.slf4j/slf4j-jdk14 -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-jdk14</artifactId>
-            <version>2.0.17</version>
+            <version>2.0.20</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/io.javalin/javalin -->
@@ -160,7 +162,7 @@
             <artifactId>javalin-ssl</artifactId>
             <version>${javalin.version}</version>
         </dependency>
-        <!-- Source: https://mvnrepository.com/artifact/io.javalin/javalin-rendering -->
+        <!-- https://mvnrepository.com/artifact/io.javalin/javalin-rendering -->
         <dependency>
             <groupId>io.javalin</groupId>
             <artifactId>javalin-rendering-jte</artifactId>
@@ -185,14 +187,14 @@
         <dependency>
             <groupId>com.yubico</groupId>
             <artifactId>webauthn-server-core</artifactId>
-            <version>2.8.1</version>
+            <version>2.10.1</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/org.junit.jupiter/junit-jupiter -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>6.0.3</version>
+            <version>6.1.3</version>
             <scope>test</scope>
         </dependency>
 
@@ -221,26 +223,26 @@
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
             <artifactId>log4j-to-jul</artifactId>
-            <version>2.25.3</version>
+            <version>${log4j.version}</version>
         </dependency>
 
-        <!-- Source: https://mvnrepository.com/artifact/com.github.bastiaanjansen/otp-java -->
+        <!-- https://mvnrepository.com/artifact/com.github.bastiaanjansen/otp-java -->
         <dependency>
             <groupId>com.github.bastiaanjansen</groupId>
             <artifactId>otp-java</artifactId>
-            <version>2.1.0</version>
+            <version>2.2.0</version>
             <scope>compile</scope>
         </dependency>
 
-        <!-- Source: https://mvnrepository.com/artifact/com.microsoft.playwright/playwright -->
+        <!-- https://mvnrepository.com/artifact/com.microsoft.playwright/playwright -->
         <dependency>
             <groupId>com.microsoft.playwright</groupId>
             <artifactId>playwright</artifactId>
-            <version>1.60.0</version>
+            <version>1.63.0</version>
             <scope>compile</scope>
         </dependency>
 
-        <!-- Source: https://mvnrepository.com/artifact/com.google.protobuf/protobuf-java -->
+        <!-- https://mvnrepository.com/artifact/com.google.protobuf/protobuf-java -->
         <dependency>
             <groupId>com.google.protobuf</groupId>
             <artifactId>protobuf-java</artifactId>
@@ -248,11 +250,11 @@
             <scope>compile</scope>
         </dependency>
 
-        <!-- Source: https://mvnrepository.com/artifact/commons-codec/commons-codec -->
+        <!-- https://mvnrepository.com/artifact/commons-codec/commons-codec -->
         <dependency>
             <groupId>commons-codec</groupId>
             <artifactId>commons-codec</artifactId>
-            <version>1.22.0</version>
+            <version>1.22.1</version>
             <scope>compile</scope>
         </dependency>
     </dependencies>
@@ -260,19 +262,11 @@
     <dependencyManagement>
         <!-- Force version of indirect dependencies to avoid vulnerabilities -->
         <dependencies>
-            <!-- Keep transitive com.fasterxml.jackson 2.x dependencies on a real, consistent release. -->
-            <dependency>
-                <groupId>com.fasterxml.jackson</groupId>
-                <artifactId>jackson-bom</artifactId>
-                <version>2.21.3</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
             <!-- https://mvnrepository.com/artifact/commons-io/commons-io -->
             <dependency>
                 <groupId>commons-io</groupId>
                 <artifactId>commons-io</artifactId>
-                <version>2.21.0</version>
+                <version>2.22.0</version>
             </dependency>
             <!-- https://mvnrepository.com/artifact/com.beust/jcommander -->
             <dependency>
@@ -290,7 +284,35 @@
             <dependency>
                 <groupId>org.jruby</groupId>
                 <artifactId>jruby</artifactId>
-                <version>9.4.14.0</version>
+      <version>10.1.2.0</version>
+            </dependency>
+            <!-- https://mvnrepository.com/artifact/org.apache.logging.log4j/log4j-api -->
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-api</artifactId>
+                <version>${log4j.version}</version>
+                <scope>compile</scope>
+            </dependency>
+            <!-- https://mvnrepository.com/artifact/org.bouncycastle/bcpkix-jdk18on -->
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcpkix-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+                <scope>compile</scope>
+            </dependency>
+            <!-- https://mvnrepository.com/artifact/org.assertj/assertj-core -->
+            <dependency>
+                <groupId>org.assertj</groupId>
+                <artifactId>assertj-core</artifactId>
+                <version>3.27.7</version>
+                <scope>test</scope>
+            </dependency>
+            <!-- https://mvnrepository.com/artifact/org.fusesource.jansi/jansi -->
+            <dependency>
+                <groupId>org.fusesource.jansi</groupId>
+                <artifactId>jansi</artifactId>
+                <version>2.4.3</version>
+                <scope>compile</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -309,7 +331,8 @@
                 <artifactId>protobuf-maven-plugin</artifactId>
                 <version>0.6.1</version>
                 <configuration>
-                    <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
+                    <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}
+                    </protocArtifact>
                 </configuration>
                 <executions>
                     <execution>
@@ -322,7 +345,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>build-helper-maven-plugin</artifactId>
-                <version>3.6.1</version>
+                <version>3.6.2</version>
                 <executions>
                     <execution>
                         <id>add-protobuf-generated-sources</id>
@@ -357,10 +380,10 @@
                 </executions>
             </plugin>
             <plugin>
-                <!-- Source: https://mvnrepository.com/artifact/org.codehaus.mojo/exec-maven-plugin -->
+                <!-- https://mvnrepository.com/artifact/org.codehaus.mojo/exec-maven-plugin -->
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.6.3</version>
+                <version>3.6.4</version>
                 <configuration>
                     <!-- The Playwright install command overrides this without starting the server. -->
                     <mainClass>${exec.mainClass}</mainClass>
