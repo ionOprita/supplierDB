@@ -28,14 +28,14 @@ import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 public final class TransferReviews {
     private static final Logger logger = Logs.getConsoleAndFileLogger("TransferReviews", INFO, 10, 1_000_000);
     private static final String SPREADSHEET_NAME = "Date Recenzii";
-    private static final String TAB_NAME = "Test Introducere date";
+    private static final String TAB_NAME = "Introducere date";
     private static final int FIRST_DATA_ROW = 3;
-    private static final int FIRST_DATA_COLUMN = 2;
+    private static final int FIRST_DATA_COLUMN = 1;
     private static final LocalDate SHEETS_EPOCH = LocalDate.of(1899, 12, 30);
     private static final Pattern BR_TAG = Pattern.compile("<br\\s*/?>", Pattern.CASE_INSENSITIVE);
     private static final Pattern CONTENT_WHITESPACE = Pattern.compile("[\\r\\n\\t]+");
     private static final Map<Integer, String> DATE_FORMATS = Map.of(
-            7, "dd/MM/yyyy hh:mm:ss", 13, "dd/MM/yyyy hh:mm:ss", 14, "dd/MM/yyyy"
+            6, "dd/MM/yyyy hh:mm:ss", 12, "dd/MM/yyyy hh:mm:ss", 13, "dd/MM/yyyy"
     );
 
     private TransferReviews() {
