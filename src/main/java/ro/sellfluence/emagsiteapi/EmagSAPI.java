@@ -165,7 +165,7 @@ public class EmagSAPI {
     }
 
     private static HttpResult sendRequest(Page page, String url) throws InterruptedException {
-        randomWait(1.5, 2.5);
+        randomWait(1.0, 3.0);
         APIResponse response = page.request().get(url, RequestOptions.create()
                 .setHeader("X-Request-Source", "mobile-app"));
         try {
