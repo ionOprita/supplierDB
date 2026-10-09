@@ -1,0 +1,44 @@
+{
+  "id": 3428567,
+  "vendor_id": 173961,
+  "vendor_name": "Example Vendor",
+  "vendor_bank": "Example Bank",
+  "vendor_iban": "RO00EXAMPLE000000000000000",
+  "customer_name": "Example Customer",
+  "vendor_order_id": 258601974,
+  "products": [
+    {
+      "id": 11726788,
+      "vendor_proform_id": 3428567,
+      "vendor_order_product_id": 315854790,
+      "vendor_product_id": 89893979,
+      "vendor_product_ext_name": "Ceas smartwatch dama, Qualtec by Koppel\u00ae, ecran rotund AMOLED 1.32\u0022, inteligent, fitness, sport, rezistent apa 3ATM, smart, notificari, wireless, apel Bluetooth 5.3, microfon HD, limba romana, pentru femei, carcasa metalica, 2 bratari incluse, ELITE, gold",
+      "vendor_order_product_quantity": 1,
+      "vendor_order_product_sale_price": "272.7190",
+      "vendor_order_product_vat_rate": "0.2100",
+      "created": "2026-10-08 12:54:12",
+      "modified": "2026-10-08 12:54:12"
+    },
+    {
+      "id": 11726789,
+      "vendor_proform_id": 3428567,
+      "vendor_order_product_id": 315854791,
+      "vendor_product_id": 92760412,
+      "vendor_product_ext_name": "Ceas smartwatch barbati, Qualtec by Koppel\u00ae, ecran AMOLED 1.43\u0022, rezolutie 466x466, inteligent, fitness, sport, rezistent apa 3ATM, smart, notificari, wireless, apel Bluetooth, microfon HD, limba romana, curea metalica, 2 bratari incluse, AMMO PRO, negru",
+      "vendor_order_product_quantity": 1,
+      "vendor_order_product_sale_price": "272.7190",
+      "vendor_order_product_vat_rate": "0.2100",
+      "created": "2026-10-08 12:54:12",
+      "modified": "2026-10-08 12:54:12"
+    }
+  ],
+  "proforma_number": 3428567,
+  "created": "2026-10-08 12:54:12",
+  "date_expire": "2026-10-23 12:54:12",
+  "net_value": "545.4400",
+  "gross_value": 659.98,
+  "status": 1,
+  "is_payed": 0,
+  "modified": "2026-10-08 12:54:12",
+  "mkt_order_id": 534972746
+}

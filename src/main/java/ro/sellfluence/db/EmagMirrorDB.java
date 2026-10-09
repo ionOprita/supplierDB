@@ -92,6 +92,7 @@ import static ro.sellfluence.support.UsefulMethods.toYearMonth;
  * <p>This module delegates all operations, which touch only a single table to the respective class
  * while it handles operations that need multiple tables itself.</p>
  */
+// TODO: Does this need to be stored in the database?
 public class EmagMirrorDB {
 
     private static final Map<String, EmagMirrorDB> openDatabases = new HashMap<>();
@@ -925,7 +926,7 @@ public class EmagMirrorDB {
                                 toLocalDateTime(rs.getTimestamp("finalization_date")),
                                 rs.getString("parent_id"),
                                 rs.getString("detailed_payment_method"),
-                                Arrays.asList(rs.getString("proforms").split("\n")), // Split the string back into a list
+                                ProformsJson.decode(rs.getString("proforms"), rs.getString("id")),
                                 rs.getString("cancellation_request"),
                                 rs.getInt("has_editable_products"),
                                 new CancellationReason(rs.getObject("cancellation_reason", Integer.class),

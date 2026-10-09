@@ -30,6 +30,7 @@ import static ro.sellfluence.db.LockerDetailsTable.insertOrUpdateLockerDetails;
 import static ro.sellfluence.support.UsefulMethods.toLocalDateTime;
 import static ro.sellfluence.support.UsefulMethods.toTimestamp;
 
+// TODO: Does this need to be stored in the database?
 public class EmagOrder {
 
     private static final Scanner scanner = new Scanner(System.in);
@@ -124,6 +125,9 @@ public class EmagOrder {
             if (!Objects.equals(oldOrder.detailed_payment_method(), order.detailed_payment_method())) {
                 updateString(db, orderInserted.surrogateId, "detailed_payment_method", order.detailed_payment_method());
             }
+            if (!Objects.equals(oldOrder.proforms(), order.proforms())) {
+                updateString(db, orderInserted.surrogateId, "proforms", ProformsJson.encode(order.proforms()));
+            }
             updateOrderDependents(db, order, oldOrder, orderInserted.surrogateId);
         }
         return 0;
@@ -202,7 +206,7 @@ public class EmagOrder {
             s.setTimestamp(23, toTimestamp(or.finalization_date()));
             s.setString(24, or.parent_id());
             s.setString(25, or.detailed_payment_method());
-            s.setString(26, String.join("", or.proforms()));
+            s.setString(26, ProformsJson.encode(or.proforms()));
             s.setString(27, or.cancellation_request());
             s.setInt(28, or.has_editable_products());
             s.setObject(29, or.late_shipment());
@@ -594,7 +598,7 @@ public class EmagOrder {
                             toLocalDateTime(rs.getTimestamp("finalization_date")),
                             rs.getString("parent_id"),
                             rs.getString("detailed_payment_method"),
-                            Arrays.asList(rs.getString("proforms").split("\n")), // Split the string back into a list
+                            ProformsJson.decode(rs.getString("proforms"), rs.getString("id")),
                             rs.getString("cancellation_request"),
                             rs.getInt("has_editable_products"),
                             new CancellationReason(rs.getObject("cancellation_reason", Integer.class),
@@ -664,7 +668,7 @@ public class EmagOrder {
                             toLocalDateTime(rs.getTimestamp("finalization_date")),
                             rs.getString("parent_id"),
                             rs.getString("detailed_payment_method"),
-                            Arrays.asList(rs.getString("proforms").split("\n")), // Split the string back into a list
+                            ProformsJson.decode(rs.getString("proforms"), rs.getString("id")),
                             rs.getString("cancellation_request"),
                             rs.getInt("has_editable_products"),
                             new CancellationReason(rs.getObject("cancellation_reason", Integer.class),

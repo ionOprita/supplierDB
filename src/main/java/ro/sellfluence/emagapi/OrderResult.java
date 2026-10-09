@@ -14,6 +14,7 @@ import static ro.sellfluence.support.UsefulMethods.bdEquals;
 import static ro.sellfluence.support.UsefulMethods.isEmpty;
 import static ro.sellfluence.support.UsefulMethods.round;
 
+// TODO: Does this need to be stored in the database?
 public record OrderResult(
         String vendor_name,
         String id,
@@ -43,7 +44,7 @@ public record OrderResult(
         LocalDateTime finalization_date,
         String parent_id,
         String detailed_payment_method,
-        List<String> proforms,
+        List<Proform> proforms,
         String cancellation_request,
         int has_editable_products,
         CancellationReason reason_cancellation,
@@ -67,7 +68,7 @@ public record OrderResult(
         if (vouchers == null) {
             vouchers = new ArrayList<>();
         }
-        if (isEmpty(proforms)) {
+        if (proforms == null) {
             proforms = new ArrayList<>();
         }
         if (flags == null) {
@@ -170,10 +171,6 @@ public record OrderResult(
         }
         if (!Objects.equals(parent_id, other.parent_id)) {
             System.out.printf("%s:%s -> %s:%s Parent ID changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, parent_id, other.parent_id);
-            hasDifference = true;
-        }
-        if (!Objects.equals(proforms, other.proforms)) {
-            System.out.printf("%s:%s -> %s:%s Proforms changed from %s to %s%n", vendor_name, id, other.vendor_name, other.id, proforms, other.proforms);
             hasDifference = true;
         }
         if (!Objects.equals(cancellation_request, other.cancellation_request)) {
