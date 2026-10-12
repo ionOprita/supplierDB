@@ -25,6 +25,7 @@ public class OffersTable {
     public record DailyProductOffer(LocalDate fetchDate, long matchingOffers, Integer stock, BigDecimal salesPrice) {
     }
 
+
     static List<DailyProductOffer> getDailyProductOffers(Connection db, UUID vendorId, String pnk,
                                                          LocalDate firstDate, LocalDate lastDate) throws SQLException {
         Objects.requireNonNull(db, "db");
@@ -32,6 +33,7 @@ public class OffersTable {
         if (pnk == null || pnk.isBlank()) return List.of();
 
         var result = new ArrayList<DailyProductOffer>();
+        // TODO: ext_stock<>0  is a quick fix for one vendor now having several vendor_ids in eMAG.
         try (var statement = db.prepareStatement("""
                 SELECT s.fetch_date, COUNT(o.offer_id) AS matching_offers,
                        MAX(o.ext_stock) AS stock, MAX(o.ext_sale_price) AS sales_price
@@ -41,6 +43,7 @@ public class OffersTable {
                     AND regexp_replace(o.doc_product_part_number_key,
                         '^[[:space:]]+|[[:space:]]+$', '', 'g') = ?
                 WHERE s.vendor_id = ? AND s.fetch_date BETWEEN ? AND ?
+                  AND o.ext_stock <> 0
                 GROUP BY s.fetch_date
                 ORDER BY s.fetch_date
                 """)) {
