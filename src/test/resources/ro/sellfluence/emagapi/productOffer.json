@@ -1,0 +1,102 @@
+{
+  "isError": false,
+  "messages": [],
+  "errors": {"warnings": []},
+  "request_id": "offer-read-1",
+  "results": [
+    {
+      "id": 4294967295,
+      "category_id": 506,
+      "vendor_category_id": 6001,
+      "part_number_key": "ES0NKBBBM",
+      "source_language": "ro_RO",
+      "name": "Test product",
+      "part_number": "md788hc/a",
+      "description": "<p>Seller documentation</p>",
+      "brand": "Brand test",
+      "brand_name": "Brand label",
+      "content_details": {"source_language": "ro_RO", "future_content_detail": "retained"},
+      "force_images_download": 1,
+      "images": [
+        {"display_type": 1, "url": "https://example.test/product.jpg", "media_type": "image/jpeg"}
+      ],
+      "images_overwrite": 0,
+      "characteristics": [
+        {"id": 22, "value": "Gold", "tag": "color", "translated_value": "Auriu"}
+      ],
+      "family": {"id": 7001, "name": "Product family", "family_type_id": 3, "category": "phones"},
+      "url": "https://example.test/product",
+      "warranty": 24,
+      "ean": ["0001234567890"],
+      "attachments": [
+        {"id": 4294967295, "url": "https://example.test/manual.pdf", "kind": "manual"}
+      ],
+      "status": 2,
+      "sale_price": 51.6477,
+      "recommended_price": 79.9999,
+      "min_sale_price": 40.0000,
+      "max_sale_price": 90.1234,
+      "currency_type": "EUR",
+      "currency": "RON",
+      "stock": [{"warehouse_id": 1, "value": 12, "reserved": 2}],
+      "handling_time": [{"warehouse_id": 1, "value": 3, "calendar": {"weekend": false}}],
+      "availability": [{"value": 3, "future_availability_detail": "retained"}],
+      "stock_2p_aging_bands": {"0-30": 12, "365+": 2},
+      "supply_lead_time": 14,
+      "start_date": ["2026-10-20", "2026-11-01"],
+      "vat_id": 1,
+      "emag_club": 1,
+      "offer_details": {
+        "id": 4294967294, "warranty_type": 1, "supply_lead_time": 7,
+        "emag_club": 0, "offer_condition": 1, "future_offer_detail": "retained"
+      },
+      "safety_information": "Keep out of reach of children.",
+      "manufacturer": false,
+      "eu_representative": false,
+      "green_tax": 0.1234,
+      "number_of_offers": 3,
+      "buy_button_rank": 1,
+      "best_offer_sale_price": 49.1234,
+      "best_offer_recommended_price": "74.0000",
+      "main_offer_price": 50.0100,
+      "ownership": true,
+      "general_stock": 12,
+      "estimated_stock": 10,
+      "offer_validation_status": {"value": 1, "description": "Saleable", "errors": null, "future_status": "retained"},
+      "validation_status": [
+        {"value": 8, "description": "Awaiting update", "errors": {
+          "info": [],
+          "warnings": [{"code": null, "section": "disclaimer", "message": {
+            "en_GB": "Review pending.", "ro_RO": "Revizuire în curs."
+          }, "extraInfo": null}],
+          "errors": [{"code": "UPDATE_NOT_ALLOWED_SAME_PLATFORM", "section": "update_vendor_id", "message": {
+            "en_GB": "Update already in progress.", "ro_RO": "Actualizare în curs."
+          }, "identifier": null}],
+          "future_validation_detail": "retained"
+        }},
+        {"value": 9, "description": "Approved documentation", "errors": null}
+      ],
+      "translation_validation_status": [
+        {"value": 9, "description": "Approved documentation", "errors": null, "languages": ["bg_BG"]},
+        {"value": 8, "description": "Awaiting translation", "errors": {"info": [], "warnings": [], "errors": []}}
+      ],
+      "doc_errors": [{"field": "description", "message": "Example documentation error"}],
+      "campaign": {"id": 243409, "name": "Test campaign", "offer_count": 5},
+      "campaign_id": 4294967295,
+      "campaign_name": "Read campaign",
+      "auto_translated": 0,
+      "fulfillment_type": 2,
+      "genius_computed": 1,
+      "genius_eligibility": 1,
+      "genius_eligibility_type": 1,
+      "recycleWarranties": 0,
+      "has_smart_deals_badge": true,
+      "reversible_vat_charging": false,
+      "rrp_guidelines": "RRP is eligible to be displayed",
+      "offer_properties": [],
+      "barcode": [],
+      "commission": null,
+      "platform_data": {"available": true, "tags": ["seller-input", "translated"]}
+    }
+  ]
+}

@@ -75,6 +75,27 @@ Production configuration:
 - Missing credentials, HTTP/API errors, malformed responses, and interrupted waits fail the task and are recorded in the
   task history rather than being reported as successful imports.
 
+### Inspect offers through the direct eMAG API
+
+`ro.sellfluence.test.FetchProductOffer` reads every page of `/product_offer/read` using the existing API credentials,
+without opening Playwright or updating the database. Run it with a configured account alias:
+
+```sh
+mvn compile exec:java -Dexec.mainClass=ro.sellfluence.test.FetchProductOffer -Dexec.args='--account=sellfusion'
+```
+
+Use `--output=<path>` to change the default `target/product-offers.json`, or `--help` for usage. The output file is
+overwritten on each run and contains a JSON array of the raw API response envelopes. Every HTTP 200
+response is saved and flushed before decoding, so captured pages remain available if a later request or decoding fails.
+A malformed response is retained verbatim and can make the archive invalid JSON. Java `ProductOffer` records are
+printed to stdout only after every page succeeds; the count and output path are printed to stderr.
+
+The API account needs API rights, and the machine's public IP must be whitelisted by eMAG. No status filter is applied,
+so inactive and End of Life offers can be inspected too. Prices returned as `sale_price` exclude VAT. The endpoint
+returns your own submitted product content; dashboard performance metrics, supply recommendations, and canonical
+product content are not guaranteed by the specification. This utility supports comparing the two sources; production
+offers snapshots continue to use the dashboard until their required fields and meanings have been verified.
+
 ### Product reviews
 
 `Fetch product reviews from eMAG` starts in its own `emagReviewsLane` from 19:00 through 23:59 server-local time.

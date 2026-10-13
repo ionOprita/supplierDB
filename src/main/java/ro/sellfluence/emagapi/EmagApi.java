@@ -9,6 +9,7 @@ import com.google.gson.stream.JsonWriter;
 import org.jspecify.annotations.NonNull;
 import ro.sellfluence.support.Logs;
 import ro.sellfluence.support.UserPassword;
+import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonGenerator;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.type.TypeReference;
@@ -17,6 +18,7 @@ import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.SerializationContext;
 import tools.jackson.databind.ValueDeserializer;
 import tools.jackson.databind.ValueSerializer;
+import tools.jackson.databind.cfg.JsonNodeFeature;
 import tools.jackson.databind.exc.MismatchedInputException;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.module.SimpleModule;
@@ -36,6 +38,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -69,6 +72,7 @@ public class EmagApi {
 
     private static final int MAX_REQUEST_RETRIES = 4;
     private static final long INITIAL_RETRY_DELAY_MILLISECONDS = 10_000;
+    private static final long PRODUCT_OFFER_PAGE_DELAY_MILLISECONDS = 350;
 
     public static final String emagRO = "https://marketplace-api.emag.ro";
 
@@ -83,10 +87,17 @@ public class EmagApi {
     private final String credentials;
     private final HttpClient httpClient;
     private final Sleeper sleeper;
+    private final URI productOfferReadUri;
 
     @FunctionalInterface
     interface Sleeper {
         void sleep(long milliseconds) throws InterruptedException;
+    }
+
+    /** Receives each successful HTTP response before it is decoded into offer records. */
+    @FunctionalInterface
+    public interface ProductOfferPageConsumer {
+        void accept(int currentPage, String responseBody) throws IOException;
     }
 
     private static final DateTimeFormatter emagDate = DateTimeFormatter.ofPattern("yyyy-MM-dd");
@@ -185,11 +196,149 @@ public class EmagApi {
     }
 
     EmagApi(UserPassword emagCredentials, Sleeper sleeper) {
+        this(emagCredentials, sleeper, URI.create(emagROApi3 + "/product_offer/read"));
+    }
+
+    EmagApi(UserPassword emagCredentials, Sleeper sleeper, URI productOfferReadUri) {
+        Objects.requireNonNull(emagCredentials, "eMAG credentials are required");
         alias = emagCredentials.getAlias();
         emagUser = emagCredentials.getUsername();
         credentials = Base64.getEncoder().encodeToString((emagCredentials.getUsername() + ":" + emagCredentials.getPassword()).getBytes());
         httpClient = HttpClient.newHttpClient();
         this.sleeper = sleeper;
+        this.productOfferReadUri = Objects.requireNonNull(productOfferReadUri);
+    }
+
+    /**
+     * Reads one product-offer page without decoding its body. Filters are top-level keys;
+     * explicit pagination arguments take precedence over pagination keys in {@code filters}.
+     * HTTP 429/500/502/504 and transport failures receive at most four retries.
+     */
+    public String readProductOffersRaw(Map<String, Object> filters, int currentPage, int itemsPerPage)
+            throws IOException, InterruptedException {
+        if (currentPage < 1) {
+            throw new IllegalArgumentException("currentPage must be at least 1");
+        }
+        if (itemsPerPage < 1 || itemsPerPage > 100) {
+            throw new IllegalArgumentException("itemsPerPage must be between 1 and 100");
+        }
+        var requestBody = new HashMap<String, Object>();
+        if (filters != null) {
+            if (filters.containsKey("data")) {
+                throw new IllegalArgumentException("Product-offer read filters must be top-level keys, without a data wrapper");
+            }
+            requestBody.putAll(filters);
+        }
+        requestBody.put("currentPage", currentPage);
+        requestBody.put("itemsPerPage", itemsPerPage);
+        var json = gson.toJson(requestBody);
+        var request = HttpRequest.newBuilder(productOfferReadUri)
+                .header("Authorization", "Basic " + credentials)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json))
+                .build();
+        var retryDelay = INITIAL_RETRY_DELAY_MILLISECONDS;
+        for (int attempt = 0; ; attempt++) {
+            communicationLogger.log(INFO, () -> "Sent product_offer/read " + json);
+            HttpResponse<String> response;
+            try {
+                response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            } catch (IOException e) {
+                if (attempt == MAX_REQUEST_RETRIES) {
+                    throw new IOException("Product-offer page %d failed after %d attempts".formatted(currentPage, attempt + 1), e);
+                }
+                communicationLogger.log(WARNING, "Product-offer page %d transport failure; retrying in %d ms".formatted(currentPage, retryDelay), e);
+                sleeper.sleep(retryDelay);
+                retryDelay *= 2;
+                continue;
+            }
+            checkAuthenticationError(response);
+            int status = response.statusCode();
+            communicationLogger.log(INFO, () -> "Received product_offer/read HTTP %d: %s".formatted(status, response.body()));
+            if (status == HTTP_OK) {
+                return response.body();
+            }
+            boolean retryable = status == 429 || status == HTTP_INTERNAL_ERROR
+                    || status == HTTP_BAD_GATEWAY || status == HTTP_GATEWAY_TIMEOUT;
+            if (!retryable || attempt == MAX_REQUEST_RETRIES) {
+                throw new IOException("Product-offer page %d returned HTTP %d: %s".formatted(currentPage, status, response.body()));
+            }
+            communicationLogger.log(WARNING, "Product-offer page %d returned HTTP %d; retrying in %d ms".formatted(currentPage, status, retryDelay));
+            sleeper.sleep(retryDelay);
+            retryDelay *= 2;
+        }
+    }
+
+    /**
+     * Decodes a successful offer response, preserving undocumented offer fields.
+     * Only an explicit false {@code isError} and an actual results array indicate success.
+     */
+    public ProductOfferResponse parseProductOffers(String json) {
+        if (json == null || json.isBlank()) {
+            throw new IllegalArgumentException("Product-offer response is empty");
+        }
+        try {
+            var root = objectMapper.reader()
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readTree(json);
+            if (root == null || !root.isObject()) {
+                throw new IllegalArgumentException("Product-offer response must be a JSON object");
+            }
+            var isError = root.get("isError");
+            if (isError == null || !isError.isBoolean()) {
+                throw new IllegalArgumentException("Product-offer response must contain a boolean isError");
+            }
+            if (isError.asBoolean()) {
+                throw new IllegalArgumentException("eMAG product_offer/read returned an error: messages=%s, errors=%s"
+                        .formatted(root.get("messages"), root.get("errors")));
+            }
+            var results = root.get("results");
+            if (results == null || !results.isArray()) {
+                throw new IllegalArgumentException("Successful product-offer response must contain a results array");
+            }
+            for (var result : results) {
+                if (!result.isObject()) {
+                    throw new IllegalArgumentException("Product-offer results must contain JSON objects");
+                }
+            }
+            // Decode the original text so decimal precision and scale do not pass through a tree's doubles.
+            return objectMapper.readerFor(ProductOfferResponse.class)
+                    .with(JsonNodeFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                    .without(JsonNodeFeature.STRIP_TRAILING_BIGDECIMAL_ZEROES)
+                    .readValue(json);
+        } catch (JacksonException e) {
+            throw new IllegalArgumentException("Could not decode product-offer response: " + e.getMessage(), e);
+        }
+    }
+
+    /** Reads all offer pages, including inactive and End of Life offers when no status filter is supplied. */
+    public List<ProductOffer> readProductOffers(Map<String, Object> filters) throws IOException, InterruptedException {
+        return readProductOffers(filters, (page, body) -> {});
+    }
+
+    /**
+     * Reads all pages and invokes {@code rawResponseConsumer} before each page is decoded.
+     * The final empty page is also delivered. Any fetch, capture or decoding failure aborts the read.
+     */
+    public List<ProductOffer> readProductOffers(Map<String, Object> filters, ProductOfferPageConsumer rawResponseConsumer)
+            throws IOException, InterruptedException {
+        Objects.requireNonNull(rawResponseConsumer, "Raw response consumer is required");
+        var offers = new ArrayList<ProductOffer>();
+        for (int currentPage = 1; ; currentPage++) {
+            var body = readProductOffersRaw(filters, currentPage, 100);
+            rawResponseConsumer.accept(currentPage, body);
+            ProductOfferResponse response;
+            try {
+                response = parseProductOffers(body);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Product-offer page %d: %s".formatted(currentPage, e.getMessage()), e);
+            }
+            if (response.results().isEmpty()) {
+                return offers;
+            }
+            offers.addAll(response.results());
+            sleeper.sleep(PRODUCT_OFFER_PAGE_DELAY_MILLISECONDS);
+        }
     }
 
     public CountResponse countOrderRequest() throws IOException, InterruptedException {
