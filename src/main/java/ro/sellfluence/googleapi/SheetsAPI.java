@@ -500,7 +500,7 @@ public class SheetsAPI {
                 batchSize += estimatedRowBytes(rows.get(to));
                 to++;
             }
-            randomWait(0.3,1.2);
+            randomWait(1.0,3.0);
             updateSpreadsheet(sheets, tabName, List.of(
                     writeValues(sheetId, startRow - 1 + from, startColumn - 1, rows, from, to, width)
             ));
