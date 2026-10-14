@@ -843,6 +843,42 @@ code {
   margin-left: .6rem;
 }
 
+.task-page-actions {
+  justify-content: space-between;
+}
+
+.task-filter-controls,
+.task-filter-field {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.task-filter-controls {
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+
+.task-filter-field label {
+  padding: 0;
+}
+
+.task-filter-controls select {
+  min-width: 0;
+}
+
+#taskNameFilter {
+  box-sizing: border-box;
+  width: 220px;
+  margin: 0;
+  padding: .35rem .5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
 .task-runtime-estimate {
   color: var(--muted);
   white-space: nowrap;

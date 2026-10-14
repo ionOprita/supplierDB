@@ -479,6 +479,15 @@ export function toTaskRows(jsonData, pausedTaskNames = []) {
   });
 }
 
+function taskStatus(row, activeTaskNames, pendingTaskNames, checkingTaskNames) {
+  if (row.started != null && row.terminated == null) return 'RUNNING';
+  if (activeTaskNames.has(row.name) || pendingTaskNames.has(row.name)) return 'STARTING';
+  if (checkingTaskNames.has(row.name)) return 'CHECKING RESULT';
+  if (row.paused) return 'PAUSED';
+  if (String(row.error ?? '').trim()) return 'ERROR';
+  return '-';
+}
+
 export function renderTasksBody(tbodyEl, rows, options = {}) {
   const canRunTasks = options.canRunTasks === true;
   const taskLaneByName = options.taskLaneByName instanceof Map
@@ -515,10 +524,10 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
   function renderRow(row) {
     const tr = document.createElement('tr');
 
-    const isRunning = row.started != null && row.terminated == null;
-    const isStarting = !isRunning &&
-      (activeTaskNames.has(row.name) || pendingTaskNames.has(row.name));
-    const isCheckingResult = !isRunning && !isStarting && checkingTaskNames.has(row.name);
+    const status = taskStatus(row, activeTaskNames, pendingTaskNames, checkingTaskNames);
+    const isRunning = status === 'RUNNING';
+    const isStarting = status === 'STARTING';
+    const isCheckingResult = status === 'CHECKING RESULT';
     const taskLane = taskLaneByName.get(row.name) ?? null;
     const blockingTaskName = taskLane == null ? null : blockingTaskByLane.get(taskLane) ?? null;
     const tdAction = document.createElement('td');
@@ -558,14 +567,8 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
       tdStatus.textContent = `RUNNING since ${formatTaskDateTime(row.started)}`;
     } else if (isStarting) {
       tdStatus.textContent = 'STARTING (waiting for the background worker)';
-    } else if (isCheckingResult) {
-      tdStatus.textContent = 'CHECKING RESULT';
-    } else if (row.paused) {
-      tdStatus.textContent = 'PAUSED';
-    } else if (row.error != null && String(row.error).trim() !== "") {
-      tdStatus.textContent = "ERROR";
     } else {
-      tdStatus.textContent = "-";
+      tdStatus.textContent = status;
     }
     tr.appendChild(tdStatus);
     const tdLastRun = document.createElement('td');
@@ -656,6 +659,9 @@ export function sortTaskTableBody(tbody, columnIndex, direction) {
  * @param {string} [cfg.pausedDataUrl] - endpoint returning the names of paused tasks
  * @param {string} [cfg.actionStatusId] - DOM id used for run-request feedback
  * @param {string} [cfg.schedulerStatusId] - DOM id used for current worker feedback
+ * @param {string} [cfg.nameFilterInputId] - DOM id of the task name filter input
+ * @param {string} [cfg.statusFilterSelectId] - DOM id of the status filter select
+ * @param {string} [cfg.laneFilterSelectId] - DOM id of the lane filter select
  * @param {boolean} [cfg.canRunTasks] - whether Run controls should be displayed
  * @param {function} [cfg.runUrlBuilder] - (taskName) => URL for the run endpoint
  * @param {function} [cfg.pauseUrlBuilder] - (taskName) => URL for the pause endpoint
@@ -668,6 +674,9 @@ export function initTaskTable(cfg) {
   const TABLE = document.getElementById(cfg.tableId);
   const ACTION_STATUS = cfg.actionStatusId ? document.getElementById(cfg.actionStatusId) : null;
   const SCHEDULER_STATUS = cfg.schedulerStatusId ? document.getElementById(cfg.schedulerStatusId) : null;
+  const NAME_FILTER = cfg.nameFilterInputId ? document.getElementById(cfg.nameFilterInputId) : null;
+  const STATUS_FILTER = cfg.statusFilterSelectId ? document.getElementById(cfg.statusFilterSelectId) : null;
+  const LANE_FILTER = cfg.laneFilterSelectId ? document.getElementById(cfg.laneFilterSelectId) : null;
   const pendingTaskNames = new Set();
   const trackedRuns = new Map();
   let currentLaneStatuses = [];
@@ -675,6 +684,7 @@ export function initTaskTable(cfg) {
   let currentActiveTaskByLane = new Map();
   let currentDatabaseRunningTaskNames = new Set();
   let latestTaskRows = [];
+  let hasLoadedTasks = false;
   let latestLoadRequest = 0;
   let clearRunStatusWhenIdle = false;
   let actionStatusSource = null;
@@ -775,6 +785,36 @@ export function initTaskTable(cfg) {
       }
     }
     return { taskLaneByName, activeTaskByLane };
+  }
+
+  function renderFilteredTasks() {
+    if (!hasLoadedTasks) return;
+
+    const name = (NAME_FILTER?.value ?? '').toLowerCase();
+    const status = STATUS_FILTER?.value ?? '';
+    const lane = LANE_FILTER?.value ?? '';
+    const activeTaskNames = new Set(currentActiveTaskByLane.values());
+    const checkingTaskNames = new Set(trackedRuns.keys());
+    const filteredRows = latestTaskRows.filter((row) => {
+      const taskLane = currentTaskLaneByName.get(row.name);
+      return row.name.toLowerCase().includes(name) &&
+        (!status || taskStatus(row, activeTaskNames, pendingTaskNames, checkingTaskNames) === status) &&
+        (!lane || taskLane === lane || taskLane?.startsWith(`${lane}:`));
+    });
+
+    if (HEAD.rows.length === 0) renderTaskHeader();
+    renderTasksBody(BODY, filteredRows, {
+      canRunTasks: cfg.canRunTasks,
+      taskLaneByName: currentTaskLaneByName,
+      activeTaskByLane: currentActiveTaskByLane,
+      pendingTaskNames,
+      checkingTaskNames,
+      // A task hidden by the filters still blocks other tasks in its lane.
+      databaseRunningTaskNames: currentDatabaseRunningTaskNames,
+      onRun: runTask,
+      onSetPaused: setTaskPaused
+    });
+    if (sortColumnIndex != null) sortTaskTableBody(BODY, sortColumnIndex, sortDirection);
   }
 
   async function readActionResponse(response, fallback) {
@@ -941,6 +981,7 @@ export function initTaskTable(cfg) {
 
       const rows = toTaskRows(data, pausedTaskNames);
       latestTaskRows = rows;
+      hasLoadedTasks = true;
       currentDatabaseRunningTaskNames = new Set(rows
         .filter((row) => row.started != null && row.terminated == null)
         .map((row) => row.name));
@@ -959,21 +1000,11 @@ export function initTaskTable(cfg) {
         }
       }
       updateTrackedRuns(rows);
-      if (HEAD.rows.length === 0) renderTaskHeader();
-      renderTasksBody(BODY, rows, {
-        canRunTasks: cfg.canRunTasks,
-        taskLaneByName: currentTaskLaneByName,
-        activeTaskByLane: currentActiveTaskByLane,
-        pendingTaskNames,
-        checkingTaskNames: new Set(trackedRuns.keys()),
-        databaseRunningTaskNames: currentDatabaseRunningTaskNames,
-        onRun: runTask,
-        onSetPaused: setTaskPaused
-      });
-      if (sortColumnIndex != null) sortTaskTableBody(BODY, sortColumnIndex, sortDirection);
+      renderFilteredTasks();
       setSchedulerStatus(currentLaneStatuses, currentDatabaseRunningTaskNames);
     } catch (e) {
       if (loadRequest !== latestLoadRequest) return;
+      hasLoadedTasks = false;
       HEAD.innerHTML = '';
       BODY.innerHTML = '<tr><td>Failed to load data</td></tr>';
       setActionStatus(
@@ -985,6 +1016,10 @@ export function initTaskTable(cfg) {
       console.error(e);
     }
   };
+
+  NAME_FILTER?.addEventListener('input', renderFilteredTasks);
+  STATUS_FILTER?.addEventListener('change', renderFilteredTasks);
+  LANE_FILTER?.addEventListener('change', renderFilteredTasks);
 
   document.getElementById('refreshBtn')?.addEventListener('click', loadTasks);
   window.addEventListener('resize', () => applyStickyOffsets(TABLE));
