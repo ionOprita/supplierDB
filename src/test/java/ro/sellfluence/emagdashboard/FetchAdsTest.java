@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static ro.sellfluence.support.UsefulMethods.randomWait;
 
 class FetchAdsTest {
     private static final String validCampaignsResponse = """
@@ -176,7 +177,7 @@ class FetchAdsTest {
     void interruptedWaitRestoresInterruptAndAborts() {
         Thread.currentThread().interrupt();
 
-        assertThrows(RuntimeException.class, () -> FetchAds.randomWait(0.0, 0.0));
+        assertThrows(RuntimeException.class, () -> randomWait(0.0, 0.0));
         assertTrue(Thread.currentThread().isInterrupted());
     }
 

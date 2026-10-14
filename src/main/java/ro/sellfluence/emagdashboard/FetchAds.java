@@ -63,14 +63,13 @@ import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
+import static ro.sellfluence.support.UsefulMethods.randomWait;
 
 public class FetchAds {
     private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", INFO, 10, 100_000);
 
     private static final int MAX_REQUEST_RETRIES = 4;
     private static final long INITIAL_RETRY_DELAY_MILLISECONDS = 10_000;
-
-    private static final Random random = new Random();
 
     private static final Path cacheDirectory = Path.of("AdsJSON");
 
@@ -867,22 +866,6 @@ public class FetchAds {
             return totp.now();
         } catch (URISyntaxException e) {
             throw new RuntimeException("Error interpreting OTP URI", e);
-        }
-    }
-
-    /**
-     * Wait a random time of minimum {@see fromSec} to less than {@see toSetc}.
-     *
-     * @param fromSec minimum time to wait for.
-     * @param toSec   maximum time to wait for.
-     */
-    public static void randomWait(Double fromSec, Double toSec) {
-        var waitSec = fromSec + (toSec - fromSec) * random.nextDouble();
-        try {
-            Thread.sleep((long) (waitSec * 1000));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Interrupted while waiting to access eMAG Ads.", e);
         }
     }
 

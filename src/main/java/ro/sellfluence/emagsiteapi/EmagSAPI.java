@@ -20,7 +20,7 @@ import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
 import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.util.logging.Level.WARNING;
-import static ro.sellfluence.emagdashboard.FetchAds.randomWait;
+import static ro.sellfluence.support.UsefulMethods.randomWait;
 
 public class EmagSAPI {
 

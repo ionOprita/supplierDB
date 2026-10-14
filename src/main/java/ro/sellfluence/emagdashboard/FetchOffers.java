@@ -30,8 +30,8 @@ import java.util.logging.Logger;
 
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
-import static ro.sellfluence.emagdashboard.FetchAds.randomWait;
 import static ro.sellfluence.emagdashboard.FetchAds.withPlaywrightSession;
+import static ro.sellfluence.support.UsefulMethods.randomWait;
 
 public class FetchOffers {
     private static final Logger logger = Logs.getConsoleAndFileLogger("FetchOffers", INFO, 10, 100_000);
