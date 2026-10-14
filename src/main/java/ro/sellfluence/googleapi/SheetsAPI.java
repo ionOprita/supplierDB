@@ -52,6 +52,7 @@ import static java.util.Objects.requireNonNull;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
+import static ro.sellfluence.support.UsefulMethods.randomWait;
 
 /**
  * This class represents a spreadsheet in Google-Drive.
@@ -402,7 +403,7 @@ public class SheetsAPI {
         );
     }
 
-    private static final long MAX_REPLACEMENT_BATCH_BYTES = 1_000_000;
+    private static final long MAX_REPLACEMENT_BATCH_BYTES = 300_000;
 
     /**
      * Replace all cell values from a starting cell through the end of a tab's grid. Cells above
@@ -499,6 +500,7 @@ public class SheetsAPI {
                 batchSize += estimatedRowBytes(rows.get(to));
                 to++;
             }
+            randomWait(0.3,1.2);
             updateSpreadsheet(sheets, tabName, List.of(
                     writeValues(sheetId, startRow - 1 + from, startColumn - 1, rows, from, to, width)
             ));

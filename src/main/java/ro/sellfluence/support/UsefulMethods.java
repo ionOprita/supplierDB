@@ -16,9 +16,12 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Random;
 import java.util.function.Supplier;
 
 public class UsefulMethods {
+    private static final Random random = new Random();
+
     /**
      * Null safe comparison of two BigDecimal numbers.
      *
@@ -179,7 +182,7 @@ public class UsefulMethods {
     /**
      * Find the column number for a given month.
      *
-     * @param row data from the spreadsheet
+     * @param row   data from the spreadsheet
      * @param month month to look for.
      * @return column identifier.
      */
@@ -224,11 +227,28 @@ public class UsefulMethods {
     }
 
     public static String getStackTraceAsString(Throwable e) {
-        if (e == null) { return ""; }
+        if (e == null) {
+            return "";
+        }
         StringWriter sw = new StringWriter();
         e.printStackTrace(new PrintWriter(sw));
         return sw.toString();
     }
 
+    /**
+     * Wait a random time of minimum {@see fromSec} to less than {@see toSetc}.
+     *
+     * @param fromSec minimum time to wait for.
+     * @param toSec   maximum time to wait for.
+     */
+    public static void randomWait(Double fromSec, Double toSec) {
+        var waitSec = fromSec + (toSec - fromSec) * random.nextDouble();
+        try {
+            Thread.sleep((long) (waitSec * 1000));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting to access eMAG Ads.", e);
+        }
+    }
 
 }
