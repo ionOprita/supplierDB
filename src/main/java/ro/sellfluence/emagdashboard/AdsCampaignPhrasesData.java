@@ -1,11 +1,11 @@
-package ro.sellfluence.emagapi;
+package ro.sellfluence.emagdashboard;
 
 import java.util.List;
 
-public record AdsCampaignTargetedProductsData(
+public record AdsCampaignPhrasesData(
         AdsPerformanceSummary summary,
         AdsCampaign campaign,
         List<AdsAdset> adsets,
-        List<AdsTargetedProduct> docs
+        List<AdsSearchPhrase> searchPhrases
 ) {
 }

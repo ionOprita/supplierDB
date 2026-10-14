@@ -1,4 +1,4 @@
-package ro.sellfluence.emagapi;
+package ro.sellfluence.emagdashboard;
 
 import org.junit.jupiter.api.Test;
 import tools.jackson.core.JsonParser;

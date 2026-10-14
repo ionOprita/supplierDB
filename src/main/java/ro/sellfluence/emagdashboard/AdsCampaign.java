@@ -1,22 +1,24 @@
-package ro.sellfluence.emagapi;
+package ro.sellfluence.emagdashboard;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-public record AdsCampaignAdSetsData(
-        AdsPerformanceSummary summary,
-        List<AdsAdset> adsets,
+public record AdsCampaign(
         Integer id,
         String name,
         Integer advertiserId,
-        LocalDateTime dateStart,
-        LocalDateTime dateEnd,
         BigDecimal dailyBudget,
+        BigDecimal effectiveDailyBudget,
         BigDecimal remainingDailyBudget,
         String status,
         String inheritedStatus,
         String targeting,
+        LocalDateTime dateStart,
+        LocalDateTime dateEnd,
+        AdsPerformanceSummary summary,
+        String advertiserName,
+        List<AdsAdset> adSets,
         String bidStrategy, //TODO: Store in database
         String bidConfig //TODO: Store in database
 ) {

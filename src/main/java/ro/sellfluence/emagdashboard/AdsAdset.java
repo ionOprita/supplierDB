@@ -1,4 +1,4 @@
-package ro.sellfluence.emagapi;
+package ro.sellfluence.emagdashboard;
 
 import java.math.BigDecimal;
 

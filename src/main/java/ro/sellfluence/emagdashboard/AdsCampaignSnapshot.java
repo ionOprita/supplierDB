@@ -1,4 +1,4 @@
-package ro.sellfluence.emagapi;
+package ro.sellfluence.emagdashboard;
 
 import java.time.LocalDate;
 import java.util.List;

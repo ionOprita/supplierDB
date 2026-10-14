@@ -1,14 +1,14 @@
 package ro.sellfluence.db;
 
-import ro.sellfluence.emagapi.AdSet;
-import ro.sellfluence.emagapi.AdsAdset;
-import ro.sellfluence.emagapi.AdsCampaign;
-import ro.sellfluence.emagapi.AdsKeyword;
-import ro.sellfluence.emagapi.AdsPerformanceSummary;
-import ro.sellfluence.emagapi.AdsRecommendedBid;
-import ro.sellfluence.emagapi.AdsSearchPhrase;
-import ro.sellfluence.emagapi.AdsTargetedProduct;
-import ro.sellfluence.emagapi.AdsCampaignSnapshot;
+import ro.sellfluence.emagdashboard.AdSet;
+import ro.sellfluence.emagdashboard.AdsAdset;
+import ro.sellfluence.emagdashboard.AdsCampaign;
+import ro.sellfluence.emagdashboard.AdsKeyword;
+import ro.sellfluence.emagdashboard.AdsPerformanceSummary;
+import ro.sellfluence.emagdashboard.AdsRecommendedBid;
+import ro.sellfluence.emagdashboard.AdsSearchPhrase;
+import ro.sellfluence.emagdashboard.AdsTargetedProduct;
+import ro.sellfluence.emagdashboard.AdsCampaignSnapshot;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
