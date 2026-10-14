@@ -403,7 +403,7 @@ public class SheetsAPI {
         );
     }
 
-    private static final long MAX_REPLACEMENT_BATCH_BYTES = 300_000;
+    private static final long MAX_REPLACEMENT_BATCH_BYTES = 100_000;
 
     /**
      * Replace all cell values from a starting cell through the end of a tab's grid. Cells above
