@@ -8,5 +8,5 @@ public class Defaults {
 
     public static final String defaultGoogleApp = "sellfluence1";
 
-    public static final String mainSpreadsheet = "Date produse & angajati";
+    public static final String mainSpreadsheet = "Date produse";
 }
