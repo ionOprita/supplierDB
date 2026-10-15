@@ -295,7 +295,7 @@ public class BackgroundJob {
                 }
         ));
         definitions.add(new TaskDefinition(
-                "Refetch some from eMAG and update GMV in DB", emagApiLane, executeWeekly, runAlways,
+                "Refetch some from eMAG and update GMV in DB", emagApiLane, executeWeekly, executeDaily, runAlways, null,
                 () -> {
                     FetchEmagAPI.fetchAndStoreToDBProbabilistic(db);
                     db.updateGMVTable();
