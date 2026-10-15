@@ -1,21 +1,5 @@
 # eMAG -> Google Drive
 
-## Run the bot
-
-To start the application, run the class from this path:
-```
-src/main/java/ro/sellfluence/app/EmagBot.java
-```
-
-It accepts an optional argument `--db=dbAlias` which specifies the database to use.
-If no database is specified, the default database is used.
-
-The following arguments are known to EmagDBApp and passed from EmagBot to it:
-
-- `--refetch-some` Use the probabilistic refetching algorithm.
-- `--refetch-all` Refetch everything from the past 3 years. This takes about 10-12 hours to run.
-- `--nofetch` Do not fetch anything from eMAG.
-
 ### Product import background tasks
 
 The server updates product data in two independent background tasks. `Populate products from sheets` reads
@@ -24,15 +8,9 @@ The server updates product data in two independent background tasks. `Populate p
 `employee_sheet_tab`. Successful employee spreadsheets are committed independently; failures are recorded and retried
 after one hour without blocking the main product import or other higher-priority jobs.
 
-This split intentionally changes these standalone applications, which are not used in production:
-
-- `PopulateProductsTableFromSheets.main()` updates the main product data but no longer refreshes employee tab mappings.
-- `EmagBot.main()` calls only that main product import before `UpdateEmployeeSheetsFromDB`, so its employee-sheet transfer
-  can use stale or null tab mappings.
-
 ### Background-task lanes, eMAG Ads, and offers
 
-The server schedules background work in independent serial lanes. eMAG API transfers use `emagApiLane`, Google Drive
+The server schedules background jobs in independent serial lanes. eMAG API transfers use `emagApiLane`, Google Drive
 and Sheets transfers use `googleApiLane`, and each dashboard account has its own `emagDashboardLane:<account>` lane shared
 by Ads and offers. Only one task can be active in a lane, preventing parallel logins for the same account, while tasks
 in different lanes can run at the same time.
@@ -42,7 +20,7 @@ after success or the failure interval after failure; an omitted failure interval
 Tasks must finish before another attempt can start, and their time predicates can defer a due attempt until an allowed
 window. Startup recovery preserves completed attempts' start times and clears interrupted attempts.
 
-Ads imports start before 07:00 in the server JVM's local timezone. After success, they wait one day from the attempt's
+Ad imports start before 07:00 in the server JVM's local timezone. After success, they wait one day from the attempt's
 start; after failure, one hour. Each run uses the completed 31-day interval `[today - 31 days, today)`. Among Ads tasks,
 campaigns and ad sets run first; keywords, search phrases, and targeted products are eligible only after a newer
 successful campaigns run.
@@ -52,7 +30,7 @@ succeeded or failed. It has priority when the account's lane becomes free; an al
 The existing task controls allow pausing automatic runs and requesting a manual run, while still preventing simultaneous
 logins for the same account.
 
-Migration 41 creates the `offers_` tables. An offers fetch downloads every page before atomically replacing the snapshot
+Migration 41 creates the `offers_` tables. An offer fetch downloads every page before atomically replacing the snapshot
 for that vendor and date, including all nested records. The date is captured once when fetching begins using the server
 JVM's local timezone. The last successful fetch of the day wins: absent offers are removed, and a successful empty result
 clears that day's offers. Earlier dates and other vendors remain unchanged. Failed or incomplete fetches preserve the
@@ -63,12 +41,12 @@ Production configuration:
 - At startup, Ads and offers tasks are registered for every account returned by `EmagAccounts.getOTPAccounts`, with duplicate aliases
   registered once. There is no account filter; restart the server after changing the available accounts. If no accounts are
   returned, other background jobs continue without dashboard tasks.
-- Each Ads account must match exactly one `vendor.account`. All Ads rows, keys, imports, and reports include that vendor's
+- Each Ads account must match exactly one `vendor.account`. All Ad rows, keys, imports, and reports include that vendor's
   UUID, so different vendors can use identical campaign and ad-set IDs. Migration 39 assigns historical Ads to the vendor
-  whose account is `sellfusion` in the database being upgraded, and fails atomically if populated Ads cannot be assigned
+  whose account is `sellfusion` in the database being upgraded and fails atomically if populated Ads cannot be assigned
   unambiguously.
 - The campaign overview lists vendors with stored campaigns. Its vendor selector sits beside the period controls;
-  drilldowns retain that vendor, and browser Back returns to the selected campaign overview. Report URLs require
+  drill-downs retain that vendor, and browser Back returns to the selected campaign overview. Report URLs require
   `vendorId`; old detail bookmarks without it must be reopened from the campaign overview.
 - Chromium is headless by default. Set the Java system property `ads.headless=false` only when an interactive browser is
   needed for diagnosis. Playwright's Chromium binary must be installed in a location readable by the server account.
@@ -155,7 +133,7 @@ Run the Ads browser-script tests with `node --test src/test/js/ads-*.test.mjs`.
 # eMAG Mirror to DB
 
 [PostgreSQL](https://www.postgresql.org/) is used as the database system the eMAG mirror DB.
-The most important commands for setup, backup etc. are listed below.
+The most important commands for setup, backup, etc. are listed below.
 For further information see the [PostgreSQL documentation](https://www.postgresql.org/docs/current/index.html).
 
 ## Database setup
@@ -171,7 +149,7 @@ Substitute *password* with the real password.
 
 The `-X` aka `--no-psqlrc` option tells psql to not read any start-up files like `~/.psqlrc`.
 It makes sense to add this option if you do not know what is in your start-up file and prefer to run the command in a reproducible way.
-You better omit this option if you know that your startup-file contain special configurations that you need.
+You better omit this option if you know that your startup-file contains special configurations that you need.
 
 The `-c` aka `--command=` option is used to execute a single command.
 
@@ -189,7 +167,7 @@ Make sure each field is separated by a single TAB character.
 
 The following instructions use the command line tools.
 
-If you prefer to use pgAdmin to backup and restore your database, read the
+If you prefer to use pgAdmin to back up and restore your database, read the
 [Backup/Restore](https://www.pgadmin.org/docs/pgadmin4/latest/backup_and_restore.html)
 chapter in its documentation.
 
@@ -222,7 +200,7 @@ pg_dump -Fc -f "db_emag_$timestamp.dump" emag
 </pre>
 </details>
 
-#### Restore into existing database
+#### Restore into the existing database
 
 Restore from a specific backup using the command (substituting date and time for your latest backup)
 ```
@@ -241,7 +219,7 @@ Combining -C and -c has the effect of dropping and recreating the database.
 
 #### Restore into a new database
 
-Before the very first time you need to create the user, that will own the new database.
+Before the very first time you need to create the user that will own the new database.
 ```
 pw=$(grep emag_test $HOME/Secrets/dbpass.txt | cut -f 4)
 psql -d emag_test -1 -X -c "CREATE ROLE emag_test WITH LOGIN PASSWORD '$pw';"
@@ -254,7 +232,7 @@ psql -c "CREATE DATABASE emag_test WITH OWNER = emag_test TEMPLATE template0"
 pg_restore -d emag_test -1 -c -O --if-exists --role=emag_test db_emag_2025-05-15T16.dump
 ```
 
-Once the test database is not needed anymore, drop it:
+Once the test database is not needed any more, drop it:
 ```
 psql -c "DROP DATABASE emag_test"
 ```
@@ -275,7 +253,7 @@ The restore command can also be used to get a human-readable version of the dump
 pg_restore -f - db_emag_2025-05-15T16.dump | less
 ```
 
-To see only the DDL commands add the options `-s` aka `--schema-only`.
+To see only the DDL commands, add the options `-s` aka `--schema-only`.
 
 ### Drop all tables for testing
 
@@ -312,7 +290,7 @@ WHERE
     order_end < next_order_start;
 ```
 
-Here an explanation what the LEAD... does:
+What the LEAD... does:
 
 The LEAD function in SQL is a window function that allows you to access data from subsequent rows in your result set. It can be particularly useful for comparing values in a sequence, like detecting gaps in time ranges.
 Here's a breakdown of the part "LEAD(order_start) OVER (PARTITION BY emag_login ORDER BY order_start) AS next_order_start":
@@ -376,7 +354,7 @@ The setup script automatically looks for `wacs.exe` in `PATH`, `C:\Program Files
 
 The setup script starts the Java scheduled task first, waits for `http://localhost:8080/health`, then asks win-acme to create `C:\Users\Oprita\Desktop\JavaServer\certs\server.sellfusion.ro.pfx`. win-acme also creates its own renewal task and runs `scripts/restart-java-task.ps1` after successful issuance or renewal so Jetty reloads the new PFX on process restart.
 
-The scheduled task runs `C:\Users\Oprita\Desktop\JavaServer\app\scripts\run-java-app.ps1`, in the checkout that it updates. Restart the task after changing that script so PowerShell loads its new contents.
+The scheduled task runs `C:\Users\Oprita\Desktop\JavaServer\app\scripts\run-java-app.ps1`, in the checkout that it updates. Restart the task after changing that script, so PowerShell loads its new contents.
 
 Tasks registered by an older setup script may still run the separate `Desktop\supplierDB` copy. After the `JavaServer\app` checkout has the updated runner, change the existing task action once from an Administrator PowerShell session:
 
@@ -403,7 +381,7 @@ If public port `80` cannot be forwarded, this HTTP-01 setup will not work. Use a
 
 ### Local development certificate
 
-Use these commands to generate a local certificate for `localhost` and convert it to a password-protected `PKCS#12` file (`.p12`) that can be used by Jetty.
+Use these commands to generate a local certificate for `localhost` and convert it to a password-protected `PKCS#12` file (`.p12`) usable by Jetty.
 
 ### macOS
 
@@ -425,7 +403,7 @@ What each command does:
 - `cd ~/Secrets/Certs`: Moves into that folder so all generated files are written there.
 - `mkcert localhost`: Generates `localhost.pem` (certificate) and `localhost-key.pem` (private key).
 - `openssl rand -base64 24 -out localhost.pw`: Creates a random password and saves it in `localhost.pw` directly from OpenSSL output.
-- `openssl pkcs12 ...`: Bundles certificate + key into `localhost.p12` using alias `jetty`, protected by the password from `localhost.pw`.
+- `openssl pkcs12 ...`: Bundles certificate and key into `localhost.p12` using alias `jetty`, protected by the password from `localhost.pw`.
 
 ### Windows 11 (PowerShell)
 

@@ -1,13 +1,11 @@
-package ro.sellfluence.app;
+package ro.sellfluence.apphelper;
 
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.Vendor;
 import ro.sellfluence.googleapi.SheetsAPI;
-import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
 
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.util.Arrays;
@@ -20,8 +18,6 @@ import java.util.stream.Collectors;
 
 import static java.lang.Boolean.TRUE;
 import static java.util.logging.Level.WARNING;
-import static ro.sellfluence.apphelper.Defaults.databaseOptionName;
-import static ro.sellfluence.apphelper.Defaults.defaultDatabase;
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 import static ro.sellfluence.apphelper.Defaults.mainSpreadsheet;
 import static ro.sellfluence.googleapi.SheetsAPI.getSpreadSheetByName;
@@ -345,7 +341,4 @@ public class PopulateProductsTableFromSheets {
         return value;
     }
 
-    static void main(String[] args) throws SQLException, IOException {
-        updateProductTable(EmagMirrorDB.getEmagMirrorDB(new Arguments(args).getOption(databaseOptionName, defaultDatabase)));
-    }
 }

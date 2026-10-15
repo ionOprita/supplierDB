@@ -1,4 +1,4 @@
-package ro.sellfluence.app;
+package ro.sellfluence.apphelper;
 
 import org.junit.jupiter.api.Test;
 

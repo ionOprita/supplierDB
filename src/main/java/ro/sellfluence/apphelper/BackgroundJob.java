@@ -2,7 +2,6 @@ package ro.sellfluence.apphelper;
 
 import org.jspecify.annotations.Nullable;
 import ro.sellfluence.app.PopulateDateComenziFromDB;
-import ro.sellfluence.app.PopulateProductsTableFromSheets;
 import ro.sellfluence.app.PopulateStornoAndReturns;
 import ro.sellfluence.app.TransferReviews;
 import ro.sellfluence.app.UpdateEmployeeSheetsFromDB;
