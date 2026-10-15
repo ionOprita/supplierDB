@@ -14,6 +14,8 @@ initTaskTable({
   nameFilterInputId: 'taskNameFilter',
   statusFilterSelectId: 'taskStatusFilter',
   laneFilterSelectId: 'taskLaneFilter',
+  pauseAllButtonId: 'pauseAllBtn',
+  pauseAllUrl: '/admin/tasks/pause-all',
   canRunTasks: tasksTable?.dataset.canRun === 'true',
   runUrlBuilder: (taskName) => `/admin/tasks/${encodeURIComponent(taskName)}/run`,
   pauseUrlBuilder: (taskName) => `/admin/tasks/${encodeURIComponent(taskName)}/pause`,

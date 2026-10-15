@@ -65,6 +65,7 @@ async function withTable(initialState, callback) {
     tasksBody: new Element('tbody'),
     tasksTable: new Element('table'),
     refreshBtn: new Element('button'),
+    pauseAllBtn: new Element('button'),
     taskNameFilter: new Element('input'),
     taskStatusFilter: new Element('select'),
     taskLaneFilter: new Element('select'),
@@ -116,7 +117,8 @@ async function withTable(initialState, callback) {
       actionStatusId: 'taskActionStatus', schedulerStatusId: 'taskSchedulerStatus',
       nameFilterInputId: 'taskNameFilter',
       statusFilterSelectId: 'taskStatusFilter', laneFilterSelectId: 'taskLaneFilter',
-      canRunTasks: true,
+      canRunTasks: state.canRunTasks ?? true,
+      pauseAllButtonId: 'pauseAllBtn', pauseAllUrl: '/admin/tasks/pause-all',
       runUrlBuilder: taskName => `/admin/tasks/${encodeURIComponent(taskName)}/run`,
       pauseUrlBuilder: taskName => `/admin/tasks/${encodeURIComponent(taskName)}/pause`,
       resumeUrlBuilder: taskName => `/admin/tasks/${encodeURIComponent(taskName)}/resume`,
@@ -329,6 +331,87 @@ test('pause and resume actions reapply the selected status filter after reload',
     assert.deepEqual(requests.filter(request => request.method === 'POST').map(request => request.url), [
       '/admin/tasks/Paused%20error/resume', '/admin/tasks/Paused%20error/pause'
     ]);
+  });
+});
+
+test('Pause All sends one bulk request and preserves filters, sorting, and hidden activity', async () => {
+  let acceptPause;
+  const acceptance = new Promise(resolve => { acceptPause = resolve; });
+  await withTable({
+    rows: [failedTask('Zulu'), failedTask('Alpha'), { name: 'Hidden running task', started }],
+    lanes: [lane('emagApiLane', ['Zulu', 'Alpha']), lane('googleApiLane', ['Hidden running task'], 'Hidden running task')],
+    async onPost() {
+      await acceptance;
+      this.paused = this.lanes.flatMap(status => status.taskNames);
+      return { ok: true, status: 204 };
+    }
+  }, async ({ elements, state, requests, names, setFilter, buttonFor, autoRefresh }) => {
+    setFilter('taskNameFilter', 'a');
+    setFilter('taskLaneFilter', 'emagApiLane');
+    setFilter('taskStatusFilter', 'ERROR');
+    elements.tasksHead.rows[0].cells[1].children[0].fire('click');
+    assert.deepEqual(names(), ['Alpha']);
+
+    const pausing = elements.pauseAllBtn.fire('click');
+    assert.equal(elements.pauseAllBtn.disabled, true);
+    assert.equal(elements.pauseAllBtn.textContent, 'Pausing...');
+    await elements.pauseAllBtn.fire('click');
+    assert.equal(requests.filter(request => request.method === 'POST').length, 1);
+
+    acceptPause();
+    await pausing;
+
+    assert.deepEqual(requests.filter(request => request.method === 'POST'), [
+      { url: '/admin/tasks/pause-all', method: 'POST' }
+    ]);
+    assert.deepEqual(state.paused, ['Zulu', 'Alpha', 'Hidden running task']);
+    assert.deepEqual(names(), [], 'Paused tasks no longer match the Error filter');
+    assert.equal(elements.taskNameFilter.value, 'a');
+    assert.equal(elements.taskLaneFilter.value, 'emagApiLane');
+    assert.equal(elements.taskStatusFilter.value, 'ERROR');
+    assert.equal(elements.pauseAllBtn.disabled, false);
+    assert.equal(elements.pauseAllBtn.textContent, 'Pause All');
+    assert.match(elements.taskActionStatus.textContent, /all tasks.*paused.*finish before stopping the server/);
+    assert.match(elements.taskSchedulerStatus.textContent, /Hidden running task/);
+
+    setFilter('taskNameFilter', '');
+    setFilter('taskStatusFilter', 'PAUSED');
+    assert.deepEqual(names(), ['Alpha', 'Zulu'], 'Name sorting is retained after the bulk reload');
+    assert.equal(buttonFor('Alpha', 'task-pause-button').textContent, 'Resume');
+    assert.equal(buttonFor('Alpha', 'task-run-button').disabled, false);
+
+    state.rows[2] = { name: 'Hidden running task', started, terminated };
+    state.lanes[1].activeTaskName = null;
+    await autoRefresh();
+    assert.equal(elements.taskSchedulerStatus.textContent, '');
+    assert.deepEqual(names(), ['Alpha', 'Zulu']);
+  });
+});
+
+for (const [label, onPost, message] of [
+  ['HTTP failure', () => ({ ok: false, status: 503, text: async () => '' }), /HTTP 503/],
+  ['expired session', () => ({ ok: true, status: 200, redirected: true }), /sign in again/],
+  ['forbidden request', () => ({ ok: false, status: 403 }), /not allowed to pause tasks/],
+  ['network failure', () => { throw new Error('Network unavailable'); }, /Network unavailable/]
+]) {
+  test(`Pause All reports ${label} and restores the button`, async () => {
+    await withTable({ rows: [failedTask('Orders')], onPost }, async ({ elements, state, names }) => {
+      await elements.pauseAllBtn.fire('click');
+
+      assert.match(elements.taskActionStatus.textContent, message);
+      assert.equal(elements.taskActionStatus.classes.has('is-error'), true);
+      assert.equal(elements.pauseAllBtn.disabled, false);
+      assert.equal(elements.pauseAllBtn.textContent, 'Pause All');
+      assert.deepEqual(state.paused, []);
+      assert.deepEqual(names(), ['Orders']);
+    });
+  });
+}
+
+test('Pause All does not submit requests without task-control permission', async () => {
+  await withTable({ canRunTasks: false }, async ({ elements, requests }) => {
+    await elements.pauseAllBtn.fire('click');
+    assert.equal(requests.some(request => request.method === 'POST'), false);
   });
 });
 

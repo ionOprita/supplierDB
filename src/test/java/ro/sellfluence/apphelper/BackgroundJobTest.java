@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
@@ -201,6 +202,74 @@ class BackgroundJobTest {
         var elapsed = new HoldingExecutor();
         new BackgroundJob(store, elapsed, clockAt(NOW.plusMinutes(1)), List.of(definition)).performWork();
         assertEquals(1, elapsed.queuedCount());
+    }
+
+    @Test
+    void pauseAllCoversEveryConfiguredTaskAndIsIdempotent() {
+        var executor = new HoldingExecutor();
+        var job = new BackgroundJob(new FakeTaskStore(), executor, clockAt(NOW), List.of(
+                task("orders", "emag", () -> {}),
+                task("more-orders", "emag", () -> {}),
+                task("sheets", "google", () -> {})
+        ));
+        job.setTaskPaused("orders", true);
+
+        job.pauseAllTasks();
+        job.pauseAllTasks();
+        job.performWork();
+
+        assertEquals(Set.of("orders", "more-orders", "sheets"), job.pausedTaskNames());
+        assertEquals(0, executor.queuedCount());
+        assertTrue(activeTasks(job).isEmpty());
+    }
+
+    @Test
+    void pauseAllAllowsClaimedTasksToFinishAndPreservesResumeAndManualRun() {
+        var executor = new HoldingExecutor();
+        var completed = new AtomicInteger();
+        var job = new BackgroundJob(new FakeTaskStore(), executor, clockAt(NOW), List.of(
+                task("orders", "emag", completed::incrementAndGet),
+                task("more-orders", "emag", completed::incrementAndGet),
+                task("sheets", "google", completed::incrementAndGet)
+        ));
+        job.performWork();
+        assertEquals(2, executor.queuedCount());
+
+        job.pauseAllTasks();
+        assertEquals(Map.of("emag", "orders", "google", "sheets"), activeTasks(job));
+        executor.runAll();
+        job.performWork();
+
+        assertEquals(2, completed.get());
+        assertTrue(activeTasks(job).isEmpty());
+        assertEquals(0, executor.queuedCount());
+
+        assertEquals(ACCEPTED, job.requestRun("orders").status());
+        executor.runAll();
+        assertEquals(BackgroundJob.PauseResult.UPDATED, job.setTaskPaused("sheets", false));
+        job.performWork();
+        assertEquals(Map.of("google", "sheets"), activeTasks(job));
+        executor.runAll();
+        assertEquals(4, completed.get());
+        assertEquals(Set.of("orders", "more-orders"), job.pausedTaskNames());
+    }
+
+    @Test
+    void pauseAllPreventsAClaimEvenWhenEligibilityWasAlreadyBeingChecked() {
+        var executor = new HoldingExecutor();
+        var jobReference = new AtomicReference<BackgroundJob>();
+        var definition = new BackgroundJob.TaskDefinition("orders", "emag", Duration.ZERO, _ -> {
+            jobReference.get().pauseAllTasks();
+            return true;
+        }, () -> {});
+        var job = new BackgroundJob(new FakeTaskStore(), executor, clockAt(NOW), List.of(definition));
+        jobReference.set(job);
+
+        job.performWork();
+
+        assertEquals(Set.of("orders"), job.pausedTaskNames());
+        assertEquals(0, executor.queuedCount());
+        assertTrue(activeTasks(job).isEmpty());
     }
 
     @Test

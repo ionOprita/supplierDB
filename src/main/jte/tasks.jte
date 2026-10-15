@@ -29,6 +29,9 @@
           <option value="googleApiLane">Google API</option>
         </select>
       </div>
+      @if(userRole.equals("admin"))
+        <button id="pauseAllBtn" type="button" title="Pause automatic scheduling for all tasks in every lane">Pause All</button>
+      @endif
     </div>
     <button id="refreshBtn" type="button" title="Reload">Reload</button>
   </div>

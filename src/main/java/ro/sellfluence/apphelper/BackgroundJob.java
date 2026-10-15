@@ -572,6 +572,16 @@ public class BackgroundJob {
         return PauseResult.UPDATED;
     }
 
+    /**
+     * Pause automatic scheduling for every configured task atomically. Already claimed tasks may finish,
+     * and manual runs remain available.
+     */
+    public void pauseAllTasks() {
+        synchronized (taskControlLock) {
+            pausedTaskNames.addAll(taskDefinitionsByName.keySet());
+        }
+    }
+
     public Set<String> pausedTaskNames() {
         synchronized (taskControlLock) {
             return Set.copyOf(pausedTaskNames);
