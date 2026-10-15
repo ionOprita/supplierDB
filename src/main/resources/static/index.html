@@ -11,11 +11,20 @@
 <h1>Sellfusion login</h1>
 
 <label for="username">Enter your username to sign in</label>
-<input id="username" type="text" autocomplete="username" placeholder="alice" onkeydown="if (event.key === 'Enter') loginWithPasskey()">
+<input id="username" type="text" autocomplete="username" placeholder="alice" autofocus onkeydown="if (event.key === 'Enter') loginWithPasskey()">
 
 <p>If you do not have an account yet, please <a href="register.html">register here</a>.</p>
 
 <div id="log"></div>
+
+<script>
+    window.addEventListener('pageshow', () => {
+        // Also handle restored pages without taking focus from another element.
+        if (document.activeElement === document.body) {
+            document.getElementById('username').focus();
+        }
+    });
+</script>
 
 </body>
 </html>
