@@ -123,9 +123,11 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
         }
     }
 
+    /** Clear interrupted attempts on startup while preserving completed attempts' scheduling history. */
     public static int resetState(Connection db) throws SQLException {
         String sql = """
                 UPDATE tasks SET started = NULL
+                WHERE started IS NOT NULL AND terminated IS NULL
                 """;
         try (var s = db.prepareStatement(sql)) {
             return s.executeUpdate();

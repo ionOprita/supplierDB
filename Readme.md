@@ -37,12 +37,18 @@ and Sheets transfers use `googleApiLane`, and each dashboard account has its own
 by Ads and offers. Only one task can be active in a lane, preventing parallel logins for the same account, while tasks
 in different lanes can run at the same time.
 
-Ads imports start before 07:00 in the server JVM's local timezone, at most once every 24 hours after a successful run. Each run
-uses the completed 31-day interval `[today - 31 days, today)`. Among Ads tasks, campaigns and ad sets run first; keywords, search phrases,
-and targeted products are eligible only after a newer successful campaigns run. Failed Ads tasks retry after one hour.
+Automatic scheduling measures intervals from the latest attempt's start time. Its outcome selects the normal interval
+after success or the failure interval after failure; an omitted failure interval defaults to the normal interval.
+Tasks must finish before another attempt can start, and their time predicates can defer a due attempt until an allowed
+window. Startup recovery preserves completed attempts' start times and clears interrupted attempts.
 
-`Fetch offers for <account>` runs throughout the day, at most once per hour after a successful run, and retries failures
-after one hour. It has priority when the account's lane becomes free; an already-running Ads task can delay it.
+Ads imports start before 07:00 in the server JVM's local timezone. After success, they wait one day from the attempt's
+start; after failure, one hour. Each run uses the completed 31-day interval `[today - 31 days, today)`. Among Ads tasks,
+campaigns and ad sets run first; keywords, search phrases, and targeted products are eligible only after a newer
+successful campaigns run.
+
+`Fetch offers for <account>` runs throughout the day, at least one hour after the previous attempt's start, whether it
+succeeded or failed. It has priority when the account's lane becomes free; an already-running Ads task can delay it.
 The existing task controls allow pausing automatic runs and requesting a manual run, while still preventing simultaneous
 logins for the same account.
 
@@ -100,9 +106,9 @@ offers snapshots continue to use the dashboard until their required fields and m
 
 `Fetch product reviews from eMAG` starts in its own `emagReviewsLane` from 19:00 through 23:59 server-local time.
 `Transfer product reviews to Google Sheets` starts in `googleApiLane` from 00:00 through 06:59 server-local time,
-ahead of the other Google API tasks. Each task runs once per local calendar date after a successful start; failures
-retry after one hour within the same window. The transfer reads the database snapshot available when it starts, so
-a fetch that runs past midnight can overlap it. The Tasks page provides manual-run and pause/resume controls.
+ahead of the other Google API tasks. Each task waits one day from the previous attempt's start after success, or one hour
+after failure. Attempts start only within their allowed window. The transfer reads the database snapshot available when
+it starts, so a fetch that runs past midnight can overlap it. The Tasks page provides manual-run and pause/resume controls.
 
 The transfer replaces review values in `Date Recenzii` → `Introducere date`, beginning at B3. It preserves column A,
 rows 1–2, and formatting, and clears stale values below the new data when the export shrinks.

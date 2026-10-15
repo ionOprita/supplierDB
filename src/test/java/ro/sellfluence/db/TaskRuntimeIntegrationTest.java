@@ -89,6 +89,27 @@ class TaskRuntimeIntegrationTest {
                         .filter(task -> task.name().equals("previous")).findFirst().orElseThrow();
                 assertEquals(completed.lastSuccessfulRun(), failed.lastSuccessfulRun());
                 assertEquals(completed.lastSuccessfulStart(), failed.lastSuccessfulStart());
+
+                Task.startTask(db, "successful");
+                Task.endTask(db, "successful", "");
+                var successful = Task.getAllTasks(db).stream()
+                        .filter(task -> task.name().equals("successful")).findFirst().orElseThrow();
+                Task.startTask(db, "interrupted");
+
+                assertEquals(1, Task.resetState(db), "Startup should reset only the interrupted attempt");
+                var afterReset = Task.getAllTasks(db);
+                assertEquals(successful, afterReset.stream()
+                        .filter(task -> task.name().equals("successful")).findFirst().orElseThrow());
+                assertEquals(failed, afterReset.stream()
+                        .filter(task -> task.name().equals("previous")).findFirst().orElseThrow());
+                assertEquals(neverRun, afterReset.stream()
+                        .filter(task -> task.name().equals("new")).findFirst().orElseThrow());
+                var interrupted = afterReset.stream()
+                        .filter(task -> task.name().equals("interrupted")).findFirst().orElseThrow();
+                assertNull(interrupted.started());
+                assertNull(interrupted.terminated());
+                assertNull(interrupted.currentRunSeconds());
+                assertEquals(0, Task.resetState(db), "A second startup reset should leave history unchanged");
             } finally {
                 db.rollback();
             }

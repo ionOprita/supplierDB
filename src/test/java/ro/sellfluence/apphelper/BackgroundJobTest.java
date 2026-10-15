@@ -190,10 +190,10 @@ class BackgroundJobTest {
     }
 
     @Test
-    void retriesAFailedTaskOnlyAfterItsFailureRetryInterval() {
+    void retriesAFailedTaskFromItsStartRatherThanItsCompletion() {
         var definition = scheduledTask("ads", "ads:sellfusion", Duration.ofDays(1), Duration.ofHours(1), null);
         var store = new FakeTaskStore();
-        store.put(completedTask("ads", NOW.minusDays(7), NOW.minusMinutes(59), "timeout"));
+        store.put(completedAttempt("ads", NOW.minusMinutes(59), NOW.minusMinutes(54), "timeout"));
         var tooEarly = new HoldingExecutor();
         new BackgroundJob(store, tooEarly, clockAt(NOW), List.of(definition)).performWork();
         assertEquals(0, tooEarly.queuedCount());
@@ -323,7 +323,7 @@ class BackgroundJobTest {
     }
 
     @Test
-    void offersAreEligibleAllDayButWaitAnHourAfterSuccessOrFailure() {
+    void offersAreEligibleAllDayButWaitAnHourFromStartAfterSuccessOrFailure() {
         var definition = BackgroundJob.offersTask("sellfusion", () -> {});
         for (var hour : List.of(0, 7, 14, 23)) {
             var now = NOW.withHour(hour);
@@ -334,8 +334,7 @@ class BackgroundJobTest {
             for (var error : List.of("", "login failed")) {
                 var store = new FakeTaskStore();
                 var lastAttempt = now.minusMinutes(59);
-                store.put(completedTask(definition.name(),
-                        error.isEmpty() ? lastAttempt : now.minusDays(1), lastAttempt, error));
+                store.put(completedAttempt(definition.name(), lastAttempt, lastAttempt.plusMinutes(5), error));
                 var tooEarly = new HoldingExecutor();
                 new BackgroundJob(store, tooEarly, clockAt(now), List.of(definition)).performWork();
                 assertEquals(0, tooEarly.queuedCount());
@@ -348,13 +347,12 @@ class BackgroundJobTest {
     }
 
     @Test
-    void reviewsRunOncePerEveningWindowAndRetryFailuresAfterAnHour() {
+    void reviewsWaitADayFromStartAndRetryFailuresAfterAnHourWithinTheEveningWindow() {
         var definition = BackgroundJob.reviewsTask(() -> {});
         assertEquals("Fetch product reviews from eMAG", definition.name());
         assertEquals(BackgroundJob.emagReviewsLane, definition.lane());
         assertEquals(Duration.ofDays(1), definition.interval());
         assertEquals(Duration.ofHours(1), definition.failureRetryInterval());
-        assertEquals(BackgroundJob.Cadence.LOCAL_CALENDAR_DAY, definition.cadence());
         assertNull(definition.prerequisiteTaskName());
 
         for (var time : List.of(NOW.withHour(19).withMinute(0), NOW.withHour(23).withMinute(59))) {
@@ -376,16 +374,15 @@ class BackgroundJobTest {
         new BackgroundJob(successfulStore, tooEarly, clockAt(now), List.of(definition)).performWork();
         assertEquals(0, tooEarly.queuedCount());
 
-        // The prior evening's run completed after midnight; its start date still governs the next window.
+        // Finishing after midnight does not change the interval's start-time anchor.
         var followingEvening = now.plusDays(1);
-        successfulStore.put(completedTask(definition.name(), followingEvening.withHour(0).withMinute(30),
-                now.withHour(23).withMinute(30), followingEvening.withHour(0).withMinute(30), ""));
-        var due = new HoldingExecutor();
-        new BackgroundJob(successfulStore, due, clockAt(followingEvening), List.of(definition)).performWork();
-        assertEquals(1, due.queuedCount());
+        var overnight = completedAttempt(definition.name(), now.withHour(23).withMinute(30),
+                followingEvening.withHour(0).withMinute(30), "");
+        assertEligibleAt(definition, overnight, followingEvening, false);
+        assertEligibleAt(definition, overnight, followingEvening.withHour(23).withMinute(30), true);
 
         var failedStore = new FakeTaskStore();
-        failedStore.put(completedTask(definition.name(), now.minusDays(7), now.minusMinutes(59), "HTTP error"));
+        failedStore.put(completedAttempt(definition.name(), now.minusMinutes(59), now.minusMinutes(54), "HTTP error"));
         var retryTooEarly = new HoldingExecutor();
         new BackgroundJob(failedStore, retryTooEarly, clockAt(now), List.of(definition)).performWork();
         assertEquals(0, retryTooEarly.queuedCount());
@@ -395,11 +392,11 @@ class BackgroundJobTest {
     }
 
     @Test
-    void reviewTransferRunsOncePerMorningWindowWithCalendarRolloverAndRetry() {
+    void reviewTransferWaitsADayFromStartAndRetriesWithinTheMorningWindow() {
         var definition = BackgroundJob.transferReviewsTask(() -> {});
         assertEquals("Transfer product reviews to Google Sheets", definition.name());
         assertEquals(BackgroundJob.googleApiLane, definition.lane());
-        assertEquals(BackgroundJob.Cadence.LOCAL_CALENDAR_DAY, definition.cadence());
+        assertEquals(Duration.ofDays(1), definition.interval());
         assertEquals(Duration.ofHours(1), definition.failureRetryInterval());
         assertNull(definition.prerequisiteTaskName());
 
@@ -416,25 +413,26 @@ class BackgroundJobTest {
 
         var morning = NOW.withHour(0);
         var store = new FakeTaskStore();
-        store.put(completedTask(definition.name(), morning.minusDays(1).withHour(7).withMinute(30),
-                morning.minusDays(1).withHour(6).withMinute(59),
+        store.put(completedAttempt(definition.name(), morning.minusDays(1).withHour(6).withMinute(59),
                 morning.minusDays(1).withHour(7).withMinute(30), ""));
         var nextDay = new HoldingExecutor();
         new BackgroundJob(store, nextDay, clockAt(morning), List.of(definition)).performWork();
-        assertEquals(1, nextDay.queuedCount(), "A new local date is eligible before 24 hours elapsed");
+        assertEquals(0, nextDay.queuedCount(), "Midnight does not make a daily task eligible");
+        var dueAt = new HoldingExecutor();
+        new BackgroundJob(store, dueAt, clockAt(morning.withHour(6).withMinute(59)), List.of(definition)).performWork();
+        assertEquals(1, dueAt.queuedCount(), "The next attempt is due a day after the prior start");
 
-        store.put(completedTask(definition.name(), morning.plusHours(1), morning,
-                morning.plusHours(1), ""));
+        store.put(completedAttempt(definition.name(), morning, morning.plusHours(1), ""));
         var sameDay = new HoldingExecutor();
         new BackgroundJob(store, sameDay, clockAt(morning.plusHours(6)), List.of(definition)).performWork();
         assertEquals(0, sameDay.queuedCount());
 
-        store.put(completedTask(definition.name(), morning.minusDays(1), morning.plusMinutes(1), "HTTP error"));
+        store.put(completedAttempt(definition.name(), morning, morning.plusMinutes(5), "HTTP error"));
         var tooEarly = new HoldingExecutor();
-        new BackgroundJob(store, tooEarly, clockAt(morning.plusHours(1)), List.of(definition)).performWork();
+        new BackgroundJob(store, tooEarly, clockAt(morning.plusMinutes(59)), List.of(definition)).performWork();
         assertEquals(0, tooEarly.queuedCount());
         var due = new HoldingExecutor();
-        new BackgroundJob(store, due, clockAt(morning.plusHours(1).plusMinutes(1)), List.of(definition)).performWork();
+        new BackgroundJob(store, due, clockAt(morning.plusHours(1)), List.of(definition)).performWork();
         assertEquals(1, due.queuedCount());
     }
 
@@ -548,16 +546,101 @@ class BackgroundJobTest {
     }
 
     @Test
-    void waitsForTheFailureRetryIntervalAfterAnUnsuccessfulRun() {
-        var failedAt = LocalDateTime.of(2026, 8, 12, 10, 0);
-        var failedTask = completedTask("task", failedAt.minusDays(1), failedAt, "timeout");
+    void equalSuccessAndFailureIntervalsUseTheSameStartTimeBoundary() {
+        for (var interval : List.of(Duration.ofHours(1), Duration.ofDays(1), Duration.ofDays(7))) {
+            var definition = scheduledTask("task", "lane", interval, interval, null);
+            for (var error : List.of("", "timeout")) {
+                var history = completedAttempt("task", NOW, NOW.plusMinutes(5), error);
+                var due = NOW.plus(interval);
+                assertEligibleAt(definition, history, due.minusNanos(1), false);
+                assertEligibleAt(definition, history, due, true);
+            }
+        }
+    }
 
-        assertFalse(BackgroundJob.failureRetryDelayElapsed(
-                failedTask, Duration.ofHours(1), failedAt.plusMinutes(59)
-        ));
-        assertTrue(BackgroundJob.failureRetryDelayElapsed(
-                failedTask, Duration.ofHours(1), failedAt.plusHours(1)
-        ));
+    @Test
+    void latestOutcomeSelectsTheIntervalAndEachRetryResetsTheStartTime() {
+        var definition = scheduledTask("task", "lane", Duration.ofDays(1), Duration.ofHours(1), null);
+        var start = NOW.withHour(6);
+        var success = completedAttempt("task", start, start.plusMinutes(5), "");
+        assertEligibleAt(definition, success, start.plusHours(1), false);
+        assertEligibleAt(definition, success, start.plusDays(1).minusNanos(1), false);
+        assertEligibleAt(definition, success, start.plusDays(1), true);
+
+        var failed = completedAttempt("task", start, start.plusMinutes(5), "timeout");
+        assertEligibleAt(definition, failed, start.plusHours(1).minusNanos(1), false);
+        assertEligibleAt(definition, failed, start.plusHours(1), true);
+
+        var retry = completedAttempt("task", start.plusHours(1), start.plusHours(1).plusMinutes(5), "timeout again");
+        assertEligibleAt(definition, retry, start.plusHours(2).minusNanos(1), false);
+        assertEligibleAt(definition, retry, start.plusHours(2), true);
+
+        var recovered = completedAttempt("task", start.plusHours(2), start.plusHours(2).plusMinutes(5), "");
+        assertEligibleAt(definition, recovered, start.plusHours(3), false);
+        assertEligibleAt(definition, recovered, start.plusHours(2).plusDays(1), true);
+    }
+
+    @Test
+    void omittedFailureIntervalDefaultsToTheNormalInterval() {
+        for (var interval : List.of(Duration.ofHours(1), Duration.ofDays(1), Duration.ofDays(7))) {
+            var definition = new BackgroundJob.TaskDefinition("task", "lane", interval, _ -> true, () -> {});
+            assertEquals(interval, definition.failureRetryInterval());
+            var history = completedAttempt("task", NOW, NOW.plusMinutes(5), "timeout");
+            assertEligibleAt(definition, history, NOW.plus(interval).minusNanos(1), false);
+            assertEligibleAt(definition, history, NOW.plus(interval), true);
+        }
+    }
+
+    @Test
+    void predicateDefersADueRetryUntilTheNextAllowedWindow() {
+        var definition = new BackgroundJob.TaskDefinition("task", "lane", Duration.ofDays(1), Duration.ofHours(1),
+                time -> time.getHour() < 6 || (time.getHour() == 6 && time.getMinute() < 30) || time.getHour() >= 18,
+                null, () -> {});
+        var start = NOW.withHour(6);
+        var failed = completedAttempt("task", start, start.plusMinutes(5), "timeout");
+        assertEligibleAt(definition, failed, start.plusMinutes(29), false);
+        assertEligibleAt(definition, failed, start.plusHours(1), false);
+        assertEligibleAt(definition, failed, start.withHour(18).minusNanos(1), false);
+        assertEligibleAt(definition, failed, start.withHour(18), true);
+    }
+
+    @Test
+    void attemptsLongerThanTheirIntervalBecomeEligibleOnlyAfterCompletion() {
+        var definition = scheduledTask("task", "lane", Duration.ofHours(1), Duration.ofHours(1), null);
+        var running = new Task("task", NOW, null, null, null, null, null, 0, null);
+        assertEligibleAt(definition, running, NOW.plusHours(2), false);
+        for (var error : List.of("", "timeout")) {
+            var completed = completedAttempt("task", NOW, NOW.plusHours(2), error);
+            assertEligibleAt(definition, completed, NOW.plusHours(2), true);
+        }
+    }
+
+    @Test
+    void missingStartHistoryAllowsSchedulingEvenWithPreviousSuccessOrFailure() {
+        var definition = scheduledTask("task", "lane", Duration.ofDays(1), Duration.ofHours(1), null);
+        for (var error : List.of("", "timeout")) {
+            var history = new Task("task", null, NOW, NOW, NOW.minusMinutes(5),
+                    Duration.ofMinutes(5), null, error.isEmpty() ? 0 : 1, error);
+            assertEligibleAt(definition, history, NOW, true);
+        }
+    }
+
+    private static void assertEligibleAt(BackgroundJob.TaskDefinition definition, Task history,
+                                         LocalDateTime now, boolean eligible) {
+        var store = new FakeTaskStore();
+        store.put(history);
+        var executor = new HoldingExecutor();
+        new BackgroundJob(store, executor, clockAt(now), List.of(definition)).performWork();
+        assertEquals(eligible ? 1 : 0, executor.queuedCount(),
+                "Eligibility at " + now + " for " + history);
+    }
+
+    private static Task completedAttempt(String name, LocalDateTime started, LocalDateTime terminated, String error) {
+        var successful = error.isEmpty();
+        return new Task(name, started, terminated,
+                successful ? terminated : started.minusDays(7),
+                successful ? started : started.minusDays(7).minusMinutes(5),
+                Duration.between(started, terminated), null, successful ? 0 : 1, error);
     }
 
     private static int adsSubmissionsAt(LocalDateTime now) {

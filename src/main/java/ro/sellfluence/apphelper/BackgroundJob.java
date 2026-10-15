@@ -61,8 +61,7 @@ public class BackgroundJob {
     private static final Duration executeWeekly = Duration.ofDays(7);
     private static final Predicate<LocalDateTime> runAlways = _ -> true;
     private static final Predicate<LocalDateTime> runOnlyInTheMorning = time -> time.getHour() < 7;
-    private static final Predicate<LocalDateTime> runReviewsInTheEvening = time -> time.getHour() >= 19;
-    private static final Predicate<LocalDateTime> runOnlyInTheAfternoon = time -> time.getHour() > 12 && time.getHour() < 18;
+    private static final Predicate<LocalDateTime> runOnlyInTheEvening = time -> time.getHour() >= 19;
     private static final Predicate<LocalDateTime> runOnlyOutOfOfficeHours = time -> time.getHour() < 7 || time.getHour() > 18;
 
     private final AtomicBoolean running = new AtomicBoolean(true);
@@ -191,11 +190,6 @@ public class BackgroundJob {
         void run() throws Exception;
     }
 
-    enum Cadence {
-        ELAPSED_INTERVAL,
-        LOCAL_CALENDAR_DAY
-    }
-
     /**
      * Persistence seam kept package-private so scheduler behaviour can be tested without a database.
      */
@@ -213,6 +207,7 @@ public class BackgroundJob {
 
     /**
      * Immutable scheduling definition. Definition order is the priority order within a lane.
+     * Both intervals are measured from the latest attempt's start, using its outcome to select the interval.
      */
     record TaskDefinition(
             String name,
@@ -221,7 +216,6 @@ public class BackgroundJob {
             Duration failureRetryInterval,
             Predicate<LocalDateTime> timePredicate,
             @Nullable String prerequisiteTaskName,
-            Cadence cadence,
             CheckedAction action
     ) {
         TaskDefinition {
@@ -235,7 +229,6 @@ public class BackgroundJob {
                 throw new IllegalArgumentException("Task intervals must not be negative");
             }
             Objects.requireNonNull(timePredicate, "timePredicate");
-            Objects.requireNonNull(cadence, "cadence");
             Objects.requireNonNull(action, "action");
         }
 
@@ -243,23 +236,10 @@ public class BackgroundJob {
                 String name,
                 String lane,
                 Duration interval,
-                Duration failureRetryInterval,
-                Predicate<LocalDateTime> timePredicate,
-                @Nullable String prerequisiteTaskName,
-                CheckedAction action
-        ) {
-            this(name, lane, interval, failureRetryInterval, timePredicate, prerequisiteTaskName,
-                    Cadence.ELAPSED_INTERVAL, action);
-        }
-
-        TaskDefinition(
-                String name,
-                String lane,
-                Duration interval,
                 Predicate<LocalDateTime> timePredicate,
                 CheckedAction action
         ) {
-            this(name, lane, interval, Duration.ZERO, timePredicate, null, Cadence.ELAPSED_INTERVAL, action);
+            this(name, lane, interval, interval, timePredicate, null, action);
         }
     }
 
@@ -397,7 +377,7 @@ public class BackgroundJob {
                 lane,
                 executeDaily,
                 executeHourly,
-                runOnlyInTheAfternoon,
+                runOnlyInTheEvening,
                 null,
                 () -> FetchAds.deleteAdsCache(alias)
         ));
@@ -425,9 +405,8 @@ public class BackgroundJob {
                 emagReviewsLane,
                 executeDaily,
                 executeHourly,
-                runReviewsInTheEvening,
+                runOnlyInTheEvening,
                 null,
-                Cadence.LOCAL_CALENDAR_DAY,
                 action
         );
     }
@@ -440,7 +419,6 @@ public class BackgroundJob {
                 executeHourly,
                 runOnlyInTheMorning,
                 null,
-                Cadence.LOCAL_CALENDAR_DAY,
                 action
         );
     }
@@ -533,10 +511,7 @@ public class BackgroundJob {
         if (isRunning(taskInfo)) {
             return false;
         }
-        if (!cadenceElapsed(definition, taskInfo, now)) {
-            return false;
-        }
-        if (!failureRetryDelayElapsed(taskInfo, definition.failureRetryInterval(), now)) {
+        if (!intervalElapsed(definition, taskInfo, now)) {
             return false;
         }
         if (!definition.timePredicate().test(now)) {
@@ -545,12 +520,12 @@ public class BackgroundJob {
         return prerequisiteSatisfied(definition, taskInfo, tasksByName);
     }
 
-    private static boolean cadenceElapsed(TaskDefinition definition, @Nullable Task taskInfo, LocalDateTime now) {
-        if (definition.cadence() == Cadence.LOCAL_CALENDAR_DAY) {
-            var lastSuccessfulStart = taskInfo == null ? null : taskInfo.lastSuccessfulStart();
-            return lastSuccessfulStart == null || lastSuccessfulStart.toLocalDate().isBefore(now.toLocalDate());
+    private static boolean intervalElapsed(TaskDefinition definition, @Nullable Task taskInfo, LocalDateTime now) {
+        if (taskInfo == null || taskInfo.started() == null) {
+            return true;
         }
-        return !getLastSuccessfulRun(taskInfo).plus(definition.interval()).isAfter(now);
+        var interval = wasSuccessful(taskInfo) ? definition.interval() : definition.failureRetryInterval();
+        return !taskInfo.started().plus(interval).isAfter(now);
     }
 
     private static boolean prerequisiteSatisfied(
@@ -579,13 +554,6 @@ public class BackgroundJob {
 
     private static boolean isRunning(@Nullable Task task) {
         return task != null && task.started() != null && task.terminated() == null;
-    }
-
-    static boolean failureRetryDelayElapsed(@Nullable Task taskInfo, Duration retryInterval, LocalDateTime now) {
-        if (taskInfo == null || taskInfo.error() == null || taskInfo.error().isBlank() || taskInfo.terminated() == null) {
-            return true;
-        }
-        return !taskInfo.terminated().plus(retryInterval).isAfter(now);
     }
 
     /**
