@@ -403,7 +403,7 @@ public class SheetsAPI {
         );
     }
 
-    private static final long MAX_REPLACEMENT_BATCH_BYTES = 100_000;
+    private static final long MAX_REPLACEMENT_BATCH_BYTES = 2_000_000;
 
     /**
      * Replace all cell values from a starting cell through the end of a tab's grid. Cells above
@@ -500,7 +500,8 @@ public class SheetsAPI {
                 batchSize += estimatedRowBytes(rows.get(to));
                 to++;
             }
-            randomWait(1.0,3.0);
+            randomWait(9.0,11.0);
+            logger.log(INFO, "Writing %d rows from %d to %d in sheet %s".formatted( to - from, from, to, sheetId));
             updateSpreadsheet(sheets, tabName, List.of(
                     writeValues(sheetId, startRow - 1 + from, startColumn - 1, rows, from, to, width)
             ));
