@@ -53,6 +53,7 @@ public class BackgroundJob {
     public static final String googleApiLane = "googleApiLane";
     public static final String emagDashboardLane = "emagDashboardLane";
     public static final String emagReviewsLane = "emagReviewsLane";
+    public static final String localLane = "localLane";
 
     private static final Logger logger = Logs.getFileLogger("BackgroundJob", Level.INFO, 10, 1_000_000);
     private static final Duration executeHourly = Duration.ofHours(1);
@@ -374,7 +375,7 @@ public class BackgroundJob {
         ));
         definitions.add(new TaskDefinition(
                 "Delete cached files for " + alias,
-                lane,
+                localLane,
                 executeDaily,
                 executeHourly,
                 runOnlyInTheEvening,
