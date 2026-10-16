@@ -171,8 +171,7 @@ public class FetchAds {
         var user = requireCredentials(alias);
         setupCacheDirectory(aliasCacheDirectory);
         try (Playwright playwright = Playwright.create()) {
-            try (Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
-                    .setHeadless(isHeadless()))) {
+            try (Browser browser = playwright.chromium().launch(new BrowserType.LaunchOptions().setChannel("chromium").setHeadless(false))) {
                 try (BrowserContext context = browser.newContext()) {
                     Page page = context.newPage();
                     if (!isOffline()) {
@@ -214,7 +213,7 @@ public class FetchAds {
     }
 
     public static boolean isHeadless() {
-        return booleanProperty("ads.headless", true);
+        return booleanProperty("ads.headless", false);
     }
 
     private static boolean isOffline() {
