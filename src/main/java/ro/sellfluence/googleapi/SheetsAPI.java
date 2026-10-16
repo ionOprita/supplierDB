@@ -6,7 +6,9 @@ import com.google.api.client.http.HttpRequestInitializer;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
+import com.google.api.client.util.Sleeper;
 import com.google.api.services.sheets.v4.Sheets;
+import com.google.api.services.sheets.v4.model.AddSheetRequest;
 import com.google.api.services.sheets.v4.model.BatchGetValuesResponse;
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest;
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetResponse;
@@ -15,7 +17,9 @@ import com.google.api.services.sheets.v4.model.BatchUpdateValuesResponse;
 import com.google.api.services.sheets.v4.model.BooleanCondition;
 import com.google.api.services.sheets.v4.model.CellData;
 import com.google.api.services.sheets.v4.model.CellFormat;
+import com.google.api.services.sheets.v4.model.CopyPasteRequest;
 import com.google.api.services.sheets.v4.model.DataValidationRule;
+import com.google.api.services.sheets.v4.model.DeleteSheetRequest;
 import com.google.api.services.sheets.v4.model.ExtendedValue;
 import com.google.api.services.sheets.v4.model.GridCoordinate;
 import com.google.api.services.sheets.v4.model.GridProperties;
@@ -26,6 +30,7 @@ import com.google.api.services.sheets.v4.model.RepeatCellRequest;
 import com.google.api.services.sheets.v4.model.Request;
 import com.google.api.services.sheets.v4.model.RowData;
 import com.google.api.services.sheets.v4.model.SheetProperties;
+import com.google.api.services.sheets.v4.model.Spreadsheet;
 import com.google.api.services.sheets.v4.model.UpdateCellsRequest;
 import com.google.api.services.sheets.v4.model.UpdateSheetPropertiesRequest;
 import com.google.api.services.sheets.v4.model.UpdateValuesResponse;
@@ -45,6 +50,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
+import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -52,7 +59,6 @@ import static java.util.Objects.requireNonNull;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
-import static ro.sellfluence.support.UsefulMethods.randomWait;
 
 /**
  * This class represents a spreadsheet in Google-Drive.
@@ -70,6 +76,8 @@ public class SheetsAPI {
     private final String appName;
     private final String spreadSheetId;
     private final String spreadSheetName;
+    private final Sheets serviceOverride;
+    private final Sleeper sleeper;
 
     private List<SheetMetaData> sheetMetaData = null;
 
@@ -80,9 +88,16 @@ public class SheetsAPI {
      *                as registered in the <a href="https://console.cloud.google.com/apis/credentials/consent">console</a>
      */
     private SheetsAPI(String appName, String spreadSheetId, String spreadSheetName) {
+        this(appName, spreadSheetId, spreadSheetName, null, Sleeper.DEFAULT);
+    }
+
+    /** Allows offline tests to exercise the API workflow and retries without credentials or delays. */
+    SheetsAPI(String appName, String spreadSheetId, String spreadSheetName, Sheets service, Sleeper sleeper) {
         this.appName = appName;
         this.spreadSheetId = spreadSheetId;
         this.spreadSheetName = spreadSheetName;
+        this.serviceOverride = service;
+        this.sleeper = requireNonNull(sleeper);
     }
 
     /**
@@ -404,13 +419,17 @@ public class SheetsAPI {
     }
 
     private static final long MAX_REPLACEMENT_BATCH_BYTES = 2_000_000;
+    private static final int REPLACEMENT_READ_TIMEOUT_MILLIS = 240_000;
 
     /**
      * Replace all cell values from a starting cell through the end of a tab's grid. Cells above
      * {@code startRow} and to the left of {@code startColumn} are untouched. Only cell values are
      * cleared or written; existing formatting is kept, apart from the requested date columns.
      * Strings supplied in {@link CellData#getUserEnteredValue()} are written literally, including
-     * strings beginning with {@code =}.
+     * strings beginning with {@code =}. Large value-only uploads are staged in a temporary hidden
+     * tab and copied to the destination once, after all upload batches succeed. Actual formula
+     * values use direct writes to preserve their formulas. If the final copy cannot be confirmed,
+     * the helper is retained and its identity is logged for recovery.
      *
      * @param tabName name of the destination tab
      * @param startRow first row to replace, numbered from 1
@@ -476,7 +495,7 @@ public class SheetsAPI {
                     .setFields("gridProperties.rowCount,gridProperties.columnCount")));
         }
 
-        if (estimatedPayloadBytes(rows) <= MAX_REPLACEMENT_BATCH_BYTES) {
+        if (width == 0 || estimatedPayloadBytes(rows) <= MAX_REPLACEMENT_BATCH_BYTES) {
             var requests = new ArrayList<>(growth);
             requests.add(clearValues(sheetId, startRow - 1, null, startColumn - 1, null));
             if (!rows.isEmpty() && width > 0) {
@@ -487,8 +506,18 @@ public class SheetsAPI {
             return;
         }
 
+        boolean containsFormulas = rows.stream().flatMap(List::stream).filter(Objects::nonNull)
+                .map(CellData::getUserEnteredValue).filter(Objects::nonNull)
+                .anyMatch(value -> value.getFormulaValue() != null);
+        if (!containsFormulas) {
+            replaceThroughHelper(sheets, spreadsheet, tabName, sheetId, startRow, startColumn,
+                    rows, width, dateColumnFormats, growth);
+            return;
+        }
+
         // Large exports are written in bounded requests. Clear the old tail and extra columns only
-        // after all replacement rows have been accepted, so a failed run can be retried safely.
+        // after all replacement rows have been accepted. Formula inputs must stay on this direct
+        // path: evaluating them in a helper and using PASTE_VALUES would change their meaning.
         if (!growth.isEmpty()) {
             updateSpreadsheet(sheets, tabName, growth);
         }
@@ -500,7 +529,7 @@ public class SheetsAPI {
                 batchSize += estimatedRowBytes(rows.get(to));
                 to++;
             }
-            randomWait(100.0,150.0);
+            pause(ThreadLocalRandom.current().nextLong(100_000, 150_001));
             logger.log(INFO, "Writing %d rows from %d to %d in sheet %s".formatted( to - from, from, to, sheetId));
             updateSpreadsheet(sheets, tabName, List.of(
                     writeValues(sheetId, startRow - 1 + from, startColumn - 1, rows, from, to, width)
@@ -524,12 +553,175 @@ public class SheetsAPI {
     }
 
     private void updateSpreadsheet(Sheets sheets, String tabName, List<Request> requests) {
-        var body = new BatchUpdateSpreadsheetRequest().setRequests(requests);
         repeatCellRequest(
                 5,
                 "replace cell values in %s!%s".formatted(spreadSheetName, tabName),
-                () -> sheets.spreadsheets().batchUpdate(spreadSheetId, body).execute()
+                () -> executeReplacement(sheets, requests)
         );
+    }
+
+    private BatchUpdateSpreadsheetResponse executeReplacement(Sheets sheets, List<Request> requests) throws IOException {
+        var command = sheets.spreadsheets().batchUpdate(spreadSheetId,
+                new BatchUpdateSpreadsheetRequest().setRequests(requests));
+        // Override only these requests; unrelated Sheets calls retain their existing timeout.
+        var httpRequest = command.buildHttpRequest();
+        httpRequest.setReadTimeout(REPLACEMENT_READ_TIMEOUT_MILLIS);
+        var response = httpRequest.execute();
+        try {
+            return response.parseAs(BatchUpdateSpreadsheetResponse.class);
+        } finally {
+            response.disconnect();
+        }
+    }
+
+    private void replaceThroughHelper(
+            Sheets sheets, Spreadsheet spreadsheet, String tabName, int sheetId, int startRow, int startColumn,
+            List<List<CellData>> rows, int width, Map<Integer, String> dateColumnFormats, List<Request> growth
+    ) {
+        var usedIds = spreadsheet.getSheets().stream().map(sheet -> sheet.getProperties().getSheetId())
+                .collect(Collectors.toSet());
+        int helperId;
+        do {
+            helperId = ThreadLocalRandom.current().nextInt(1, Integer.MAX_VALUE);
+        } while (usedIds.contains(helperId));
+        var helper = new SheetProperties().setSheetId(helperId)
+                .setTitle("__supplierDB_upload_" + UUID.randomUUID()).setHidden(true)
+                .setGridProperties(new GridProperties().setRowCount(rows.size()).setColumnCount(width));
+
+        boolean copyStarted = false;
+        boolean copyConfirmed = false;
+        try {
+            createHelper(sheets, helper);
+            int from = 0;
+            while (from < rows.size()) {
+                int to = from;
+                long batchSize = 0;
+                while (to < rows.size()
+                        && (to == from || batchSize + estimatedRowBytes(rows.get(to)) <= MAX_REPLACEMENT_BATCH_BYTES)) {
+                    batchSize += estimatedRowBytes(rows.get(to));
+                    to++;
+                }
+                pause(1_000);
+                logger.log(INFO, "Uploading rows %d through %d of %d to helper %s (%d) for %s!%s"
+                        .formatted(from + 1, to, rows.size(), helper.getTitle(), helperId, spreadSheetName, tabName));
+                updateSpreadsheet(sheets, helper.getTitle(), List.of(
+                        writeValues(helperId, from, 0, rows, from, to, width)
+                ));
+                from = to;
+            }
+
+            var requests = new ArrayList<>(growth);
+            requests.add(clearValues(sheetId, startRow - 1, null, startColumn - 1, null));
+            requests.add(new Request().setCopyPaste(new CopyPasteRequest()
+                    .setSource(new GridRange().setSheetId(helperId)
+                            .setStartRowIndex(0).setEndRowIndex(rows.size())
+                            .setStartColumnIndex(0).setEndColumnIndex(width))
+                    .setDestination(new GridRange().setSheetId(sheetId)
+                            .setStartRowIndex(startRow - 1).setEndRowIndex(startRow - 1 + rows.size())
+                            .setStartColumnIndex(startColumn - 1).setEndColumnIndex(startColumn - 1 + width))
+                    .setPasteType("PASTE_VALUES").setPasteOrientation("NORMAL")));
+            requests.addAll(dateFormats(sheetId, startRow - 1, rows.size(), dateColumnFormats));
+            pause(1_000);
+            copyStarted = true;
+            long started = System.nanoTime();
+            logger.log(INFO, "Copying all %d staged rows to %s!%s in one batch"
+                    .formatted(rows.size(), spreadSheetName, tabName));
+            updateSpreadsheet(sheets, tabName, requests);
+            copyConfirmed = true;
+            logger.log(INFO, "Copied %d rows to %s!%s in %d ms"
+                    .formatted(rows.size(), spreadSheetName, tabName, (System.nanoTime() - started) / 1_000_000));
+        } finally {
+            if (!copyStarted || copyConfirmed) {
+                cleanupHelper(sheets, helper);
+            } else {
+                logger.log(WARNING, "Copy to %s!%s could not be confirmed. Retaining hidden helper %s (%d) in %s"
+                        .formatted(spreadSheetName, tabName, helper.getTitle(), helperId, spreadSheetId));
+            }
+        }
+    }
+
+    private void createHelper(Sheets sheets, SheetProperties helper) {
+        try {
+            repeatCellRequest(5, "create helper " + helper.getTitle(), () -> {
+                if (helperExists(sheets, helper)) {
+                    return null;
+                }
+                try {
+                    executeReplacement(sheets, List.of(new Request().setAddSheet(new AddSheetRequest()
+                            .setProperties(helper))));
+                } catch (IOException failure) {
+                    // The response can be lost even though creation succeeded. Reuse only this
+                    // invocation's exact ID/title, including when a retry gets a duplicate-ID 400.
+                    try {
+                        if (helperExists(sheets, helper)) {
+                            return null;
+                        }
+                    } catch (IOException reconciliationFailure) {
+                        failure.addSuppressed(reconciliationFailure);
+                    }
+                    throw failure;
+                }
+                return null;
+            });
+        } finally {
+            sheetMetaData = null;
+        }
+    }
+
+    private boolean helperExists(Sheets sheets, SheetProperties helper) throws IOException {
+        var spreadsheet = sheets.spreadsheets().get(spreadSheetId)
+                .setFields("sheets(properties(sheetId,title))").execute();
+        for (var sheet : spreadsheet.getSheets()) {
+            var properties = sheet.getProperties();
+            if (helper.getSheetId().equals(properties.getSheetId())
+                    || helper.getTitle().equals(properties.getTitle())) {
+                if (!helper.getSheetId().equals(properties.getSheetId())
+                        || !helper.getTitle().equals(properties.getTitle())) {
+                    throw new IllegalStateException("Helper sheet identity conflict: " + helper.getTitle());
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void cleanupHelper(Sheets sheets, SheetProperties helper) {
+        try {
+            pause(1_000);
+            repeatCellRequest(5, "delete helper " + helper.getTitle(), () -> {
+                if (!helperExists(sheets, helper)) {
+                    return null;
+                }
+                try {
+                    executeReplacement(sheets, List.of(new Request().setDeleteSheet(new DeleteSheetRequest()
+                            .setSheetId(helper.getSheetId()))));
+                } catch (IOException failure) {
+                    try {
+                        if (!helperExists(sheets, helper)) {
+                            return null;
+                        }
+                    } catch (IOException reconciliationFailure) {
+                        failure.addSuppressed(reconciliationFailure);
+                    }
+                    throw failure;
+                }
+                return null;
+            });
+        } catch (RuntimeException failure) {
+            logger.log(WARNING, "Could not clean up hidden helper %s (%d) in %s; it may need manual removal"
+                    .formatted(helper.getTitle(), helper.getSheetId(), spreadSheetId), failure);
+        } finally {
+            sheetMetaData = null;
+        }
+    }
+
+    private void pause(long millis) {
+        try {
+            sleeper.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting to access Google Sheets", e);
+        }
     }
 
     static Request clearValues(
@@ -783,11 +975,7 @@ public class SheetsAPI {
                     throw new RuntimeException("Issue in %s".formatted(callerDescription), e);
                 }
                 logger.log(WARNING, "IOException. Retrying after %d s. Retry count %d".formatted(retryDelay / 1000, retryCount));
-                try {
-                    Thread.sleep(retryDelay);
-                } catch (InterruptedException ex) {
-                    // Don't care about interrupts.
-                }
+                pause(retryDelay);
                 retryDelay *= 2;
             }
         }
@@ -885,6 +1073,9 @@ public class SheetsAPI {
     }
 
     private Sheets getSheetsService() {
+        if (serviceOverride != null) {
+            return serviceOverride;
+        }
         Sheets sheetService;
         try {
             final NetHttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();

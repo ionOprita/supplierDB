@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JteTemplateEngineTest {
     @Test
-    void rendersPauseAllAfterLaneSelectorOnlyForAdmins() {
+    void rendersPauseAllAndResumeAllAfterLaneSelectorOnlyForAdmins() {
         for (var role : List.of("admin", "user")) {
             var output = new StringOutput();
             Server.createJteEngine().render("tasks.jte", Map.of(
@@ -28,11 +28,15 @@ class JteTemplateEngineTest {
             var html = output.toString();
             if (role.equals("admin")) {
                 var buttonIndex = html.indexOf("id=\"pauseAllBtn\"");
+                var resumeButtonIndex = html.indexOf("id=\"resumeAllBtn\"");
                 assertTrue(buttonIndex > html.indexOf("id=\"taskLaneFilter\""));
-                assertTrue(buttonIndex < html.indexOf("id=\"refreshBtn\""));
+                assertTrue(resumeButtonIndex > buttonIndex);
+                assertTrue(resumeButtonIndex < html.indexOf("id=\"refreshBtn\""));
                 assertTrue(html.contains(">Pause All</button>"));
+                assertTrue(html.contains(">Resume all</button>"));
             } else {
                 assertFalse(html.contains("id=\"pauseAllBtn\""));
+                assertFalse(html.contains("id=\"resumeAllBtn\""));
             }
         }
     }

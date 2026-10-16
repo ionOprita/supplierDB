@@ -442,6 +442,13 @@ public class Server {
             backgroundJob.pauseAllTasks();
             ctx.status(204);
         });
+        app.post("/admin/tasks/resume-all", ctx -> {
+            if (requireAdmin(ctx) == null) {
+                return;
+            }
+            backgroundJob.resumeAllTasks();
+            ctx.status(204);
+        });
         app.post("/admin/tasks/{taskName}/pause", ctx -> setTaskPaused(ctx, backgroundJob, true));
         app.post("/admin/tasks/{taskName}/resume", ctx -> setTaskPaused(ctx, backgroundJob, false));
         ServerLogFiles supervisorLogFiles = new ServerLogFiles(serverLogDirectory());
