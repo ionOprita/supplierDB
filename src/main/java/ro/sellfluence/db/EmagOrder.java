@@ -240,7 +240,7 @@ public class EmagOrder {
         var products = productIds.stream().map(productId -> {
             List<VoucherSplit> voucherSplits;
             try {
-                voucherSplits = selectVoucherSplitsByProductId(db, productId);
+                voucherSplits = selectVoucherSplitsByProductId(db, productId, surrogateId);
                 try {
                     return selectProduct(db, productId, surrogateId, voucherSplits, new ArrayList<>());
                 } catch (SQLException e) {
@@ -393,12 +393,14 @@ public class EmagOrder {
         return list;
     }
 
-    private static List<VoucherSplit> selectVoucherSplitsByProductId(Connection db, int productId) throws SQLException {
+    private static List<VoucherSplit> selectVoucherSplitsByProductId(Connection db, int productId, int surrogateId) throws SQLException {
         var list = new ArrayList<VoucherSplit>();
         try (var s = db.prepareStatement("""
-                SELECT voucher_id, value, vat_value, vat, offered_by, voucher_name FROM voucher_split WHERE product_id = ?
+                SELECT voucher_id, value, vat_value, vat, offered_by, voucher_name
+                FROM voucher_split WHERE product_id = ? AND emag_order_surrogate_id = ?
                 """)) {
             s.setInt(1, productId);
+            s.setInt(2, surrogateId);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     list.add(new VoucherSplit(rs.getObject("voucher_id", Integer.class),

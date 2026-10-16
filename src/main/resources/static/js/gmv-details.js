@@ -27,7 +27,7 @@ export async function fetchGMVForPeriod(request) {
       && typeof row.orderId === 'string'
       && typeof row.orderDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(row.orderDate)
       && statuses.has(row.status) && Number.isSafeInteger(row.quantity)
-      && money(row.unitPrice) && money(row.gmv))) {
+      && money(row.unitPrice) && money(row.sellerVoucherAdjustment) && money(row.gmv))) {
     throw new Error('The server returned an invalid GMV result. Try again.');
   }
   return data;
@@ -120,7 +120,7 @@ export function createGMVDetails(documentRoot) {
     for (const contribution of data.contributions) {
       const row = documentRoot.createElement('tr');
       const values = [contribution.orderId, contribution.orderDate, contribution.status,
-        contribution.quantity, contribution.unitPrice, contribution.gmv];
+        contribution.quantity, contribution.unitPrice, contribution.sellerVoucherAdjustment, contribution.gmv];
       for (const [index, value] of values.entries()) {
         const cell = documentRoot.createElement('td');
         cell.textContent = String(value);

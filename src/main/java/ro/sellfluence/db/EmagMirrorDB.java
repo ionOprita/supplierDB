@@ -2045,6 +2045,7 @@ public class EmagMirrorDB {
         var result = new HashMap<String, List<POInfo>>();
         try (var s = db.prepareStatement("""
                 SELECT p.name AS productName,
+                seller_voucher.total AS sellerVoucherTotal,
                 pio.quantity AS quantity,
                 pio.initial_qty AS initialQuantity,
                 pio.storno_qty AS stornoQuantity,
@@ -2060,6 +2061,12 @@ public class EmagMirrorDB {
                 FROM product_in_order AS pio
                 INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
                 INNER JOIN emag_order AS o ON pio.emag_order_surrogate_id = o.surrogate_id
+                LEFT JOIN LATERAL (
+                    SELECT SUM(COALESCE(v.value, 0) + COALESCE(v.vat_value, 0)) AS total
+                    FROM voucher_split AS v
+                    WHERE v.product_id = pio.id AND v.emag_order_surrogate_id = pio.emag_order_surrogate_id
+                      AND v.offered_by = 'seller'
+                ) AS seller_voucher ON TRUE
                 WHERE p.product_code = ? AND (o.status = 4 OR o.status = 5)
                 ORDER BY o.id, o.status
                 """)) {
@@ -2084,7 +2091,8 @@ public class EmagMirrorDB {
                             quantity,
                             initialQuantity,
                             stornoQuantity,
-                            price
+                            price,
+                            rs.getBigDecimal("sellerVoucherTotal")
                     );
                     poInfos.add(poInfo);
                     result.put(orderId, poInfos);

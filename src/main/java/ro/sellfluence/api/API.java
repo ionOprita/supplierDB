@@ -90,7 +90,12 @@ public class API {
     }
 
     public record GMVContributionResponse(String orderId, String orderDate, String status, long quantity,
-                                          String unitPrice, String gmv) {
+                                          String unitPrice, String gmv, String sellerVoucherAdjustment) {
+        public GMVContributionResponse(String orderId, String orderDate, String status, long quantity,
+                                       String unitPrice, String gmv) {
+            this(orderId, orderDate, status, quantity, unitPrice, gmv, "0.00");
+        }
+
         static GMVContributionResponse create(GMV.Contribution contribution) {
             var source = contribution.source();
             var status = source.orderStatus() == 4 ? "Finalized"
@@ -98,7 +103,8 @@ public class API {
                     : contribution.quantity() == 0 ? "Storno" : "Remaining after storno";
             return new GMVContributionResponse(source.orderId(), source.orderDate().toString(), status,
                     contribution.quantity(), source.price().setScale(2, HALF_EVEN).toPlainString(),
-                    contribution.amount().setScale(2, HALF_EVEN).toPlainString());
+                    contribution.amount().setScale(2, HALF_EVEN).toPlainString(),
+                    contribution.sellerVoucherAdjustment().setScale(2, HALF_EVEN).toPlainString());
         }
     }
 

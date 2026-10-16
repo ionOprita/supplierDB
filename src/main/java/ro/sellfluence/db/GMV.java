@@ -31,7 +31,10 @@ public class GMV {
     private static final Logger logger = Logs.getConsoleLogger("GMV", WARNING);
 
     /** The source snapshot and signed quantity used for one exact GMV contribution. */
-    public record Contribution(POInfo source, long quantity, BigDecimal amount) {
+    public record Contribution(POInfo source, long quantity, BigDecimal amount, BigDecimal sellerVoucherAdjustment) {
+        public Contribution(POInfo source, long quantity, BigDecimal amount) {
+            this(source, quantity, amount, BigDecimal.ZERO.setScale(2));
+        }
     }
 
     /** Current GMV and its contributing order lines; no values are stored. */
@@ -169,9 +172,18 @@ public class GMV {
 
     private static <T> void contribute(T bucket, POInfo source, long quantity,
                                       BiConsumer<T, Contribution> consumer) {
+        contribute(bucket, source, quantity, voucherForRemainingItems(source), consumer);
+    }
+
+    private static BigDecimal voucherForRemainingItems(POInfo source) {
+        return source.quantity() == 0 ? BigDecimal.ZERO.setScale(2) : source.sellerVoucherTotal();
+    }
+
+    private static <T> void contribute(T bucket, POInfo source, long quantity, BigDecimal voucherAdjustment,
+                                      BiConsumer<T, Contribution> consumer) {
         if (bucket == null) return;
         consumer.accept(bucket, new Contribution(source, quantity,
-                source.price().multiply(BigDecimal.valueOf(quantity))));
+                source.price().multiply(BigDecimal.valueOf(quantity)).add(voucherAdjustment), voucherAdjustment));
     }
 
     private static <T> void singleProductWithFinalizedAndStorno(POInfo finalized, POInfo storno,
@@ -192,7 +204,8 @@ public class GMV {
             contribute(finalizedBucket, storno, storno.quantity(), consumer);
         } else {
             contribute(finalizedBucket, finalized, finalized.quantity(), consumer);
-            contribute(stornoBucket, storno, -(long) storno.stornoQuantity(), consumer);
+            contribute(stornoBucket, storno, -(long) storno.stornoQuantity(),
+                    voucherForRemainingItems(storno).subtract(voucherForRemainingItems(finalized)), consumer);
         }
     }
 

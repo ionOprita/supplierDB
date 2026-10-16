@@ -152,7 +152,7 @@ class MonthlyGMVTemplateTest {
         assertTrue(dialogTag.contains("aria-labelledby=\"gmvDetailsTitle\""));
         var dialog = elementContent(html, "dialog", "gmvDetailsDialog");
         assertTrue(openingTag(dialog, "table", "gmvDetailsTable").contains("class=\"gmv-details-table\""));
-        assertEquals(List.of("Order ID", "Date", "Status", "Quantity used", "Unit price incl. VAT", "GMV contribution"),
+        assertEquals(List.of("Order ID", "Date", "Status", "Quantity used", "Unit price incl. VAT", "Seller voucher adjustment", "GMV contribution"),
                 elementTexts(dialog, "th"));
         assertEquals("Contributing orders", elementContent(dialog, "h2", "gmvDetailsTitle"));
         assertEquals("", elementContent(dialog, "p", "gmvDetailsContext"));

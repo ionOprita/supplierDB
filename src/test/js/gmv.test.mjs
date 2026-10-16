@@ -127,7 +127,7 @@ function fixture(vendorIds = [FIRST_VENDOR, SECOND_VENDOR, ''], selectedVendor =
   };
   const detailHead = new Element('thead');
   const detailHeader = new Element('tr');
-  for (const label of ['Order ID', 'Date', 'Status', 'Quantity used', 'Unit price incl. VAT', 'GMV contribution']) {
+  for (const label of ['Order ID', 'Date', 'Status', 'Quantity used', 'Unit price incl. VAT', 'Seller voucher adjustment', 'GMV contribution']) {
     const cell = new Element('th');
     cell.textContent = label;
     detailHeader.appendChild(cell);
@@ -532,7 +532,7 @@ test('changing a control clears a prior error', async t => {
 
 function contribution(overrides = {}) {
   return {orderId: '000123', orderDate: START, status: 'Finalized', quantity: 1,
-    unitPrice: '1234.56', gmv: '1234.56', ...overrides};
+    unitPrice: '1234.56', sellerVoucherAdjustment: '0.00', gmv: '1234.56', ...overrides};
 }
 
 function monthlyPayload(url, gmv = '123.40', contributions = [contribution({unitPrice: gmv, gmv})]) {
@@ -611,7 +611,7 @@ test('calculated GMV opens the cached contributing rows without another request 
     `GMV ${row.gmv} for Product 0 (CODE-0), ${START} to ${END}. View contributing orders.`);
   assert.equal(page.details.mismatch.hidden, true);
   assert.deepEqual(page.details.body.children[0].children.map(cell => cell.textContent),
-    [row.orderId, START, 'Storno deduction', '-2', row.unitPrice, row.gmv]);
+    [row.orderId, START, 'Storno deduction', '-2', row.unitPrice, row.sellerVoucherAdjustment, row.gmv]);
   assert.ok(page.details.body.children[0].children.slice(3).every(cell => cell.classes.has('numeric')));
   assert.equal(page.details.context.textContent, `Product 0 (CODE-0) · ${START} to ${END}`);
   assert.equal(page.details.retry.hidden, true);
@@ -636,7 +636,7 @@ test('a cached zero-quantity storno renders its neutral status and exact zero to
   assert.equal(calls, 1);
   assert.equal(page.details.dialog.open, true);
   assert.deepEqual(page.details.body.children[0].children.slice(2).map(cell => cell.textContent),
-    ['Storno', '0', '10.00', '0.00']);
+    ['Storno', '0', '10.00', '0.00', '0.00']);
   assert.equal(page.result.textContent, '0.00');
   assert.equal(page.details.total.textContent, '0.00');
 });
@@ -815,6 +815,8 @@ for (const [label, rows] of [
   ['fractional quantity', [contribution({quantity: 1.5})]],
   ['unsafe quantity', [contribution({quantity: Number.MAX_SAFE_INTEGER + 1})]],
   ['numeric unit price', [contribution({unitPrice: 1.23})]],
+  ['numeric voucher adjustment', [contribution({sellerVoucherAdjustment: 1.23})]],
+  ['missing voucher adjustment', [contribution({sellerVoucherAdjustment: undefined})]],
   ['numeric row GMV', [contribution({gmv: 1.23})]]
 ]) {
   test(`${label} is rejected before rendering or caching a result`, async t => {
@@ -831,7 +833,7 @@ for (const [label, rows] of [
   });
 }
 
-const CSV_HEADER = 'Order ID,Date,Status,Quantity used,Unit price incl. VAT,GMV contribution';
+const CSV_HEADER = 'Order ID,Date,Status,Quantity used,Unit price incl. VAT,Seller voucher adjustment,GMV contribution';
 
 function captureDownloads(t, page) {
   const oldDocument = globalThis.document;
@@ -897,10 +899,10 @@ test('CSV exports every rendered contribution with BOM, escaping, Unicode and ex
   assert.equal(captured.blobs[0].type, 'text/csv;charset=utf-8;');
   assert.deepEqual(csv.split('\r\n'), [
     `\uFEFF${CSV_HEADER}`,
-    `"0001, ""Șurub""",${START},Finalized,2,12345678901234567890.12,24691357802469135780.24`,
-    `RMA-2 line,${START},Storno deduction,-2,12.35,-24.70`,
-    `0003,${START},Storno,0,0.00,0.00`,
-    ...Array.from({length: 27}, (_, index) => `${String(index + 4).padStart(4, '0')},${START},Finalized,1,1.00,1.00`)
+    `"0001, ""Șurub""",${START},Finalized,2,12345678901234567890.12,0.00,24691357802469135780.24`,
+    `RMA-2 line,${START},Storno deduction,-2,12.35,0.00,-24.70`,
+    `0003,${START},Storno,0,0.00,0.00,0.00`,
+    ...Array.from({length: 27}, (_, index) => `${String(index + 4).padStart(4, '0')},${START},Finalized,1,1.00,0.00,1.00`)
   ]);
   assert.equal(csv.replaceAll('\r\n', '').includes('\n'), false);
   assert.equal(calls, 1, 'CSV uses cached rendered details without another request');
@@ -943,7 +945,7 @@ test('mismatched monthly CSV contains current contribution rows and excludes sum
 
   captured.click();
 
-  assert.equal(await captured.text(), `\uFEFF${CSV_HEADER}\r\n000123,${START},Storno deduction,-2,12.35,-24.70`);
+  assert.equal(await captured.text(), `\uFEFF${CSV_HEADER}\r\n000123,${START},Storno deduction,-2,12.35,0.00,-24.70`);
   assert.equal(page.details.reference.textContent, 'Stored monthly GMV: 123.40');
   assert.equal(page.details.total.textContent, '-24.70');
   assert.equal(page.rows[0].cells[3], '123.40');
@@ -1031,7 +1033,7 @@ test('replacing loaded details disables the old CSV until the new response rende
     'gmv-details-CODE-0-2026-01-01-to-2026-01-31.csv',
     'gmv-details-CODE-1-2026-01-01-to-2026-01-31.csv'
   ]);
-  assert.match(await captured.text(1), /42\.00,42\.00$/);
+  assert.match(await captured.text(1), /42\.00,0\.00,42\.00$/);
   assert.equal(calls, 2);
 });
 
@@ -1058,7 +1060,7 @@ test('cached calculated details replace pending monthly export context and ignor
   captured.click();
 
   assert.equal(captured.downloads[0].fileName, `gmv-details-CODE-0-${START}-to-${END}.csv`);
-  assert.equal(await captured.text(), `\uFEFF${CSV_HEADER}\r\n000123,${START},Finalized,1,1234.56,1234.56`);
+  assert.equal(await captured.text(), `\uFEFF${CSV_HEADER}\r\n000123,${START},Finalized,1,1234.56,0.00,1234.56`);
   assert.equal(calls, 2);
 });
 
@@ -1118,3 +1120,21 @@ test('a queued close event from the previous dialog cannot clear a reopened CSV 
   captured.click();
   assert.equal(captured.downloads[0].fileName, 'gmv-details-CODE-1-2026-01-01-to-2026-01-31.csv');
 });
+
+for (const [quantity, voucher, amount] of [[4, '-40.00', '360.00'], [-1, '10.00', '-90.00']]) {
+  test(`voucher adjustment ${voucher} is rendered and exported with the cached result`, async t => {
+    let calls = 0;
+    const row = contribution({quantity, unitPrice: '100.00', sellerVoucherAdjustment: voucher, gmv: amount});
+    t.mock.method(globalThis, 'fetch', async () => { calls++; return response({...payload('CODE-0', amount), contributions: [row]}); });
+    const page = fixture();
+    const captured = captureDownloads(t, page);
+    page.selectProduct('CODE-0');
+    await page.submit();
+    page.openCalculated();
+    assert.deepEqual(page.details.body.children[0].cells.map(cell => cell.textContent),
+      [row.orderId, row.orderDate, row.status, String(quantity), '100.00', voucher, amount]);
+    captured.click();
+    assert.equal(await captured.text(), `\uFEFF${CSV_HEADER}\r\n000123,${START},Finalized,${quantity},100.00,${voucher},${amount}`);
+    assert.equal(calls, 1);
+  });
+}

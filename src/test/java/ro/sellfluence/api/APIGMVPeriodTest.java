@@ -83,7 +83,8 @@ class APIGMVPeriodTest {
         assertEquals("Storno", rows.get(2).get("status").asString());
         assertEquals(0, rows.get(2).get("quantity").asInt());
         assertEquals("0.00", rows.get(2).get("gmv").asString());
-        assertEquals(6, rows.get(0).size());
+        assertEquals(7, rows.get(0).size());
+        assertEquals("0.00", rows.get(0).get("sellerVoucherAdjustment").asString());
         assertEquals("Remaining after storno", API.GMVContributionResponse.create(
                 new GMV.Contribution(zero, 2, new BigDecimal("0.58"))).status());
     }
@@ -97,6 +98,17 @@ class APIGMVPeriodTest {
 
         assertTrue(json.contains("\"unitPrice\":\"9007199254740993.12\""));
         assertTrue(json.contains("\"gmv\":\"9007199254740993.12\""));
+    }
+
+    @Test
+    void serializesTheExactSignedSellerVoucherAdjustment() {
+        var source = snapshot("discounted", 4, "100.00");
+        var row = API.GMVContributionResponse.create(new GMV.Contribution(
+                source, 4, new BigDecimal("360.00"), new BigDecimal("-40.00")));
+        var json = new ObjectMapper().readTree(new ObjectMapper().writeValueAsString(row));
+        assertEquals("-40.00", json.get("sellerVoucherAdjustment").asString());
+        assertEquals("360.00", json.get("gmv").asString());
+        assertEquals(7, json.size());
     }
 
     @Test

@@ -116,6 +116,7 @@
                     <th scope="col">Status</th>
                     <th scope="col" class="numeric">Quantity used</th>
                     <th scope="col" class="numeric">Unit price incl. VAT</th>
+                    <th scope="col" class="numeric">Seller voucher adjustment</th>
                     <th scope="col" class="numeric">GMV contribution</th>
                 </tr>
                 </thead>
