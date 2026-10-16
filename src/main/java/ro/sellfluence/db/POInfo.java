@@ -26,12 +26,23 @@ import static ro.sellfluence.support.UsefulMethods.toLocalDate;
  * @param initialQuantity quantity initially ordered.
  * @param stornoQuantity quantity cancelled/returned.
  * @param price price including VAT.
+ * @param sellerVoucherTotal seller-funded discount for the entire line, including VAT.
  */
 public record POInfo(String orderId, int surrogateId, LocalDate orderDate, int orderStatus, int productInOrderId,
                      String productName,
                      int quantity,
                      int initialQuantity, int stornoQuantity,
-                     BigDecimal price) {
+                     BigDecimal price, BigDecimal sellerVoucherTotal) {
+
+    public POInfo {
+        sellerVoucherTotal = (sellerVoucherTotal == null ? BigDecimal.ZERO : sellerVoucherTotal).setScale(2, HALF_EVEN);
+    }
+
+    public POInfo(String orderId, int surrogateId, LocalDate orderDate, int orderStatus, int productInOrderId,
+                  String productName, int quantity, int initialQuantity, int stornoQuantity, BigDecimal price) {
+        this(orderId, surrogateId, orderDate, orderStatus, productInOrderId, productName,
+                quantity, initialQuantity, stornoQuantity, price, BigDecimal.ZERO);
+    }
 
     /**
      * Retrieves a list of POInfo objects for a specific product and month. The method queries the database to find
@@ -47,6 +58,7 @@ public record POInfo(String orderId, int surrogateId, LocalDate orderDate, int o
         var result = new ArrayList<POInfo>();
         try (var s = db.prepareStatement("""
                 SELECT p.name AS productName,
+                seller_voucher.total AS sellerVoucherTotal,
                 pio.quantity AS quantity,
                 pio.initial_qty AS initialQuantity,
                 pio.storno_qty AS stornoQuantity,
@@ -62,6 +74,12 @@ public record POInfo(String orderId, int surrogateId, LocalDate orderDate, int o
                 FROM product_in_order AS pio
                 INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
                 INNER JOIN emag_order AS o ON pio.emag_order_surrogate_id = o.surrogate_id
+                LEFT JOIN LATERAL (
+                    SELECT SUM(COALESCE(v.value, 0) + COALESCE(v.vat_value, 0)) AS total
+                    FROM voucher_split AS v
+                    WHERE v.product_id = pio.id AND v.emag_order_surrogate_id = pio.emag_order_surrogate_id
+                      AND v.offered_by = 'seller'
+                ) AS seller_voucher ON TRUE
                 WHERE p.product_code = ? AND (o.status = 4 OR o.status = 5) AND o.date >= ? AND o.date < ?
                 ORDER BY o.id, o.status
                 """)) {
@@ -87,7 +105,8 @@ public record POInfo(String orderId, int surrogateId, LocalDate orderDate, int o
                             quantity,
                             initialQuantity,
                             stornoQuantity,
-                            price
+                            price,
+                            rs.getBigDecimal("sellerVoucherTotal")
                     );
                     result.add(poInfo);
                 }

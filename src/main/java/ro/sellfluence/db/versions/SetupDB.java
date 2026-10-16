@@ -49,6 +49,7 @@ public class SetupDB {
                 EmagMirrorDBVersion41::version41,
                 EmagMirrorDBVersion42::version42,
                 EmagMirrorDBVersion43::version43,
-                EmagMirrorDBVersion44::version44);
+                EmagMirrorDBVersion44::version44,
+                EmagMirrorDBVersion45::version45);
     }
 }

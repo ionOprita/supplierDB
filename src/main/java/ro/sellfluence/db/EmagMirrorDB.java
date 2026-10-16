@@ -44,6 +44,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
@@ -66,8 +67,8 @@ import static ro.sellfluence.db.EmagFetchLog.insertEmagLog;
 import static ro.sellfluence.db.EmagFetchLog.updateEmagLog;
 import static ro.sellfluence.db.EmagOrder.addOrderResult;
 import static ro.sellfluence.db.GMV.computeAndStoreGMVForProduct;
+import static ro.sellfluence.db.GMV.getAllGMVByProductCode;
 import static ro.sellfluence.db.GMV.getGMVByMonth;
-import static ro.sellfluence.db.GMV.getGMVByProductId;
 import static ro.sellfluence.db.ProductTable.getProductCodes;
 import static ro.sellfluence.db.ProductTable.getProducts;
 import static ro.sellfluence.db.ProductTable.insertOrUpdateProduct;
@@ -716,6 +717,41 @@ public class EmagMirrorDB {
     }
 
     /**
+     * Compute a product's GMV without storing the result, treating the inclusive period as one bucket.
+     * Uses finalized and storno snapshots and VAT-inclusive prices, following the monthly GMV rules.
+     * Period membership uses the snapshots' order dates, not their modification timestamps.
+     *
+     * @param productCode internal product code.
+     * @param startDate first order date to include.
+     * @param endDate last order date to include.
+     * @return GMV rounded to two decimals, or 0.00 when nothing contributes.
+     * @throws NullPointerException if any argument is null.
+     * @throws IllegalArgumentException if startDate is after endDate.
+     * @throws SQLException on database errors.
+     */
+    public BigDecimal computeGMVForProduct(String productCode, LocalDate startDate, LocalDate endDate) throws SQLException {
+        Objects.requireNonNull(productCode, "productCode");
+        GMV.validatePeriod(startDate, endDate);
+        return database.readTX(db -> GMV.computeGMVForPeriod(getOrderDataByProduct(db, productCode), startDate, endDate));
+    }
+
+    /**
+     * Compute a product's current GMV and contributing order lines without storing either result.
+     * Both dates are inclusive, and matching snapshots outside the period remain available to the calculation.
+     *
+     * @throws NullPointerException if any argument is null.
+     * @throws IllegalArgumentException if startDate is after endDate.
+     * @throws SQLException on database errors.
+     */
+    public GMV.Breakdown computeGMVBreakdownForProduct(String productCode, LocalDate startDate, LocalDate endDate)
+            throws SQLException {
+        Objects.requireNonNull(productCode, "productCode");
+        GMV.validatePeriod(startDate, endDate);
+        return database.readTX(db -> GMV.computeGMVBreakdownForPeriod(
+                getOrderDataByProduct(db, productCode), startDate, endDate));
+    }
+
+    /**
      * Refresh materialized views used by the cohort-based rolling return rate chart.
      * Refresh order matters because downstream views depend on upstream ones.
      *
@@ -760,10 +796,13 @@ public class EmagMirrorDB {
      */
     public static SortedMap<ProductInfo, SortedMap<YearMonth, BigDecimal>> getGMV(Connection db) throws SQLException {
         var rows = new TreeMap<ProductInfo, SortedMap<YearMonth, BigDecimal>>(
-                Comparator.comparing(ProductInfo::name)
+                Comparator.comparing(ProductInfo::name, Comparator.nullsLast(String::compareTo))
+                        .thenComparing(ProductInfo::productCode, Comparator.nullsFirst(String::compareTo))
         );
-        for (ProductInfo product : getProducts(db)) {
-            var gmvs = getGMVByProductId(db, product.productCode());
+        var products = getProducts(db);
+        var gmvsByProduct = getAllGMVByProductCode(db);
+        for (ProductInfo product : products) {
+            var gmvs = gmvsByProduct.getOrDefault(product.productCode(), Map.of());
             rows.put(product, new TreeMap<>(gmvs));
         }
         return rows;
@@ -2006,6 +2045,7 @@ public class EmagMirrorDB {
         var result = new HashMap<String, List<POInfo>>();
         try (var s = db.prepareStatement("""
                 SELECT p.name AS productName,
+                seller_voucher.total AS sellerVoucherTotal,
                 pio.quantity AS quantity,
                 pio.initial_qty AS initialQuantity,
                 pio.storno_qty AS stornoQuantity,
@@ -2021,6 +2061,12 @@ public class EmagMirrorDB {
                 FROM product_in_order AS pio
                 INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
                 INNER JOIN emag_order AS o ON pio.emag_order_surrogate_id = o.surrogate_id
+                LEFT JOIN LATERAL (
+                    SELECT SUM(COALESCE(v.value, 0) + COALESCE(v.vat_value, 0)) AS total
+                    FROM voucher_split AS v
+                    WHERE v.product_id = pio.id AND v.emag_order_surrogate_id = pio.emag_order_surrogate_id
+                      AND v.offered_by = 'seller'
+                ) AS seller_voucher ON TRUE
                 WHERE p.product_code = ? AND (o.status = 4 OR o.status = 5)
                 ORDER BY o.id, o.status
                 """)) {
@@ -2045,7 +2091,8 @@ public class EmagMirrorDB {
                             quantity,
                             initialQuantity,
                             stornoQuantity,
-                            price
+                            price,
+                            rs.getBigDecimal("sellerVoucherTotal")
                     );
                     poInfos.add(poInfo);
                     result.put(orderId, poInfos);

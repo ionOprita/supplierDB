@@ -8,6 +8,7 @@ import ro.sellfluence.db.AdsCampaignTable.AdsSearchPhraseTableData;
 import ro.sellfluence.db.AdsCampaignTable.AdsTargetedProductTableData;
 import ro.sellfluence.db.AdsReportPeriod;
 import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.db.GMV;
 import ro.sellfluence.db.OffersTable.DailyProductOffer;
 import ro.sellfluence.db.Vendor;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
@@ -19,6 +20,7 @@ import ro.sellfluence.support.DoubleWindow;
 import ro.sellfluence.support.Statistics;
 import ro.sellfluence.support.Statistics.Estimate;
 
+import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -35,6 +37,7 @@ import java.util.logging.Logger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static java.math.RoundingMode.HALF_EVEN;
 import static java.util.logging.Level.SEVERE;
 import static ro.sellfluence.api.API.ProductForFrontend.nameComparator;
 import static ro.sellfluence.db.ProductTable.ProductInfo.nameComparatorString;
@@ -51,6 +54,58 @@ public class API {
 
     public API(EmagMirrorDB db) {
         mirrorDB = db;
+    }
+
+    /** Compute an inclusive period on demand, or return empty when the product does not exist. */
+    public Optional<GMVPeriodResponse> getGMVForPeriod(String productCode, LocalDate startDate, LocalDate endDate)
+            throws SQLException {
+        if (productCode == null || productCode.isBlank()) return Optional.empty();
+        if (mirrorDB.readProduct(productCode).isEmpty()) return Optional.empty();
+        var breakdown = mirrorDB.computeGMVBreakdownForProduct(productCode, startDate, endDate);
+        return Optional.of(GMVPeriodResponse.create(productCode, startDate, endDate, breakdown));
+    }
+
+    /** Decimal text preserves the exact amount when the response is consumed by JavaScript. */
+    public record GMVPeriodResponse(String productCode, String startDate, String endDate, String gmv,
+                                    List<GMVContributionResponse> contributions) {
+        public GMVPeriodResponse {
+            contributions = List.copyOf(contributions);
+        }
+
+        public GMVPeriodResponse(String productCode, String startDate, String endDate, String gmv) {
+            this(productCode, startDate, endDate, gmv, List.of());
+        }
+
+        static GMVPeriodResponse create(String productCode, LocalDate startDate, LocalDate endDate, BigDecimal gmv) {
+            return new GMVPeriodResponse(productCode, startDate.toString(), endDate.toString(),
+                    gmv.setScale(2, HALF_EVEN).toPlainString());
+        }
+
+        static GMVPeriodResponse create(String productCode, LocalDate startDate, LocalDate endDate,
+                                       GMV.Breakdown breakdown) {
+            return new GMVPeriodResponse(productCode, startDate.toString(), endDate.toString(),
+                    breakdown.total().setScale(2, HALF_EVEN).toPlainString(),
+                    breakdown.contributions().stream().map(GMVContributionResponse::create).toList());
+        }
+    }
+
+    public record GMVContributionResponse(String orderId, String orderDate, String status, long quantity,
+                                          String unitPrice, String gmv, String sellerVoucherAdjustment) {
+        public GMVContributionResponse(String orderId, String orderDate, String status, long quantity,
+                                       String unitPrice, String gmv) {
+            this(orderId, orderDate, status, quantity, unitPrice, gmv, "0.00");
+        }
+
+        static GMVContributionResponse create(GMV.Contribution contribution) {
+            var source = contribution.source();
+            var status = source.orderStatus() == 4 ? "Finalized"
+                    : contribution.quantity() < 0 ? "Storno deduction"
+                    : contribution.quantity() == 0 ? "Storno" : "Remaining after storno";
+            return new GMVContributionResponse(source.orderId(), source.orderDate().toString(), status,
+                    contribution.quantity(), source.price().setScale(2, HALF_EVEN).toPlainString(),
+                    contribution.amount().setScale(2, HALF_EVEN).toPlainString(),
+                    contribution.sellerVoucherAdjustment().setScale(2, HALF_EVEN).toPlainString());
+        }
     }
 
     public ProductPerformanceOptions.Response getProductPerformanceOptions() throws SQLException {
