@@ -1,5 +1,7 @@
 package ro.sellfluence.emagdashboard;
 
+import tools.jackson.databind.JsonNode;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -20,6 +22,6 @@ public record AdsCampaign(
         String advertiserName,
         List<AdsAdset> adSets,
         String bidStrategy, //TODO: Store in database
-        String bidConfig //TODO: Store in database
+        AdsBidConfig bidConfig //TODO: Store in database
 ) {
 }
