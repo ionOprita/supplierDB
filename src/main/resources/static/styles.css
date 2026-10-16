@@ -411,14 +411,16 @@ tbody tr:nth-child(even) .sticky-col-2 {
 @supports selector(body:has(#productsTable)) {
   html:has(#productsTable),
   html:has(#employeeDataTable),
-  html:has(#categoryDataTable) {
+  html:has(#categoryDataTable),
+  html:has(#monthlyGmvTable) {
     height: 100%;
     overflow: hidden;
   }
 
   body:has(#productsTable),
   body:has(#employeeDataTable),
-  body:has(#categoryDataTable) {
+  body:has(#categoryDataTable),
+  body:has(#monthlyGmvTable) {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -428,7 +430,8 @@ tbody tr:nth-child(even) .sticky-col-2 {
 
   body:has(#productsTable) main,
   body:has(#employeeDataTable) main,
-  body:has(#categoryDataTable) main {
+  body:has(#categoryDataTable) main,
+  body:has(#monthlyGmvTable) main {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
@@ -438,7 +441,8 @@ tbody tr:nth-child(even) .sticky-col-2 {
 
   body:has(#productsTable) .product-sheet-wrap,
   body:has(#employeeDataTable) .product-sheet-wrap,
-  body:has(#categoryDataTable) .product-sheet-wrap {
+  body:has(#categoryDataTable) .product-sheet-wrap,
+  body:has(#monthlyGmvTable) .product-sheet-wrap {
     flex: 1 1 auto;
     min-height: 0;
     max-height: none;
@@ -497,6 +501,28 @@ tbody tr:nth-child(even) .sticky-col-2 {
   width: 180px;
   max-width: 180px;
   box-shadow: 2px 0 0 var(--sticky-separator);
+}
+
+.gmv-sheet-table th,
+.gmv-sheet-table td {
+  box-sizing: border-box;
+}
+
+.gmv-sheet-table td {
+  padding: .45rem .55rem;
+  vertical-align: middle;
+}
+
+.gmv-sheet-table td.sticky-col {
+  overflow-wrap: anywhere;
+}
+
+.gmv-sheet-table .numeric {
+  min-width: 140px;
+  width: 140px;
+  max-width: 140px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .employee-sheet-table .sticky-col-employee-name {

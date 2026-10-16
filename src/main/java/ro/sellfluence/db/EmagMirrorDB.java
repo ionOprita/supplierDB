@@ -67,8 +67,8 @@ import static ro.sellfluence.db.EmagFetchLog.insertEmagLog;
 import static ro.sellfluence.db.EmagFetchLog.updateEmagLog;
 import static ro.sellfluence.db.EmagOrder.addOrderResult;
 import static ro.sellfluence.db.GMV.computeAndStoreGMVForProduct;
+import static ro.sellfluence.db.GMV.getAllGMVByProductCode;
 import static ro.sellfluence.db.GMV.getGMVByMonth;
-import static ro.sellfluence.db.GMV.getGMVByProductId;
 import static ro.sellfluence.db.ProductTable.getProductCodes;
 import static ro.sellfluence.db.ProductTable.getProducts;
 import static ro.sellfluence.db.ProductTable.insertOrUpdateProduct;
@@ -780,10 +780,13 @@ public class EmagMirrorDB {
      */
     public static SortedMap<ProductInfo, SortedMap<YearMonth, BigDecimal>> getGMV(Connection db) throws SQLException {
         var rows = new TreeMap<ProductInfo, SortedMap<YearMonth, BigDecimal>>(
-                Comparator.comparing(ProductInfo::name)
+                Comparator.comparing(ProductInfo::name, Comparator.nullsLast(String::compareTo))
+                        .thenComparing(ProductInfo::productCode, Comparator.nullsFirst(String::compareTo))
         );
-        for (ProductInfo product : getProducts(db)) {
-            var gmvs = getGMVByProductId(db, product.productCode());
+        var products = getProducts(db);
+        var gmvsByProduct = getAllGMVByProductCode(db);
+        for (ProductInfo product : products) {
+            var gmvs = gmvsByProduct.getOrDefault(product.productCode(), Map.of());
             rows.put(product, new TreeMap<>(gmvs));
         }
         return rows;

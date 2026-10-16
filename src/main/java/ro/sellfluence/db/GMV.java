@@ -113,6 +113,20 @@ public class GMV {
         return result;
     }
 
+    /** Read all stored GMV values, grouped by product code, in a single query. */
+    static Map<String, Map<YearMonth, BigDecimal>> getAllGMVByProductCode(Connection db) throws SQLException {
+        var result = new HashMap<String, Map<YearMonth, BigDecimal>>();
+        try (var s = db.prepareStatement("SELECT product_code, month, gmv FROM gmv")) {
+            try (var rs = s.executeQuery()) {
+                while (rs.next()) {
+                    result.computeIfAbsent(rs.getString("product_code"), _ -> new HashMap<>())
+                            .put(toYearMonth(rs.getDate("month")), rs.getBigDecimal("gmv"));
+                }
+            }
+        }
+        return result;
+    }
+
     private static <T> void addToGMV(Map<T, BigDecimal> gmvByBucket, T bucket, POInfo order) {
         if (bucket == null) return;
         var gmv = gmvByBucket.getOrDefault(bucket, BigDecimal.ZERO);

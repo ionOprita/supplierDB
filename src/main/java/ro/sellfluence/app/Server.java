@@ -376,6 +376,7 @@ public class Server {
 
         app.before("/private/*", ctx -> checkRole(ctx, user));
         app.get("/private/products", ctx -> renderProductsPage(ctx, mirrorDB));
+        app.get("/private/gmv", ctx -> renderGMVPage(ctx, mirrorDB));
         app.get("/private/employees", ctx -> renderEmployeesPage(ctx, mirrorDB));
         app.post("/private/employees/save", ctx -> saveEmployeeTableChanges(ctx, mirrorDB));
         app.get("/private/categories", ctx -> renderCategoriesPage(ctx, mirrorDB));
@@ -1367,6 +1368,26 @@ public class Server {
             ctx.header("Cache-Control", "no-store");
             ctx.json(backgroundJob.pausedTaskNames());
         });
+    }
+
+    private static void renderGMVPage(Context ctx, EmagMirrorDB mirrorDB) {
+        var currentUser = resolveCurrentUser(ctx);
+        if (currentUser == null) {
+            return;
+        }
+
+        var model = new HashMap<String, Object>();
+        model.put("userName", currentUser.username());
+        model.put("userRole", currentUser.role().name());
+        model.put("pageTitle", "Monthly GMV");
+        try {
+            model.put("vendors", mirrorDB.getAllVendors());
+            model.put("report", MonthlyGMVPage.from(mirrorDB.getGMVTable()));
+            ctx.render("gmv.jte", model);
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load monthly GMV page.", e);
+            ctx.status(500).result("Failed to load monthly GMV.");
+        }
     }
 
     private static void renderProductsPage(Context ctx, EmagMirrorDB mirrorDB) {
