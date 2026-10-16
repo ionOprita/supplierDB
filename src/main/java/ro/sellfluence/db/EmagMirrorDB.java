@@ -44,6 +44,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
@@ -713,6 +714,25 @@ public class EmagMirrorDB {
      */
     public void updateGMVTable() throws SQLException {
         database.writeTX(EmagMirrorDB::computeGMV);
+    }
+
+    /**
+     * Compute a product's GMV without storing the result, treating the inclusive period as one bucket.
+     * Uses finalized and storno snapshots and VAT-inclusive prices, following the monthly GMV rules.
+     * Period membership uses the snapshots' order dates, not their modification timestamps.
+     *
+     * @param productCode internal product code.
+     * @param startDate first order date to include.
+     * @param endDate last order date to include.
+     * @return GMV rounded to two decimals, or 0.00 when nothing contributes.
+     * @throws NullPointerException if any argument is null.
+     * @throws IllegalArgumentException if startDate is after endDate.
+     * @throws SQLException on database errors.
+     */
+    public BigDecimal computeGMVForProduct(String productCode, LocalDate startDate, LocalDate endDate) throws SQLException {
+        Objects.requireNonNull(productCode, "productCode");
+        GMV.validatePeriod(startDate, endDate);
+        return database.readTX(db -> GMV.computeGMVForPeriod(getOrderDataByProduct(db, productCode), startDate, endDate));
     }
 
     /**

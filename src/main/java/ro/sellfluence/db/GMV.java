@@ -5,10 +5,13 @@ import ro.sellfluence.support.Logs;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -18,7 +21,7 @@ import static ro.sellfluence.support.UsefulMethods.toDate;
 import static ro.sellfluence.support.UsefulMethods.toYearMonth;
 
 /**
- * Collect all database methods tied to the GMV table.
+ * Collect GMV calculations and database methods tied to the GMV table.
  */
 public class GMV {
 
@@ -33,9 +36,39 @@ public class GMV {
      * @throws SQLException on database error.
      */
     static void computeAndStoreGMVForProduct(Connection db, String productCode, Map<String, List<POInfo>> ordersWithProduct) throws SQLException {
-        var gmvByMonth = new HashMap<YearMonth, BigDecimal>();
-        ordersWithProduct.forEach((_, poInfos) -> computeGMVForOrder(poInfos, gmvByMonth));
-        insertOrUpdateGMV(db, productCode, gmvByMonth);
+        insertOrUpdateGMV(db, productCode, computeGMVByMonth(ordersWithProduct));
+    }
+
+    static Map<YearMonth, BigDecimal> computeGMVByMonth(Map<String, List<POInfo>> ordersWithProduct) {
+        return computeGMVByBucket(ordersWithProduct, YearMonth::from);
+    }
+
+    /**
+     * Compute GMV with the inclusive date range treated as a single bucket.
+     * Matching finalized and storno snapshots outside the range must also be supplied.
+     */
+    static BigDecimal computeGMVForPeriod(Map<String, List<POInfo>> ordersWithProduct,
+                                         LocalDate startDate, LocalDate endDate) {
+        validatePeriod(startDate, endDate);
+        var gmv = computeGMVByBucket(ordersWithProduct,
+                date -> !date.isBefore(startDate) && !date.isAfter(endDate) ? Boolean.TRUE : null);
+        return gmv.getOrDefault(Boolean.TRUE, BigDecimal.ZERO).setScale(2, HALF_EVEN);
+    }
+
+    static void validatePeriod(LocalDate startDate, LocalDate endDate) {
+        Objects.requireNonNull(startDate, "startDate");
+        Objects.requireNonNull(endDate, "endDate");
+        if (startDate.isAfter(endDate)) {
+            throw new IllegalArgumentException("startDate must not be after endDate");
+        }
+    }
+
+    /** A null bucket excludes that snapshot's contribution without losing its matching state. */
+    private static <T> Map<T, BigDecimal> computeGMVByBucket(Map<String, List<POInfo>> ordersWithProduct,
+                                                           Function<LocalDate, T> bucketForDate) {
+        var gmvByBucket = new HashMap<T, BigDecimal>();
+        ordersWithProduct.forEach((_, poInfos) -> computeGMVForOrder(poInfos, gmvByBucket, bucketForDate));
+        return gmvByBucket;
     }
 
     /**
@@ -80,19 +113,23 @@ public class GMV {
         return result;
     }
 
-    private static void addToGMV(HashMap<YearMonth, BigDecimal> gmvByMonth, YearMonth yearMonth, POInfo order) {
-        var gmv = gmvByMonth.getOrDefault(yearMonth, BigDecimal.ZERO);
+    private static <T> void addToGMV(Map<T, BigDecimal> gmvByBucket, T bucket, POInfo order) {
+        if (bucket == null) return;
+        var gmv = gmvByBucket.getOrDefault(bucket, BigDecimal.ZERO);
         gmv = gmv.add(order.price().multiply(BigDecimal.valueOf(order.quantity())));
-        gmvByMonth.put(yearMonth, gmv);
+        gmvByBucket.put(bucket, gmv);
     }
 
-    private static void subtractFromGMV(HashMap<YearMonth, BigDecimal> gmvByMonth, YearMonth yearMonthMonth, POInfo storno) {
-        var stornoGMV = gmvByMonth.getOrDefault(yearMonthMonth, BigDecimal.ZERO);
+    private static <T> void subtractFromGMV(Map<T, BigDecimal> gmvByBucket, T bucket, POInfo storno) {
+        if (bucket == null) return;
+        var stornoGMV = gmvByBucket.getOrDefault(bucket, BigDecimal.ZERO);
         stornoGMV = stornoGMV.subtract(storno.price().multiply(BigDecimal.valueOf(storno.stornoQuantity())));
-        gmvByMonth.put(yearMonthMonth, stornoGMV);
+        gmvByBucket.put(bucket, stornoGMV);
     }
 
-    private static void singleProductWithFinalizedAndStorno(HashMap<YearMonth, BigDecimal> gmvByMonth, POInfo finalized, POInfo storno) {
+    private static <T> void singleProductWithFinalizedAndStorno(Map<T, BigDecimal> gmvByBucket,
+                                                               POInfo finalized, POInfo storno,
+                                                               Function<LocalDate, T> bucketForDate) {
         if (storno.initialQuantity() != finalized.quantity()) {
             logger.log(WARNING, "Mismatch in quantity between\n finalized order: %s\n and storno order: %s.".formatted(finalized, storno));
         }
@@ -102,28 +139,28 @@ public class GMV {
         if (storno.orderStatus() != 5) {
             throw new RuntimeException("Storno order status wrong: %s.".formatted(storno));
         }
-        var finalizedMonth = YearMonth.from(finalized.orderDate());
-        var stornoMonth = YearMonth.from(storno.orderDate());
-        if (finalizedMonth.equals(stornoMonth)) {
-            addToGMV(gmvByMonth, finalizedMonth, storno);
+        var finalizedBucket = bucketForDate.apply(finalized.orderDate());
+        var stornoBucket = bucketForDate.apply(storno.orderDate());
+        if (Objects.equals(finalizedBucket, stornoBucket)) {
+            addToGMV(gmvByBucket, finalizedBucket, storno);
         } else {
-            addToGMV(gmvByMonth, finalizedMonth, finalized);
-            subtractFromGMV(gmvByMonth, stornoMonth, storno);
+            addToGMV(gmvByBucket, finalizedBucket, finalized);
+            subtractFromGMV(gmvByBucket, stornoBucket, storno);
         }
     }
 
-    private static void computeGMVForOrder(List<POInfo> poInfos, HashMap<YearMonth, BigDecimal> gmvByMonth) {
+    private static <T> void computeGMVForOrder(List<POInfo> poInfos, Map<T, BigDecimal> gmvByBucket,
+                                              Function<LocalDate, T> bucketForDate) {
         var poInfoByOrderProductId = poInfos.stream()
                 .collect(Collectors.groupingBy(POInfo::productInOrderId));
         poInfoByOrderProductId.forEach((productInOrderId, orderInfos) -> {
             if (orderInfos.size() == 1) {
                 POInfo order = orderInfos.getFirst();
-                var yearMonth = YearMonth.from(order.orderDate());
-                addToGMV(gmvByMonth, yearMonth, order);
+                addToGMV(gmvByBucket, bucketForDate.apply(order.orderDate()), order);
             } else if (orderInfos.size() == 2) {
                 POInfo finalized = orderInfos.getFirst();
                 POInfo storno = orderInfos.getLast();
-                singleProductWithFinalizedAndStorno(gmvByMonth, finalized, storno);
+                singleProductWithFinalizedAndStorno(gmvByBucket, finalized, storno, bucketForDate);
             } else {
                 throw new RuntimeException("Not prepared to handle order with more than two states: %s / %d.".formatted(orderInfos, productInOrderId));
             }
