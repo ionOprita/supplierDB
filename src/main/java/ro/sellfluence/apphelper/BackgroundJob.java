@@ -56,6 +56,7 @@ public class BackgroundJob {
 
     private static final Logger logger = Logs.getFileLogger("BackgroundJob", Level.INFO, 10, 1_000_000);
     private static final Duration executeHourly = Duration.ofHours(1);
+    private static final Duration executeEveryFourHours = Duration.ofHours(4);
     private static final Duration executeDaily = Duration.ofDays(1);
     private static final Duration executeWeekly = Duration.ofDays(7);
     private static final Predicate<LocalDateTime> runAlways = _ -> true;
@@ -257,7 +258,7 @@ public class BackgroundJob {
                 () -> PopulateProductsTableFromSheets.updateProductTable(db)
         ));
         definitions.add(new TaskDefinition(
-                "Fetch new orders from eMAG and update GMV in DB", emagApiLane, executeHourly, runAlways,
+                "Fetch new orders from eMAG and update GMV in DB", emagApiLane, executeEveryFourHours, runAlways,
                 () -> {
                     FetchEmagAPI.fetchNewOrders(db);
                     db.updateGMVTable();
@@ -265,7 +266,7 @@ public class BackgroundJob {
         ));
         definitions.add(new TaskDefinition(
                 "Fetch not finalized orders from last 30 days eMAG and update GMV in DB",
-                emagApiLane, executeHourly, runAlways,
+                emagApiLane, executeEveryFourHours, runAlways,
                 () -> {
                     FetchEmagAPI.fetchOrdersNotFinalizedInDB(db, true);
                     db.updateGMVTable();
@@ -280,14 +281,14 @@ public class BackgroundJob {
                 }
         ));
         definitions.add(new TaskDefinition(
-                "Fetch storno orders from eMAG and update GMV in DB", emagApiLane, executeHourly, runAlways,
+                "Fetch storno orders from eMAG and update GMV in DB", emagApiLane, executeEveryFourHours, runAlways,
                 () -> {
                     FetchEmagAPI.fetchStornoOrders(db);
                     db.updateGMVTable();
                 }
         ));
         definitions.add(new TaskDefinition(
-                "Fetch RMAs from eMAG and update GMV in DB", emagApiLane, executeHourly, runAlways,
+                "Fetch RMAs from eMAG and update GMV in DB", emagApiLane, executeEveryFourHours, runAlways,
                 () -> {
                     FetchEmagAPI.fetchRMAs(db);
                     db.updateGMVTable();
