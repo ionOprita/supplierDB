@@ -7,13 +7,11 @@
 @param String pageTitle
 @param List<Vendor> vendors
 @param MonthlyGMVPage report
+@param String defaultStartDate
+@param String defaultEndDate
 
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
-    @if(report.months().isEmpty())
-        <p class="muted">No stored GMV available.</p>
-    @endif
-
-    <div class="page-actions product-list-actions">
+    <div class="page-actions gmv-vendor-actions">
         <label for="gmvVendorFilterSelect">Vendor:</label>
         <select id="gmvVendorFilterSelect" class="vendor-filter-select">
             <option value="" selected>All vendors</option>
@@ -23,7 +21,43 @@
         </select>
     </div>
 
-    <div class="wrap product-sheet-wrap">
+    <section class="gmv-period" aria-labelledby="gmvPeriodHeading">
+        <h2 id="gmvPeriodHeading">GMV for a period</h2>
+        <form id="gmvPeriodForm" class="gmv-period-form">
+            <div class="gmv-period-field gmv-period-product">
+                <label for="gmvProductSelect">Product</label>
+                <select id="gmvProductSelect" required>
+                    <option value="" selected>All products</option>
+                    @for(var row : report.rows())
+                        <option value="${row.product().productCode()}" data-vendor-id="${row.product().vendor() == null ? "" : row.product().vendor().toString()}">${row.product().name() == null || row.product().name().isBlank() ? row.product().productCode() : row.product().name() + " (" + row.product().productCode() + ")"}</option>
+                    @endfor
+                </select>
+            </div>
+            <div class="gmv-period-field">
+                <label for="gmvStartDate">Start date</label>
+                <input id="gmvStartDate" type="date" value="${defaultStartDate}" required>
+            </div>
+            <div class="gmv-period-field">
+                <label for="gmvEndDate">End date</label>
+                <input id="gmvEndDate" type="date" value="${defaultEndDate}" required>
+            </div>
+            <button id="gmvCalculateButton" type="submit" class="primary-action" disabled>Calculate GMV</button>
+        </form>
+        <p class="gmv-period-help">Both dates included. Prices include VAT.</p>
+        <div class="gmv-period-summary">
+            <label for="gmvPeriodResult">GMV</label>
+            <output id="gmvPeriodResult" hidden></output>
+            <span id="gmvPeriodContext"></span>
+        </div>
+        <p id="gmvPeriodStatus" role="status" aria-live="polite">Select a product to calculate GMV.</p>
+    </section>
+
+    <h2 class="gmv-monthly-heading">Monthly GMV</h2>
+    @if(report.months().isEmpty())
+        <p class="gmv-monthly-empty muted">No stored GMV available.</p>
+    @endif
+
+    <div class="wrap product-sheet-wrap gmv-monthly-wrap">
         <table id="monthlyGmvTable" class="product-sheet-table gmv-sheet-table">
             <thead>
             <tr>
@@ -45,7 +79,7 @@
                     <td colspan="${3 + report.months().size()}">No products found.</td>
                 </tr>
                 @for(var row : report.rows())
-                    <tr data-vendor-id="${row.product().vendor() == null ? "" : row.product().vendor().toString()}">
+                    <tr data-product-code="${row.product().productCode()}" data-vendor-id="${row.product().vendor() == null ? "" : row.product().vendor().toString()}">
                         <td class="sticky-col sticky-col-name">${row.product().name()}</td>
                         <td class="sticky-col sticky-col-pnk">${row.product().pnk()}</td>
                         <td class="sticky-col sticky-col-product-code">${row.product().productCode()}</td>

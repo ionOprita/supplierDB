@@ -1002,6 +1002,7 @@ public class Server {
 
     private static void configureAPI(JavalinDefaultRoutingApi app, API api, BackgroundJob backgroundJob) {
         app.before("/app/*", ctx -> checkRole(ctx, user)); // TODO: Need to protect admin calls
+        app.get("/app/gmvForPeriod", ctx -> computeGMVForPeriod(ctx, api));
         app.get("/app/productPerformanceOptions", ctx -> {
             try {
                 ctx.json(api.getProductPerformanceOptions());
@@ -1370,6 +1371,29 @@ public class Server {
         });
     }
 
+    static void computeGMVForPeriod(Context ctx, API api) {
+        ctx.header("Cache-Control", "no-store");
+        final GMVPeriodRequest request;
+        try {
+            request = parseGMVPeriodRequest(ctx.queryParam("productCode"),
+                    ctx.queryParam("startDate"), ctx.queryParam("endDate"));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+            return;
+        }
+        try {
+            var response = api.getGMVForPeriod(request.productCode(), request.startDate(), request.endDate());
+            if (response.isEmpty()) {
+                ctx.status(404).json(Map.of("error", "Product not found"));
+            } else {
+                ctx.json(response.orElseThrow());
+            }
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to compute GMV for the requested period.", e);
+            ctx.status(500).json(Map.of("error", "Database error"));
+        }
+    }
+
     private static void renderGMVPage(Context ctx, EmagMirrorDB mirrorDB) {
         var currentUser = resolveCurrentUser(ctx);
         if (currentUser == null) {
@@ -1379,15 +1403,21 @@ public class Server {
         var model = new HashMap<String, Object>();
         model.put("userName", currentUser.username());
         model.put("userRole", currentUser.role().name());
-        model.put("pageTitle", "Monthly GMV");
+        model.put("pageTitle", "GMV");
+        model.putAll(defaultGMVPeriodDates(Clock.systemDefaultZone()));
         try {
             model.put("vendors", mirrorDB.getAllVendors());
             model.put("report", MonthlyGMVPage.from(mirrorDB.getGMVTable()));
             ctx.render("gmv.jte", model);
         } catch (SQLException e) {
-            logger.log(SEVERE, "Failed to load monthly GMV page.", e);
-            ctx.status(500).result("Failed to load monthly GMV.");
+            logger.log(SEVERE, "Failed to load GMV page.", e);
+            ctx.status(500).result("Failed to load GMV.");
         }
+    }
+
+    static Map<String, String> defaultGMVPeriodDates(Clock clock) {
+        var today = LocalDate.now(clock);
+        return Map.of("defaultStartDate", today.minusDays(29).toString(), "defaultEndDate", today.toString());
     }
 
     private static void renderProductsPage(Context ctx, EmagMirrorDB mirrorDB) {
@@ -2576,6 +2606,27 @@ public class Server {
             throw new IllegalArgumentException("Invalid or missing vendorId");
         }
         return UUID.fromString(value);
+    }
+
+    record GMVPeriodRequest(String productCode, LocalDate startDate, LocalDate endDate) {
+    }
+
+    static GMVPeriodRequest parseGMVPeriodRequest(String productCode, String startDate, String endDate) {
+        if (productCode == null || productCode.isBlank()) {
+            throw new IllegalArgumentException("Select a product.");
+        }
+        var start = parseLocalDate(startDate);
+        var end = parseLocalDate(endDate);
+        if (start == null) {
+            throw new IllegalArgumentException("Choose a valid start date.");
+        }
+        if (end == null) {
+            throw new IllegalArgumentException("Choose a valid end date.");
+        }
+        if (start.isAfter(end)) {
+            throw new IllegalArgumentException("End date must be on or after start date.");
+        }
+        return new GMVPeriodRequest(productCode, start, end);
     }
 
     record ProductPerformanceRequest(UUID vendorId, String productCode, Period period) {

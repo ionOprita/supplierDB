@@ -525,6 +525,137 @@ tbody tr:nth-child(even) .sticky-col-2 {
   font-variant-numeric: tabular-nums;
 }
 
+.gmv-vendor-actions {
+  justify-content: flex-start;
+}
+
+.gmv-period {
+  margin-bottom: .9rem;
+  padding: .75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.gmv-period h2,
+.gmv-monthly-heading {
+  margin: 0 0 .6rem;
+  font-size: 1rem;
+}
+
+.gmv-period-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: .6rem;
+}
+
+.gmv-period-field {
+  min-width: 0;
+  flex: 0 1 10rem;
+}
+
+.gmv-period-product {
+  flex: 1 1 20rem;
+  max-width: 36rem;
+}
+
+.gmv-period-field label {
+  padding: 0 0 .3rem;
+  font-size: .85rem;
+}
+
+.gmv-period-field select,
+.gmv-period-field input,
+.gmv-period-form button,
+#gmvVendorFilterSelect {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: .4rem .5rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font: inherit;
+}
+
+.gmv-period-field select,
+.gmv-period-field input {
+  width: 100%;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.gmv-period-form button {
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.gmv-period-form button:disabled {
+  cursor: default;
+}
+
+.gmv-period-help,
+#gmvPeriodStatus {
+  margin: .5rem 0 0;
+  color: var(--muted);
+  font-size: .85rem;
+}
+
+.gmv-period-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .35rem .65rem;
+  margin-top: .65rem;
+}
+
+.gmv-period-summary label {
+  padding: 0;
+}
+
+#gmvPeriodResult {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+#gmvPeriodContext {
+  color: var(--muted);
+  font-size: .85rem;
+  overflow-wrap: anywhere;
+}
+
+#gmvPeriodStatus.is-error {
+  color: var(--danger);
+}
+
+body:has(#gmvPeriodForm) main {
+  overflow: auto;
+}
+
+body:has(#gmvPeriodForm) main > :not(.gmv-monthly-wrap) {
+  flex-shrink: 0;
+}
+
+body:has(#gmvPeriodForm) .gmv-monthly-wrap {
+  min-height: 9rem;
+}
+
+@media (max-width: 540px) {
+  .gmv-period-product {
+    flex-basis: 100%;
+  }
+
+  .gmv-period-field:not(.gmv-period-product) {
+    flex-grow: 1;
+  }
+
+  .gmv-vendor-actions select {
+    flex: 1 1 12rem;
+    max-width: 100%;
+  }
+}
+
 .employee-sheet-table .sticky-col-employee-name {
   left: 0;
   min-width: 260px;

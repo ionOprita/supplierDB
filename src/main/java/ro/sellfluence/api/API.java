@@ -19,6 +19,7 @@ import ro.sellfluence.support.DoubleWindow;
 import ro.sellfluence.support.Statistics;
 import ro.sellfluence.support.Statistics.Estimate;
 
+import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -35,6 +36,7 @@ import java.util.logging.Logger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static java.math.RoundingMode.HALF_EVEN;
 import static java.util.logging.Level.SEVERE;
 import static ro.sellfluence.api.API.ProductForFrontend.nameComparator;
 import static ro.sellfluence.db.ProductTable.ProductInfo.nameComparatorString;
@@ -51,6 +53,23 @@ public class API {
 
     public API(EmagMirrorDB db) {
         mirrorDB = db;
+    }
+
+    /** Compute an inclusive period on demand, or return empty when the product does not exist. */
+    public Optional<GMVPeriodResponse> getGMVForPeriod(String productCode, LocalDate startDate, LocalDate endDate)
+            throws SQLException {
+        if (productCode == null || productCode.isBlank()) return Optional.empty();
+        if (mirrorDB.readProduct(productCode).isEmpty()) return Optional.empty();
+        var gmv = mirrorDB.computeGMVForProduct(productCode, startDate, endDate);
+        return Optional.of(GMVPeriodResponse.create(productCode, startDate, endDate, gmv));
+    }
+
+    /** Decimal text preserves the exact amount when the response is consumed by JavaScript. */
+    public record GMVPeriodResponse(String productCode, String startDate, String endDate, String gmv) {
+        static GMVPeriodResponse create(String productCode, LocalDate startDate, LocalDate endDate, BigDecimal gmv) {
+            return new GMVPeriodResponse(productCode, startDate.toString(), endDate.toString(),
+                    gmv.setScale(2, HALF_EVEN).toPlainString());
+        }
     }
 
     public ProductPerformanceOptions.Response getProductPerformanceOptions() throws SQLException {

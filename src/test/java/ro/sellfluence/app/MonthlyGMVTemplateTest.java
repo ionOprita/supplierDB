@@ -40,14 +40,51 @@ class MonthlyGMVTemplateTest {
         assertTrue(cells.containsAll(List.of("0.00", "-12.34", "—")));
         assertTrue(table.contains("data-vendor-id=\"" + firstVendor.id() + "\""));
         assertTrue(table.contains("data-vendor-id=\"\""));
+        assertTrue(table.contains("data-product-code=\"CODE-A\""));
+        assertTrue(table.contains("data-product-code=\"CODE-B\""));
         assertTrue(html.contains("id=\"gmvVendorFilterSelect\""));
         assertTrue(html.contains("<option value=\"" + firstVendor.id() + "\">Same vendor name</option>"));
         assertTrue(html.contains("<option value=\"" + secondVendor.id() + "\">Same vendor name</option>"));
         assertTrue(html.contains("id=\"gmvNoRows\""));
         assertTrue(html.contains("href=\"/private/gmv\""));
+        var products = elementContent(html, "select", "gmvProductSelect");
+        assertTrue(products.contains("<option value=\"\" selected>All products</option>"));
+        assertTrue(products.contains("<option value=\"CODE-A\" data-vendor-id=\"" + firstVendor.id()
+                + "\">S. 2 - Same product (CODE-A)</option>"));
+        assertTrue(products.contains("<option value=\"CODE-B\" data-vendor-id=\"\">S. 2 - Same product (CODE-B)</option>"));
         assertFalse(Pattern.compile("<(?:input|select|textarea|button)\\b|contenteditable\\s*=", Pattern.CASE_INSENSITIVE)
                 .matcher(table).find());
         assertFalse(html.contains("No stored GMV available."));
+    }
+
+    @Test
+    void rendersPeriodCalculatorWithRequiredCalendarDefaultsAndAccessibleStatus() {
+        var html = render(MonthlyGMVPage.from(Map.of()), List.of());
+
+        assertTrue(html.contains(">GMV for a period</h2>"));
+        assertTrue(html.contains(">Monthly GMV</h2>"));
+        assertTrue(html.indexOf("id=\"gmvVendorFilterSelect\"") < html.indexOf("id=\"gmvPeriodForm\""));
+        assertTrue(html.indexOf("id=\"gmvPeriodForm\"") < html.indexOf(">Monthly GMV</h2>"));
+        assertTrue(openingTag(html, "select", "gmvProductSelect").contains("required"));
+        var start = openingTag(html, "input", "gmvStartDate");
+        assertTrue(start.contains("type=\"date\""));
+        assertTrue(start.contains("value=\"2026-09-17\""));
+        assertTrue(start.contains("required"));
+        var end = openingTag(html, "input", "gmvEndDate");
+        assertTrue(end.contains("type=\"date\""));
+        assertTrue(end.contains("value=\"2026-10-16\""));
+        assertTrue(end.contains("required"));
+        assertTrue(openingTag(html, "button", "gmvCalculateButton").contains("disabled"));
+        assertTrue(html.contains(">Calculate GMV</button>"));
+        assertTrue(openingTag(html, "output", "gmvPeriodResult").contains("hidden"));
+        assertEquals("", elementContent(html, "span", "gmvPeriodContext"));
+        var status = openingTag(html, "p", "gmvPeriodStatus");
+        assertTrue(status.contains("role=\"status\""));
+        assertTrue(status.contains("aria-live=\"polite\""));
+        assertTrue(html.contains("<label for=\"gmvProductSelect\">Product</label>"));
+        assertTrue(html.contains("<label for=\"gmvStartDate\">Start date</label>"));
+        assertTrue(html.contains("<label for=\"gmvEndDate\">End date</label>"));
+        assertTrue(html.contains("Both dates included. Prices include VAT."));
     }
 
     @Test
@@ -63,6 +100,8 @@ class MonthlyGMVTemplateTest {
         assertTrue(html.contains("&lt;script&gt;"));
         assertTrue(html.contains("&lt;/script&gt;"));
         assertTrue(html.contains("&lt;Vendor &amp; Co&gt;"));
+        assertTrue(elementContent(html, "select", "gmvProductSelect").contains("value=\"CODE&lt;&amp;\""));
+        assertTrue(table(html).contains("data-product-code=\"CODE&lt;&amp;\""));
         assertFalse(html.contains("<script>alert('x')</script>"));
         assertFalse(html.contains("<Vendor & Co>"));
     }
@@ -74,6 +113,9 @@ class MonthlyGMVTemplateTest {
         var html = render(MonthlyGMVPage.from(Map.of(product, Map.of())), List.of());
 
         assertTrue(html.contains("No stored GMV available."));
+        assertTrue(html.indexOf("No stored GMV available.") > html.indexOf(">Monthly GMV</h2>"));
+        assertTrue(elementContent(html, "select", "gmvProductSelect").contains(
+                "<option value=\"CODE-EMPTY\" data-vendor-id=\"\">S. 1 - Empty (CODE-EMPTY)</option>"));
     }
 
     @Test
@@ -91,16 +133,28 @@ class MonthlyGMVTemplateTest {
                 "userRole", "user",
                 "pageTitle", "GMV",
                 "vendors", vendors,
-                "report", report
+                "report", report,
+                "defaultStartDate", "2026-09-17",
+                "defaultEndDate", "2026-10-16"
         ), output);
         return output.toString();
     }
 
     private static String table(String html) {
-        var matcher = Pattern.compile("<table\\b[^>]*\\bid=\"monthlyGmvTable\"[^>]*>(.*?)</table>", Pattern.DOTALL)
+        return elementContent(html, "table", "monthlyGmvTable");
+    }
+
+    private static String elementContent(String html, String element, String id) {
+        var matcher = Pattern.compile("<" + element + "\\b[^>]*\\bid=\"" + id + "\"[^>]*>(.*?)</" + element + ">", Pattern.DOTALL)
                 .matcher(html);
-        assertTrue(matcher.find(), "Monthly GMV table should be rendered");
+        assertTrue(matcher.find(), "Expected " + element + "#" + id);
         return matcher.group(1);
+    }
+
+    private static String openingTag(String html, String element, String id) {
+        var matcher = Pattern.compile("<" + element + "\\b[^>]*\\bid=\"" + id + "\"[^>]*>").matcher(html);
+        assertTrue(matcher.find(), "Expected " + element + "#" + id);
+        return matcher.group();
     }
 
     private static List<String> elementTexts(String html, String element) {
