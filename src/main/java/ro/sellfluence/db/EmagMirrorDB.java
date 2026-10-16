@@ -736,6 +736,22 @@ public class EmagMirrorDB {
     }
 
     /**
+     * Compute a product's current GMV and contributing order lines without storing either result.
+     * Both dates are inclusive, and matching snapshots outside the period remain available to the calculation.
+     *
+     * @throws NullPointerException if any argument is null.
+     * @throws IllegalArgumentException if startDate is after endDate.
+     * @throws SQLException on database errors.
+     */
+    public GMV.Breakdown computeGMVBreakdownForProduct(String productCode, LocalDate startDate, LocalDate endDate)
+            throws SQLException {
+        Objects.requireNonNull(productCode, "productCode");
+        GMV.validatePeriod(startDate, endDate);
+        return database.readTX(db -> GMV.computeGMVBreakdownForPeriod(
+                getOrderDataByProduct(db, productCode), startDate, endDate));
+    }
+
+    /**
      * Refresh materialized views used by the cohort-based rolling return rate chart.
      * Refresh order matters because downstream views depend on upstream ones.
      *

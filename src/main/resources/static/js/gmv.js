@@ -1,3 +1,5 @@
+import {createGMVDetails, fetchGMVForPeriod} from './gmv-details.js';
+
 export function initMonthlyGMV(documentRoot = document) {
   const vendorFilter = documentRoot.getElementById('gmvVendorFilterSelect');
   const table = documentRoot.getElementById('monthlyGmvTable');
@@ -16,8 +18,10 @@ export function initMonthlyGMV(documentRoot = document) {
   const productRows = Array.from(table.querySelectorAll('tbody tr[data-vendor-id]'));
   const allProductsOption = productSelect.options[0].cloneNode(true);
   const productOptions = Array.from(productSelect.options).slice(1).map(option => option.cloneNode(true));
+  const details = createGMVDetails(documentRoot);
   let requestGeneration = 0;
   let pending = false;
+  let calculatedResponse = null;
 
   function selectedProduct() {
     return productOptions.find(option => option.value === productSelect.value);
@@ -61,7 +65,10 @@ export function initMonthlyGMV(documentRoot = document) {
     pending = false;
     result.hidden = true;
     result.textContent = '';
+    result.setAttribute('aria-label', 'View contributing orders');
     context.textContent = '';
+    calculatedResponse = null;
+    details?.invalidateCalculated();
     setStatus('');
   }
 
@@ -105,6 +112,12 @@ export function initMonthlyGMV(documentRoot = document) {
     }
   }
 
+  result.addEventListener('click', () => {
+    if (calculatedResponse) {
+      details?.openCalculated(result, calculatedResponse.data, calculatedResponse.label);
+    }
+  });
+
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (pending) return;
@@ -122,32 +135,12 @@ export function initMonthlyGMV(documentRoot = document) {
     setStatus('Calculating GMV…');
     updateCalculateButton();
     try {
-      const response = await fetch(`/app/gmvForPeriod?${new URLSearchParams(request)}`, {
-        method: 'GET', headers: {'Accept': 'application/json'}
-      });
+      const data = await fetchGMVForPeriod(request);
       if (generation !== requestGeneration) return;
-      if (response.redirected || response.status === 401) {
-        throw new Error('Your session expired. Sign in again and retry.');
-      }
-      if (!response.ok) {
-        const message = response.status === 400 ? 'Choose a valid product and date range.'
-          : response.status === 404 ? 'This product is no longer available.'
-          : response.status === 403 ? 'You are not allowed to calculate GMV.'
-          : 'Could not calculate GMV. Try again.';
-        throw new Error(`${message} (HTTP ${response.status})`);
-      }
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error('Your session may have expired. Sign in again and retry.');
-      }
-      const data = await response.json();
-      if (generation !== requestGeneration) return;
-      if (typeof data?.gmv !== 'string' || data.productCode !== request.productCode
-        || data.startDate !== request.startDate || data.endDate !== request.endDate) {
-        throw new Error('The server returned an invalid GMV result. Try again.');
-      }
+      calculatedResponse = {data, label: product.textContent.trim()};
       result.textContent = data.gmv;
-      context.textContent = `${product.textContent.trim()} · ${request.startDate} to ${request.endDate}`;
+      context.textContent = `${calculatedResponse.label} · ${request.startDate} to ${request.endDate}`;
+      result.setAttribute('aria-label', `GMV ${data.gmv} for ${calculatedResponse.label}, ${request.startDate} to ${request.endDate}. View contributing orders.`);
       result.hidden = false;
       setStatus('');
     } catch (error) {

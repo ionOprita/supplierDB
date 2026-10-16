@@ -52,8 +52,14 @@ class MonthlyGMVTemplateTest {
         assertTrue(products.contains("<option value=\"CODE-A\" data-vendor-id=\"" + firstVendor.id()
                 + "\">S. 2 - Same product (CODE-A)</option>"));
         assertTrue(products.contains("<option value=\"CODE-B\" data-vendor-id=\"\">S. 2 - Same product (CODE-B)</option>"));
-        assertFalse(Pattern.compile("<(?:input|select|textarea|button)\\b|contenteditable\\s*=", Pattern.CASE_INSENSITIVE)
+        assertFalse(Pattern.compile("<(?:input|select|textarea)\\b|contenteditable\\s*=", Pattern.CASE_INSENSITIVE)
                 .matcher(table).find());
+        var tableButtons = Pattern.compile("<button\\b[^>]*>").matcher(table).results().toList();
+        assertEquals(2, tableButtons.size());
+        for (var button : tableButtons) {
+            assertTrue(button.group().contains("gmv-details-trigger"));
+            assertTrue(button.group().contains("type=\"button\""));
+        }
         assertFalse(html.contains("No stored GMV available."));
     }
 
@@ -76,7 +82,11 @@ class MonthlyGMVTemplateTest {
         assertTrue(end.contains("required"));
         assertTrue(openingTag(html, "button", "gmvCalculateButton").contains("disabled"));
         assertTrue(html.contains(">Calculate GMV</button>"));
-        assertTrue(openingTag(html, "output", "gmvPeriodResult").contains("hidden"));
+        var result = openingTag(html, "button", "gmvPeriodResult");
+        assertTrue(result.contains("type=\"button\""));
+        assertTrue(result.contains("hidden"));
+        assertTrue(result.contains("aria-label=\"View contributing orders\""));
+        assertTrue(result.contains("title=\"View contributing orders\""));
         assertEquals("", elementContent(html, "span", "gmvPeriodContext"));
         var status = openingTag(html, "p", "gmvPeriodStatus");
         assertTrue(status.contains("role=\"status\""));
@@ -102,8 +112,73 @@ class MonthlyGMVTemplateTest {
         assertTrue(html.contains("&lt;Vendor &amp; Co&gt;"));
         assertTrue(elementContent(html, "select", "gmvProductSelect").contains("value=\"CODE&lt;&amp;\""));
         assertTrue(table(html).contains("data-product-code=\"CODE&lt;&amp;\""));
+        assertTrue(table(html).contains("data-product-name=\"S. 1 - &lt;script>alert(&#39;x&#39;)&lt;/script>\""));
         assertFalse(html.contains("<script>alert('x')</script>"));
         assertFalse(html.contains("<Vendor & Co>"));
+    }
+
+    @Test
+    void onlyStoredMonthlyValuesIncludingZeroAreDrilldownButtons() {
+        var product = product("PNK", " exact/code? & + ", "S. 1 - Product", null);
+        var report = MonthlyGMVPage.from(Map.of(product, Map.of(
+                YearMonth.of(2026, 1), BigDecimal.ZERO,
+                YearMonth.of(2026, 2), new BigDecimal("9007199254740993.12")
+        )));
+
+        var table = table(render(report, List.of()));
+        var buttons = Pattern.compile("<button\\b[^>]*>(.*?)</button>", Pattern.DOTALL)
+                .matcher(table).results().toList();
+
+        assertEquals(2, buttons.size());
+        assertTrue(buttons.getFirst().group().contains("data-month=\"2026-01\""));
+        assertTrue(buttons.getFirst().group().contains("data-gmv=\"0.00\""));
+        assertTrue(buttons.getFirst().group().contains(">0.00</button>"));
+        assertTrue(buttons.getLast().group().contains("data-month=\"2026-02\""));
+        assertTrue(buttons.getLast().group().contains("data-gmv=\"9007199254740993.12\""));
+        assertTrue(buttons.getLast().group().contains(">9007199254740993.12</button>"));
+        for (var button : buttons) {
+            assertTrue(button.group().contains("data-product-code=\" exact/code? &amp; + \""));
+            assertTrue(button.group().contains("data-product-name=\"S. 1 - Product\""));
+            assertTrue(button.group().contains("type=\"button\""));
+        }
+        assertEquals(22, Pattern.compile("<td class=\"numeric\">\\s*—\\s*</td>").matcher(table).results().count());
+    }
+
+    @Test
+    void rendersSharedAccessibleDetailsDialogWithReadOnlyColumnsAndSeparateTotal() {
+        var html = render(MonthlyGMVPage.from(Map.of()), List.of());
+
+        var dialogTag = openingTag(html, "dialog", "gmvDetailsDialog");
+        assertTrue(dialogTag.contains("aria-labelledby=\"gmvDetailsTitle\""));
+        var dialog = elementContent(html, "dialog", "gmvDetailsDialog");
+        assertTrue(openingTag(dialog, "table", "gmvDetailsTable").contains("class=\"gmv-details-table\""));
+        assertEquals(List.of("Order ID", "Date", "Status", "Quantity used", "Unit price incl. VAT", "GMV contribution"),
+                elementTexts(dialog, "th"));
+        assertEquals("Contributing orders", elementContent(dialog, "h2", "gmvDetailsTitle"));
+        assertEquals("", elementContent(dialog, "p", "gmvDetailsContext"));
+        assertEquals("", elementContent(dialog, "p", "gmvDetailsReference"));
+        assertEquals("", elementContent(dialog, "tbody", "gmvDetailsBody"));
+        var status = openingTag(dialog, "p", "gmvDetailsStatus");
+        assertTrue(status.contains("role=\"status\""));
+        assertTrue(status.contains("aria-live=\"polite\""));
+        assertTrue(openingTag(dialog, "p", "gmvDetailsMismatch").contains("hidden"));
+        assertEquals("—", elementContent(dialog, "strong", "gmvDetailsTotal"));
+        assertTrue(dialog.indexOf("id=\"gmvDetailsTotal\"") > dialog.indexOf("</table>"));
+        var download = openingTag(dialog, "button", "gmvDetailsDownloadCsv");
+        assertTrue(download.contains("type=\"button\""));
+        assertTrue(download.contains("disabled"));
+        assertFalse(download.contains("hidden"));
+        assertEquals("Download CSV", elementContent(dialog, "button", "gmvDetailsDownloadCsv"));
+        assertTrue(dialog.indexOf("id=\"gmvDetailsDownloadCsv\"") < dialog.indexOf("id=\"gmvDetailsRetry\""));
+        var retry = openingTag(dialog, "button", "gmvDetailsRetry");
+        assertTrue(retry.contains("type=\"button\""));
+        assertTrue(retry.contains("hidden"));
+        var close = openingTag(dialog, "button", "gmvDetailsClose");
+        assertTrue(close.contains("type=\"button\""));
+        assertTrue(close.contains("autofocus"));
+        assertEquals("Close", elementContent(dialog, "button", "gmvDetailsClose"));
+        assertFalse(Pattern.compile("<(?:input|select|textarea)\\b|contenteditable\\s*=", Pattern.CASE_INSENSITIVE)
+                .matcher(dialog).find());
     }
 
     @Test

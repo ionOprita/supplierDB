@@ -629,6 +629,150 @@ tbody tr:nth-child(even) .sticky-col-2 {
   color: var(--danger);
 }
 
+.gmv-amount-button {
+  padding: .15rem .1rem;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-decoration: underline;
+  text-underline-offset: .2em;
+  cursor: pointer;
+}
+
+.gmv-amount-button:hover {
+  color: var(--primary-hover);
+  background: var(--hover);
+}
+
+.gmv-amount-button:focus-visible,
+.gmv-details-actions button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.gmv-details-dialog {
+  box-sizing: border-box;
+  width: min(64rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.gmv-details-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.gmv-details-dialog::backdrop {
+  background: rgb(17 24 39 / 55%);
+}
+
+.gmv-details-heading {
+  flex: 0 0 auto;
+  max-height: 45dvh;
+  padding: 1rem;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.gmv-details-heading h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.gmv-details-heading p {
+  margin: .4rem 0 0;
+  font-size: .85rem;
+}
+
+#gmvDetailsContext,
+#gmvDetailsReference,
+.gmv-details-status {
+  color: var(--muted);
+}
+
+.gmv-details-status.is-error {
+  color: var(--danger);
+}
+
+.gmv-details-mismatch {
+  padding: .5rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-alt);
+}
+
+.gmv-details-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border-block: 1px solid var(--border);
+  scrollbar-gutter: stable;
+}
+
+.gmv-details-table {
+  min-width: 750px;
+  font-size: .85rem;
+}
+
+.gmv-details-table th,
+.gmv-details-table td {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.gmv-details-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.gmv-details-footer {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .6rem;
+  padding: .75rem 1rem;
+}
+
+.gmv-details-footer p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.gmv-details-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .5rem;
+}
+
+.gmv-details-actions button {
+  padding: .35rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.gmv-details-actions button:disabled {
+  opacity: .6;
+  cursor: default;
+}
+
 body:has(#gmvPeriodForm) main {
   overflow: auto;
 }

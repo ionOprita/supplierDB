@@ -7,10 +7,13 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -26,6 +29,17 @@ import static ro.sellfluence.support.UsefulMethods.toYearMonth;
 public class GMV {
 
     private static final Logger logger = Logs.getConsoleLogger("GMV", WARNING);
+
+    /** The source snapshot and signed quantity used for one exact GMV contribution. */
+    public record Contribution(POInfo source, long quantity, BigDecimal amount) {
+    }
+
+    /** Current GMV and its contributing order lines; no values are stored. */
+    public record Breakdown(BigDecimal total, List<Contribution> contributions) {
+        public Breakdown {
+            contributions = List.copyOf(contributions);
+        }
+    }
 
     /**
      * Compute the GMV for a specific product.
@@ -50,9 +64,28 @@ public class GMV {
     static BigDecimal computeGMVForPeriod(Map<String, List<POInfo>> ordersWithProduct,
                                          LocalDate startDate, LocalDate endDate) {
         validatePeriod(startDate, endDate);
-        var gmv = computeGMVByBucket(ordersWithProduct,
-                date -> !date.isBefore(startDate) && !date.isAfter(endDate) ? Boolean.TRUE : null);
+        var gmv = computeGMVByBucket(ordersWithProduct, bucketForPeriod(startDate, endDate));
         return gmv.getOrDefault(Boolean.TRUE, BigDecimal.ZERO).setScale(2, HALF_EVEN);
+    }
+
+    /** Return the exact contributing snapshots, including zero-valued lines, for an inclusive period. */
+    static Breakdown computeGMVBreakdownForPeriod(Map<String, List<POInfo>> ordersWithProduct,
+                                                  LocalDate startDate, LocalDate endDate) {
+        validatePeriod(startDate, endDate);
+        var contributions = new ArrayList<Contribution>();
+        visitContributions(ordersWithProduct, bucketForPeriod(startDate, endDate),
+                (_, contribution) -> contributions.add(contribution));
+        contributions.sort(Comparator.comparing((Contribution contribution) -> contribution.source().orderDate())
+                .thenComparing(contribution -> contribution.source().orderId())
+                .thenComparingInt(contribution -> contribution.source().productInOrderId())
+                .thenComparingInt(contribution -> contribution.source().orderStatus())
+                .thenComparingInt(contribution -> contribution.source().surrogateId()));
+        var total = contributions.stream().map(Contribution::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new Breakdown(total.setScale(2, HALF_EVEN), contributions);
+    }
+
+    private static Function<LocalDate, Boolean> bucketForPeriod(LocalDate startDate, LocalDate endDate) {
+        return date -> !date.isBefore(startDate) && !date.isAfter(endDate) ? Boolean.TRUE : null;
     }
 
     static void validatePeriod(LocalDate startDate, LocalDate endDate) {
@@ -67,8 +100,15 @@ public class GMV {
     private static <T> Map<T, BigDecimal> computeGMVByBucket(Map<String, List<POInfo>> ordersWithProduct,
                                                            Function<LocalDate, T> bucketForDate) {
         var gmvByBucket = new HashMap<T, BigDecimal>();
-        ordersWithProduct.forEach((_, poInfos) -> computeGMVForOrder(poInfos, gmvByBucket, bucketForDate));
+        visitContributions(ordersWithProduct, bucketForDate,
+                (bucket, contribution) -> gmvByBucket.merge(bucket, contribution.amount(), BigDecimal::add));
         return gmvByBucket;
+    }
+
+    private static <T> void visitContributions(Map<String, List<POInfo>> ordersWithProduct,
+                                               Function<LocalDate, T> bucketForDate,
+                                               BiConsumer<T, Contribution> consumer) {
+        ordersWithProduct.forEach((_, poInfos) -> computeGMVForOrder(poInfos, bucketForDate, consumer));
     }
 
     /**
@@ -127,23 +167,16 @@ public class GMV {
         return result;
     }
 
-    private static <T> void addToGMV(Map<T, BigDecimal> gmvByBucket, T bucket, POInfo order) {
+    private static <T> void contribute(T bucket, POInfo source, long quantity,
+                                      BiConsumer<T, Contribution> consumer) {
         if (bucket == null) return;
-        var gmv = gmvByBucket.getOrDefault(bucket, BigDecimal.ZERO);
-        gmv = gmv.add(order.price().multiply(BigDecimal.valueOf(order.quantity())));
-        gmvByBucket.put(bucket, gmv);
+        consumer.accept(bucket, new Contribution(source, quantity,
+                source.price().multiply(BigDecimal.valueOf(quantity))));
     }
 
-    private static <T> void subtractFromGMV(Map<T, BigDecimal> gmvByBucket, T bucket, POInfo storno) {
-        if (bucket == null) return;
-        var stornoGMV = gmvByBucket.getOrDefault(bucket, BigDecimal.ZERO);
-        stornoGMV = stornoGMV.subtract(storno.price().multiply(BigDecimal.valueOf(storno.stornoQuantity())));
-        gmvByBucket.put(bucket, stornoGMV);
-    }
-
-    private static <T> void singleProductWithFinalizedAndStorno(Map<T, BigDecimal> gmvByBucket,
-                                                               POInfo finalized, POInfo storno,
-                                                               Function<LocalDate, T> bucketForDate) {
+    private static <T> void singleProductWithFinalizedAndStorno(POInfo finalized, POInfo storno,
+                                                               Function<LocalDate, T> bucketForDate,
+                                                               BiConsumer<T, Contribution> consumer) {
         if (storno.initialQuantity() != finalized.quantity()) {
             logger.log(WARNING, "Mismatch in quantity between\n finalized order: %s\n and storno order: %s.".formatted(finalized, storno));
         }
@@ -156,25 +189,25 @@ public class GMV {
         var finalizedBucket = bucketForDate.apply(finalized.orderDate());
         var stornoBucket = bucketForDate.apply(storno.orderDate());
         if (Objects.equals(finalizedBucket, stornoBucket)) {
-            addToGMV(gmvByBucket, finalizedBucket, storno);
+            contribute(finalizedBucket, storno, storno.quantity(), consumer);
         } else {
-            addToGMV(gmvByBucket, finalizedBucket, finalized);
-            subtractFromGMV(gmvByBucket, stornoBucket, storno);
+            contribute(finalizedBucket, finalized, finalized.quantity(), consumer);
+            contribute(stornoBucket, storno, -(long) storno.stornoQuantity(), consumer);
         }
     }
 
-    private static <T> void computeGMVForOrder(List<POInfo> poInfos, Map<T, BigDecimal> gmvByBucket,
-                                              Function<LocalDate, T> bucketForDate) {
+    private static <T> void computeGMVForOrder(List<POInfo> poInfos, Function<LocalDate, T> bucketForDate,
+                                              BiConsumer<T, Contribution> consumer) {
         var poInfoByOrderProductId = poInfos.stream()
                 .collect(Collectors.groupingBy(POInfo::productInOrderId));
         poInfoByOrderProductId.forEach((productInOrderId, orderInfos) -> {
             if (orderInfos.size() == 1) {
                 POInfo order = orderInfos.getFirst();
-                addToGMV(gmvByBucket, bucketForDate.apply(order.orderDate()), order);
+                contribute(bucketForDate.apply(order.orderDate()), order, order.quantity(), consumer);
             } else if (orderInfos.size() == 2) {
                 POInfo finalized = orderInfos.getFirst();
                 POInfo storno = orderInfos.getLast();
-                singleProductWithFinalizedAndStorno(gmvByBucket, finalized, storno, bucketForDate);
+                singleProductWithFinalizedAndStorno(finalized, storno, bucketForDate, consumer);
             } else {
                 throw new RuntimeException("Not prepared to handle order with more than two states: %s / %d.".formatted(orderInfos, productInOrderId));
             }

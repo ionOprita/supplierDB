@@ -46,7 +46,7 @@
         <p class="gmv-period-help">Both dates included. Prices include VAT.</p>
         <div class="gmv-period-summary">
             <label for="gmvPeriodResult">GMV</label>
-            <output id="gmvPeriodResult" hidden></output>
+            <button id="gmvPeriodResult" type="button" class="gmv-amount-button" title="View contributing orders" aria-label="View contributing orders" hidden></button>
             <span id="gmvPeriodContext"></span>
         </div>
         <p id="gmvPeriodStatus" role="status" aria-live="polite">Select a product to calculate GMV.</p>
@@ -84,7 +84,13 @@
                         <td class="sticky-col sticky-col-pnk">${row.product().pnk()}</td>
                         <td class="sticky-col sticky-col-product-code">${row.product().productCode()}</td>
                         @for(var month : report.months())
-                            <td class="numeric">${row.amount(month)}</td>
+                            <td class="numeric">
+                                @if(row.gmvs().containsKey(month))
+                                    <button type="button" class="gmv-amount-button gmv-details-trigger" data-product-code="${row.product().productCode()}" data-product-name="${row.product().name() == null ? "" : row.product().name()}" data-month="${month.toString()}" data-gmv="${row.amount(month)}" title="View contributing orders" aria-label="${"View contributing orders for GMV " + row.amount(month) + " for " + row.product().productCode() + " in " + month.toString()}">${row.amount(month)}</button>
+                                @else
+                                    —
+                                @endif
+                            </td>
                         @endfor
                     </tr>
                 @endfor
@@ -92,6 +98,39 @@
             </tbody>
         </table>
     </div>
+
+    <dialog id="gmvDetailsDialog" class="gmv-details-dialog" aria-labelledby="gmvDetailsTitle" aria-describedby="gmvDetailsContext gmvDetailsReference">
+        <div class="gmv-details-heading">
+            <h2 id="gmvDetailsTitle">Contributing orders</h2>
+            <p id="gmvDetailsContext"></p>
+            <p id="gmvDetailsReference"></p>
+            <p id="gmvDetailsStatus" class="gmv-details-status" role="status" aria-live="polite"></p>
+            <p id="gmvDetailsMismatch" class="gmv-details-mismatch" hidden></p>
+        </div>
+        <div class="gmv-details-table-wrap">
+            <table id="gmvDetailsTable" class="gmv-details-table" aria-label="Orders contributing to GMV">
+                <thead>
+                <tr>
+                    <th scope="col">Order ID</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" class="numeric">Quantity used</th>
+                    <th scope="col" class="numeric">Unit price incl. VAT</th>
+                    <th scope="col" class="numeric">GMV contribution</th>
+                </tr>
+                </thead>
+                <tbody id="gmvDetailsBody"></tbody>
+            </table>
+        </div>
+        <div class="gmv-details-footer">
+            <p>Total GMV: <strong id="gmvDetailsTotal">—</strong></p>
+            <div class="gmv-details-actions">
+                <button id="gmvDetailsDownloadCsv" type="button" disabled>Download CSV</button>
+                <button id="gmvDetailsRetry" type="button" hidden>Retry</button>
+                <button id="gmvDetailsClose" type="button" autofocus>Close</button>
+            </div>
+        </div>
+    </dialog>
 
     <script type="module" src="/js/gmv.js"></script>
 `)

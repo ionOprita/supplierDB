@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -92,6 +93,8 @@ class ServerGMVPeriodTest {
         assertEquals("2026-01-31", json.get("endDate").asString());
         assertTrue(json.get("gmv").isString());
         assertEquals(api.amount, json.get("gmv").asString());
+        assertTrue(json.get("contributions").isArray());
+        assertEquals(0, json.get("contributions").size());
         assertEquals(new Server.GMVPeriodRequest(code, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31)),
                 api.request);
     }
@@ -104,6 +107,27 @@ class ServerGMVPeriodTest {
             assertEquals(200, response.statusCode());
             assertEquals(amount, JSON.readTree(response.body()).get("gmv").asString());
         }
+    }
+
+    @Test
+    void includesTheMatchingOrderBreakdownInTheCalculationResponse() throws Exception {
+        api.amount = "-12.34";
+        api.contributions = List.of(
+                new API.GMVContributionResponse("original", "2026-01-01", "Finalized", 1, "10.00", "10.00"),
+                new API.GMVContributionResponse("returned", "2026-01-02", "Storno deduction", -2, "11.17", "-22.34")
+        );
+
+        var response = get(query("product", "2026-01-01", "2026-01-31"));
+        var json = JSON.readTree(response.body());
+
+        assertEquals(200, response.statusCode());
+        assertEquals("-12.34", json.get("gmv").asString());
+        assertEquals(2, json.get("contributions").size());
+        assertEquals("original", json.get("contributions").get(0).get("orderId").asString());
+        assertEquals(-2, json.get("contributions").get(1).get("quantity").asInt());
+        assertTrue(json.get("contributions").get(1).get("gmv").isString());
+        assertEquals("-22.34", json.get("contributions").get(1).get("gmv").asString());
+        assertEquals(1, api.calls);
     }
 
     @Test
@@ -156,6 +180,7 @@ class ServerGMVPeriodTest {
         private String amount = "0.00";
         private boolean unknown;
         private boolean failure;
+        private List<GMVContributionResponse> contributions = List.of();
         private Server.GMVPeriodRequest request;
 
         private StubAPI() {
@@ -169,7 +194,7 @@ class ServerGMVPeriodTest {
             request = new Server.GMVPeriodRequest(productCode, startDate, endDate);
             if (failure) throw new SQLException("private database detail");
             return unknown ? Optional.empty() : Optional.of(new GMVPeriodResponse(
-                    productCode, startDate.toString(), endDate.toString(), amount));
+                    productCode, startDate.toString(), endDate.toString(), amount, contributions));
         }
     }
 }

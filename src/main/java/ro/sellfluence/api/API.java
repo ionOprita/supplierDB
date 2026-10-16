@@ -8,6 +8,7 @@ import ro.sellfluence.db.AdsCampaignTable.AdsSearchPhraseTableData;
 import ro.sellfluence.db.AdsCampaignTable.AdsTargetedProductTableData;
 import ro.sellfluence.db.AdsReportPeriod;
 import ro.sellfluence.db.EmagMirrorDB;
+import ro.sellfluence.db.GMV;
 import ro.sellfluence.db.OffersTable.DailyProductOffer;
 import ro.sellfluence.db.Vendor;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
@@ -60,15 +61,44 @@ public class API {
             throws SQLException {
         if (productCode == null || productCode.isBlank()) return Optional.empty();
         if (mirrorDB.readProduct(productCode).isEmpty()) return Optional.empty();
-        var gmv = mirrorDB.computeGMVForProduct(productCode, startDate, endDate);
-        return Optional.of(GMVPeriodResponse.create(productCode, startDate, endDate, gmv));
+        var breakdown = mirrorDB.computeGMVBreakdownForProduct(productCode, startDate, endDate);
+        return Optional.of(GMVPeriodResponse.create(productCode, startDate, endDate, breakdown));
     }
 
     /** Decimal text preserves the exact amount when the response is consumed by JavaScript. */
-    public record GMVPeriodResponse(String productCode, String startDate, String endDate, String gmv) {
+    public record GMVPeriodResponse(String productCode, String startDate, String endDate, String gmv,
+                                    List<GMVContributionResponse> contributions) {
+        public GMVPeriodResponse {
+            contributions = List.copyOf(contributions);
+        }
+
+        public GMVPeriodResponse(String productCode, String startDate, String endDate, String gmv) {
+            this(productCode, startDate, endDate, gmv, List.of());
+        }
+
         static GMVPeriodResponse create(String productCode, LocalDate startDate, LocalDate endDate, BigDecimal gmv) {
             return new GMVPeriodResponse(productCode, startDate.toString(), endDate.toString(),
                     gmv.setScale(2, HALF_EVEN).toPlainString());
+        }
+
+        static GMVPeriodResponse create(String productCode, LocalDate startDate, LocalDate endDate,
+                                       GMV.Breakdown breakdown) {
+            return new GMVPeriodResponse(productCode, startDate.toString(), endDate.toString(),
+                    breakdown.total().setScale(2, HALF_EVEN).toPlainString(),
+                    breakdown.contributions().stream().map(GMVContributionResponse::create).toList());
+        }
+    }
+
+    public record GMVContributionResponse(String orderId, String orderDate, String status, long quantity,
+                                          String unitPrice, String gmv) {
+        static GMVContributionResponse create(GMV.Contribution contribution) {
+            var source = contribution.source();
+            var status = source.orderStatus() == 4 ? "Finalized"
+                    : contribution.quantity() < 0 ? "Storno deduction"
+                    : contribution.quantity() == 0 ? "Storno" : "Remaining after storno";
+            return new GMVContributionResponse(source.orderId(), source.orderDate().toString(), status,
+                    contribution.quantity(), source.price().setScale(2, HALF_EVEN).toPlainString(),
+                    contribution.amount().setScale(2, HALF_EVEN).toPlainString());
         }
     }
 
