@@ -664,6 +664,8 @@ export function sortTaskTableBody(tbody, columnIndex, direction) {
  * @param {string} [cfg.laneFilterSelectId] - DOM id of the lane filter select
  * @param {string} [cfg.pauseAllButtonId] - DOM id of the Pause All button
  * @param {string} [cfg.pauseAllUrl] - endpoint to pause automatic scheduling for every task
+ * @param {string} [cfg.resumeAllButtonId] - DOM id of the Resume all button
+ * @param {string} [cfg.resumeAllUrl] - endpoint to resume automatic scheduling for all paused tasks
  * @param {boolean} [cfg.canRunTasks] - whether Run controls should be displayed
  * @param {function} [cfg.runUrlBuilder] - (taskName) => URL for the run endpoint
  * @param {function} [cfg.pauseUrlBuilder] - (taskName) => URL for the pause endpoint
@@ -680,6 +682,7 @@ export function initTaskTable(cfg) {
   const STATUS_FILTER = cfg.statusFilterSelectId ? document.getElementById(cfg.statusFilterSelectId) : null;
   const LANE_FILTER = cfg.laneFilterSelectId ? document.getElementById(cfg.laneFilterSelectId) : null;
   const PAUSE_ALL_BUTTON = cfg.pauseAllButtonId ? document.getElementById(cfg.pauseAllButtonId) : null;
+  const RESUME_ALL_BUTTON = cfg.resumeAllButtonId ? document.getElementById(cfg.resumeAllButtonId) : null;
   const pendingTaskNames = new Set();
   const trackedRuns = new Map();
   let currentLaneStatuses = [];
@@ -972,29 +975,34 @@ export function initTaskTable(cfg) {
     }
   }
 
-  async function pauseAllTasks() {
-    if (!cfg.canRunTasks || !cfg.pauseAllUrl || !PAUSE_ALL_BUTTON || PAUSE_ALL_BUTTON.disabled) return;
+  async function setAllTasksPaused(paused) {
+    const button = paused ? PAUSE_ALL_BUTTON : RESUME_ALL_BUTTON;
+    const url = paused ? cfg.pauseAllUrl : cfg.resumeAllUrl;
+    const action = paused ? 'pause' : 'resume';
+    if (!cfg.canRunTasks || !url || !button || button.disabled) return;
 
-    PAUSE_ALL_BUTTON.disabled = true;
-    PAUSE_ALL_BUTTON.textContent = 'Pausing...';
-    setActionStatus('Pausing automatic scheduling for all tasks...');
+    button.disabled = true;
+    button.textContent = paused ? 'Pausing...' : 'Resuming...';
+    setActionStatus(`${paused ? 'Pausing' : 'Resuming'} automatic scheduling for all tasks...`);
 
     try {
-      const response = await fetch(cfg.pauseAllUrl, { method: 'POST' });
+      const response = await fetch(url, { method: 'POST' });
       if (response.redirected || response.status === 401 || response.status === 403) {
-        throw new Error('Your session has expired or you are not allowed to pause tasks. Please sign in again.');
+        throw new Error(`Your session has expired or you are not allowed to ${action} tasks. Please sign in again.`);
       }
       if (!response.ok) {
         const detail = await response.text();
-        throw new Error(detail || `Could not pause all tasks (HTTP ${response.status}).`);
+        throw new Error(detail || `Could not ${action} all tasks (HTTP ${response.status}).`);
       }
-      setActionStatus('Automatic scheduling for all tasks is now paused. Wait for running or starting tasks to finish before stopping the server.');
+      setActionStatus(paused
+        ? 'Automatic scheduling for all tasks is now paused. Wait for running or starting tasks to finish before stopping the server.'
+        : 'Automatic scheduling for all paused tasks is now resumed.');
     } catch (error) {
       setActionStatus(error instanceof Error ? error.message : String(error), true);
     } finally {
       await loadTasks();
-      PAUSE_ALL_BUTTON.disabled = false;
-      PAUSE_ALL_BUTTON.textContent = 'Pause All';
+      button.disabled = false;
+      button.textContent = paused ? 'Pause All' : 'Resume all';
     }
   }
 
@@ -1049,7 +1057,8 @@ export function initTaskTable(cfg) {
   NAME_FILTER?.addEventListener('input', renderFilteredTasks);
   STATUS_FILTER?.addEventListener('change', renderFilteredTasks);
   LANE_FILTER?.addEventListener('change', renderFilteredTasks);
-  PAUSE_ALL_BUTTON?.addEventListener('click', pauseAllTasks);
+  PAUSE_ALL_BUTTON?.addEventListener('click', () => setAllTasksPaused(true));
+  RESUME_ALL_BUTTON?.addEventListener('click', () => setAllTasksPaused(false));
 
   document.getElementById('refreshBtn')?.addEventListener('click', loadTasks);
   window.addEventListener('resize', () => applyStickyOffsets(TABLE));

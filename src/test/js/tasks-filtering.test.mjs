@@ -66,6 +66,7 @@ async function withTable(initialState, callback) {
     tasksTable: new Element('table'),
     refreshBtn: new Element('button'),
     pauseAllBtn: new Element('button'),
+    resumeAllBtn: new Element('button'),
     taskNameFilter: new Element('input'),
     taskStatusFilter: new Element('select'),
     taskLaneFilter: new Element('select'),
@@ -119,6 +120,7 @@ async function withTable(initialState, callback) {
       statusFilterSelectId: 'taskStatusFilter', laneFilterSelectId: 'taskLaneFilter',
       canRunTasks: state.canRunTasks ?? true,
       pauseAllButtonId: 'pauseAllBtn', pauseAllUrl: '/admin/tasks/pause-all',
+      resumeAllButtonId: 'resumeAllBtn', resumeAllUrl: '/admin/tasks/resume-all',
       runUrlBuilder: taskName => `/admin/tasks/${encodeURIComponent(taskName)}/run`,
       pauseUrlBuilder: taskName => `/admin/tasks/${encodeURIComponent(taskName)}/pause`,
       resumeUrlBuilder: taskName => `/admin/tasks/${encodeURIComponent(taskName)}/resume`,
@@ -388,32 +390,86 @@ test('Pause All sends one bulk request and preserves filters, sorting, and hidde
   });
 });
 
-for (const [label, onPost, message] of [
-  ['HTTP failure', () => ({ ok: false, status: 503, text: async () => '' }), /HTTP 503/],
-  ['expired session', () => ({ ok: true, status: 200, redirected: true }), /sign in again/],
-  ['forbidden request', () => ({ ok: false, status: 403 }), /not allowed to pause tasks/],
-  ['network failure', () => { throw new Error('Network unavailable'); }, /Network unavailable/]
-]) {
-  test(`Pause All reports ${label} and restores the button`, async () => {
-    await withTable({ rows: [failedTask('Orders')], onPost }, async ({ elements, state, names }) => {
-      await elements.pauseAllBtn.fire('click');
+test('Resume all resumes hidden paused tasks and preserves filters and sorting', async () => {
+  let acceptResume;
+  const acceptance = new Promise(resolve => { acceptResume = resolve; });
+  await withTable({
+    rows: [failedTask('Zulu'), failedTask('Alpha'), failedTask('Hidden paused'), { name: 'Running', started }],
+    paused: ['Zulu', 'Alpha', 'Hidden paused'],
+    lanes: [lane('emagApiLane', ['Zulu', 'Alpha']), lane('googleApiLane', ['Hidden paused', 'Running'], 'Running')],
+    async onPost() {
+      await acceptance;
+      this.paused = [];
+      return { ok: true, status: 204 };
+    }
+  }, async ({ elements, state, requests, names, setFilter, buttonFor }) => {
+    setFilter('taskNameFilter', 'a');
+    setFilter('taskLaneFilter', 'emagApiLane');
+    setFilter('taskStatusFilter', 'PAUSED');
+    elements.tasksHead.rows[0].cells[1].children[0].fire('click');
+    assert.deepEqual(names(), ['Alpha']);
 
-      assert.match(elements.taskActionStatus.textContent, message);
-      assert.equal(elements.taskActionStatus.classes.has('is-error'), true);
-      assert.equal(elements.pauseAllBtn.disabled, false);
-      assert.equal(elements.pauseAllBtn.textContent, 'Pause All');
-      assert.deepEqual(state.paused, []);
-      assert.deepEqual(names(), ['Orders']);
+    const resuming = elements.resumeAllBtn.fire('click');
+    assert.equal(elements.resumeAllBtn.disabled, true);
+    assert.equal(elements.resumeAllBtn.textContent, 'Resuming...');
+    await elements.resumeAllBtn.fire('click');
+    assert.equal(requests.filter(request => request.method === 'POST').length, 1);
+    acceptResume();
+    await resuming;
+
+    assert.deepEqual(requests.filter(request => request.method === 'POST'), [
+      { url: '/admin/tasks/resume-all', method: 'POST' }
+    ]);
+    assert.deepEqual(state.paused, []);
+    assert.deepEqual(names(), [], 'Resumed tasks no longer match the Paused filter');
+    assert.equal(elements.taskNameFilter.value, 'a');
+    assert.equal(elements.taskLaneFilter.value, 'emagApiLane');
+    assert.equal(elements.taskStatusFilter.value, 'PAUSED');
+    assert.equal(elements.resumeAllBtn.disabled, false);
+    assert.equal(elements.resumeAllBtn.textContent, 'Resume all');
+    assert.match(elements.taskActionStatus.textContent, /all paused tasks.*resumed/);
+    assert.match(elements.taskSchedulerStatus.textContent, /Running/);
+
+    setFilter('taskNameFilter', '');
+    setFilter('taskStatusFilter', 'ERROR');
+    assert.deepEqual(names(), ['Alpha', 'Zulu']);
+    assert.equal(buttonFor('Alpha', 'task-pause-button').textContent, 'Pause');
+    setFilter('taskLaneFilter', '');
+    assert.deepEqual(names(), ['Alpha', 'Hidden paused', 'Zulu']);
+  });
+});
+
+for (const [buttonId, buttonText, action] of [
+  ['pauseAllBtn', 'Pause All', 'pause'],
+  ['resumeAllBtn', 'Resume all', 'resume']
+]) {
+  for (const [label, onPost, message] of [
+    ['HTTP failure', () => ({ ok: false, status: 503, text: async () => '' }), /HTTP 503/],
+    ['expired session', () => ({ ok: true, status: 200, redirected: true }), /sign in again/],
+    ['forbidden request', () => ({ ok: false, status: 403 }), new RegExp(`not allowed to ${action} tasks`)],
+    ['network failure', () => { throw new Error('Network unavailable'); }, /Network unavailable/]
+  ]) {
+    test(`${buttonText} reports ${label} and restores the button`, async () => {
+      await withTable({ rows: [failedTask('Orders')], onPost }, async ({ elements, state, names }) => {
+        await elements[buttonId].fire('click');
+
+        assert.match(elements.taskActionStatus.textContent, message);
+        assert.equal(elements.taskActionStatus.classes.has('is-error'), true);
+        assert.equal(elements[buttonId].disabled, false);
+        assert.equal(elements[buttonId].textContent, buttonText);
+        assert.deepEqual(state.paused, []);
+        assert.deepEqual(names(), ['Orders']);
+      });
+    });
+  }
+
+  test(`${buttonText} does not submit requests without task-control permission`, async () => {
+    await withTable({ canRunTasks: false }, async ({ elements, requests }) => {
+      await elements[buttonId].fire('click');
+      assert.equal(requests.some(request => request.method === 'POST'), false);
     });
   });
 }
-
-test('Pause All does not submit requests without task-control permission', async () => {
-  await withTable({ canRunTasks: false }, async ({ elements, requests }) => {
-    await elements.pauseAllBtn.fire('click');
-    assert.equal(requests.some(request => request.method === 'POST'), false);
-  });
-});
 
 test('filter changes preserve a load failure and a successful retry reapplies current filters', async () => {
   await withTable({

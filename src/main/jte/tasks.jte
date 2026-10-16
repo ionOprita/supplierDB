@@ -31,6 +31,7 @@
       </div>
       @if(userRole.equals("admin"))
         <button id="pauseAllBtn" type="button" title="Pause automatic scheduling for all tasks in every lane">Pause All</button>
+        <button id="resumeAllBtn" type="button" title="Resume automatic scheduling for all paused tasks in every lane">Resume all</button>
       @endif
     </div>
     <button id="refreshBtn" type="button" title="Reload">Reload</button>

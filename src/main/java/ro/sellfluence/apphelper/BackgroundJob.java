@@ -582,6 +582,15 @@ public class BackgroundJob {
         }
     }
 
+    /**
+     * Resume automatic scheduling for all paused tasks atomically. Normal scheduling checks still apply.
+     */
+    public void resumeAllTasks() {
+        synchronized (taskControlLock) {
+            pausedTaskNames.clear();
+        }
+    }
+
     public Set<String> pausedTaskNames() {
         synchronized (taskControlLock) {
             return Set.copyOf(pausedTaskNames);

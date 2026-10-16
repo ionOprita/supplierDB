@@ -224,6 +224,34 @@ class BackgroundJobTest {
     }
 
     @Test
+    void resumeAllRestoresPausedTasksAcrossLanesAndPreservesSchedulingChecks() {
+        var executor = new HoldingExecutor();
+        var store = new FakeTaskStore();
+        store.put(completedAttempt("recent", NOW.minusMinutes(5), NOW.minusMinutes(1), ""));
+        var job = new BackgroundJob(store, executor, clockAt(NOW), List.of(
+                task("orders", "emag", () -> {}),
+                task("sheets", "google", () -> {}),
+                task("active", "reviews", () -> {}),
+                scheduledTask("recent", "recent", Duration.ofDays(1), Duration.ofHours(1), null),
+                scheduledTask("dependent", "dependent", Duration.ofDays(1), Duration.ofHours(1), "missing")
+        ));
+        job.setTaskPaused("orders", true);
+        job.setTaskPaused("sheets", true);
+        job.setTaskPaused("recent", true);
+        job.setTaskPaused("dependent", true);
+        assertEquals(ACCEPTED, job.requestRun("active").status());
+
+        job.resumeAllTasks();
+        job.resumeAllTasks();
+
+        assertTrue(job.pausedTaskNames().isEmpty());
+        assertEquals(1, executor.queuedCount(), "Resuming should leave dispatch to the scheduler");
+        job.performWork();
+        assertEquals(Map.of("emag", "orders", "google", "sheets", "reviews", "active"), activeTasks(job));
+        assertEquals(3, executor.queuedCount(), "Existing activity, intervals, and dependencies still apply");
+    }
+
+    @Test
     void pauseAllAllowsClaimedTasksToFinishAndPreservesResumeAndManualRun() {
         var executor = new HoldingExecutor();
         var completed = new AtomicInteger();
