@@ -56,6 +56,7 @@ public class FetchAds {
 
     private static final int MAX_REQUEST_RETRIES = 4;
     private static final long INITIAL_RETRY_DELAY_MILLISECONDS = 10_000;
+    private static final long INITIAL_UNAUTHORIZED_RETRY_DELAY_MILLISECONDS = 5_000;
 
     private static final Path cacheDirectory = Path.of("AdsJSON");
 
@@ -102,6 +103,97 @@ public class FetchAds {
     record DownloadedPage<T>(List<T> items, int pageCount) {
     }
 
+    static class UnauthorizedException extends RuntimeException {
+        UnauthorizedException(String url) {
+            super("eMAG Ads request failed with HTTP 401 Unauthorized for %s.".formatted(url));
+        }
+    }
+
+    private static class UnauthorizedStreakException extends RuntimeException {
+        UnauthorizedStreakException(UnauthorizedException cause) {
+            super("Aborted after 3 consecutive URLs returned HTTP 401 despite retries.", cause);
+        }
+    }
+
+    /** State belongs to one detail task, never to an account or a shared browser session. */
+    static class DetailFetchProgress {
+        private final List<String> issues = new ArrayList<>();
+        private int consecutiveUnauthorized;
+
+        HttpFetcher fetcher(HttpFetcher fetchOnce, Sleeper sleeper) {
+            return url -> {
+                var response = fetchWithRetry(url, fetchOnce, sleeper, true);
+                if (response.ok()) {
+                    consecutiveUnauthorized = 0;
+                }
+                return response;
+            };
+        }
+
+        boolean skip(String message, UnauthorizedException failure) {
+            issues.add(message);
+            logger.log(WARNING, message + ". " + failure.getMessage());
+            return ++consecutiveUnauthorized >= 3;
+        }
+
+        void run(Runnable action) {
+            try {
+                action.run();
+            } catch (RuntimeException failure) {
+                if (issues.isEmpty()) {
+                    throw failure;
+                }
+                var messages = new ArrayList<String>();
+                var reason = failure.getMessage();
+                messages.add(reason == null ? "Task aborted: " + failure.getClass().getSimpleName()
+                        : "Task aborted: " + reason.replaceAll("\\R", " "));
+                messages.addAll(issues);
+                throw new AdsPartialFailureException(messages, failure);
+            }
+            if (!issues.isEmpty()) {
+                throw new AdsPartialFailureException(issues, null);
+            }
+        }
+    }
+
+    @FunctionalInterface
+    interface ReportWriter<T> {
+        void write(List<AdsAdsetReport<T>> reports) throws SQLException;
+    }
+
+    /** A failed page invalidates its whole report; only completed reports reach the writer. */
+    static <K, T> void transferDetailReports(
+            List<K> keys,
+            Function<K, List<AdsAdsetReport<T>>> download,
+            Function<K, String> skipMessage,
+            ReportWriter<T> writer,
+            DetailFetchProgress progress
+    ) throws SQLException {
+        var reports = new ArrayList<AdsAdsetReport<T>>();
+        UnauthorizedStreakException abort = null;
+        for (var key : keys) {
+            try {
+                reports.addAll(download.apply(key));
+            } catch (UnauthorizedException failure) {
+                if (progress.skip(skipMessage.apply(key), failure)) {
+                    abort = new UnauthorizedStreakException(failure);
+                    break;
+                }
+            }
+        }
+        try {
+            writer.write(reports);
+        } catch (SQLException | RuntimeException failure) {
+            if (abort != null) {
+                failure.addSuppressed(abort);
+            }
+            throw failure;
+        }
+        if (abort != null) {
+            throw abort;
+        }
+    }
+
     /**
      * Fetch campaigns and their ad sets and store them in the database.
      *
@@ -126,8 +218,9 @@ public class FetchAds {
      */
     public static void fetchKeywords(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
         var vendorId = requireVendorId(alias, mirrorDB);
-        withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
-                transferKeywordsToDB(page, aliasCacheDirectory, mirrorDB, vendorId, startDate, endDate));
+        var progress = new DetailFetchProgress();
+        progress.run(() -> withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
+                transferKeywordsToDB(page, aliasCacheDirectory, mirrorDB, vendorId, startDate, endDate, progress)));
     }
 
     /**
@@ -140,8 +233,9 @@ public class FetchAds {
      */
     public static void fetchSearchPhrases(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
         var vendorId = requireVendorId(alias, mirrorDB);
-        withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
-                transferSearchPhrasesToDB(page, aliasCacheDirectory, mirrorDB, vendorId, startDate, endDate));
+        var progress = new DetailFetchProgress();
+        progress.run(() -> withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
+                transferSearchPhrasesToDB(page, aliasCacheDirectory, mirrorDB, vendorId, startDate, endDate, progress)));
     }
 
     /**
@@ -154,8 +248,9 @@ public class FetchAds {
      */
     public static void fetchTargetedProducts(String alias, EmagMirrorDB mirrorDB, LocalDate startDate, LocalDate endDate) {
         var vendorId = requireVendorId(alias, mirrorDB);
-        withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
-                transferTargetedProductsToDB(page, aliasCacheDirectory, mirrorDB, vendorId, startDate, endDate));
+        var progress = new DetailFetchProgress();
+        progress.run(() -> withPlaywrightSession(alias, (page, aliasCacheDirectory) ->
+                transferTargetedProductsToDB(page, aliasCacheDirectory, mirrorDB, vendorId, startDate, endDate, progress)));
     }
 
     private static UUID requireVendorId(String alias, EmagMirrorDB mirrorDB) {
@@ -295,28 +390,30 @@ public class FetchAds {
             EmagMirrorDB mirrorDB,
             UUID vendorId,
             LocalDate startDate,
-            LocalDate endDate
+            LocalDate endDate,
+            DetailFetchProgress progress
     ) {
         var adSetsByDate = readAdSetsByDate(mirrorDB, vendorId, startDate, endDate);
-        var currentDate = startDate;
-        while (currentDate.isBefore(endDate)) {
-            var reports = new ArrayList<AdsAdsetReport<AdsKeyword>>();
-            var downloadedRows = 0;
-            for (var adSet : adSetsByDate.getOrDefault(currentDate, List.of())) {
-                var keywords = downloadKeywords(
-                        page, aliasCacheDirectory, currentDate, adSet.campaignId(), adSet.adsetId()
-                );
-                downloadedRows += keywords.size();
-                reports.add(new AdsAdsetReport<>(adSet, keywords));
-            }
+        var fetcher = progress.fetcher(url -> fetchOnce(page, url), Thread::sleep);
+        for (var date : startDate.datesUntil(endDate).toList()) {
             try {
-                var changedRows = mirrorDB.addOrUpdateAdsKeywords(reports);
-                logger.log(INFO, "Inserted or updated %d keyword rows from %d downloaded rows for %s (vendor %s)."
-                        .formatted(changedRows, downloadedRows, currentDate, vendorId));
+                transferDetailReports(
+                        adSetsByDate.getOrDefault(date, List.of()),
+                        adSet -> List.of(new AdsAdsetReport<>(adSet, downloadKeywords(
+                                fetcher, aliasCacheDirectory, date, adSet.campaignId(), adSet.adsetId()))),
+                        adSet -> "Skipped campaign %d adset %d for dates %s-%s"
+                                .formatted(adSet.campaignId(), adSet.adsetId(), date, date),
+                        reports -> {
+                            var changedRows = mirrorDB.addOrUpdateAdsKeywords(reports);
+                            var downloadedRows = reports.stream().mapToInt(report -> report.rows().size()).sum();
+                            logger.log(INFO, "Inserted or updated %d keyword rows from %d downloaded rows for %s (vendor %s)."
+                                    .formatted(changedRows, downloadedRows, date, vendorId));
+                        },
+                        progress
+                );
             } catch (SQLException e) {
                 throw new RuntimeException("Error storing keywords in the database.", e);
             }
-            currentDate = currentDate.plusDays(1);
         }
     }
 
@@ -334,42 +431,46 @@ public class FetchAds {
             EmagMirrorDB mirrorDB,
             UUID vendorId,
             LocalDate startDate,
-            LocalDate endDate
+            LocalDate endDate,
+            DetailFetchProgress progress
     ) {
         var adSetsByDate = readAdSetsByDate(mirrorDB, vendorId, startDate, endDate);
-        var currentDate = startDate;
-        while (currentDate.isBefore(endDate)) {
-            var reports = new ArrayList<AdsAdsetReport<AdsSearchPhrase>>();
-            var downloadedRows = 0;
-            var matchedRows = 0;
-            var adSetsByCampaign = adSetsByDate.getOrDefault(currentDate, List.of()).stream()
+        var fetcher = progress.fetcher(url -> fetchOnce(page, url), Thread::sleep);
+        for (var date : startDate.datesUntil(endDate).toList()) {
+            var adSetsByCampaign = adSetsByDate.getOrDefault(date, List.of()).stream()
                     .collect(Collectors.groupingBy(AdsAdsetKey::campaignId, LinkedHashMap::new, Collectors.toList()));
-            for (var campaignEntry : adSetsByCampaign.entrySet()) {
-                var searchPhrases = downloadSearchPhrases(
-                        page, aliasCacheDirectory, currentDate, campaignEntry.getKey()
-                );
-                downloadedRows += searchPhrases.size();
-                var phrasesByAdSet = searchPhrases.stream()
-                        .filter(phrase -> phrase.adsetId() != null)
-                        .collect(Collectors.groupingBy(AdsSearchPhrase::adsetId));
-                for (var adSet : campaignEntry.getValue()) {
-                    var phrases = phrasesByAdSet.getOrDefault(adSet.adsetId(), List.of());
-                    matchedRows += phrases.size();
-                    reports.add(new AdsAdsetReport<>(adSet, phrases));
-                }
-            }
-            if (matchedRows != downloadedRows) {
-                logger.log(WARNING, "Ignored %d search phrase rows for unknown ad sets on %s."
-                        .formatted(downloadedRows - matchedRows, currentDate));
-            }
             try {
-                var changedRows = mirrorDB.addOrUpdateAdsSearchPhrases(reports);
-                logger.log(INFO, "Inserted or updated %d search phrase rows from %d downloaded rows for %s (vendor %s)."
-                        .formatted(changedRows, downloadedRows, currentDate, vendorId));
+                transferDetailReports(
+                        new ArrayList<>(adSetsByCampaign.entrySet()),
+                        campaign -> {
+                            var phrases = downloadSearchPhrases(fetcher, aliasCacheDirectory, date, campaign.getKey());
+                            var phrasesByAdSet = phrases.stream()
+                                    .filter(phrase -> phrase.adsetId() != null)
+                                    .collect(Collectors.groupingBy(AdsSearchPhrase::adsetId));
+                            var reports = campaign.getValue().stream()
+                                    .map(adSet -> new AdsAdsetReport<>(adSet,
+                                            phrasesByAdSet.getOrDefault(adSet.adsetId(), List.of())))
+                                    .toList();
+                            var matchedRows = reports.stream().mapToInt(report -> report.rows().size()).sum();
+                            if (matchedRows != phrases.size()) {
+                                logger.log(WARNING, "Ignored %d search phrase rows for unknown ad sets in campaign %d on %s."
+                                        .formatted(phrases.size() - matchedRows, campaign.getKey(), date));
+                            }
+                            return reports;
+                        },
+                        campaign -> "Skipped campaign %d for dates %s-%s (search phrases, all adsets)"
+                                .formatted(campaign.getKey(), date, date),
+                        reports -> {
+                            var changedRows = mirrorDB.addOrUpdateAdsSearchPhrases(reports);
+                            var matchedRows = reports.stream().mapToInt(report -> report.rows().size()).sum();
+                            logger.log(INFO, "Inserted or updated %d search phrase rows from %d matched rows for %s (vendor %s)."
+                                    .formatted(changedRows, matchedRows, date, vendorId));
+                        },
+                        progress
+                );
             } catch (SQLException e) {
                 throw new RuntimeException("Error storing search phrases in the database.", e);
             }
-            currentDate = currentDate.plusDays(1);
         }
     }
 
@@ -387,28 +488,30 @@ public class FetchAds {
             EmagMirrorDB mirrorDB,
             UUID vendorId,
             LocalDate startDate,
-            LocalDate endDate
+            LocalDate endDate,
+            DetailFetchProgress progress
     ) {
         var adSetsByDate = readAdSetsByDate(mirrorDB, vendorId, startDate, endDate);
-        var currentDate = startDate;
-        while (currentDate.isBefore(endDate)) {
-            var reports = new ArrayList<AdsAdsetReport<AdsTargetedProduct>>();
-            var downloadedRows = 0;
-            for (var adSet : adSetsByDate.getOrDefault(currentDate, List.of())) {
-                var targetedProducts = downloadTargetedProducts(
-                        page, aliasCacheDirectory, currentDate, adSet.campaignId(), adSet.adsetId()
-                );
-                downloadedRows += targetedProducts.size();
-                reports.add(new AdsAdsetReport<>(adSet, targetedProducts));
-            }
+        var fetcher = progress.fetcher(url -> fetchOnce(page, url), Thread::sleep);
+        for (var date : startDate.datesUntil(endDate).toList()) {
             try {
-                var changedRows = mirrorDB.addOrUpdateAdsTargetedProducts(reports);
-                logger.log(INFO, "Inserted or updated %d targeted product rows from %d downloaded rows for %s (vendor %s)."
-                        .formatted(changedRows, downloadedRows, currentDate, vendorId));
+                transferDetailReports(
+                        adSetsByDate.getOrDefault(date, List.of()),
+                        adSet -> List.of(new AdsAdsetReport<>(adSet, downloadTargetedProducts(
+                                fetcher, aliasCacheDirectory, date, adSet.campaignId(), adSet.adsetId()))),
+                        adSet -> "Skipped campaign %d adset %d for dates %s-%s"
+                                .formatted(adSet.campaignId(), adSet.adsetId(), date, date.plusDays(1)),
+                        reports -> {
+                            var changedRows = mirrorDB.addOrUpdateAdsTargetedProducts(reports);
+                            var downloadedRows = reports.stream().mapToInt(report -> report.rows().size()).sum();
+                            logger.log(INFO, "Inserted or updated %d targeted product rows from %d downloaded rows for %s (vendor %s)."
+                                    .formatted(changedRows, downloadedRows, date, vendorId));
+                        },
+                        progress
+                );
             } catch (SQLException e) {
                 throw new RuntimeException("Error storing targeted products in the database.", e);
             }
-            currentDate = currentDate.plusDays(1);
         }
     }
 
@@ -496,19 +599,18 @@ public class FetchAds {
     /**
      * Download adset information for the given campaign and day.
      *
-     * @param page       Playwright session.
+     * @param fetcher    HTTP fetcher with this detail task's retry and streak tracking.
      * @param date       for which to download the data.
      * @param campaignId selects the campaign.
      * @return List of campaign data.
      */
     private static List<AdsSearchPhrase> downloadSearchPhrases(
-            Page page,
+            HttpFetcher fetcher,
             Path aliasCacheDirectory,
             LocalDate date,
             int campaignId
     ) {
         return downloadPages(
-                page,
                 pageNumber -> createCommonURI(date, pageNumber)
                         .appendPath("campaigns/%d/search-phrases".formatted(campaignId))
                         .setParameter("page", Integer.toString(pageNumber)),
@@ -516,28 +618,29 @@ public class FetchAds {
                         "adsSearchPhrases_%s_%d_%d.json".formatted(date, pageNumber, campaignId)
                 ),
                 AdsCampaignPhrasesResponse.class,
-                response -> response.data.searchPhrases()
+                response -> response.data.searchPhrases(),
+                isOffline(),
+                fetcher
         );
     }
 
     /**
      * Download targeted product information for the given campaign, adset, and day.
      *
-     * @param page       Playwright session.
+     * @param fetcher    HTTP fetcher with this detail task's retry and streak tracking.
      * @param date       for which to download the data.
      * @param campaignId selects the campaign.
      * @param adSetId    selects the ad set within the campaign.
      * @return List of targeted product data.
      */
     private static List<AdsTargetedProduct> downloadTargetedProducts(
-            Page page,
+            HttpFetcher fetcher,
             Path aliasCacheDirectory,
             LocalDate date,
             int campaignId,
             int adSetId
     ) {
         return downloadPages(
-                page,
                 pageNumber -> createCommonURI(date, pageNumber)
                         .appendPath("campaigns/%d/adsets/%s/targeted-products".formatted(campaignId, adSetId))
                         .setParameter("page", Integer.toString(pageNumber))
@@ -548,28 +651,29 @@ public class FetchAds {
                                 .formatted(date, pageNumber, campaignId, adSetId)
                 ),
                 AdsCampaignTargetedProductsResponse.class,
-                response -> response.data.docs()
+                response -> response.data.docs(),
+                isOffline(),
+                fetcher
         );
     }
 
     /**
      * Download keyword information for the given campaign, adset, and day.
      *
-     * @param page       Playwright session.
+     * @param fetcher    HTTP fetcher with this detail task's retry and streak tracking.
      * @param date       for which to download the data.
      * @param campaignId selects the campaign.
      * @param adSetId    selects the ad set within the campaign.
      * @return List of keyword data.
      */
     private static List<AdsKeyword> downloadKeywords(
-            Page page,
+            HttpFetcher fetcher,
             Path aliasCacheDirectory,
             LocalDate date,
             int campaignId,
             int adSetId
     ) {
         return downloadPages(
-                page,
                 pageNumber -> createCommonURI(date, pageNumber)
                         .appendPath("campaign/%d/keywords".formatted(campaignId))
                         .setParameter("page", Integer.toString(pageNumber))
@@ -579,7 +683,9 @@ public class FetchAds {
                         "adsKeywords_%s_%d_%d_%d.json".formatted(date, pageNumber, campaignId, adSetId)
                 ),
                 AdsCampaignKeywordsResponse.class,
-                response -> response.data.keywords()
+                response -> response.data.keywords(),
+                isOffline(),
+                fetcher
         );
     }
 
@@ -600,6 +706,18 @@ public class FetchAds {
             Class<R> responseType,
             Function<R, List<T>> itemsFromResponse
     ) {
+        return downloadPages(uriForPage, pathForPage, responseType, itemsFromResponse, isOffline(),
+                url -> fetch(page, url));
+    }
+
+    static <T, R extends AdsResponse> List<T> downloadPages(
+            IntFunction<URIBuilder> uriForPage,
+            IntFunction<Path> pathForPage,
+            Class<R> responseType,
+            Function<R, List<T>> itemsFromResponse,
+            boolean offlineMode,
+            HttpFetcher fetcher
+    ) {
         int pageNumber = 1;
         int totalPages;
         List<T> result = new ArrayList<>();
@@ -611,10 +729,10 @@ public class FetchAds {
                         path,
                         uri.toASCIIString(),
                         pageNumber == 1,
-                        isOffline(),
+                        offlineMode,
                         responseType,
                         itemsFromResponse,
-                        url -> fetch(page, url)
+                        fetcher
                 );
                 result.addAll(downloadedPage.items());
                 totalPages = downloadedPage.pageCount();
@@ -671,6 +789,9 @@ public class FetchAds {
         }
         var httpResult = fetcher.fetch(url);
         if (!httpResult.ok()) {
+            if (httpResult.status() == 401) {
+                throw new UnauthorizedException(url);
+            }
             throw new RuntimeException("eMAG Ads request failed with HTTP %d %s for %s."
                     .formatted(httpResult.status(), httpResult.statusText(), url));
         }
@@ -691,49 +812,43 @@ public class FetchAds {
     }
 
     static HttpResult fetchWithRetry(String url, HttpFetcher fetcher, Sleeper sleeper) {
+        return fetchWithRetry(url, fetcher, sleeper, false);
+    }
+
+    static HttpResult fetchWithRetry(String url, HttpFetcher fetcher, Sleeper sleeper, boolean retryUnauthorized) {
         Objects.requireNonNull(url);
         Objects.requireNonNull(fetcher);
         Objects.requireNonNull(sleeper);
 
-        var retriesRemaining = MAX_REQUEST_RETRIES;
-        var retryDelay = INITIAL_RETRY_DELAY_MILLISECONDS;
-        while (true) {
+        for (var attempt = 0; ; attempt++) {
+            long initialDelay;
+            String reason;
             try {
-                return fetcher.fetch(url);
-            } catch (TimeoutError timeout) {
-                if (retriesRemaining == 0) {
-                    throw timeout;
+                var response = fetcher.fetch(url);
+                if (!retryUnauthorized || response.ok() || response.status() != 401 || attempt == MAX_REQUEST_RETRIES) {
+                    return response;
                 }
-                logger.log(WARNING, "eMAG Ads request timed out for %s. Retrying after %d s; retries remaining=%d."
-                        .formatted(url, retryDelay / 1_000, retriesRemaining));
-                retriesRemaining--;
-                try {
-                    sleeper.sleep(retryDelay);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException(
-                            "Interrupted while waiting to retry eMAG Ads request for %s.".formatted(url),
-                            interrupted
-                    );
+                reason = "returned HTTP 401 Unauthorized";
+                initialDelay = INITIAL_UNAUTHORIZED_RETRY_DELAY_MILLISECONDS;
+            } catch (PlaywrightException failure) {
+                if (attempt == MAX_REQUEST_RETRIES) {
+                    throw failure;
                 }
-                retryDelay *= 2;
-            } catch (PlaywrightException playwrightException) {
-                if (retriesRemaining == 0) {
-                    throw playwrightException;
-                }
-                logger.log(WARNING, "eMAG Ads request ended with PlaywrightException %s for %s. Retrying after %d s; retries remaining=%d."
-                        .formatted(playwrightException.getMessage(), url, retryDelay / 1_000, retriesRemaining));
-                retriesRemaining--;
-                try {
-                    sleeper.sleep(retryDelay);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException(
-                            "Interrupted while waiting to retry eMAG Ads request for %s.".formatted(url),
-                            interrupted
-                    );
-                }
-                retryDelay *= 2;
+                reason = failure instanceof TimeoutError ? "timed out"
+                        : "ended with PlaywrightException " + failure.getMessage();
+                initialDelay = INITIAL_RETRY_DELAY_MILLISECONDS;
+            }
+            var retryDelay = initialDelay << attempt;
+            logger.log(WARNING, "eMAG Ads request %s for %s. Retrying after %d s; retries remaining=%d."
+                    .formatted(reason, url, retryDelay / 1_000, MAX_REQUEST_RETRIES - attempt));
+            try {
+                sleeper.sleep(retryDelay);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(
+                        "Interrupted while waiting to retry eMAG Ads request for %s.".formatted(url),
+                        interrupted
+                );
             }
         }
     }
@@ -816,29 +931,27 @@ public class FetchAds {
      */
     private static void login(Page page, UserPassword user) {
         page.navigate("https://auth.emag.net/login");
-        randomWait(1.0, 1.0);
+        randomWait(1.0, 2.0);
         page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Enter your username or e-mail")).dblclick();
-        randomWait(1.0, 1.0);
+        randomWait(1.0, 1.5);
         page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Enter your username or e-mail")).fill(user.getUsername());
-        randomWait(1.0, 1.0);
+        randomWait(1.0, 1.5);
         page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Next")).click();
-        randomWait(1.0, 1.0);
+        randomWait(1.0, 1.5);
         page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Enter your password")).click();
-        randomWait(1.0, 1.0);
-        page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Enter your password")).click();
-        randomWait(1.0, 1.0);
+        randomWait(1.0, 1.5);
         page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Enter your password")).fill(user.getPassword());
-        randomWait(2.0, 2.0);
+        randomWait(1.0, 1.5);
         page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Login")).click();
-        randomWait(1.0, 1.0);
-        page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Introdu OTP")).click();
         randomWait(2.0, 7.0);
+        page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Introdu OTP")).click();
+        randomWait(1.0, 2.0);
         page.getByRole(AriaRole.TEXTBOX, new Page.GetByRoleOptions().setName("Introdu OTP")).fill(genOTP(user.getOtpAuth()));
-        randomWait(1.0, 1.0);
+        randomWait(1.0, 1.5);
         page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Logare")).click();
-        randomWait(2.0, 2.0);
+        randomWait(2.0, 3.0);
         page.navigate("https://marketplace.emag.ro/dashboard");
-        randomWait(2.0, 2.0);
+        randomWait(2.0, 3.0);
         page.navigate("https://advertising.emag.net/");
         randomWait(5.0, 8.0);
     }

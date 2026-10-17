@@ -8,6 +8,7 @@ import ro.sellfluence.app.UpdateEmployeeSheetsFromDB;
 import ro.sellfluence.app.UpdateProductEmployeeSheetTabsFromSheets;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.Task;
+import ro.sellfluence.emagdashboard.AdsPartialFailureException;
 import ro.sellfluence.emagdashboard.FetchAds;
 import ro.sellfluence.emagdashboard.FetchOffers;
 import ro.sellfluence.support.Logs;
@@ -694,7 +695,11 @@ public class BackgroundJob {
             logger.info(() -> "Task \"" + taskName + "\" completed successfully.");
         } catch (Exception e) {
             try {
-                taskStore.endTask(taskName, e);
+                if (e instanceof AdsPartialFailureException) {
+                    taskStore.endTask(taskName, e.getMessage());
+                } else {
+                    taskStore.endTask(taskName, e);
+                }
             } catch (SQLException databaseException) {
                 e.addSuppressed(databaseException);
             }

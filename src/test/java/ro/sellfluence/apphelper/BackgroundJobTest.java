@@ -2,6 +2,7 @@ package ro.sellfluence.apphelper;
 
 import org.junit.jupiter.api.Test;
 import ro.sellfluence.db.Task;
+import ro.sellfluence.emagdashboard.AdsPartialFailureException;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -26,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static ro.sellfluence.apphelper.BackgroundJob.RunStatus.ACCEPTED;
@@ -346,9 +348,10 @@ class BackgroundJobTest {
     @Test
     void releasesAClaimWhenTheTaskFails() {
         var store = new FakeTaskStore();
+        var failure = new IllegalStateException("failed");
         var job = new BackgroundJob(store, Runnable::run, clockAt(NOW), List.of(
                 task("transfer", "transfers", () -> {
-                    throw new IllegalStateException("failed");
+                    throw failure;
                 })
         ));
 
@@ -356,6 +359,37 @@ class BackgroundJobTest {
 
         assertNull(job.laneStatuses().getFirst().activeTaskName());
         assertEquals(List.of("transfer"), store.failedTaskNames);
+        assertSame(failure, store.completedTaskExceptions.get("transfer"));
+        assertFalse(store.completedTaskErrors.containsKey("transfer"));
+    }
+
+    @Test
+    void partialAdsFailurePersistsOnlyItsSummaryAndRetriesAfterAnHour() {
+        var issues = List.of(
+                "Skipped campaign 504644 adset 638998 for dates 2026-09-30-2026-10-01.",
+                "Skipped campaign 504645 adset 638999 for dates 2026-09-30-2026-10-01."
+        );
+        var failure = new AdsPartialFailureException(issues, new IllegalStateException("HTTP 401"));
+        var started = NOW.withHour(3);
+        var definition = BackgroundJob.adsTask(
+                "ads", "ads:sellfusion", null, clockAt(started), (_, _) -> {
+                    throw failure;
+                }
+        );
+        var store = new FakeTaskStore();
+        var job = new BackgroundJob(store, Runnable::run, clockAt(started), List.of(definition));
+
+        assertEquals(ACCEPTED, job.requestRun("ads").status());
+
+        var persistedError = store.completedTaskErrors.get("ads");
+        assertEquals(String.join("\n", issues), persistedError);
+        assertFalse(store.completedTaskExceptions.containsKey("ads"));
+        assertEquals(List.of("ads"), store.failedTaskNames);
+        assertNull(job.laneStatuses().getFirst().activeTaskName());
+
+        var completed = completedAttempt("ads", started, started.plusMinutes(5), persistedError);
+        assertEligibleAt(definition, completed, started.plusHours(1).minusNanos(1), false);
+        assertEligibleAt(definition, completed, started.plusHours(1), true);
     }
 
     @Test
@@ -865,6 +899,8 @@ class BackgroundJobTest {
         private final List<String> registeredTaskNames = new ArrayList<>();
         private final List<String> startedTaskNames = new ArrayList<>();
         private final List<String> failedTaskNames = new ArrayList<>();
+        private final Map<String, String> completedTaskErrors = new LinkedHashMap<>();
+        private final Map<String, Throwable> completedTaskExceptions = new LinkedHashMap<>();
 
         synchronized void put(Task task) {
             history.put(task.name(), task);
@@ -889,12 +925,17 @@ class BackgroundJobTest {
         }
 
         @Override
-        public int endTask(String name, String error) {
+        public synchronized int endTask(String name, String error) {
+            completedTaskErrors.put(name, error);
+            if (error != null && !error.isBlank()) {
+                failedTaskNames.add(name);
+            }
             return 1;
         }
 
         @Override
         public synchronized int endTask(String name, Throwable error) {
+            completedTaskExceptions.put(name, error);
             failedTaskNames.add(name);
             return 1;
         }
