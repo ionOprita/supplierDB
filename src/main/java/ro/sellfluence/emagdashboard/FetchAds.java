@@ -36,7 +36,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Random;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -52,7 +51,7 @@ import static ro.sellfluence.sheetSupport.Conversions.toLocalDateTime;
 import static ro.sellfluence.support.UsefulMethods.randomWait;
 
 public class FetchAds {
-    private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", INFO, 10, 100_000);
+    private static final Logger logger = Logs.getConsoleAndFileLogger("FetchAds", INFO, 10, 1_000_000);
 
     private static final int MAX_REQUEST_RETRIES = 4;
     private static final long INITIAL_RETRY_DELAY_MILLISECONDS = 10_000;

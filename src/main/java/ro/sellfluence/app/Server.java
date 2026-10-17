@@ -524,16 +524,16 @@ public class Server {
         model.put("pageTitle", "Server Logs");
         model.put("logSections", List.of(
                 listLogSection(
-                        "Supervisor logs",
-                        "Files written by the PowerShell application supervisor.",
-                        "supervisor",
-                        supervisorLogFiles
-                ),
-                listLogSection(
                         "Application logs",
                         "Files written by Java logging under java.io.tmpdir/EmagDBLogs.",
                         "application",
                         applicationLogFiles
+                ),
+                listLogSection(
+                        "Supervisor logs",
+                        "Files written by the PowerShell application supervisor.",
+                        "supervisor",
+                        supervisorLogFiles
                 )
         ));
 
