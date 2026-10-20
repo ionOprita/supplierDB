@@ -14,14 +14,21 @@
             @if(section.error() != null)
                 <p class="flash-message error-message" role="alert">${section.error()}</p>
             @else
+                <div class="page-actions log-filter-controls" role="group" aria-label="Filter ${section.title()}">
+                    <span>Filter by:</span>
+                    <div class="log-filter-field">
+                        <label for="logNameFilter-${section.source()}">Name</label>
+                        <input id="logNameFilter-${section.source()}" class="log-name-filter" type="search" autocomplete="off" />
+                    </div>
+                </div>
                 <div class="wrap">
                     <table class="log-files-table">
                         <thead>
                         <tr>
-                            <th>File</th>
-                            <th class="numeric">Size (bytes)</th>
-                            <th>Last modified</th>
-                            <th>Actions</th>
+                            <th scope="col"><button type="button" class="log-sort-button" data-sort-column="0" aria-label="Sort by File">File</button></th>
+                            <th scope="col" class="numeric"><button type="button" class="log-sort-button" data-sort-column="1" aria-label="Sort by Size">Size (bytes)</button></th>
+                            <th scope="col" aria-sort="descending"><button type="button" class="log-sort-button" data-sort-column="2" aria-label="Sort by Last modified">Last modified</button></th>
+                            <th scope="col">Actions</th>
                         </tr>
                         </thead>
                         <tbody>
@@ -31,10 +38,10 @@
                             </tr>
                         @else
                             @for(var logFile : section.files())
-                                <tr>
+                                <tr data-log-file>
                                     <td><code>${logFile.name()}</code></td>
-                                    <td class="numeric">${logFile.size()}</td>
-                                    <td>${logFile.lastModified().toString()}</td>
+                                    <td class="numeric" data-sort-value="${logFile.size()}">${logFile.size()}</td>
+                                    <td data-sort-value="${logFile.lastModified().toEpochMilli()}">${logFile.lastModified().toString()}</td>
                                     <td class="log-file-actions">
                                         <a href="/admin/logs/view?source=${section.source()}&amp;file=${logFile.encodedName()}" target="_blank" rel="noopener">View</a>
                                         <a href="/admin/logs/download?source=${section.source()}&amp;file=${logFile.encodedName()}">Download</a>
@@ -48,4 +55,5 @@
             @endif
         </section>
     @endfor
+    <script type="module" src="/js/logs.js"></script>
 `)

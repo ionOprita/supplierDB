@@ -1144,23 +1144,31 @@ code {
   margin-left: .6rem;
 }
 
+.log-filter-controls {
+  justify-content: flex-start;
+}
+
 .task-page-actions {
   justify-content: space-between;
 }
 
 .task-filter-controls,
-.task-filter-field {
+.task-filter-field,
+.log-filter-controls,
+.log-filter-field {
   display: flex;
   align-items: center;
   gap: .5rem;
 }
 
-.task-filter-controls {
+.task-filter-controls,
+.log-filter-controls {
   flex-wrap: wrap;
   gap: .75rem;
 }
 
-.task-filter-field label {
+.task-filter-field label,
+.log-filter-field label {
   padding: 0;
 }
 
@@ -1168,7 +1176,8 @@ code {
   min-width: 0;
 }
 
-#taskNameFilter {
+#taskNameFilter,
+.log-name-filter {
   box-sizing: border-box;
   width: 220px;
   margin: 0;
@@ -1185,8 +1194,9 @@ code {
   white-space: nowrap;
 }
 
-/* Task controls share a cell; keep adjacent actions visually distinct. */
-#tasksTable .task-sort-button {
+/* Sortable table headings. */
+#tasksTable .task-sort-button,
+.log-files-table .log-sort-button {
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -1198,23 +1208,27 @@ code {
   white-space: nowrap;
 }
 
-#tasksTable .task-sort-button::after {
+#tasksTable .task-sort-button::after,
+.log-files-table .log-sort-button::after {
   content: '↕';
   margin-left: 0.35rem;
   opacity: 0.55;
 }
 
-#tasksTable th[aria-sort='ascending'] .task-sort-button::after {
+#tasksTable th[aria-sort='ascending'] .task-sort-button::after,
+.log-files-table th[aria-sort='ascending'] .log-sort-button::after {
   content: '↑';
   opacity: 1;
 }
 
-#tasksTable th[aria-sort='descending'] .task-sort-button::after {
+#tasksTable th[aria-sort='descending'] .task-sort-button::after,
+.log-files-table th[aria-sort='descending'] .log-sort-button::after {
   content: '↓';
   opacity: 1;
 }
 
-#tasksTable .task-sort-button:hover {
+#tasksTable .task-sort-button:hover,
+.log-files-table .log-sort-button:hover {
   text-decoration: underline;
 }
 

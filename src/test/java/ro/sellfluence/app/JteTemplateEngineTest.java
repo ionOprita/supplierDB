@@ -189,6 +189,23 @@ class JteTemplateEngineTest {
         ));
         assertTrue(html.contains("2026-07-28T08:30:00Z"));
         assertTrue(html.contains("Server Logs"));
+        for (var source : List.of("application", "supervisor")) {
+            assertTrue(html.contains("for=\"logNameFilter-" + source + "\""));
+            assertTrue(html.contains("id=\"logNameFilter-" + source + "\""));
+        }
+        assertTrue(html.contains("type=\"search\""));
+        assertTrue(html.contains("aria-label=\"Filter Application logs\""));
+        assertTrue(html.contains("aria-label=\"Filter Supervisor logs\""));
+        for (var column : List.of("File", "Size", "Last modified")) {
+            assertTrue(html.contains("aria-label=\"Sort by " + column + "\""));
+        }
+        assertTrue(html.contains("aria-sort=\"descending\""));
+        assertTrue(html.contains("<th scope=\"col\">Actions</th>"));
+        assertTrue(html.contains("data-log-file"));
+        assertTrue(html.contains("data-sort-value=\"123\""));
+        assertTrue(html.contains("data-sort-value=\""
+                + Instant.parse("2026-07-28T08:30:00Z").toEpochMilli() + "\""));
+        assertTrue(html.contains("src=\"/js/logs.js\""));
     }
 
     @Test
@@ -225,5 +242,25 @@ class JteTemplateEngineTest {
         var html = output.toString();
         assertTrue(html.contains("available.log"));
         assertTrue(html.contains("Application logs are unavailable &lt;retry&gt;."));
+        assertTrue(html.contains("id=\"logNameFilter-supervisor\""));
+        assertFalse(html.contains("id=\"logNameFilter-application\""));
+    }
+
+    @Test
+    void rendersEmptyLogDirectoryWithFilterAndOriginalMessage() {
+        var output = new StringOutput();
+        Server.createJteEngine().render("logs.jte", Map.of(
+                "userName", "test-admin",
+                "userRole", "admin",
+                "pageTitle", "Server Logs",
+                "logSections", List.of(new ServerLogFiles.Section(
+                        "Application logs", "Application description", "application", List.of(), null
+                ))
+        ), output);
+
+        var html = output.toString();
+        assertTrue(html.contains("id=\"logNameFilter-application\""));
+        assertTrue(html.contains("No log files found."));
+        assertFalse(html.contains("data-log-file"));
     }
 }
