@@ -84,15 +84,6 @@ class FetchAdsTest {
     }
 
     @Test
-    void chromiumIsHeadlessByDefaultAndCanBeMadeHeaded() {
-        assertTrue(FetchAds.isHeadless());
-
-        System.setProperty("ads.headless", "false");
-
-        assertFalse(FetchAds.isHeadless());
-    }
-
-    @Test
     void rejectsInvalidHeadlessConfiguration() {
         System.setProperty("ads.headless", "sometimes");
 

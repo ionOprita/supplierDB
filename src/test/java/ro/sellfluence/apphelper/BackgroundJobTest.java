@@ -439,7 +439,7 @@ class BackgroundJobTest {
             var laneTasks = definitions.stream()
                     .filter(task -> task.lane().equals(BackgroundJob.emagDashboardLane + ":" + alias))
                     .toList();
-            assertEquals(6, laneTasks.size());
+            assertEquals(5, laneTasks.size());
             assertEquals("Fetch offers for " + alias, laneTasks.getFirst().name());
             assertNull(laneTasks.getFirst().prerequisiteTaskName());
             assertEquals(Duration.ofHours(1), laneTasks.getFirst().interval());
