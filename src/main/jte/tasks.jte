@@ -44,5 +44,15 @@
       <tbody id="tasksBody"></tbody>
     </table>
   </div>
+  <dialog id="taskErrorDialog" class="task-error-dialog" aria-labelledby="taskErrorTitle">
+    <div class="task-error-heading">
+      <h2 id="taskErrorTitle">Task error</h2>
+      <div class="task-error-actions">
+        <button id="taskErrorDownload" type="button" disabled>Download error</button>
+        <button id="taskErrorClose" type="button" autofocus>Close</button>
+      </div>
+    </div>
+    <pre id="taskErrorContent" class="task-error-content" tabindex="0" aria-label="Full task error"></pre>
+  </dialog>
   <script type="module" src="/js/tasks.js"></script>
 `)

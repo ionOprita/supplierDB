@@ -603,7 +603,21 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
     tdFailures.dataset.sortValue = String(row.unsuccessfulRuns);
     tr.appendChild(tdFailures);
     const tdError = document.createElement('td');
-    tdError.textContent = row.error;
+    tdError.dataset.sortValue = row.error;
+    const errorCharacters = Array.from(row.error);
+    if (errorCharacters.length > 60) {
+      const errorButton = document.createElement('button');
+      errorButton.type = 'button';
+      errorButton.classList.add('task-error-button');
+      errorButton.dataset.taskName = row.name;
+      errorButton.textContent = errorCharacters.slice(0, 59).join('') + '…';
+      errorButton.setAttribute('aria-label', `Show full error for ${row.name}`);
+      errorButton.setAttribute('aria-haspopup', 'dialog');
+      errorButton.addEventListener('click', () => options.onViewError?.(row.name, row.error, errorButton));
+      tdError.appendChild(errorButton);
+    } else {
+      tdError.textContent = row.error;
+    }
     tr.appendChild(tdError);
 
     return tr;
@@ -629,7 +643,9 @@ export function sortTaskTableBody(tbody, columnIndex, direction) {
   const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
   const valueOf = (row) => {
     const cell = row.cells[columnIndex];
-    const value = type === 'number' ? cell.dataset.sortValue : cell.textContent.trim();
+    const value = type === 'number'
+      ? cell.dataset.sortValue
+      : (cell.dataset.sortValue ?? cell.textContent).trim();
     return value == null || value === '' ? null : type === 'number' ? Number(value) : value;
   };
 
@@ -670,6 +686,7 @@ export function sortTaskTableBody(tbody, columnIndex, direction) {
  * @param {function} [cfg.runUrlBuilder] - (taskName) => URL for the run endpoint
  * @param {function} [cfg.pauseUrlBuilder] - (taskName) => URL for the pause endpoint
  * @param {function} [cfg.resumeUrlBuilder] - (taskName) => URL for the resume endpoint
+ * @param {function} [cfg.onViewError] - (taskName, error, trigger) => open the full task error
  * @param {number} [cfg.refreshIntervalMs] - automatic refresh interval in milliseconds
  */
 export function initTaskTable(cfg) {
@@ -818,7 +835,8 @@ export function initTaskTable(cfg) {
       // A task hidden by the filters still blocks other tasks in its lane.
       databaseRunningTaskNames: currentDatabaseRunningTaskNames,
       onRun: runTask,
-      onSetPaused: setTaskPaused
+      onSetPaused: setTaskPaused,
+      onViewError: cfg.onViewError
     });
     if (sortColumnIndex != null) sortTaskTableBody(BODY, sortColumnIndex, sortDirection);
   }

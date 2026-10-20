@@ -18,6 +18,7 @@ import java.util.logging.Logger;
 import static java.net.HttpURLConnection.HTTP_BAD_GATEWAY;
 import static java.net.HttpURLConnection.HTTP_GATEWAY_TIMEOUT;
 import static java.net.HttpURLConnection.HTTP_INTERNAL_ERROR;
+import static java.net.HttpURLConnection.HTTP_NOT_IMPLEMENTED;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.support.UsefulMethods.randomWait;
@@ -30,7 +31,7 @@ public class EmagSAPI {
     private static final int MAX_LOGGED_RESPONSE_CHARS = 8_000;
     private static final long INITIAL_RETRY_DELAY_MILLISECONDS = 10_000;
     private static final Set<Integer> RETRYABLE_STATUS_CODES =
-            Set.of(HTTP_INTERNAL_ERROR, HTTP_BAD_GATEWAY, HTTP_GATEWAY_TIMEOUT);
+            Set.of(HTTP_INTERNAL_ERROR, HTTP_NOT_IMPLEMENTED, HTTP_BAD_GATEWAY, HTTP_GATEWAY_TIMEOUT);
 
     private static final String BASE_URL =
             "https://sapi.emag.ro/products/%s/reviews"

@@ -2,6 +2,8 @@ package ro.sellfluence.emagsiteapi;
 
 import com.microsoft.playwright.PlaywrightException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -10,6 +12,8 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.net.HttpURLConnection.HTTP_BAD_GATEWAY;
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
+import static java.net.HttpURLConnection.HTTP_NOT_IMPLEMENTED;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -79,19 +83,54 @@ class EmagSAPITest {
         assertEquals("Blue", parsed.product().firstFamilyCharacteristicValue());
     }
 
-    @Test
-    void givesUpAfterFourRetries() {
+    @ParameterizedTest
+    @ValueSource(ints = {500, 501, 502, 504})
+    void givesUpAfterFourRetries(int statusCode) {
         var requestedOffsets = new ArrayList<Integer>();
         var delays = new ArrayList<Long>();
 
         var exception = assertThrows(IllegalStateException.class, () -> EmagSAPI.getReviews(offset -> {
             requestedOffsets.add(offset);
-            return new EmagSAPI.HttpResult(HTTP_BAD_GATEWAY, "");
+            return new EmagSAPI.HttpResult(statusCode, "");
         }, delays::add));
 
-        assertEquals("eMAG returned HTTP 502", exception.getMessage());
+        assertEquals("eMAG returned HTTP " + statusCode, exception.getMessage());
         assertEquals(List.of(0, 0, 0, 0, 0), requestedOffsets);
         assertEquals(List.of(10_000L, 20_000L, 40_000L, 80_000L), delays);
+    }
+
+    @Test
+    void retriesHttp501AndReturnsTheRecoveredResponse() throws Exception {
+        var calls = new AtomicInteger();
+        var requestedOffsets = new ArrayList<Integer>();
+        var delays = new ArrayList<Long>();
+
+        var response = EmagSAPI.getReviews(offset -> {
+            requestedOffsets.add(offset);
+            return calls.getAndIncrement() == 0
+                    ? new EmagSAPI.HttpResult(HTTP_NOT_IMPLEMENTED, "")
+                    : new EmagSAPI.HttpResult(HTTP_OK, page(1, review(11)));
+        }, delays::add);
+
+        assertEquals(List.of(0, 0), requestedOffsets);
+        assertEquals(List.of(10_000L), delays);
+        assertEquals(1, response.data().count());
+        assertEquals(11L, response.data().items().getFirst().id());
+    }
+
+    @Test
+    void doesNotRetryNonretryableHttpStatuses() {
+        var calls = new AtomicInteger();
+        var delays = new ArrayList<Long>();
+
+        var exception = assertThrows(IllegalStateException.class, () -> EmagSAPI.getReviews(offset -> {
+            calls.incrementAndGet();
+            return new EmagSAPI.HttpResult(HTTP_NOT_FOUND, "");
+        }, delays::add));
+
+        assertEquals("eMAG returned HTTP 404", exception.getMessage());
+        assertEquals(1, calls.get());
+        assertEquals(List.of(), delays);
     }
 
     @Test

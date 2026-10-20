@@ -26,6 +26,13 @@ class JteTemplateEngineTest {
             ), output);
 
             var html = output.toString();
+            var dialogIndex = html.indexOf("<dialog id=\"taskErrorDialog\"");
+            assertTrue(dialogIndex > html.indexOf("</table>"));
+            assertTrue(html.contains("aria-labelledby=\"taskErrorTitle\""));
+            var downloadIndex = html.indexOf("id=\"taskErrorDownload\"");
+            var errorContentIndex = html.indexOf("id=\"taskErrorContent\"");
+            assertTrue(downloadIndex > dialogIndex && downloadIndex < errorContentIndex);
+            assertTrue(html.contains("id=\"taskErrorClose\""));
             if (role.equals("admin")) {
                 var buttonIndex = html.indexOf("id=\"pauseAllBtn\"");
                 var resumeButtonIndex = html.indexOf("id=\"resumeAllBtn\"");

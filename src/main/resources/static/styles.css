@@ -1222,6 +1222,83 @@ code {
   margin-left: 0.4rem;
 }
 
+.task-error-button {
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: .2em;
+  cursor: pointer;
+}
+
+.task-error-button:hover {
+  color: var(--primary-hover);
+  background: var(--hover);
+}
+
+.task-error-button:focus-visible,
+.task-error-actions button:focus-visible,
+.task-error-content:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.task-error-dialog {
+  box-sizing: border-box;
+  width: min(70rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.task-error-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.task-error-dialog::backdrop {
+  background: rgb(17 24 39 / 55%);
+}
+
+.task-error-heading {
+  flex: 0 0 auto;
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.task-error-heading h2 {
+  margin: 0 0 .75rem;
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.task-error-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.task-error-content {
+  min-height: 0;
+  margin: 0;
+  padding: 1rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  line-height: 1.5;
+}
+
 .task-status-message {
   margin: 0 0 0.75rem;
   padding: 0.6rem 0.75rem;

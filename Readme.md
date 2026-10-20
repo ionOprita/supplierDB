@@ -20,6 +20,10 @@ after success or the failure interval after failure; an omitted failure interval
 Tasks must finish before another attempt can start, and their time predicates can defer a due attempt until an allowed
 window. Startup recovery preserves completed attempts' start times and clears interrupted attempts.
 
+Migration 46 changes `tasks.error` to `TEXT` so large aggregated failures can be recorded along with task completion.
+The Tasks page shows errors longer than 60 characters as a clickable preview. Open it to read the full error or
+download the original text as a UTF-8 `.txt` file. The dialog keeps the selected error while the table refreshes.
+
 Ad imports start before 07:00 in the server JVM's local timezone. After success, they wait one day from the attempt's
 start; after failure, one hour. Each run uses the completed 31-day interval `[today - 31 days, today)`. Among Ads tasks,
 campaigns and ad sets run first; keywords, search phrases, and targeted products are eligible only after a newer
@@ -95,9 +99,9 @@ The task reads products from the database and selects those with `continueToSell
 and a nonblank PNK. It strips surrounding whitespace, fetches each distinct PNK once, and processes products
 sequentially. A refresh with eligible products opens one fresh headless Chromium session, navigates to `https://emag.ro/`
 once, and uses Playwright API requests for review pages. Each complete response is committed independently; an
-individual failure is reported after the remaining products have been attempted. Fetches use the existing retries and
-exponential delays for retryable HTTP statuses and Playwright transport failures. Chromium must be installed for the
-server account as described above.
+individual failure is reported after the remaining products have been attempted. HTTP 500, 501, 502, and 504 responses
+and Playwright transport failures receive up to four retries, with waits of 10, 20, 40, and 80 seconds. Chromium must
+be installed for the server account as described above.
 
 Migration 42 creates the `review` and `review_` tables. Reviews are identified by `(pnk, review_id)` and store
 the latest observed contents, including related comments, users, products, prices, and images in relational tables.
@@ -129,6 +133,7 @@ The PostgreSQL migration and storage tests require `ADS_TEST_DB_URL` pointing to
 with optional `ADS_TEST_DB_USER` and `ADS_TEST_DB_PASSWORD`. They create and remove isolated schemas and run with
 `mvn test`; without the URL, these integration tests are skipped. They do not use the application's configured databases.
 Run the Ads browser-script tests with `node --test src/test/js/ads-*.test.mjs`.
+Run the Tasks UI tests with `node --test src/test/js/tasks-*.test.mjs`.
 
 # eMAG Mirror to DB
 
