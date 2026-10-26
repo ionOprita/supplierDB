@@ -65,6 +65,8 @@ class JteTemplateEngineTest {
         assertTrue(html.contains("id=\"productPerformanceErrorSummary\""));
         assertTrue(html.contains("id=\"productPerformanceErrorList\""));
         assertTrue(html.contains("id=\"productPerformanceTable\""));
+        assertTrue(html.contains("id=\"productPerformanceDownloadCsv\" type=\"button\" disabled"));
+        assertTrue(html.contains("Download CSV"));
         assertTrue(html.contains("src=\"/js/product-performance.js\""));
     }
 

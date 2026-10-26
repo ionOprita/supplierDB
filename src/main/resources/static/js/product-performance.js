@@ -1,4 +1,5 @@
 import {fetchJSON} from './common.js';
+import {downloadCsvFromTable, sanitizeFileNamePart} from './table-common.js';
 
 const numberFormats = {
   integer: new Intl.NumberFormat('en-US', {maximumFractionDigits: 0}),
@@ -51,6 +52,7 @@ export function initProductPerformance() {
   const wrap = byId('Wrap');
   const status = byId('Status');
   const retry = byId('Retry');
+  const download = byId('DownloadCsv');
   const table = byId('Table');
   const vendorSelect = byId('VendorSelect');
   const productSelect = byId('ProductSelect');
@@ -134,7 +136,7 @@ export function initProductPerformance() {
       table.insertBefore(colgroup, head);
     }
     columns = groups.flatMap(group => group.columns.map((column, index) => ({
-      ...column, group: group.key, groupStart: index === 0
+      ...column, group: group.key, groupLabel: group.label, groupStart: index === 0
     })));
     frozenIndexes = new Map(columns.filter(column => column.group === 'overview')
       .map((column, index) => [column.key, index]));
@@ -307,6 +309,7 @@ export function initProductPerformance() {
   }
 
   function clearReport() {
+    download.disabled = true;
     byId('Product').hidden = true;
     currentRows = [];
     body.replaceChildren();
@@ -411,6 +414,7 @@ export function initProductPerformance() {
       wrap.hidden = false;
       updateFrozenOffsets();
       updateStatus(data.rows);
+      download.disabled = !data.rows.length;
     } catch (error) {
       if (version !== requestVersion) return;
       status.textContent = 'Unable to load product performance. Please try again.';
@@ -424,6 +428,32 @@ export function initProductPerformance() {
     }
   }
 
+  download.addEventListener('click', () => {
+    if (download.disabled || wrap.hidden || !currentVendor || !currentProduct) return;
+    // Flatten grouped headers and omit the controls embedded in the period header.
+    const exportTable = document.createElement('table');
+    const header = document.createElement('tr');
+    for (const column of columns) {
+      const cell = document.createElement('th');
+      cell.textContent = column.key === 'week' ? (periodMode === 'week' ? 'Week' : 'Month')
+        : column.group === 'overview' ? column.label : `${column.groupLabel} - ${column.label}`;
+      header.appendChild(cell);
+    }
+    exportTable.appendChild(header);
+    for (const row of body.querySelectorAll('tr')) {
+      const exportRow = document.createElement('tr');
+      for (const sourceCell of row.cells) {
+        const cell = document.createElement('td');
+        cell.textContent = sourceCell.textContent;
+        exportRow.appendChild(cell);
+      }
+      exportTable.appendChild(exportRow);
+    }
+    const date = new Date().toISOString().slice(0, 10);
+    const productCode = sanitizeFileNamePart(currentProduct.productCode);
+    downloadCsvFromTable(exportTable,
+      `product-performance-${currentVendor.vendorId}-${productCode}-${periodMode}-${date}.csv`);
+  });
   retry.addEventListener('click', () => retryAction());
   vendorSelect.addEventListener('change', () => selectVendor(vendorSelect.value));
   productSelect.addEventListener('change', () => {

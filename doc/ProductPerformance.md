@@ -56,6 +56,13 @@ including in month mode. Rows are sorted oldest to newest. The UI initially show
 latest 20 rows; “Show everything” reveals all returned periods. Switching period mode
 requests new aggregates rather than relabelling existing rows.
 
+“Download CSV” exports the displayed rows and values, including their numeric formatting.
+Check “Show everything” to include the full history for the selected product and period mode.
+The CSV has one flat header row, with advertising labels qualified by their group (for
+example, “Total - Clicks”). The filename identifies the vendor, product code, week/month
+mode, and export date. Download is disabled while loading, after a failed request, or when
+the report has no rows; partial reports with data remain downloadable.
+
 Only periods containing eligible advertising snapshots are returned. Partial periods sum
 the available daily reports, including the first/last stored period; missing dates are not
 filled with invented observations. The category accumulators are combined to produce
