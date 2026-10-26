@@ -46,3 +46,4 @@ build/
 ### API documentation from emag
 /emag-marketplace-api-documentation-*.*
 /AdsJSON/
+/src/main/python/alibaba-bot/selenium_profile/
