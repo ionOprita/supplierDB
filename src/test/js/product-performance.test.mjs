@@ -7,9 +7,13 @@ import test from 'node:test';
 // Load the browser module without introducing a frontend package/build dependency.
 const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const common = moduleUrl(await readFile(new URL('../../main/resources/static/js/common.js', import.meta.url), 'utf8'));
+const tableCommon = moduleUrl((await readFile(new URL('../../main/resources/static/js/table-common.js', import.meta.url), 'utf8'))
+  .replace('"./common.js"', JSON.stringify(common)));
 const source = await readFile(new URL('../../main/resources/static/js/product-performance.js', import.meta.url), 'utf8');
 const {formatPerformanceValue: format, formatPerformancePeriod: formatPeriod,
-  visiblePerformanceRows, initProductPerformance} = await import(moduleUrl(source.replace("'./common.js'", JSON.stringify(common))));
+  visiblePerformanceRows, initProductPerformance} = await import(moduleUrl(source
+    .replace("'./common.js'", JSON.stringify(common))
+    .replace("'./table-common.js'", JSON.stringify(tableCommon))));
 
 test('formats numeric values like the spreadsheet, including fractional percentages', () => {
   assert.equal(format(43488, 'integer'), '43,488');
@@ -47,6 +51,38 @@ test('shows ambiguous offer cells without treating them as numbers', async t => 
     'Multiple matching offers in the latest daily snapshot');
 });
 
+test('renders GMV as whole numbers and refreshes it for the selected period and product', async t => {
+  const page = await openPage(t);
+  const withGmv = (amounts, dates, errors = []) => {
+    const data = report(5, dates[0], errors);
+    data.groups[0].columns.push({key: 'gmv', label: 'GMV', type: 'integer'});
+    data.rows = amounts.map((gmv, index) => ({values: {
+      week: dates[index], gmv, auto_clicks: 5, total_clicks: errors.length ? null : 5
+    }}));
+    return data;
+  };
+  const gmvCells = () => page.byId('Body').children.map(row => row.children[1].textContent);
+  await page.respond(0, withGmv([1234.56, 0, -42.75], ['2026-09-07', '2026-09-14', '2026-09-21'],
+    [classificationError]));
+  assert.deepEqual(gmvCells(), ['1,235', '0', '-43']);
+  assert.equal(page.byId('Body').children[0].children[3].textContent, '—');
+
+  page.periodSelect().value = 'month';
+  page.periodSelect().dispatch('change');
+  assert.equal(page.requests[1].url.searchParams.get('period'), 'month');
+  assert.equal(page.byId('Body').textContent, '');
+  await page.respond(1, withGmv([9876.54], ['2026-09-01']));
+  assert.deepEqual(gmvCells(), ['9,877']);
+
+  page.byId('ProductSelect').value = 'OTHER';
+  page.byId('ProductSelect').dispatch('change');
+  assert.equal(page.requests[2].url.searchParams.get('productCode'), 'OTHER');
+  assert.equal(page.requests[2].url.searchParams.get('period'), 'month');
+  assert.equal(page.byId('Body').textContent, '');
+  await page.respond(2, withGmv([0], ['2026-09-01']));
+  assert.deepEqual(gmvCells(), ['0']);
+});
+
 test('renders ISO calendar dates without time-zone shifts or invalid date rollover', () => {
   assert.equal(format('2026-05-01', 'date'), '01 May 26');
   assert.equal(format('2026-09-04', 'date'), '04 Sep 26');
@@ -79,6 +115,7 @@ class Element {
     this.classList = {add() {}};
     this.style = {setProperty() {}};
     this.hidden = false;
+    this.disabled = false;
     this.value = '';
     this.text = '';
     this.scrollLeft = 0;
@@ -91,6 +128,10 @@ class Element {
 
   get textContent() {
     return this.text + this.children.map(child => child.textContent).join('');
+  }
+
+  get cells() {
+    return this.children.filter(child => child.tag === 'td' || child.tag === 'th');
   }
 
   append(...children) {
@@ -149,6 +190,10 @@ class Element {
   dispatch(type) {
     for (const listener of this.listeners.get(type) || []) listener();
   }
+
+  click() {
+    if (!this.disabled) this.dispatch('click');
+  }
 }
 
 const vendorId = '2aa401ef-31ad-462a-baa4-993c9e21d006';
@@ -174,12 +219,13 @@ function report(clicks, date = '2026-09-07', errors = []) {
   };
 }
 
-async function openPage(t, period) {
+async function openPage(t, period, requestedProductCode = productCode) {
   const template = await readFile(new URL('../../main/jte/product-performance.jte', import.meta.url), 'utf8');
   const elements = new Map([...template.matchAll(/<([a-z]+)[^>]*\bid="([^"]+)"[^>]*>/g)]
     .map(([markup, tag, id]) => {
       const element = new Element(tag);
       element.hidden = /\bhidden\b/.test(markup);
+      element.disabled = /\bdisabled\b/.test(markup);
       return [id, element];
     }));
   const byId = suffix => elements.get(`productPerformance${suffix}`);
@@ -190,15 +236,32 @@ async function openPage(t, period) {
     if (value === undefined) delete globalThis[key];
     else globalThis[key] = value;
   }));
+  const downloads = [];
+  const objectUrls = new Map();
+  const revokedUrls = [];
+  t.mock.method(URL, 'createObjectURL', blob => {
+    const url = `blob:performance-test-${objectUrls.size}`;
+    objectUrls.set(url, blob);
+    return url;
+  });
+  t.mock.method(URL, 'revokeObjectURL', url => revokedUrls.push(url));
   globalThis.document = {
+    body: new Element('body'),
     getElementById: id => elements.get(id) || null,
     querySelector: () => null,
-    createElement: tag => new Element(tag),
+    createElement: tag => {
+      const element = new Element(tag);
+      if (tag === 'a') element.addEventListener('click', () => downloads.push({
+        fileName: element.download, blob: objectUrls.get(element.href), url: element.href
+      }));
+      return element;
+    },
     createDocumentFragment: () => new Element('fragment'),
     createTextNode: text => Object.assign(new Element('#text'), {text})
   };
   globalThis.window = {
-    location: new URL(`/private/product-performance?vendorId=${vendorId}&productCode=${productCode}${period ? `&period=${period}` : ''}`, origin),
+    location: new URL(`/private/product-performance?${new URLSearchParams({vendorId,
+      productCode: requestedProductCode, ...(period ? {period} : {})})}`, origin),
     history: {replaceState(state, title, url) { window.location = new URL(url, origin); }}
   };
   globalThis.ResizeObserver = class {observe() {} disconnect() {}};
@@ -210,7 +273,7 @@ async function openPage(t, period) {
     if (parsed.pathname === '/app/productPerformanceOptions') {
       return {ok: true, json: async () => ({defaultVendorId: vendorId, vendors: [
         {vendorId, name: 'Example vendor', products: [
-          {productCode, name: 'Example product'}, {productCode: 'OTHER', name: 'Other product'}
+          {productCode: requestedProductCode, name: 'Example product'}, {productCode: 'OTHER', name: 'Other product'}
         ]}
       ]})};
     }
@@ -224,9 +287,15 @@ async function openPage(t, period) {
   await setImmediate();
   assert.equal(requests.length, 1);
   return {
-    byId, requests, loggedErrors, template,
+    byId, requests, loggedErrors, template, downloads, revokedUrls,
     periodSelect() {
       return byId('Head').descendants().find(element => element.getAttribute('aria-label') === 'Performance period');
+    },
+    showEverything() {
+      return byId('Head').descendants().find(element => element.tag === 'input' && element.type === 'checkbox');
+    },
+    async csv(index = downloads.length - 1) {
+      return Buffer.from(await downloads[index].blob.arrayBuffer()).toString('utf8');
     },
     async respond(index, data) {
       requests[index].respond(data);
@@ -234,6 +303,102 @@ async function openPage(t, period) {
     }
   };
 }
+
+test('CSV downloads align flat grouped headers with the displayed formatted cells', async t => {
+  const page = await openPage(t);
+  const data = report(25, '2026-09-07', [classificationError]);
+  data.groups[0].columns.push(
+    {key: 'stock', label: 'Stock', type: 'integer'},
+    {key: 'gmv', label: 'GMV', type: 'integer'},
+    {key: 'conversion', label: 'Conv.', type: 'percent'},
+    {key: 'performance', label: 'Perform.', type: 'text'},
+    {key: 'rating', label: 'rating', type: 'decimal'});
+  Object.assign(data.rows[0].values, {
+    stock: '???', gmv: 1234.56, conversion: 0.0267, performance: 'Șură, "SUPER HOT"', rating: null
+  });
+  await page.respond(0, data);
+  assert.equal(page.byId('DownloadCsv').disabled, false, 'Partial reports remain exportable');
+  page.byId('DownloadCsv').click();
+  assert.equal(page.downloads.length, 1);
+  assert.equal(await page.csv(), '\uFEFFWeek,Stock,GMV,Conv.,Perform.,rating,Auto - Clicks,Total - Clicks\r\n'
+    + '07 Sep 26 - 13 Sep 26,???,"1,235",2.67%,"Șură, ""SUPER HOT""",—,25,—');
+  assert.equal(page.downloads[0].blob.type, 'text/csv;charset=utf-8;');
+  assert.deepEqual(page.revokedUrls, [page.downloads[0].url]);
+  assert.equal(document.body.children.length, 0, 'Temporary download anchor is removed');
+});
+
+test('CSV exports only the latest 20 displayed rows until Show everything is selected', async t => {
+  const page = await openPage(t);
+  const data = report(0);
+  data.rows = Array.from({length: 25}, (_, index) => {
+    const date = new Date(Date.UTC(2026, 0, 5 + index * 7)).toISOString().slice(0, 10);
+    return {values: {week: date, auto_clicks: index, total_clicks: index}};
+  });
+  await page.respond(0, data);
+  page.byId('DownloadCsv').click();
+  const visible = (await page.csv()).split('\r\n');
+  assert.equal(visible.length, 21);
+  assert.equal(visible[1], '09 Feb 26 - 15 Feb 26,5,5');
+  assert.equal(visible.at(-1), '22 Jun 26 - 28 Jun 26,24,24');
+  page.showEverything().checked = true;
+  page.showEverything().dispatch('change');
+  page.byId('DownloadCsv').click();
+  const all = (await page.csv()).split('\r\n');
+  assert.equal(all.length, 26);
+  assert.equal(all[1], '05 Jan 26 - 11 Jan 26,0,0');
+  assert.deepEqual(all.slice(6), visible.slice(1));
+});
+
+test('CSV filenames and period headers follow the selected product and mode', async t => {
+  const page = await openPage(t, undefined, 'SKU/Ș blue');
+  const exportDate = new Date().toISOString().slice(0, 10);
+  await page.respond(0, report(7));
+  page.byId('DownloadCsv').click();
+  assert.equal(page.downloads[0].fileName,
+    `product-performance-${vendorId}-SKU_Ș-blue-week-${exportDate}.csv`);
+  page.periodSelect().value = 'month';
+  page.periodSelect().dispatch('change');
+  await page.respond(1, report(300, '2026-09-01'));
+  page.byId('ProductSelect').value = 'OTHER';
+  page.byId('ProductSelect').dispatch('change');
+  await page.respond(2, report(42, '2026-10-01'));
+  page.byId('DownloadCsv').click();
+  assert.equal(page.downloads[1].fileName,
+    `product-performance-${vendorId}-OTHER-month-${exportDate}.csv`);
+  assert.equal(await page.csv(), '\uFEFFMonth,Auto - Clicks,Total - Clicks\r\nOctober 2026,42,42');
+});
+
+test('CSV download stays disabled during loading, failure, empty results, and stale success', async t => {
+  const page = await openPage(t);
+  const assertDisabled = () => {
+    assert.equal(page.byId('DownloadCsv').disabled, true);
+    page.byId('DownloadCsv').dispatch('click');
+    assert.equal(page.downloads.length, 0);
+  };
+  assertDisabled();
+  await page.respond(0, report(7));
+  assert.equal(page.byId('DownloadCsv').disabled, false);
+  page.byId('ProductSelect').value = 'OTHER';
+  page.byId('ProductSelect').dispatch('change');
+  assertDisabled();
+  page.requests[1].fail();
+  await setImmediate();
+  assertDisabled();
+  page.byId('Retry').click();
+  const empty = report(0);
+  empty.rows = [];
+  await page.respond(2, empty);
+  assertDisabled();
+  page.byId('Retry').click();
+  page.byId('ProductSelect').value = productCode;
+  page.byId('ProductSelect').dispatch('change');
+  await page.respond(3, report(999));
+  assertDisabled();
+  await page.respond(4, report(4));
+  assert.equal(page.byId('DownloadCsv').disabled, false);
+  page.byId('DownloadCsv').click();
+  assert.match(await page.csv(), /\r\n07 Sep 26 - 13 Sep 26,4,4$/);
+});
 
 test('period selection requests server aggregates and preserves vendor/product selection', async t => {
   const page = await openPage(t);
@@ -305,6 +470,7 @@ test('a stale period response cannot overwrite newer rows or restore old classif
   assert.equal(page.byId('ErrorList').textContent, '');
   assert.match(page.byId('Status').textContent, /^1 week/);
   assert.equal(page.periodSelect().value, 'week');
+  assert.equal(page.byId('DownloadCsv').disabled, false);
 });
 
 test('a stale period failure cannot clear newer data', async t => {
@@ -321,6 +487,7 @@ test('a stale period failure cannot clear newer data', async t => {
   assert.equal(page.byId('Body').children[0].children[1].textContent, '70');
   assert.equal(page.byId('Wrap').hidden, false);
   assert.equal(page.loggedErrors.length, 0);
+  assert.equal(page.byId('DownloadCsv').disabled, false);
 });
 
 test('classification errors clear when changing selection and remain clear after failure and retry', async t => {

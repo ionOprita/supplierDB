@@ -17,6 +17,7 @@
                     <a id="productPerformanceLink" target="_blank" rel="noopener noreferrer" hidden>View on eMAG ↗</a>
                 </div>
             </div>
+            <button id="productPerformanceDownloadCsv" type="button" disabled>Download CSV</button>
         </div>
         <div class="pp-status-bar">
             <p id="productPerformanceStatus" class="muted" role="status" aria-live="polite">Loading vendors and products…</p>

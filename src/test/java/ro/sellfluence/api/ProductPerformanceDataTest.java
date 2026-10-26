@@ -37,7 +37,7 @@ class ProductPerformanceDataTest {
                 response.groups().stream().map(ProductPerformanceData.ColumnGroup::key).toList());
         assertEquals(List.of(10, 13, 15, 15, 15, 15),
                 response.groups().stream().map(group -> group.columns().size()).toList());
-        assertEquals(List.of("Week", "Stock", "GMV 30", "Clicks", "Sales Price", "Conv.",
+        assertEquals(List.of("Week", "Stock", "GMV", "Clicks", "Sales Price", "Conv.",
                         "Perform.", "Average price", "# rev.", "rating"),
                 response.groups().getFirst().columns().stream().map(ProductPerformanceData.Column::label).toList());
         assertEquals(List.of("date", "integer", "integer", "integer", "decimal", "percent", "text", "decimal", "integer", "decimal"),
@@ -383,6 +383,74 @@ class ProductPerformanceDataTest {
         assertNumber(values, "auto_ctr", ".04");
         assertNumber(values, "auto_cpc", ".25");
         assertEquals(1000L, values.get("total_impressions"));
+    }
+
+    @Test
+    void matchesWeeklyGmvToPeriodStartsAndSerializesPositiveZeroAndNegativeAmountsAsNumbers() {
+        var snapshots = List.of("2023-12-31", "2024-01-01", "2024-01-08").stream()
+                .map(date -> snapshot(date, "auto", List.of(), metrics(1, 1, "1", "1", 1, 1))).toList();
+        var amounts = List.of(new BigDecimal("1234.56"), new BigDecimal("0.00"), new BigDecimal("-42.75"));
+        var response = ProductPerformanceData.create(PRODUCT, WEEK, snapshots, List.of(), Map.of(
+                LocalDate.parse("2023-12-25"), amounts.get(0),
+                LocalDate.parse("2024-01-01"), amounts.get(1),
+                LocalDate.parse("2024-01-08"), amounts.get(2),
+                LocalDate.parse("2024-01-15"), new BigDecimal("999.99")));
+
+        assertEquals(List.of("2023-12-25", "2024-01-01", "2024-01-08"),
+                response.rows().stream().map(row -> row.values().get("week")).toList());
+        assertEquals(amounts, response.rows().stream().map(row -> row.values().get("gmv")).toList());
+        var mapper = new ObjectMapper();
+        var jsonRows = mapper.readTree(mapper.writeValueAsString(response)).get("rows");
+        for (int index = 0; index < amounts.size(); index++) {
+            var jsonGmv = jsonRows.get(index).get("values").get("gmv");
+            assertTrue(jsonGmv.isNumber());
+            assertEquals(0, amounts.get(index).compareTo(jsonGmv.decimalValue()));
+        }
+        assertEquals("integer", response.groups().getFirst().columns().stream()
+                .filter(column -> "gmv".equals(column.key())).findFirst().orElseThrow().type());
+    }
+
+    @Test
+    void matchesMonthlyGmvAcrossYearAndLeapFebruaryBoundaries() {
+        var snapshots = List.of("2023-12-31", "2024-01-01", "2024-02-01", "2024-02-29").stream()
+                .map(date -> snapshot(date, "auto", List.of(), metrics(1, 1, "1", "1", 1, 1))).toList();
+        var response = ProductPerformanceData.create(PRODUCT, MONTH, snapshots, List.of(), Map.of(
+                LocalDate.parse("2023-12-01"), new BigDecimal("10.25"),
+                LocalDate.parse("2024-01-01"), new BigDecimal("20.50"),
+                LocalDate.parse("2024-02-01"), new BigDecimal("30.75")));
+
+        assertEquals(List.of("2023-12-01", "2024-01-01", "2024-02-01"),
+                response.rows().stream().map(row -> row.values().get("week")).toList());
+        assertEquals(List.of(new BigDecimal("10.25"), new BigDecimal("20.50"), new BigDecimal("30.75")),
+                response.rows().stream().map(row -> row.values().get("gmv")).toList());
+        assertEquals(LocalDate.parse("2023-12-31"), WEEK.end(LocalDate.parse("2023-12-31")));
+        assertEquals(LocalDate.parse("2024-01-07"), WEEK.end(LocalDate.parse("2024-01-01")));
+        assertEquals(LocalDate.parse("2024-02-29"), MONTH.end(LocalDate.parse("2024-02-01")));
+        assertEquals(LocalDate.parse("2024-02-29"), MONTH.end(LocalDate.parse("2024-02-29")));
+    }
+
+    @Test
+    void advertisingClassificationErrorsDoNotInvalidateGmv() {
+        for (var period : List.of(WEEK, MONTH)) {
+            var reportDate = LocalDate.parse("2026-09-08");
+            var response = ProductPerformanceData.create(PRODUCT, period,
+                    List.of(snapshot(reportDate.toString(), "unsupported", List.of(), metrics(1, 1, "1", "1", 1, 1))),
+                    List.of(), Map.of(period.start(reportDate), new BigDecimal("-10.25")));
+            assertEquals("UNKNOWN_TARGETING", response.errors().getFirst().code());
+            var values = response.rows().getFirst().values();
+            assertNumber(values, "gmv", "-10.25");
+            assertNull(values.get("total_sales"));
+            assertNull(values.get("auto_sales"));
+        }
+    }
+
+    @Test
+    void missingGmvRemainsUnavailableAndGmvAloneDoesNotCreateRows() {
+        var snapshots = List.of(snapshot("2026-09-08", "auto", List.of(), metrics(1, 1, "1", "1", 1, 1)));
+        assertNull(ProductPerformanceData.create(PRODUCT, WEEK, snapshots, List.of(), Map.of())
+                .rows().getFirst().values().get("gmv"));
+        assertTrue(ProductPerformanceData.create(PRODUCT, WEEK, List.of(), List.of(),
+                Map.of(LocalDate.parse("2026-09-07"), new BigDecimal("10.25"))).rows().isEmpty());
     }
 
     @Test
