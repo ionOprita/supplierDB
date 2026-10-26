@@ -21,7 +21,7 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 /**
- * Product and advertising performance, computed from eligible daily adset and offer snapshots.
+ * Product and advertising performance, computed from eligible daily adset and offer snapshots and period GMV.
  *
  * <p>The database supplies vendor/product attribution and same-day active campaign/adset filtering.
  * This class classifies each adset snapshot, sums only the six advertising source primitives,
@@ -106,6 +106,12 @@ public final class ProductPerformanceData {
 
     public static Response create(Product product, Period period, List<DailyAdset> snapshots,
                                   List<DailyProductOffer> offers) {
+        return create(product, period, snapshots, offers, Map.of());
+    }
+
+    /** GMV amounts are keyed by period start; they do not create additional advertising periods. */
+    public static Response create(Product product, Period period, List<DailyAdset> snapshots,
+                                  List<DailyProductOffer> offers, Map<LocalDate, BigDecimal> gmvByPeriod) {
         var periods = new TreeMap<LocalDate, PeriodTotals>();
         var errors = new ArrayList<DataError>();
         for (var snapshot : snapshots) {
@@ -118,7 +124,8 @@ public final class ProductPerformanceData {
                     (previous, current) -> previous.fetchDate().isAfter(current.fetchDate()) ? previous : current);
         }
         var rows = periods.entrySet().stream()
-                .map(entry -> entry.getValue().row(entry.getKey(), latestOffers.get(entry.getKey()))).toList();
+                .map(entry -> entry.getValue().row(entry.getKey(), latestOffers.get(entry.getKey()),
+                        gmvByPeriod.get(entry.getKey()))).toList();
         return new Response(false, product, GROUPS, rows, List.copyOf(errors));
     }
 
@@ -205,13 +212,14 @@ public final class ProductPerformanceData {
             return null;
         }
 
-        private Row row(LocalDate start, DailyProductOffer offer) {
+        private Row row(LocalDate start, DailyProductOffer offer, BigDecimal gmv) {
             var values = new LinkedHashMap<String, Object>();
             // Unsupported overview columns, TACOS, and shares of overall product activity remain null.
             for (var group : GROUPS) {
                 for (var column : group.columns()) values.put(column.key(), null);
             }
             values.put("week", start.toString());
+            values.put("gmv", gmv);
             if (offer != null) {
                 if (offer.matchingOffers() == 1) {
                     values.put("stock", offer.stock());

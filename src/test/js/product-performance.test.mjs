@@ -47,6 +47,38 @@ test('shows ambiguous offer cells without treating them as numbers', async t => 
     'Multiple matching offers in the latest daily snapshot');
 });
 
+test('renders GMV as whole numbers and refreshes it for the selected period and product', async t => {
+  const page = await openPage(t);
+  const withGmv = (amounts, dates, errors = []) => {
+    const data = report(5, dates[0], errors);
+    data.groups[0].columns.push({key: 'gmv', label: 'GMV', type: 'integer'});
+    data.rows = amounts.map((gmv, index) => ({values: {
+      week: dates[index], gmv, auto_clicks: 5, total_clicks: errors.length ? null : 5
+    }}));
+    return data;
+  };
+  const gmvCells = () => page.byId('Body').children.map(row => row.children[1].textContent);
+  await page.respond(0, withGmv([1234.56, 0, -42.75], ['2026-09-07', '2026-09-14', '2026-09-21'],
+    [classificationError]));
+  assert.deepEqual(gmvCells(), ['1,235', '0', '-43']);
+  assert.equal(page.byId('Body').children[0].children[3].textContent, '—');
+
+  page.periodSelect().value = 'month';
+  page.periodSelect().dispatch('change');
+  assert.equal(page.requests[1].url.searchParams.get('period'), 'month');
+  assert.equal(page.byId('Body').textContent, '');
+  await page.respond(1, withGmv([9876.54], ['2026-09-01']));
+  assert.deepEqual(gmvCells(), ['9,877']);
+
+  page.byId('ProductSelect').value = 'OTHER';
+  page.byId('ProductSelect').dispatch('change');
+  assert.equal(page.requests[2].url.searchParams.get('productCode'), 'OTHER');
+  assert.equal(page.requests[2].url.searchParams.get('period'), 'month');
+  assert.equal(page.byId('Body').textContent, '');
+  await page.respond(2, withGmv([0], ['2026-09-01']));
+  assert.deepEqual(gmvCells(), ['0']);
+});
+
 test('renders ISO calendar dates without time-zone shifts or invalid date rollover', () => {
   assert.equal(format('2026-05-01', 'date'), '01 May 26');
   assert.equal(format('2026-09-04', 'date'), '04 Sep 26');

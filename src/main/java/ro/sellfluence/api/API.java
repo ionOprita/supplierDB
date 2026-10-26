@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -130,14 +131,18 @@ public class API {
         var snapshots = metadata.pnk() == null ? List.<DailyAdset>of()
                 : mirrorDB.getProductPerformanceAdsets(vendorId, metadata.pnk());
         List<DailyProductOffer> offers = List.of();
-        if (!snapshots.isEmpty()) {
-            var dates = snapshots.stream().map(snapshot -> snapshot.key().reportDate()).toList();
-            var first = dates.stream().min(LocalDate::compareTo).orElseThrow();
-            var last = dates.stream().max(LocalDate::compareTo).orElseThrow();
-            offers = mirrorDB.getProductPerformanceOffers(vendorId, metadata.pnk(),
-                    period.start(first), period.end(last));
+        Map<LocalDate, BigDecimal> gmvByPeriod = Map.of();
+        var periodEnds = new TreeMap<LocalDate, LocalDate>();
+        for (var snapshot : snapshots) {
+            var start = period.start(snapshot.key().reportDate());
+            periodEnds.put(start, period.end(start));
         }
-        return Optional.of(ProductPerformanceData.create(metadata, period, snapshots, offers));
+        if (!periodEnds.isEmpty()) {
+            offers = mirrorDB.getProductPerformanceOffers(vendorId, metadata.pnk(),
+                    periodEnds.firstKey(), periodEnds.lastEntry().getValue());
+            gmvByPeriod = mirrorDB.computeGMVForProductPeriods(productCode, periodEnds);
+        }
+        return Optional.of(ProductPerformanceData.create(metadata, period, snapshots, offers, gmvByPeriod));
     }
 
     record ProductForFrontend(String name, String id) {

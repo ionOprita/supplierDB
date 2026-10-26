@@ -1,7 +1,7 @@
 # Product performance calculations
 
 `/app/productPerformance?vendorId=…&productCode=…&period=week` returns database-backed
-advertising performance for one vendor/product. `period` accepts `week` (the default)
+product and advertising performance for one vendor/product. `period` accepts `week` (the default)
 or `month`. The response keeps the dashboard's column definitions and adds an `errors`
 list; `mock` is always false. Vendor/product membership is checked before reading ads.
 
@@ -70,6 +70,20 @@ A day with multiple matching offers displays “???” in both cells until a rul
 combining them is established. An empty latest snapshot does not reuse older values.
 Offer snapshots do not create extra periods or affect advertising totals and errors.
 
+GMV uses the existing product GMV calculator with the selected internal product code.
+Each row includes the complete Monday–Sunday week or calendar month, with both dates
+inclusive, even when advertising snapshots cover only part of that period. The product's
+order history is loaded once per request, retaining finalized and storno snapshots outside
+the requested periods so matching orders are calculated correctly. Calculations use
+VAT-inclusive prices, storno deductions, and seller voucher adjustments, with period
+membership determined by order dates rather than modification timestamps. Each period is
+computed directly; monthly GMV is not assembled from displayed weeks.
+
+The API's numeric `gmv` value retains two decimal places. The GMV column displays whole
+numbers using the existing integer formatter, including zero and negative values. No
+contributing orders produce zero. GMV-only periods do not create extra rows, and advertising
+classification errors do not hide a row's GMV.
+
 | Displayed metric | Primitive or calculation within the period |
 |---|---|
 | Impressions | Sum of `summary_impressions` |
@@ -99,8 +113,8 @@ distinct from a measured zero.
 
 ## Unsupported columns and errors
 
-The current sources support 66 advertising columns. GMV, overall product
-clicks/conversion, performance classification, average price, review count,
+The current sources support 66 advertising columns, plus GMV, Stock, and Sales Price.
+Overall product clicks/conversion, performance classification, average price, review count,
 and rating remain null. TACOS and Total's advertising shares of overall product clicks
 and sales also remain null: advertising summaries do not supply the required overall
 product denominators. These columns retain their positions without fabricated values.
@@ -118,10 +132,11 @@ an unknown product/vendor pairing returns HTTP 404, and database failures return
 ## Validation
 
 Unit tests cover weighted formulas, numeric/null serialization, classification errors,
-period boundaries, unavailable columns, and empty inputs. PostgreSQL integration tests
+period boundaries, GMV period alignment and independence from advertising errors,
+unavailable columns, and empty inputs. PostgreSQL integration tests
 cover joins, active filters, product attribution, vendor isolation, and classification
 without multiplying metrics. Browser-script tests cover real period requests, stale
-responses, error details, selectors, and row visibility.
+responses, error details, selectors, GMV formatting and refreshes, and row visibility.
 
 Run `mvn test` and `node --test src/test/js/product-performance.test.mjs`. PostgreSQL
 tests require `ADS_TEST_DB_URL` pointing to a disposable database, optionally with

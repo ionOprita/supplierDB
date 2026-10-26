@@ -736,6 +736,39 @@ public class EmagMirrorDB {
     }
 
     /**
+     * Compute a product's GMV for several inclusive periods from one read of its full order history.
+     * Each map entry supplies a period's start and end; results are keyed by the same start dates.
+     * Matching snapshots outside each period remain available to the existing GMV calculation.
+     *
+     * @return GMV rounded to two decimals for each period, including 0.00 when nothing contributes.
+     * @throws NullPointerException if the product code, periods, or either date is null.
+     * @throws IllegalArgumentException if any start date is after its end date.
+     * @throws SQLException on database errors.
+     */
+    public Map<LocalDate, BigDecimal> computeGMVForProductPeriods(
+            String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
+        validateGMVPeriods(productCode, periodEnds);
+        if (periodEnds.isEmpty()) return Map.of();
+        return database.readTX(db -> computeGMVForProductPeriods(db, productCode, periodEnds));
+    }
+
+    static Map<LocalDate, BigDecimal> computeGMVForProductPeriods(
+            Connection db, String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
+        validateGMVPeriods(productCode, periodEnds);
+        if (periodEnds.isEmpty()) return Map.of();
+        var orders = getOrderDataByProduct(db, productCode);
+        var result = new HashMap<LocalDate, BigDecimal>();
+        periodEnds.forEach((start, end) -> result.put(start, GMV.computeGMVForPeriod(orders, start, end)));
+        return Map.copyOf(result);
+    }
+
+    private static void validateGMVPeriods(String productCode, Map<LocalDate, LocalDate> periodEnds) {
+        Objects.requireNonNull(productCode, "productCode");
+        Objects.requireNonNull(periodEnds, "periodEnds");
+        periodEnds.forEach(GMV::validatePeriod);
+    }
+
+    /**
      * Compute a product's current GMV and contributing order lines without storing either result.
      * Both dates are inclusive, and matching snapshots outside the period remain available to the calculation.
      *
