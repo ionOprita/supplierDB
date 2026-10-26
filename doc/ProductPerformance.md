@@ -99,7 +99,7 @@ distinct from a measured zero.
 
 ## Unsupported columns and errors
 
-The current sources support 66 advertising columns. GMV 30, overall product
+The current sources support 66 advertising columns. GMV, overall product
 clicks/conversion, performance classification, average price, review count,
 and rating remain null. TACOS and Total's advertising shares of overall product clicks
 and sales also remain null: advertising summaries do not supply the required overall

@@ -37,7 +37,7 @@ class ProductPerformanceDataTest {
                 response.groups().stream().map(ProductPerformanceData.ColumnGroup::key).toList());
         assertEquals(List.of(10, 13, 15, 15, 15, 15),
                 response.groups().stream().map(group -> group.columns().size()).toList());
-        assertEquals(List.of("Week", "Stock", "GMV 30", "Clicks", "Sales Price", "Conv.",
+        assertEquals(List.of("Week", "Stock", "GMV", "Clicks", "Sales Price", "Conv.",
                         "Perform.", "Average price", "# rev.", "rating"),
                 response.groups().getFirst().columns().stream().map(ProductPerformanceData.Column::label).toList());
         assertEquals(List.of("date", "integer", "integer", "integer", "decimal", "percent", "text", "decimal", "integer", "decimal"),

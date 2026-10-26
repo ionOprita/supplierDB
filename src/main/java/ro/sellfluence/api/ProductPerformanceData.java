@@ -36,7 +36,7 @@ public final class ProductPerformanceData {
             new ColumnGroup("overview", "Product metrics", List.of(
                     column("week", "Week", "date"),
                     column("stock", "Stock", "integer"),
-                    column("gmv30", "GMV 30", "integer"),
+                    column("gmv", "GMV", "integer"),
                     column("clicks", "Clicks", "integer"),
                     column("salesPrice", "Sales Price", "decimal"),
                     column("conversion", "Conv.", "percent"),
