@@ -7,7 +7,7 @@ import importlib
 import sys
 import os, time, re, json, pandas as pd
 import undetected_chromedriver as uc
-from urllib.parse import quote_plus
+from urllib.parse import parse_qs, quote_plus, urlsplit
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -18,8 +18,8 @@ from selenium.common.exceptions import (
 
 # ========== CONFIG ==========
 SEARCH_TEXTS = [
-    "cordless chainsaw",
-    # "cordless electric chain saw",
+    # "mini cordless chainsaw",
+    "cordless electric chain saw",
     # "gasoline generator",
     # "petrol generator",
 ]
@@ -57,11 +57,68 @@ NEXT_XPATHS = [
 ]
 
 # ---------- helpers ----------
+class AlibabaAccessBlocked(RuntimeError):
+    """Stop the batch on denial or unfinished manual verification."""
+
+    def __init__(self, message, rows=None):
+        super().__init__(message)
+        self.rows = list(rows or [])
+
+
+def is_alibaba_url(url):
+    host = (urlsplit(url).hostname or "").lower()
+    return host == "alibaba.com" or host.endswith(".alibaba.com")
+
+
+def access_state(driver):
+    """Inspect the current page without navigating or trying to solve challenges."""
+    url = urlsplit(driver.current_url or "")
+    host = (url.hostname or "").lower()
+    alibaba_host = host == "alibaba.com" or host.endswith(".alibaba.com")
+    alicdn_host = host == "alicdn.com" or host.endswith(".alicdn.com")
+    punish_page = (alibaba_host or alicdn_host) and "punish" in url.path.lower()
+    actions = parse_qs(url.query).get("action", [])
+    if punish_page and any(action.lower() == "deny" for action in actions):
+        return "denied"
+
+    bodies = driver.find_elements(By.TAG_NAME, "body")
+    text = " ".join((bodies[0].text or "").lower().split()) if bodies else ""
+    if "unusual traffic from your network" in text and "please try again later" in text:
+        return "denied"
+    if punish_page or "slide to verify" in text or "please complete the verification" in text:
+        return "verification"
+    return None
+
+
+def check_access(driver):
+    state = access_state(driver)
+    if state == "denied":
+        raise AlibabaAccessBlocked(
+            "Alibaba denied access because it detected unusual traffic. "
+            "This page has no CAPTCHA to solve. Stop requests and try again later; "
+            "if it persists in your regular browser, use Click to feedback or Alibaba support."
+        )
+    if state != "verification":
+        return
+    if HEADLESS:
+        raise AlibabaAccessBlocked("Manual verification is required. Run with HEADLESS = False.")
+    print("\n=== ACTION === Complete Alibaba's verification manually in Chrome.")
+    try:
+        input("Press ENTER here only after the supplier list is visible.\n")
+    except EOFError as exc:
+        raise AlibabaAccessBlocked("Manual verification requires an interactive terminal.") from exc
+    state = access_state(driver)
+    if state == "denied":
+        raise AlibabaAccessBlocked("Alibaba denied access after verification. Stop and try again later.")
+    if state == "verification":
+        raise AlibabaAccessBlocked("Verification is still displayed. Stopping without retrying.")
+
+
 def build_search_url(search_text):
     return (
         "https://www.alibaba.com/search/page"
         "?spm=a2700.supplier_search.the-new-header_fy23_pc_search_bar.keydown__Enter"
-        f"&SearchScene=suppliers&SearchText={quote_plus(search_text)}&verifiedManufactory=true"
+        f"&SearchScene=suppliers&SearchText={quote_plus(search_text)}"
     )
 
 def build_output_path(index, search_text):
@@ -81,34 +138,42 @@ def make_driver(user_data_dir, profile_name, label):
     opts.add_argument("--no-default-browser-check")
     opts.add_argument("--window-size=1500,1100")
     opts.add_argument("--lang=en-US,en")
-    opts.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
     d = uc.Chrome(options=opts)
     d.set_page_load_timeout(PAGE_LOAD_TIMEOUT)
     return d
 
 def robust_go(driver, url, attempts=3):
+    def navigation_ready():
+        check_access(driver)
+        if is_alibaba_url(driver.current_url or ""):
+            time.sleep(AFTER_NAV_PAUSE)
+            check_access(driver)
+            return True
+        return False
+
     for _ in range(attempts):
         try:
-            driver.get(url); time.sleep(2)
-            if "alibaba.com" in (driver.current_url or "").lower():
-                time.sleep(AFTER_NAV_PAUSE)
-                return True
+            driver.get(url)
         except WebDriverException:
             pass
+        time.sleep(2)
+        if navigation_ready():
+            return True
         try:
-            driver.execute_script("window.location.href = arguments[0];", url); time.sleep(2)
-            if "alibaba.com" in (driver.current_url or "").lower():
-                time.sleep(AFTER_NAV_PAUSE)
-                return True
+            driver.execute_script("window.location.href = arguments[0];", url)
         except WebDriverException:
             pass
+        time.sleep(2)
+        if navigation_ready():
+            return True
         time.sleep(1)
     return False
 
 def scroll_to_bottom(driver, max_rounds=MAX_SCROLL_ROUNDS, pause=SCROLL_PAUSE):
+    check_access(driver)
     last = driver.execute_script("return document.body.scrollHeight;")
     for _ in range(max_rounds):
+        check_access(driver)
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(pause)
         new = driver.execute_script("return document.body.scrollHeight;")
@@ -127,6 +192,7 @@ def wait_for_cards(driver, timeout=18):
     end = time.time() + timeout
     last_count = -1
     while time.time() < end:
+        check_access(driver)
         cards = driver.find_elements(By.XPATH, CARD_XPATH)
         if cards:
             return cards
@@ -140,6 +206,7 @@ def wait_for_cards(driver, timeout=18):
             last_count = cnt
             time.sleep(0.4)
     # Final attempt
+    check_access(driver)
     return driver.find_elements(By.XPATH, CARD_XPATH)
 
 def get_page_label(driver):
@@ -388,11 +455,21 @@ def extract_from_card(card):
 
 # ---------- main flow (NEXT-until-stop) ----------
 def run_flow(driver):
+    rows, seen_keys = [], set()
+    try:
+        return collect_pages(driver, rows, seen_keys)
+    except AlibabaAccessBlocked as exc:
+        exc.rows = list(rows)
+        raise
+
+
+def collect_pages(driver, rows, seen_keys):
+    check_access(driver)
     if WAIT_FOR_LOGIN:
         print("\n=== ACTION === Handle cookie/login/captcha if needed in Chrome.")
         input("Press ENTER here when the supplier list is visible…\n")
 
-    rows, seen_keys = [], set()
+    check_access(driver)
 
     def first_card_key():
         try:
@@ -400,6 +477,8 @@ def run_flow(driver):
             first = first[0] if first else None
             if not first:
                 return ""
+        except AlibabaAccessBlocked:
+            raise
         except Exception:
             return ""
         d = extract_from_card(first)
@@ -425,8 +504,10 @@ def run_flow(driver):
     pages_done = 1
 
     while pages_done < MAX_PAGES_CAP:
+        check_access(driver)
         nxt = find_next(driver)
         if not nxt:
+            check_access(driver)
             print("[page] Next not found or disabled — stopping.")
             break
 
@@ -445,6 +526,7 @@ def run_flow(driver):
         changed = False
         for _ in range(80):  # ~24s max
             time.sleep(0.3)
+            check_access(driver)
             new_label = get_page_label(driver)
             new_key = first_card_key()
             if (new_label and new_label != page_label) or (new_key and new_key != prev_key):
@@ -454,6 +536,7 @@ def run_flow(driver):
                 break
 
         if not changed:
+            check_access(driver)
             print("[page] Page didn’t change after Next — stopping.")
             break
 
@@ -478,13 +561,24 @@ def run_flow(driver):
             rows.append(d); seen_keys.add(key); added += 1
         pages_done += 1
 
+    check_access(driver)
     return rows
 
 def scrape(search_text):
+    browser_vpn = "--browser-vpn" in sys.argv[1:]
+    if browser_vpn and HEADLESS:
+        raise AlibabaAccessBlocked("Browser VPN preparation requires HEADLESS = False.")
     driver = None
     try:
         os.makedirs(PROFILE_DIR_FALLBACK, exist_ok=True)
         driver = make_driver(PROFILE_DIR_FALLBACK, PROFILE_NAME_FALLBACK, "FALLBACK")
+        if browser_vpn:
+            print("[vpn] Keep the NordVPN desktop VPN disconnected.")
+            print("[vpn] Connect the NordVPN extension in this Chrome window and check its IP.")
+            try:
+                input("Press ENTER only after the browser VPN is connected, to open Alibaba.\n")
+            except EOFError as exc:
+                raise AlibabaAccessBlocked("Browser VPN preparation requires an interactive terminal.") from exc
         if not robust_go(driver, build_search_url(search_text)):
             raise RuntimeError("nav failed")
         return run_flow(driver)
@@ -493,7 +587,36 @@ def scrape(search_text):
             try: driver.quit()
             except: pass
 
+def setup_browser():
+    """Open the bot's profile for manual extension setup without visiting Alibaba."""
+    if HEADLESS:
+        print("[setup] Browser setup requires HEADLESS = False.")
+        return 1
+    driver = None
+    try:
+        os.makedirs(PROFILE_DIR_FALLBACK, exist_ok=True)
+        driver = make_driver(PROFILE_DIR_FALLBACK, PROFILE_NAME_FALLBACK, "SETUP")
+        print(f"[setup] Browser profile: {PROFILE_DIR_FALLBACK} ({PROFILE_NAME_FALLBACK})")
+        print("[setup] Keep the NordVPN desktop VPN disconnected to preserve the server's connection.")
+        print("[setup] In this Chrome window, install the official NordVPN extension from:")
+        print("https://nordvpn.com/download/chrome-extension/")
+        print("[setup] Sign in and connect through the extension. Check the IP in this browser.")
+        print("[setup] Run with --browser-vpn to pause before opening Alibaba on later runs.")
+        input("Press ENTER here to close the setup browser when finished.\n")
+        return 0
+    except Exception as exc:
+        print(f"[setup] Browser setup failed: {exc}")
+        return 1
+    finally:
+        if driver:
+            try: driver.quit()
+            except: pass
+
+
 def main():
+    if "--setup-browser" in sys.argv[1:]:
+        return setup_browser()
+
     if (
         not isinstance(SEARCH_TEXTS, list)
         or not SEARCH_TEXTS
@@ -526,6 +649,20 @@ def main():
             df = df.drop_duplicates(subset=["companyId","url"], keep="first")
             output_path = build_output_path(index, search_text)
             df.to_excel(output_path, index=False, engine="openpyxl")
+        except AlibabaAccessBlocked as exc:
+            failures.append(search_text)
+            print(f"[blocked] {search_text}: {exc}")
+            if exc.rows:
+                partial_path = os.path.splitext(build_output_path(index, search_text))[0] + "_partial.xlsx"
+                try:
+                    df = pd.DataFrame(exc.rows, columns=OUTPUT_COLUMNS)
+                    df = df.drop_duplicates(subset=["companyId", "url"], keep="first")
+                    df.to_excel(partial_path, index=False, engine="openpyxl")
+                    print(f"[partial] Saved {len(df)} collected rows to {partial_path}")
+                except Exception as export_exc:
+                    print(f"[failed] Unable to save partial results: {export_exc}")
+            print("[blocked] Stopping the batch; remaining searches were not attempted.")
+            break
         except Exception as exc:
             failures.append(search_text)
             print(f"[failed] {search_text}: {exc}")
