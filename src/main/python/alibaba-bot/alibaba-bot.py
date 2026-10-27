@@ -118,7 +118,7 @@ def build_search_url(search_text):
     return (
         "https://www.alibaba.com/search/page"
         "?spm=a2700.supplier_search.the-new-header_fy23_pc_search_bar.keydown__Enter"
-        f"&SearchScene=suppliers&SearchText={quote_plus(search_text)}"
+        f"&SearchScene=suppliers&SearchText={quote_plus(search_text)}&verifiedManufactory=true"
     )
 
 def build_output_path(index, search_text):
