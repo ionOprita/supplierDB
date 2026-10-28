@@ -259,8 +259,42 @@ class RefreshLocalDBTest {
             var failure = assertThrows(IllegalStateException.class,
                     () -> RefreshLocalDB.refresh(source, target, pgBin, backups));
 
-            assertEquals("Other local database sessions are active; stop the application first", failure.getMessage());
+            assertEquals("Other local client connections are active; stop Server and disconnect database clients first",
+                    failure.getMessage());
             assertEquals(before, snapshot(targetConnection));
+        }
+
+        @Test
+        void ignoresMaintenanceWorkersButCountsEveryOtherClientConnection() throws SQLException {
+            var query = """
+                    WITH sessions(case_id, pid, datname, backend_type, state, client_addr) AS (
+                        VALUES
+                            ('autovacuum', pg_backend_pid()+100, current_database(),
+                                'autovacuum worker', 'active', NULL::inet),
+                            ('parallel-worker', pg_backend_pid()+101, current_database(),
+                                'parallel worker', 'active', NULL::inet),
+                            ('background-worker', pg_backend_pid()+102, current_database(),
+                                'background worker', 'active', NULL::inet),
+                            ('background-writer', pg_backend_pid()+103, current_database(),
+                                'background writer', NULL, NULL::inet),
+                            ('client-active', pg_backend_pid()+104, current_database(),
+                                'client backend', 'active', '127.0.0.1'::inet),
+                            ('client-idle', pg_backend_pid()+105, current_database(),
+                                'client backend', 'idle', '127.0.0.1'::inet),
+                            ('client-idle-in-transaction', pg_backend_pid()+106, current_database(),
+                                'client backend', 'idle in transaction', '127.0.0.1'::inet),
+                            ('client-socket', pg_backend_pid()+107, current_database(),
+                                'client backend', 'idle', NULL::inet),
+                            ('own-client', pg_backend_pid(), current_database(),
+                                'client backend', 'active', '127.0.0.1'::inet),
+                            ('other-database-client', pg_backend_pid()+108, current_database() || '_other',
+                                'client backend', 'idle', '127.0.0.1'::inet)
+                    )
+                    SELECT case_id FROM sessions WHERE
+                    """ + RefreshLocalDB.OTHER_CLIENT_SESSIONS_CONDITION + " ORDER BY case_id";
+
+            assertEquals(List.of("client-active", "client-idle", "client-idle-in-transaction", "client-socket"),
+                    rows(targetConnection, query));
         }
 
         private Path refresh(Path tools) throws Exception {

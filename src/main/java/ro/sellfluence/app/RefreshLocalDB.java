@@ -42,6 +42,12 @@ public class RefreshLocalDB {
     private static final Pattern TOC_ENTRY = Pattern.compile("^\\d+;\\s+\\d+\\s+\\d+\\s+.+$");
     private static final Pattern MATERIALIZED_VIEW_DATA = Pattern.compile(
             "^\\d+;\\s+\\d+\\s+\\d+\\s+MATERIALIZED VIEW DATA\\s+.+$");
+    static final String OTHER_CLIENT_SESSIONS_CONDITION = """
+            datname = current_database() AND pid <> pg_backend_pid()
+                AND backend_type = 'client backend'
+            """;
+    private static final String ACTIVE_CLIENTS_MESSAGE =
+            "Other local client connections are active; stop Server and disconnect database clients first";
     private static final String TABLES_QUERY = """
             SELECT c.relname FROM pg_catalog.pg_class c
             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
@@ -197,15 +203,14 @@ public class RefreshLocalDB {
         Files.writeString(resetSql, """
                 DO $refresh$
                 BEGIN
-                    IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity
-                        WHERE datname = current_database() AND pid <> pg_backend_pid()) THEN
-                        RAISE EXCEPTION 'Other local database sessions are active; stop the application first';
+                    IF EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity WHERE %s) THEN
+                        RAISE EXCEPTION '%s';
                     END IF;
                 END;
                 $refresh$;
                 DROP SCHEMA public CASCADE;
                 CREATE SCHEMA public AUTHORIZATION CURRENT_USER;
-                """);
+                """.formatted(OTHER_CLIENT_SESSIONS_CONDITION, ACTIVE_CLIENTS_MESSAGE));
         Path verifySql = privateFile(run.resolve("verify.sql"));
         generated.add(verifySql);
         Files.writeString(verifySql, verificationSql(source, target, local));
@@ -328,11 +333,9 @@ public class RefreshLocalDB {
                 if (serverAddress == null || !isLoopback(serverAddress)) {
                     throw new IllegalArgumentException("emagLocal must reach a server on a loopback address");
                 }
-                if (number(db, """
-                        SELECT count(*) FROM pg_catalog.pg_stat_activity
-                        WHERE datname = current_database() AND pid <> pg_backend_pid()
-                        """) != 0) {
-                    throw new IllegalStateException("Other local database sessions are active; stop the application first");
+                if (number(db, "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE "
+                        + OTHER_CLIENT_SESSIONS_CONDITION) != 0) {
+                    throw new IllegalStateException(ACTIVE_CLIENTS_MESSAGE);
                 }
                 if (!string(db, "SELECT pg_catalog.pg_get_userbyid(datdba) FROM pg_catalog.pg_database WHERE datname = current_database()")
                         .equals(string(db, "SELECT current_user"))) {
