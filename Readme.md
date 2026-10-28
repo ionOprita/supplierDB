@@ -84,6 +84,28 @@ returns your own submitted product content; dashboard performance metrics, suppl
 product content are not guaranteed by the specification. This utility supports comparing the two sources; production
 offers snapshots continue to use the dashboard until their required fields and meanings have been verified.
 
+### Explore campaign APIs
+
+`ro.sellfluence.test.FetchCampaigns` samples the campaign APIs without initializing the database or issuing API writes.
+It uses the same credential aliases as `FetchProductOffer`:
+
+```sh
+mvn compile exec:java -Dexec.mainClass=ro.sellfluence.test.FetchCampaigns -Dexec.args='--account=sellfusion --pnk=DDHSVQMBM'
+```
+
+The defaults are account `sellfusion` and PNK `DDHSVQMBM`; use `--help` for usage. Each run creates a fresh
+`/tmp/emag-campaigns-<unique>/` directory. Response files preserve original JSON, including undocumented fields and
+error responses; non-JSON bodies are retained as a `rawBody` string in a JSON capture. `index.json` records requests,
+HTTP statuses, response filenames, outcomes, skipped calls, and assumptions, without credentials or authorization headers.
+
+The explorer reads the full campaign catalog without status/date filters and samples the first 50 eligible offers per
+campaign. It reads a categories baseline, then probes `campaign_id` for campaigns with restricted categories. A
+`product_offer/read` lookup filtered by PNK resolves seller offer IDs for the badge-timeline and Smart Deals calls.
+Eligible-offer samples have no documented product filter: absence of the selected PNK does not establish ineligibility.
+The categories `campaign_id` selector and the use of the seller offer ID as Smart Deals `productId` are exploratory
+assumptions, not verified API guarantees. Endpoint failures retain their responses and do not prevent unrelated calls;
+the completion summary identifies failures and incomplete pagination.
+
 ### Product reviews
 
 `Fetch product reviews from eMAG` starts in its own `emagReviewsLane` from 19:00 through 23:59 server-local time.
