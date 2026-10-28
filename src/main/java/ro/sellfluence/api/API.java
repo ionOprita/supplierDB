@@ -15,6 +15,7 @@ import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
+import ro.sellfluence.db.ReviewsTable.ReviewHistory;
 import ro.sellfluence.db.Task;
 import ro.sellfluence.support.DoubleWindow;
 import ro.sellfluence.support.Statistics;
@@ -132,6 +133,7 @@ public class API {
                 : mirrorDB.getProductPerformanceAdsets(vendorId, metadata.pnk());
         List<DailyProductOffer> offers = List.of();
         Map<LocalDate, BigDecimal> gmvByPeriod = Map.of();
+        var reviews = ReviewHistory.unavailable();
         var periodEnds = new TreeMap<LocalDate, LocalDate>();
         for (var snapshot : snapshots) {
             var start = period.start(snapshot.key().reportDate());
@@ -141,8 +143,9 @@ public class API {
             offers = mirrorDB.getProductPerformanceOffers(vendorId, metadata.pnk(),
                     periodEnds.firstKey(), periodEnds.lastEntry().getValue());
             gmvByPeriod = mirrorDB.computeGMVForProductPeriods(productCode, periodEnds);
+            reviews = mirrorDB.readProductReviews(metadata.pnk());
         }
-        return Optional.of(ProductPerformanceData.create(metadata, period, snapshots, offers, gmvByPeriod));
+        return Optional.of(ProductPerformanceData.create(metadata, period, snapshots, offers, gmvByPeriod, reviews));
     }
 
     record ProductForFrontend(String name, String id) {

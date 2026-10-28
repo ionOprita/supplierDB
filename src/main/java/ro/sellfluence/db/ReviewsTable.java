@@ -56,6 +56,50 @@ public final class ReviewsTable {
     public record StoreResult(int inserted, int changed, int unchanged, int notReturned) {
     }
 
+    /** One stored review's publication timestamp and rating, independent of its child records. */
+    public record PublishedReview(long reviewId, String published, Integer rating) {
+    }
+
+    /** A successful empty fetch is known history; an unfetched product has no available history. */
+    public record ReviewHistory(boolean fetched, List<PublishedReview> reviews) {
+        public ReviewHistory {
+            reviews = List.copyOf(reviews);
+        }
+
+        public static ReviewHistory unavailable() {
+            return new ReviewHistory(false, List.of());
+        }
+    }
+
+    /** Reads one product's current and retained reviews in the same snapshot as its fetch marker. */
+    static ReviewHistory readProductReviews(Connection db, String pnk) throws SQLException {
+        Objects.requireNonNull(db, "db");
+        if (pnk == null || pnk.isBlank()) return ReviewHistory.unavailable();
+
+        boolean fetched = false;
+        var reviews = new ArrayList<PublishedReview>();
+        try (var statement = db.prepareStatement("""
+                SELECT r.review_id, r.published, r.rating
+                FROM review_fetch AS f
+                LEFT JOIN review AS r ON r.pnk = f.pnk
+                WHERE f.pnk = ?
+                ORDER BY r.review_id
+                """)) {
+            statement.setString(1, pnk.strip());
+            try (var rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    fetched = true;
+                    Long reviewId = rows.getObject("review_id", Long.class);
+                    if (reviewId != null) {
+                        reviews.add(new PublishedReview(reviewId, rows.getString("published"),
+                                rows.getObject("rating", Integer.class)));
+                    }
+                }
+            }
+        }
+        return new ReviewHistory(fetched, reviews);
+    }
+
     /** One stored review and its review-level user/product values for the sheet export. */
     public record ExportReview(long reviewId, Long productFamilyId, String pnk, Integer rating,
                                String optionValue, String created, String content, String clientName,

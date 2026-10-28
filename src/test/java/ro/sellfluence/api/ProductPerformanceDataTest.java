@@ -5,6 +5,8 @@ import ro.sellfluence.db.AdsCampaignTable.AdsAdsetKey;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
 import ro.sellfluence.db.ProductPerformanceTable.Primitives;
 import ro.sellfluence.db.OffersTable.DailyProductOffer;
+import ro.sellfluence.db.ReviewsTable.PublishedReview;
+import ro.sellfluence.db.ReviewsTable.ReviewHistory;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
@@ -383,6 +385,137 @@ class ProductPerformanceDataTest {
         assertNumber(values, "auto_ctr", ".04");
         assertNumber(values, "auto_cpc", ".25");
         assertEquals(1000L, values.get("total_impressions"));
+    }
+
+    @Test
+    void countsPublishedReviewsAcrossFullWeeksUsingTheirLocalCalendarDates() {
+        var ads = List.of("2026-09-08", "2026-09-15").stream()
+                .map(date -> snapshot(date, "auto", List.of(), metrics(1, 1, "1", "1", 1, 1))).toList();
+        var history = new ReviewHistory(true, List.of(
+                new PublishedReview(1, "2026-09-07T00:00:00+14:00", 5),
+                new PublishedReview(2, "2026-09-13T23:59:59.999999-12:00", 1),
+                new PublishedReview(3, "2026-09-14T00:00:00+14:00", 3),
+                new PublishedReview(4, "2026-09-06T23:59:59-12:00", 2)));
+        var response = ProductPerformanceData.create(PRODUCT, WEEK, ads, List.of(), Map.of(), history);
+
+        assertEquals(List.of("2026-09-07", "2026-09-14"),
+                response.rows().stream().map(row -> row.values().get("week")).toList());
+        assertEquals(List.of(2L, 1L), response.rows().stream().map(row -> row.values().get("reviews")).toList());
+        assertNumber(response.rows().get(0).values(), "rating", "3");
+        assertNumber(response.rows().get(1).values(), "rating", "3");
+
+        var mapper = new ObjectMapper();
+        var values = mapper.readTree(mapper.writeValueAsString(response)).get("rows").get(0).get("values");
+        assertTrue(values.get("reviews").isIntegralNumber());
+        assertEquals(2L, values.get("reviews").asLong());
+        assertTrue(values.get("rating").isNumber());
+        assertEquals(0, BigDecimal.valueOf(3).compareTo(values.get("rating").decimalValue()));
+    }
+
+    @Test
+    void monthlyReviewAveragesWeightIndividualReviewsRatherThanWeeklyAverages() {
+        var ads = List.of("2026-09-08", "2026-09-15").stream()
+                .map(date -> snapshot(date, "auto", List.of(), metrics(1, 1, "1", "1", 1, 1))).toList();
+        var history = new ReviewHistory(true, List.of(
+                new PublishedReview(1, "2026-09-08T12:00:00+03:00", 5),
+                new PublishedReview(2, "2026-09-14T12:00:00+03:00", 1),
+                new PublishedReview(3, "2026-09-15T12:00:00+03:00", 1),
+                new PublishedReview(4, "2026-09-16T12:00:00+03:00", 1)));
+        var weeks = ProductPerformanceData.create(PRODUCT, WEEK, ads, List.of(), Map.of(), history).rows();
+        assertNumber(weeks.get(0).values(), "rating", "5");
+        assertNumber(weeks.get(1).values(), "rating", "1");
+        var month = ProductPerformanceData.create(PRODUCT, MONTH, ads, List.of(), Map.of(), history)
+                .rows().getFirst().values();
+        assertEquals(4L, month.get("reviews"));
+        assertNumber(month, "rating", "2");
+    }
+
+    @Test
+    void reviewMonthsRespectYearAndLeapDayBoundaries() {
+        var ads = List.of("2023-12-31", "2024-01-01", "2024-02-01", "2024-03-01").stream()
+                .map(date -> snapshot(date, "auto", List.of(), metrics(1, 1, "1", "1", 1, 1))).toList();
+        var history = new ReviewHistory(true, List.of(
+                new PublishedReview(1, "2023-12-31T23:59:59-12:00", 1),
+                new PublishedReview(2, "2024-01-01T00:00:00+14:00", 2),
+                new PublishedReview(3, "2024-02-29T23:59:59-12:00", 3),
+                new PublishedReview(4, "2024-03-01T00:00:00+14:00", 4)));
+        var rows = ProductPerformanceData.create(PRODUCT, MONTH, ads, List.of(), Map.of(), history).rows();
+        assertEquals(List.of("2023-12-01", "2024-01-01", "2024-02-01", "2024-03-01"),
+                rows.stream().map(row -> row.values().get("week")).toList());
+        for (int index = 0; index < rows.size(); index++) {
+            assertEquals(1L, rows.get(index).values().get("reviews"));
+            assertNumber(rows.get(index).values(), "rating", Integer.toString(index + 1));
+        }
+    }
+
+    @Test
+    void countsUnratedReviewsButExcludesMissingPublicationDatesAndPreservesAveragePrecision() {
+        var ads = List.of(snapshot("2026-09-08", "auto", List.of(), metrics(1, 1, "1", "1", 1, 1)));
+        var history = new ReviewHistory(true, List.of(
+                new PublishedReview(1, "2026-09-08T12:00:00Z", 4),
+                new PublishedReview(2, "2026-09-09T12:00:00Z", 5),
+                new PublishedReview(3, "2026-09-10T12:00:00Z", 5),
+                new PublishedReview(4, "2026-09-11T12:00:00Z", null),
+                new PublishedReview(5, null, 1),
+                new PublishedReview(6, " \t", 1)));
+        var values = ProductPerformanceData.create(PRODUCT, WEEK, ads, List.of(), Map.of(), history)
+                .rows().getFirst().values();
+        assertEquals(4L, values.get("reviews"));
+        assertNumber(values, "rating", fraction(14, 3));
+    }
+
+    @Test
+    void distinguishesUnfetchedHistoryEmptyPeriodsAndPeriodsWithOnlyUnratedReviews() {
+        var ads = List.of("2026-09-08", "2026-09-15").stream()
+                .map(date -> snapshot(date, "auto", List.of(), metrics(1, 1, "1", "1", 1, 1))).toList();
+        var unknown = ProductPerformanceData.create(PRODUCT, WEEK, ads, List.of(), Map.of(),
+                ReviewHistory.unavailable());
+        for (var row : unknown.rows()) {
+            assertNull(row.values().get("reviews"));
+            assertNull(row.values().get("rating"));
+        }
+        var knownEmpty = ProductPerformanceData.create(PRODUCT, WEEK, ads, List.of(), Map.of(),
+                new ReviewHistory(true, List.of()));
+        for (var row : knownEmpty.rows()) {
+            assertEquals(0L, row.values().get("reviews"));
+            assertNull(row.values().get("rating"));
+        }
+        var unrated = ProductPerformanceData.create(PRODUCT, WEEK, ads, List.of(), Map.of(),
+                new ReviewHistory(true, List.of(new PublishedReview(1, "2026-09-08T12:00:00Z", null))));
+        assertEquals(1L, unrated.rows().getFirst().values().get("reviews"));
+        assertNull(unrated.rows().getFirst().values().get("rating"));
+        assertEquals(0L, unrated.rows().getLast().values().get("reviews"));
+        assertNull(unrated.rows().getLast().values().get("rating"));
+    }
+
+    @Test
+    void reviewsRemainAvailableWithAdvertisingErrorsAndDoNotCreateAdditionalPeriods() {
+        var history = new ReviewHistory(true, List.of(
+                new PublishedReview(1, "2026-09-08T12:00:00Z", 5),
+                new PublishedReview(2, "2026-10-08T12:00:00Z", 1)));
+        for (var period : List.of(WEEK, MONTH)) {
+            var ads = List.of(snapshot("2026-09-08", "unsupported", List.of(), metrics(1, 1, "1", "1", 1, 1)));
+            var response = ProductPerformanceData.create(PRODUCT, period, ads, List.of(), Map.of(), history);
+            assertEquals(1, response.rows().size());
+            assertEquals("UNKNOWN_TARGETING", response.errors().getFirst().code());
+            var values = response.rows().getFirst().values();
+            assertEquals(1L, values.get("reviews"));
+            assertNumber(values, "rating", "5");
+            assertNull(values.get("total_sales"));
+            assertTrue(ProductPerformanceData.create(PRODUCT, period, List.of(), List.of(), Map.of(), history)
+                    .rows().isEmpty());
+        }
+    }
+
+    @Test
+    void rejectsMalformedNonemptyPublicationTimestampsWithTheReviewId() {
+        var ads = List.of(snapshot("2026-09-08", "auto", List.of(), metrics(1, 1, "1", "1", 1, 1)));
+        for (var value : List.of("not-a-date", "2026-02-30T12:00:00Z", "2026-09-08T12:00:00")) {
+            var history = new ReviewHistory(true, List.of(new PublishedReview(42, value, 5)));
+            var error = assertThrows(IllegalArgumentException.class,
+                    () -> ProductPerformanceData.create(PRODUCT, WEEK, ads, List.of(), Map.of(), history));
+            assertEquals("Invalid published timestamp for review 42: " + value, error.getMessage());
+        }
     }
 
     @Test

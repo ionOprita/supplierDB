@@ -3,11 +3,15 @@ package ro.sellfluence.api;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
 import ro.sellfluence.db.ProductPerformanceTable.Primitives;
 import ro.sellfluence.db.OffersTable.DailyProductOffer;
+import ro.sellfluence.db.ReviewsTable.PublishedReview;
+import ro.sellfluence.db.ReviewsTable.ReviewHistory;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -21,7 +25,7 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 /**
- * Product and advertising performance, computed from eligible daily adset and offer snapshots and period GMV.
+ * Product and advertising performance, computed from daily adsets, offers, period GMV, and published reviews.
  *
  * <p>The database supplies vendor/product attribution and same-day active campaign/adset filtering.
  * This class classifies each adset snapshot, sums only the six advertising source primitives,
@@ -112,6 +116,13 @@ public final class ProductPerformanceData {
     /** GMV amounts are keyed by period start; they do not create additional advertising periods. */
     public static Response create(Product product, Period period, List<DailyAdset> snapshots,
                                   List<DailyProductOffer> offers, Map<LocalDate, BigDecimal> gmvByPeriod) {
+        return create(product, period, snapshots, offers, gmvByPeriod, ReviewHistory.unavailable());
+    }
+
+    /** Reviews use their publication dates and do not create additional advertising periods. */
+    public static Response create(Product product, Period period, List<DailyAdset> snapshots,
+                                  List<DailyProductOffer> offers, Map<LocalDate, BigDecimal> gmvByPeriod,
+                                  ReviewHistory reviews) {
         var periods = new TreeMap<LocalDate, PeriodTotals>();
         var errors = new ArrayList<DataError>();
         for (var snapshot : snapshots) {
@@ -123,10 +134,49 @@ public final class ProductPerformanceData {
             latestOffers.merge(period.start(offer.fetchDate()), offer,
                     (previous, current) -> previous.fetchDate().isAfter(current.fetchDate()) ? previous : current);
         }
+        var reviewsByPeriod = new TreeMap<LocalDate, ReviewTotals>();
+        if (reviews.fetched()) {
+            periods.keySet().forEach(start -> reviewsByPeriod.put(start, new ReviewTotals()));
+            for (var review : reviews.reviews()) {
+                var date = publicationDate(review);
+                if (date == null) continue;
+                var totals = reviewsByPeriod.get(period.start(date));
+                if (totals != null) totals.add(review.rating());
+            }
+        }
         var rows = periods.entrySet().stream()
                 .map(entry -> entry.getValue().row(entry.getKey(), latestOffers.get(entry.getKey()),
-                        gmvByPeriod.get(entry.getKey()))).toList();
+                        gmvByPeriod.get(entry.getKey()), reviewsByPeriod.get(entry.getKey()))).toList();
         return new Response(false, product, GROUPS, rows, List.copyOf(errors));
+    }
+
+    private static LocalDate publicationDate(PublishedReview review) {
+        if (review.published() == null || review.published().isBlank()) return null;
+        try {
+            // Use the same wall-clock calendar date as the review sheet, without a timezone shift.
+            return OffsetDateTime.parse(review.published()).toLocalDate();
+        } catch (DateTimeParseException e) {
+            throw new IllegalArgumentException("Invalid published timestamp for review "
+                    + review.reviewId() + ": " + review.published(), e);
+        }
+    }
+
+    private static final class ReviewTotals {
+        private long count;
+        private long ratedCount;
+        private BigDecimal ratingSum = BigDecimal.ZERO;
+
+        private void add(Integer rating) {
+            count = Math.addExact(count, 1L);
+            if (rating != null) {
+                ratedCount = Math.addExact(ratedCount, 1L);
+                ratingSum = ratingSum.add(BigDecimal.valueOf(rating));
+            }
+        }
+
+        private BigDecimal averageRating() {
+            return ratedCount == 0 ? null : ratingSum.divide(BigDecimal.valueOf(ratedCount), MathContext.DECIMAL128);
+        }
     }
 
     private static Column column(String key, String label, String type) {
@@ -212,7 +262,7 @@ public final class ProductPerformanceData {
             return null;
         }
 
-        private Row row(LocalDate start, DailyProductOffer offer, BigDecimal gmv) {
+        private Row row(LocalDate start, DailyProductOffer offer, BigDecimal gmv, ReviewTotals reviews) {
             var values = new LinkedHashMap<String, Object>();
             // Unsupported overview columns, TACOS, and shares of overall product activity remain null.
             for (var group : GROUPS) {
@@ -220,6 +270,10 @@ public final class ProductPerformanceData {
             }
             values.put("week", start.toString());
             values.put("gmv", gmv);
+            if (reviews != null) {
+                values.put("reviews", reviews.count);
+                values.put("rating", reviews.averageRating());
+            }
             if (offer != null) {
                 if (offer.matchingOffers() == 1) {
                     values.put("stock", offer.stock());

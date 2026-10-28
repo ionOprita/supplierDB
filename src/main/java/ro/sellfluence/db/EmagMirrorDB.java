@@ -206,6 +206,11 @@ public class EmagMirrorDB {
         return database.readTX(ReviewsTable::readReviewExportRows);
     }
 
+    /** Reads one product's publication history and distinguishes unfetched from known empty history. */
+    public ReviewsTable.ReviewHistory readProductReviews(String pnk) throws SQLException {
+        return database.readTX(db -> ReviewsTable.readProductReviews(db, pnk));
+    }
+
     public int addOrUpdateAdsAndCampaigns(UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         return database.writeTX(db -> upsertCampaignsAndAdsets(db, vendorId, campaigns));
     }

@@ -91,8 +91,33 @@ numbers using the existing integer formatter, including zero and negative values
 contributing orders produce zero. GMV-only periods do not create extra rows, and advertising
 classification errors do not hide a row's GMV.
 
+`# rev.` and `rating` use the stored reviews also exported to `Date Recenzii`, matched
+on the selected product's trimmed PNK. Reviews are public product data: vendors sharing
+a PNK receive the same review metrics after the vendor/product membership check.
+The review history is read once per report request, without joining comments or other
+review child records. Retained reviews that no longer appear in later fetches still count,
+using their latest stored ratings, just as they remain in the sheet export.
+
+A review belongs to the complete week or month containing its **publication date**,
+preserving the source timestamp's local calendar date and matching the sheet export's
+date semantics. Creation, modification, and first-import dates do not determine membership.
+Reviews without a publication date are excluded; malformed nonempty publication timestamps
+surface as data errors. `# rev.` counts each dated review once, including reviews with no
+rating. `rating` is the arithmetic mean of the nonnull ratings in that period, displayed
+with two decimal places. Monthly averages are calculated from individual reviews rather
+than by averaging weekly averages.
+
+After a successful review fetch, a period with no published reviews shows `0` reviews and
+an unavailable rating (`—`). If all reviews in the period lack ratings, the count remains
+available and the rating is `—`. Both cells are unavailable when the product has never
+been successfully fetched. Review-only periods do not create extra rows, and advertising
+classification errors do not hide review metrics. The existing CSV export includes the
+displayed counts and ratings.
+
 | Displayed metric | Primitive or calculation within the period |
 |---|---|
+| # rev. | Count of stored reviews published in the period |
+| rating | Sum of nonnull ratings / count of rated reviews published in the period |
 | Impressions | Sum of `summary_impressions` |
 | Clicks | Sum of `summary_clicks` |
 | Spend | Sum of `summary_spent` |
@@ -120,9 +145,9 @@ distinct from a measured zero.
 
 ## Unsupported columns and errors
 
-The current sources support 66 advertising columns, plus GMV, Stock, and Sales Price.
-Overall product clicks/conversion, performance classification, average price, review count,
-and rating remain null. TACOS and Total's advertising shares of overall product clicks
+The current sources support 66 advertising columns, plus GMV, Stock, Sales Price, review
+count, and rating. Overall product clicks/conversion, performance classification, and
+average price remain null. TACOS and Total's advertising shares of overall product clicks
 and sales also remain null: advertising summaries do not supply the required overall
 product denominators. These columns retain their positions without fabricated values.
 
@@ -140,10 +165,13 @@ an unknown product/vendor pairing returns HTTP 404, and database failures return
 
 Unit tests cover weighted formulas, numeric/null serialization, classification errors,
 period boundaries, GMV period alignment and independence from advertising errors,
+review publication dates, raw-review monthly averages, unavailable review data,
 unavailable columns, and empty inputs. PostgreSQL integration tests
 cover joins, active filters, product attribution, vendor isolation, and classification
-without multiplying metrics. Browser-script tests cover real period requests, stale
-responses, error details, selectors, GMV formatting and refreshes, and row visibility.
+without multiplying metrics, plus PNK-scoped review reads, successful empty fetches,
+and retained reviews without child-record duplication. Browser-script tests cover real
+period requests, stale responses, error details, selectors, GMV and review formatting,
+review CSV values, selection refreshes, and row visibility.
 
 Run `mvn test` and `node --test src/test/js/product-performance.test.mjs`. PostgreSQL
 tests require `ADS_TEST_DB_URL` pointing to a disposable database, optionally with

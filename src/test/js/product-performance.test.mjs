@@ -219,6 +219,17 @@ function report(clicks, date = '2026-09-07', errors = []) {
   };
 }
 
+function reviewReport(reviews, errors = []) {
+  const data = report(5, reviews[0][0], errors);
+  data.groups[0].columns.push(
+    {key: 'reviews', label: '# rev.', type: 'integer'},
+    {key: 'rating', label: 'rating', type: 'decimal'});
+  data.rows = reviews.map(([week, count, rating]) => ({values: {
+    week, reviews: count, rating, auto_clicks: 5, total_clicks: errors.length ? null : 5
+  }}));
+  return data;
+}
+
 async function openPage(t, period, requestedProductCode = productCode) {
   const template = await readFile(new URL('../../main/jte/product-performance.jte', import.meta.url), 'utf8');
   const elements = new Map([...template.matchAll(/<([a-z]+)[^>]*\bid="([^"]+)"[^>]*>/g)]
@@ -325,6 +336,57 @@ test('CSV downloads align flat grouped headers with the displayed formatted cell
   assert.equal(page.downloads[0].blob.type, 'text/csv;charset=utf-8;');
   assert.deepEqual(page.revokedUrls, [page.downloads[0].url]);
   assert.equal(document.body.children.length, 0, 'Temporary download anchor is removed');
+});
+
+test('review cells and CSV distinguish counts, unrated periods, and unavailable fetch data', async t => {
+  const page = await openPage(t);
+  await page.respond(0, reviewReport([
+    ['2026-09-07', 3, 4.6666666667],
+    ['2026-09-14', 0, null],
+    ['2026-09-21', null, null],
+    ['2026-09-28', 2, null]
+  ], [classificationError]));
+  const cells = page.byId('Body').children.map(row => row.children.slice(1, 3).map(cell => cell.textContent));
+  assert.deepEqual(cells, [['3', '4.67'], ['0', '—'], ['—', '—'], ['2', '—']]);
+  assert.equal(page.byId('Errors').hidden, false);
+  assert.equal(page.byId('Body').children[0].children[4].textContent, '—');
+  page.byId('DownloadCsv').click();
+  assert.equal(await page.csv(), '\uFEFFWeek,# rev.,rating,Auto - Clicks,Total - Clicks\r\n'
+    + '07 Sep 26 - 13 Sep 26,3,4.67,5,—\r\n'
+    + '14 Sep 26 - 20 Sep 26,0,—,5,—\r\n'
+    + '21 Sep 26 - 27 Sep 26,—,—,5,—\r\n'
+    + '28 Sep 26 - 04 Oct 26,2,—,5,—');
+});
+
+test('review metrics refresh for period and product changes while ignoring stale responses', async t => {
+  const page = await openPage(t);
+  await page.respond(0, reviewReport([['2026-09-07', 3, 4]]));
+  const reviewCells = () => page.byId('Body').children[0].children.slice(1, 3).map(cell => cell.textContent);
+  assert.deepEqual(reviewCells(), ['3', '4.00']);
+
+  page.periodSelect().value = 'month';
+  page.periodSelect().dispatch('change');
+  assert.equal(page.requests[1].url.searchParams.get('period'), 'month');
+  assert.equal(page.byId('Body').textContent, '');
+  await page.respond(1, reviewReport([['2026-09-01', 12, 4.75]]));
+  assert.deepEqual(reviewCells(), ['12', '4.75']);
+  page.byId('DownloadCsv').click();
+  assert.equal(await page.csv(), '\uFEFFMonth,# rev.,rating,Auto - Clicks,Total - Clicks\r\n'
+    + 'September 2026,12,4.75,5,5');
+
+  page.periodSelect().value = 'week';
+  page.periodSelect().dispatch('change');
+  page.byId('ProductSelect').value = 'OTHER';
+  page.byId('ProductSelect').dispatch('change');
+  assert.equal(page.requests[3].url.searchParams.get('productCode'), 'OTHER');
+  assert.equal(page.requests[3].url.searchParams.get('period'), 'week');
+  assert.equal(page.byId('Body').textContent, '');
+  await page.respond(3, reviewReport([['2026-09-07', 0, null]]));
+  await page.respond(2, reviewReport([['2026-09-07', 999, 1]]));
+  assert.deepEqual(reviewCells(), ['0', '—']);
+  page.byId('DownloadCsv').click();
+  assert.equal(await page.csv(), '\uFEFFWeek,# rev.,rating,Auto - Clicks,Total - Clicks\r\n'
+    + '07 Sep 26 - 13 Sep 26,0,—,5,5');
 });
 
 test('CSV exports only the latest 20 displayed rows until Show everything is selected', async t => {

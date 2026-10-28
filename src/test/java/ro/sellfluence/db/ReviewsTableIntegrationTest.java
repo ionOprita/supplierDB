@@ -473,6 +473,53 @@ class ReviewsTableIntegrationTest {
     }
 
     @Test
+    void productReviewHistoryDistinguishesUnfetchedProductsFromSuccessfulEmptyFetches() throws Exception {
+        assertEquals(ReviewsTable.ReviewHistory.unavailable(), ReviewsTable.readProductReviews(db, PNK));
+        assertEquals(ReviewsTable.ReviewHistory.unavailable(), ReviewsTable.readProductReviews(db, null));
+        assertEquals(ReviewsTable.ReviewHistory.unavailable(), ReviewsTable.readProductReviews(db, " \t\n"));
+
+        ReviewsTable.storeReviews(db, PNK, FIRST_FETCH, response());
+
+        assertEquals(new ReviewsTable.ReviewHistory(true, List.of()), ReviewsTable.readProductReviews(db, PNK));
+        assertEquals(ReviewsTable.ReviewHistory.unavailable(), ReviewsTable.readProductReviews(db, "OTHER-PNK"));
+    }
+
+    @Test
+    void productReviewHistoryUsesTheExactTrimmedPnkAndPreservesNullableSourceFields() throws Exception {
+        var fields = new LinkedHashMap<String, Object>();
+        fields.put("published", null);
+        fields.put("rating", null);
+        var first = copyRecord(fullReview(11, 1), fields);
+        var second = copyRecord(fullReview(11, 2, "PNK-2"),
+                Map.of("published", "2026-09-28T00:30:00+03:00", "rating", 5));
+        ReviewsTable.storeReviews(db, PNK, FIRST_FETCH, response(first));
+        ReviewsTable.storeReviews(db, "PNK-2", FIRST_FETCH, response(second));
+
+        assertEquals(new ReviewsTable.ReviewHistory(true, List.of(new ReviewsTable.PublishedReview(11, null, null))),
+                ReviewsTable.readProductReviews(db, " \t" + PNK + "\r\n "));
+        assertEquals(new ReviewsTable.ReviewHistory(true, List.of(
+                        new ReviewsTable.PublishedReview(11, second.published(), 5))),
+                ReviewsTable.readProductReviews(db, "PNK-2"));
+        assertEquals(ReviewsTable.ReviewHistory.unavailable(), ReviewsTable.readProductReviews(db, "pnk-1"));
+    }
+
+    @Test
+    void productReviewHistoryIncludesRetainedAndInactiveRowsWithoutMultiplyingChildren() throws Exception {
+        var retained = copyRecord(fullReview(11, 1), Map.of("isActive", false,
+                "deleted", "2026-09-24T11:00:00+03:00", "rating", 2));
+        var current = copyRecord(fullReview(12, 2), Map.of("rating", 5));
+        ReviewsTable.storeReviews(db, PNK, FIRST_FETCH, response(retained, current));
+        var updated = copyRecord(current, Map.of("rating", 4));
+        ReviewsTable.storeReviews(db, PNK, SECOND_FETCH, response(updated));
+
+        assertTrue(count("SELECT count(*) FROM review_user") > count("SELECT count(*) FROM review"));
+        assertEquals(new ReviewsTable.ReviewHistory(true, List.of(
+                        new ReviewsTable.PublishedReview(11, retained.published(), 2),
+                        new ReviewsTable.PublishedReview(12, current.published(), 4))),
+                ReviewsTable.readProductReviews(db, PNK));
+    }
+
+    @Test
     void exportIncludesRetainedReviewsAndUsesOnlyReviewLevelOwnerData() throws Exception {
         var first = fullReview(11, 1);
         var option = new ReviewProduct.FamilyCharacteristics(List.of(
