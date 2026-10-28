@@ -475,11 +475,17 @@ public class Server {
         app.before("/static/*", ctx -> checkRole(ctx, null));
 
         app.get("/welcome.html", ctx -> renderPage(ctx, mirrorDB, "welcome"));
-        app.get("/health", ctx -> ctx.result("ok"));
+        app.get("/health", ctx -> serveHealth(ctx, serverShutdownRequested.get()));
         app.post("/logout", ctx -> {
             ctx.req().getSession().invalidate();
             ctx.redirect("/");
         });
+    }
+
+    static void serveHealth(Context ctx, boolean shutdownRequested) {
+        ctx.header("Cache-Control", "no-store")
+                .status(shutdownRequested ? 503 : 200)
+                .result(shutdownRequested ? "stopping" : "ok");
     }
 
     private static void configureAcmeChallenge(JavalinDefaultRoutingApi app) {
