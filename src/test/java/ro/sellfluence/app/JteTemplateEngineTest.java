@@ -16,6 +16,53 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JteTemplateEngineTest {
     @Test
+    void sharedShellPreservesNavigationPermissionsAndLogout() {
+        for (var role : java.util.Arrays.asList("admin", "user", "nobody", null)) {
+            var model = new HashMap<String, Object>();
+            model.put("userName", "ion");
+            model.put("userRole", role);
+            model.put("pageTitle", "Overview");
+            var output = new StringOutput();
+            Server.createJteEngine().render("overview.jte", model, output);
+            var html = output.toString();
+
+            assertTrue(html.contains("id=\"appMain\""));
+            assertTrue(html.contains("id=\"title\""));
+            assertTrue(html.contains("Select an item from the menu."));
+            assertTrue(html.contains("action=\"/logout\" method=\"post\""));
+            assertTrue(html.contains("src=\"/js/app-shell.js\""));
+            boolean authorized = role != null && !role.equals("nobody");
+            org.junit.jupiter.api.Assertions.assertEquals(authorized, html.contains("id=\"appSidebar\""));
+            org.junit.jupiter.api.Assertions.assertEquals(authorized, html.contains("id=\"appNavToggle\""));
+            org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("href=\"/admin/users\""));
+            org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("id=\"serverStopButton\""));
+            org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("id=\"serverStopDialog\""));
+            if (authorized) {
+                for (var route : List.of("orders", "storno", "returns", "storno-rate", "return-rate",
+                        "current-rates", "current-rates-categories", "returnCharts", "rrr", "ads-campaigns",
+                        "products", "gmv", "product-performance", "categories", "employees", "tasks")) {
+                    assertTrue(html.contains("href=\"/private/" + route + "\""), route);
+                }
+            }
+            if ("admin".equals(role)) {
+                assertTrue(html.indexOf("id=\"serverStopDialog\"") > html.indexOf("</main>"),
+                        "The native confirmation must remain outside the mobile drawer's inert main region");
+            }
+        }
+    }
+
+    @Test
+    void sharedShellEscapesAccountNames() {
+        var output = new StringOutput();
+        Server.createJteEngine().render("overview.jte", Map.of(
+                "userName", "ion<script>alert(1)</script>", "userRole", "user", "pageTitle", "Overview"
+        ), output);
+
+        assertTrue(output.toString().contains("ion&lt;script&gt;alert(1)&lt;/script&gt;"));
+        assertFalse(output.toString().contains("ion<script>"));
+    }
+
+    @Test
     void rendersPauseAllAndResumeAllAfterLaneSelectorOnlyForAdmins() {
         for (var role : List.of("admin", "user")) {
             var output = new StringOutput();

@@ -1623,3 +1623,1005 @@ code {
     --pp-product: #283d30;
   }
 }
+
+/* Shared application frame. Standalone sign-in and registration pages keep their own layout. */
+body.app-shell {
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-alt: #f8fafc;
+  --text: #1e293b;
+  --muted: #5f6f85;
+  --border: #dce3ee;
+  --hover: #edf4ff;
+  --sticky-separator: #cbd5e1;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --app-sidebar-bg: #f5f7fb;
+  --app-active-bg: #e7efff;
+  --app-active-text: #1d4ed8;
+  --app-shadow: 0 2px 8px rgb(15 23 42 / 3%);
+  --app-header-height: 64px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--app-header-height) minmax(0, 1fr) auto;
+  grid-template-areas: "header" "main" "footer";
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 100dvh;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  overflow-x: clip;
+}
+
+body.app-shell--with-nav {
+  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-areas: "header header" "sidebar main" "sidebar footer";
+}
+
+body.app-shell,
+body.app-shell :where(input, select, textarea, button,
+  .app-topbar, .app-sidebar, .app-main, .app-footer, .app-nav-link, .app-account-avatar,
+  .page-actions, .card, .gmv-period, .pp-heading, .pp-product, .pp-product-details) {
+  box-sizing: border-box;
+}
+
+body.app-shell[hidden],
+body.app-shell [hidden] {
+  display: none !important;
+}
+
+body.app-shell :where(button, input, select, textarea) {
+  font: inherit;
+}
+
+body.app-shell :where(button) {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.35;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+body.app-shell :where(button:hover:not(:disabled)) {
+  background: var(--surface-alt);
+  border-color: var(--sticky-separator);
+}
+
+body.app-shell :where(button:disabled, input:disabled, select:disabled) {
+  opacity: .55;
+  cursor: default;
+}
+
+body.app-shell :where(input[type="text"], input[type="search"], input[type="date"], input[type="number"], select, textarea) {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  line-height: 1.35;
+}
+
+body.app-shell :where(input[type="checkbox"], input[type="radio"]) {
+  accent-color: var(--primary);
+}
+
+body.app-shell :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+body.app-shell :where(label) {
+  color: var(--muted);
+  font-size: .875rem;
+  font-weight: 600;
+}
+
+body.app-shell .primary-action {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #ffffff;
+}
+
+body.app-shell .primary-action:hover:not(:disabled) {
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
+}
+
+body.app-shell .danger-action {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--danger-text);
+}
+
+body.app-shell .danger-action:hover:not(:disabled) {
+  border-color: var(--danger-hover);
+  background: var(--danger-hover);
+}
+
+body.app-shell .app-skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 8px;
+  left: 8px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #ffffff;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-160%);
+}
+
+body.app-shell .app-skip-link:focus {
+  transform: translateY(0);
+}
+
+body.app-shell .app-topbar {
+  position: sticky;
+  z-index: 50;
+  top: 0;
+  grid-area: header;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 24px;
+  min-width: 0;
+  height: var(--app-header-height);
+  padding: 0 32px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+body.app-shell .app-brand {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 10px;
+  min-width: 0;
+  margin-right: auto;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -.035em;
+  text-decoration: none;
+}
+
+body.app-shell .app-brand-mark {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  color: var(--primary);
+}
+
+body.app-shell .app-account {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 12px;
+  min-width: 0;
+}
+
+body.app-shell .app-account-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--app-active-bg);
+  color: var(--app-active-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+body.app-shell .app-account-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 180px;
+  line-height: 1.35;
+}
+
+body.app-shell .app-account-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.app-shell .app-account-role {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+body.app-shell .app-logout-form {
+  margin: 0 0 0 4px;
+}
+
+body.app-shell .app-logout-form button {
+  font-size: 12px;
+}
+
+body.app-shell .app-nav-toggle,
+body.app-shell .app-nav-close {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  padding: 0;
+}
+
+body.app-shell .app-sidebar {
+  position: sticky;
+  top: var(--app-header-height);
+  grid-area: sidebar;
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  min-width: 0;
+  height: calc(100dvh - var(--app-header-height));
+  border-right: 1px solid var(--border);
+  background: var(--app-sidebar-bg);
+  overflow: hidden;
+}
+
+body.app-shell .app-sidebar-header {
+  display: none;
+}
+
+body.app-shell .app-navigation {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 20px 12px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+body.app-shell .app-nav-group + .app-nav-group {
+  margin-top: 20px;
+}
+
+body.app-shell .app-nav-heading {
+  margin: 0 0 6px;
+  padding: 0 12px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  line-height: 1.6;
+  text-transform: uppercase;
+}
+
+body.app-shell .app-nav-list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+body.app-shell .app-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+body.app-shell .app-nav-link:hover {
+  background: var(--surface);
+}
+
+body.app-shell .app-nav-link[aria-current="page"],
+body.app-shell .app-nav-link.is-active {
+  background: var(--app-active-bg);
+  box-shadow: inset 3px 0 0 var(--primary);
+  color: var(--app-active-text);
+  font-weight: 650;
+}
+
+body.app-shell .app-sidebar-footer {
+  flex: 0 0 auto;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+
+body.app-shell .app-sidebar-footer .server-stop-button {
+  width: 100%;
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
+  background: var(--surface);
+  color: var(--danger);
+  font-size: 12px;
+}
+
+body.app-shell .app-sidebar-footer .server-stop-button:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+
+body.app-shell .app-nav-backdrop {
+  display: none;
+}
+
+body.app-shell .app-main {
+  grid-area: main;
+  min-width: 0;
+  padding: 28px 32px;
+  background: var(--surface);
+}
+
+body.app-shell .app-main > #title {
+  margin: 0 0 24px;
+  font-size: clamp(23px, 2vw, 28px);
+  font-weight: 750;
+  letter-spacing: -.035em;
+  line-height: 1.25;
+}
+
+body.app-shell .app-main > p {
+  max-width: 75ch;
+}
+
+body.app-shell .app-footer {
+  grid-area: footer;
+  min-width: 0;
+  padding: 12px 32px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+body.app-shell .page-actions {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px 12px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-alt);
+}
+
+body.app-shell .page-actions label {
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+}
+
+body.app-shell .page-actions > .vendor-filter-select {
+  flex: 0 1 240px;
+  width: 240px;
+  min-width: 0;
+}
+
+body.app-shell .page-actions > #downloadCsvBtn {
+  margin-left: auto;
+}
+
+body.app-shell .page-actions :where(input[type="text"], input[type="search"], select) {
+  margin-bottom: 0;
+}
+
+body.app-shell .task-filter-controls,
+body.app-shell .log-filter-controls,
+body.app-shell .ads-campaigns-filter-controls,
+body.app-shell .current-rates-filter-controls {
+  min-width: 0;
+  max-width: 100%;
+  gap: 8px;
+}
+
+body.app-shell .current-rates-actions,
+body.app-shell .task-page-actions,
+body.app-shell .ads-campaigns-actions {
+  justify-content: space-between;
+}
+
+body.app-shell .wrap {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  border-color: var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--app-shadow);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+body.app-shell table:not(.pp-table) {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+body.app-shell table:not(.pp-table):not(.product-sheet-table) :where(th, td) {
+  padding: 10px 12px;
+  vertical-align: middle;
+}
+
+body.app-shell table:not(.pp-table) thead th {
+  background: var(--surface-alt);
+  color: var(--text);
+  font-weight: 650;
+}
+
+body.app-shell table:not(.pp-table):not(.product-sheet-table) tbody tr:hover td {
+  background: var(--hover);
+}
+
+body.app-shell .product-sheet-input,
+body.app-shell .product-sheet-select,
+body.app-shell .product-sheet-textarea {
+  min-height: 40px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+body.app-shell .product-sheet-input:focus,
+body.app-shell .product-sheet-select:focus,
+body.app-shell .product-sheet-textarea:focus {
+  outline-offset: -2px;
+}
+
+body.app-shell .gmv-amount-button,
+body.app-shell .task-error-button,
+body.app-shell .task-sort-button,
+body.app-shell .log-sort-button {
+  padding: 2px 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  font-weight: inherit;
+}
+
+body.app-shell .gmv-amount-button,
+body.app-shell .task-error-button {
+  color: var(--primary);
+}
+
+body.app-shell .row {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+body.app-shell .card,
+body.app-shell .gmv-period,
+body.app-shell .pp-heading {
+  border-color: var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--app-shadow);
+}
+
+body.app-shell .card {
+  min-width: 0;
+  padding: 20px;
+}
+
+body.app-shell .card > select {
+  width: 100%;
+}
+
+body.app-shell .gmv-period {
+  padding: 16px;
+}
+
+body.app-shell .pp-heading {
+  gap: 12px;
+  padding: 16px;
+}
+
+body.app-shell .pp-vendor-select {
+  background: var(--pp-overview);
+}
+
+body.app-shell .pp-everything-label {
+  min-height: 32px;
+  color: var(--text);
+}
+
+body.app-shell .product-performance {
+  min-width: 0;
+  margin-top: 0;
+}
+
+body.app-shell .product-form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+}
+
+body.app-shell dialog {
+  border-color: var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgb(15 23 42 / 24%);
+}
+
+/* Spreadsheet pages use the frame's remaining height instead of the former menu's fixed offset. */
+@supports selector(body:has(#productsTable)) {
+  body.app-shell:has(:is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) {
+    display: grid;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.app-shell:has(:is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) .app-main {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.app-shell:has(:is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) .app-main > :not(.product-sheet-wrap) {
+    flex-shrink: 0;
+  }
+
+  body.app-shell:has(:is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) .product-sheet-wrap {
+    flex: 1 1 auto;
+    min-height: 120px;
+    max-height: none;
+  }
+
+  body.app-shell:has(#gmvPeriodForm) .app-main {
+    overflow: auto;
+  }
+}
+
+@media (max-width: 1199px) {
+  body.app-shell--with-nav {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: var(--app-header-height) auto minmax(0, 1fr) auto;
+    grid-template-areas: "header" "sidebar" "main" "footer";
+  }
+
+  body.app-shell .app-topbar {
+    gap: 12px;
+    padding-inline: 24px;
+  }
+
+  body.app-shell .app-main {
+    padding: 24px;
+  }
+
+  body.app-shell .app-sidebar {
+    position: static;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    overflow: visible;
+  }
+
+  body.app-shell .app-navigation {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    align-items: start;
+    gap: 20px;
+    overflow: visible;
+    padding: 16px;
+  }
+
+  body.app-shell .app-nav-group + .app-nav-group {
+    margin-top: 0;
+  }
+
+  body.app-shell .app-sidebar-footer .server-stop-button {
+    width: auto;
+  }
+
+  body.app-shell--enhanced.app-shell--with-nav {
+    grid-template-rows: var(--app-header-height) minmax(0, 1fr) auto;
+    grid-template-areas: "header" "main" "footer";
+  }
+
+  body.app-shell--enhanced .app-nav-toggle,
+  body.app-shell--enhanced .app-nav-close {
+    display: inline-flex;
+  }
+
+  body.app-shell--enhanced .app-sidebar {
+    position: fixed;
+    z-index: 80;
+    inset: 0 auto 0 0;
+    width: min(320px, 90vw);
+    max-width: calc(100vw - 24px);
+    height: 100dvh;
+    border: 0;
+    border-right: 1px solid var(--border);
+    box-shadow: 16px 0 48px rgb(15 23 42 / 16%);
+    overflow: hidden;
+    visibility: hidden;
+    transform: translateX(-105%);
+    transition: transform 180ms ease, visibility 180ms;
+    pointer-events: none;
+  }
+
+  body.app-shell--enhanced.app-nav-open .app-sidebar {
+    visibility: visible;
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+
+  body.app-shell--enhanced .app-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 0 0 auto;
+    gap: 16px;
+    min-height: var(--app-header-height);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  body.app-shell--enhanced .app-sidebar-header h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 650;
+  }
+
+  body.app-shell--enhanced .app-navigation {
+    display: block;
+    overflow-y: auto;
+    padding: 16px 12px;
+  }
+
+  body.app-shell--enhanced .app-nav-group + .app-nav-group {
+    margin-top: 20px;
+  }
+
+  body.app-shell--enhanced .app-sidebar-footer .server-stop-button {
+    width: 100%;
+  }
+
+  body.app-shell--enhanced.app-nav-open .app-nav-backdrop:not([hidden]) {
+    position: fixed;
+    z-index: 70;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100dvh;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgb(15 23 42 / 38%);
+  }
+
+  @supports selector(body:has(#productsTable)) {
+    html:has(body.app-shell:not(.app-shell--enhanced) :is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) {
+      height: auto;
+      overflow: auto;
+    }
+
+    body.app-shell:not(.app-shell--enhanced):has(:is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) {
+      height: auto;
+      min-height: 100dvh;
+      overflow: visible;
+      overflow-x: clip;
+    }
+
+    body.app-shell:not(.app-shell--enhanced):has(:is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) .app-main {
+      overflow: visible;
+    }
+
+    body.app-shell:not(.app-shell--enhanced):has(:is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) .product-sheet-wrap {
+      flex: 0 0 auto;
+      max-height: 65dvh;
+    }
+  }
+}
+
+@media (max-width: 767px) {
+  body.app-shell .app-topbar {
+    padding-inline: 16px;
+  }
+
+  body.app-shell .app-main {
+    padding: 20px 16px;
+  }
+
+  body.app-shell .app-main > #title {
+    margin-bottom: 20px;
+    overflow-wrap: anywhere;
+  }
+
+  body.app-shell .app-footer {
+    padding: 12px 16px;
+  }
+
+  body.app-shell :where(button, input[type="text"], input[type="search"], input[type="date"], input[type="number"], select, textarea) {
+    min-height: 44px;
+  }
+
+  body.app-shell .app-nav-toggle,
+  body.app-shell .app-nav-close {
+    width: 44px;
+  }
+
+  body.app-shell .app-nav-link {
+    min-height: 44px;
+  }
+
+  body.app-shell .page-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  body.app-shell .page-actions > :where(select, input, button),
+  body.app-shell .page-actions > .vendor-filter-select {
+    flex: 0 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  body.app-shell .page-actions > #downloadCsvBtn {
+    margin-left: 0;
+  }
+
+  body.app-shell .task-filter-controls,
+  body.app-shell .log-filter-controls,
+  body.app-shell .ads-campaigns-filter-controls,
+  body.app-shell .current-rates-filter-controls,
+  body.app-shell .ads-period-anchor-controls,
+  body.app-shell .ads-period-custom-controls,
+  body.app-shell .task-filter-field,
+  body.app-shell .log-filter-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  body.app-shell .task-filter-controls :where(input, select),
+  body.app-shell #taskNameFilter,
+  body.app-shell .log-filter-controls :where(input, select),
+  body.app-shell .ads-campaigns-filter-controls :where(input, select),
+  body.app-shell .current-rates-filter-controls :where(input, select),
+  body.app-shell .brand-create-form :where(input, select),
+  body.app-shell .gmv-vendor-actions select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  body.app-shell .gmv-period-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  body.app-shell .gmv-period-field,
+  body.app-shell .gmv-period-product {
+    max-width: 100%;
+  }
+
+  body.app-shell .pp-heading,
+  body.app-shell .pp-product,
+  body.app-shell .pp-product-details {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+  }
+
+  body.app-shell .pp-header-select,
+  body.app-shell .pp-heading > button {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  body.app-shell .pp-product-details {
+    align-items: flex-start;
+  }
+
+  /* Keep a compact period column visible without pinning the whole overview on phones. */
+  body.app-shell .pp-table {
+    --pp-frozen-width: var(--pp-week-width, 112px) !important;
+  }
+
+  body.app-shell .pp-table .pp-frozen:not(.pp-week) {
+    position: static;
+    left: auto;
+    z-index: auto;
+    box-shadow: none;
+    transform: none;
+  }
+
+  body.app-shell .pp-table thead .pp-frozen:not(.pp-week) {
+    position: sticky;
+    top: var(--pp-group-height);
+    left: auto;
+    z-index: 3;
+  }
+
+  body.app-shell .pp-table .pp-frozen-group {
+    position: sticky;
+    top: 0;
+    left: auto;
+    z-index: 3;
+    box-shadow: none;
+    transform: none;
+  }
+
+  body.app-shell .pp-table .pp-frozen-group .pp-group-label {
+    position: sticky;
+    left: calc(var(--pp-week-width, 112px) + .65rem);
+  }
+
+  body.app-shell .pp-table .pp-week {
+    left: 0;
+    width: 112px;
+    min-width: 112px;
+    max-width: 112px;
+    box-shadow: 2px 0 0 var(--sticky-separator);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    transform: none;
+  }
+
+  body.app-shell .pp-table thead .pp-week {
+    z-index: 6;
+  }
+
+  body.app-shell .pp-period-controls,
+  body.app-shell .pp-period-select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  body.app-shell .pp-everything-label {
+    min-height: 44px;
+    font-size: 11px;
+    line-height: 1.3;
+    white-space: normal;
+  }
+
+  body.app-shell .pp-everything-label input {
+    flex: 0 0 auto;
+    margin: 0;
+  }
+
+  body.app-shell .product-sheet-table .sticky-col {
+    position: static;
+    left: auto;
+    box-shadow: none;
+  }
+
+  body.app-shell .product-sheet-table thead .sticky-col {
+    position: sticky;
+    top: 0;
+    left: auto;
+    z-index: 3;
+  }
+
+  body.app-shell .product-sheet-input,
+  body.app-shell .product-sheet-select,
+  body.app-shell .product-sheet-textarea {
+    min-height: 44px;
+  }
+
+  body.app-shell .card {
+    padding: 16px;
+  }
+
+  @supports selector(body:has(#productsTable)) {
+    html:has(body.app-shell :is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) {
+      height: auto;
+      overflow: auto;
+    }
+
+    body.app-shell:has(:is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) {
+      height: auto;
+      min-height: 100dvh;
+      overflow: visible;
+      overflow-x: clip;
+    }
+
+    body.app-shell:has(:is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) .app-main {
+      overflow: visible;
+    }
+
+    body.app-shell:has(:is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) .product-sheet-wrap {
+      flex: 0 0 auto;
+      min-height: 120px;
+      max-height: 65dvh;
+    }
+  }
+}
+
+@media (max-width: 479px) {
+  body.app-shell .app-topbar {
+    gap: 8px;
+    padding-inline: 12px;
+  }
+
+  body.app-shell .app-brand {
+    font-size: 16px;
+  }
+
+  body.app-shell .app-brand-mark,
+  body.app-shell .app-account-avatar {
+    display: none;
+  }
+
+  body.app-shell .app-account {
+    gap: 8px;
+  }
+
+  body.app-shell .app-account-details {
+    max-width: 64px;
+  }
+
+  body.app-shell .app-logout-form {
+    margin-left: 0;
+  }
+
+  body.app-shell .app-logout-form button {
+    padding-inline: 8px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  body.app-shell {
+    --bg: #0d1420;
+    --surface: #151f2d;
+    --surface-alt: #1b2737;
+    --text: #e2e8f0;
+    --muted: #a0aec0;
+    --border: #344256;
+    --hover: #23354c;
+    --sticky-separator: #465973;
+    --primary: #60a5fa;
+    --primary-hover: #93c5fd;
+    --app-sidebar-bg: #101a28;
+    --app-active-bg: #203957;
+    --app-active-text: #bfdbfe;
+    --app-shadow: none;
+  }
+
+  body.app-shell .primary-action,
+  body.app-shell .app-skip-link {
+    color: #0d1420;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.app-shell .app-sidebar,
+  body.app-shell :where(button) {
+    transition: none;
+  }
+}
