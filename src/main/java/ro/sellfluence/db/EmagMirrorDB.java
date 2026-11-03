@@ -1488,27 +1488,7 @@ public class EmagMirrorDB {
      * @return map from PNK to number of orders.
      */
     public @NonNull Map<String, Integer> countOrdersByMonth(@NonNull YearMonth month) throws SQLException {
-        return countByMonth(month, """
-                WITH picked AS (
-                  SELECT DISTINCT ON (o.id, pio.part_number_key)
-                         CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS picked_qty,
-                         pio.part_number_key AS pnk
-                  FROM emag_order AS o
-                  JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
-                  WHERE o.status IN (4,5)
-                    AND o.date >= ?
-                    AND o.date < ?
-                  ORDER BY
-                    o.id,
-                    pio.part_number_key,
-                    o.status,          -- prefer status 4; fallback to 5
-                    o.surrogate_id DESC
-                )
-                SELECT SUM(picked_qty) AS quantity, pnk
-                FROM picked
-                GROUP BY pnk
-                ORDER BY pnk;
-                """);
+        return countByMonth(month, OrderQuantityTable.MONTH_SQL);
     }
 
     /**
@@ -1520,29 +1500,18 @@ public class EmagMirrorDB {
      */
     public @NonNull Map<String, Map<YearMonth, Integer>> countOrdersByMonth(@NonNull YearMonth startMonth,
                                                                              @NonNull YearMonth endMonth) throws SQLException {
-        return countByMonthRange(startMonth, endMonth, """
-                WITH picked AS (
-                  SELECT DISTINCT ON (o.id, pio.part_number_key, DATE_TRUNC('month', o.date)::date)
-                         CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS picked_qty,
-                         pio.part_number_key AS pnk,
-                         DATE_TRUNC('month', o.date)::date AS month_start
-                  FROM emag_order AS o
-                  JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
-                  WHERE o.status IN (4,5)
-                    AND o.date >= ?
-                    AND o.date < ?
-                  ORDER BY
-                    o.id,
-                    pio.part_number_key,
-                    DATE_TRUNC('month', o.date)::date,
-                    o.status,          -- prefer status 4; fallback to 5
-                    o.surrogate_id DESC
-                )
-                SELECT pnk, month_start, SUM(picked_qty) AS quantity
-                FROM picked
-                GROUP BY pnk, month_start
-                ORDER BY pnk, month_start;
-                """);
+        return countByMonthRange(startMonth, endMonth, OrderQuantityTable.MONTHS_SQL);
+    }
+
+    /**
+     * Sum product units using the Orders table's snapshot rules independently inside each inclusive period.
+     * Counts span order vendors and return zero for empty periods; no storno quantities are deducted.
+     */
+    public Map<LocalDate, Long> countOrdersForProductPeriods(
+            String pnk, Map<LocalDate, LocalDate> inclusivePeriodEnds) throws SQLException {
+        OrderQuantityTable.validatePeriods(pnk, inclusivePeriodEnds);
+        if (inclusivePeriodEnds.isEmpty()) return Map.of();
+        return database.readTX(db -> OrderQuantityTable.countForProductPeriods(db, pnk, inclusivePeriodEnds));
     }
 
     /**

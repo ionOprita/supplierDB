@@ -83,6 +83,34 @@ test('renders GMV as whole numbers and refreshes it for the selected period and 
   assert.deepEqual(gmvCells(), ['0']);
 });
 
+test('renders and exports Orders directly after Stock with integer units and aligned frozen columns', async t => {
+  const page = await openPage(t);
+  const data = report(5);
+  data.groups[0].columns.push(
+    {key: 'stock', label: 'Stock', type: 'integer'},
+    {key: 'orders', label: 'Orders', type: 'integer'},
+    {key: 'gmv', label: 'GMV', type: 'integer'});
+  data.rows = [
+    {values: {week: '2026-09-07', stock: 10, orders: 0, gmv: 9.25, auto_clicks: 5, total_clicks: 5}},
+    {values: {week: '2026-09-14', stock: 8, orders: 1234, gmv: 10, auto_clicks: 5, total_clicks: 5}},
+    {values: {week: '2026-09-21', stock: 7, orders: -2, gmv: null, auto_clicks: 5, total_clicks: 5}}
+  ];
+  await page.respond(0, data);
+  const headers = page.byId('Head').children[1].children;
+  assert.deepEqual(headers.slice(0, 3).map(cell => cell.textContent), ['Stock', 'Orders', 'GMV']);
+  assert.equal(page.byId('Head').children[0].children[1].colSpan, 3);
+  assert.equal(headers[1].dataset.frozenIndex, 2);
+  const rows = page.byId('Body').children;
+  assert.deepEqual(rows.map(row => row.cells[2].textContent), ['0', '1,234', '-2']);
+  assert.ok(rows.every(row => row.cells[2].dataset.frozenIndex === 2));
+  assert.ok(rows.every(row => row.cells[2].dataset.type === 'integer'));
+  page.byId('DownloadCsv').click();
+  assert.equal(await page.csv(), '\uFEFFWeek,Stock,Orders,GMV,Auto - Clicks,Total - Clicks\r\n'
+    + '07 Sep 26 - 13 Sep 26,10,0,9,5,5\r\n'
+    + '14 Sep 26 - 20 Sep 26,8,"1,234",10,5,5\r\n'
+    + '21 Sep 26 - 27 Sep 26,7,-2,—,5,5');
+});
+
 test('renders ISO calendar dates without time-zone shifts or invalid date rollover', () => {
   assert.equal(format('2026-05-01', 'date'), '01 May 26');
   assert.equal(format('2026-09-04', 'date'), '04 Sep 26');

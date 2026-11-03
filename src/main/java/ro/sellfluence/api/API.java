@@ -60,12 +60,12 @@ public class API {
         mirrorDB = db;
     }
 
-    /** Current-month transaction counts using the Romanian business calendar. */
+    /** Current-month ordered and returned product quantities using the Romanian business calendar. */
     public OverviewData getOverview() throws SQLException {
         return getOverview(null);
     }
 
-    /** Transaction counts for a completed month, or through today for the current month. */
+    /** Product quantities for a completed month, or through today for the current month. */
     public OverviewData getOverview(YearMonth month) throws SQLException {
         return mirrorDB.getOverview(overviewThroughDate(month, Clock.systemUTC()));
     }
@@ -162,6 +162,7 @@ public class API {
                 : mirrorDB.getProductPerformanceAdsets(vendorId, metadata.pnk());
         List<DailyProductOffer> offers = List.of();
         Map<LocalDate, BigDecimal> gmvByPeriod = Map.of();
+        Map<LocalDate, Long> ordersByPeriod = Map.of();
         var periodEnds = new TreeMap<LocalDate, LocalDate>();
         for (var snapshot : snapshots) {
             var start = period.start(snapshot.key().reportDate());
@@ -171,8 +172,12 @@ public class API {
             offers = mirrorDB.getProductPerformanceOffers(vendorId, metadata.pnk(),
                     periodEnds.firstKey(), periodEnds.lastEntry().getValue());
             gmvByPeriod = mirrorDB.computeGMVForProductPeriods(productCode, periodEnds);
+            // Match Order Table quantities for the PNK across selling accounts. The selected
+            // vendor controls product access and ads attribution, not the legacy order total.
+            ordersByPeriod = mirrorDB.countOrdersForProductPeriods(metadata.pnk(), periodEnds);
         }
-        return Optional.of(ProductPerformanceData.create(metadata, period, snapshots, offers, gmvByPeriod));
+        return Optional.of(ProductPerformanceData.create(metadata, period, snapshots, offers,
+                gmvByPeriod, ordersByPeriod));
     }
 
     record ProductForFrontend(String name, String id) {

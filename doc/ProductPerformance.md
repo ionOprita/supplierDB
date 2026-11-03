@@ -77,6 +77,33 @@ A day with multiple matching offers displays “???” in both cells until a rul
 combining them is established. An empty latest snapshot does not reuse older values.
 Offer snapshots do not create extra periods or affect advertising totals and errors.
 
+Orders appears immediately after Stock, before GMV, in the table and CSV. It is the
+number of **ordered product units**, using the same selection as Order Table, rather
+than the number of distinct orders or advertising-attributed sales. For example, two
+orders containing three and two units contribute five. Returning two units does not
+reduce that Orders value; returned units are reported separately on the dashboard.
+
+For each complete Monday–Sunday week or calendar month, order snapshots are first
+filtered by their order date to that period. Within each order ID and product PNK,
+status 4 contributes `product_in_order.quantity`; if no status 4 snapshot exists in
+that period, status 5 contributes `initial_qty`. Other statuses do not contribute.
+The latest surrogate ID breaks ties within one status. This preserves Order Table's
+existing selection key, including its omission of vendor ID, and includes all selling
+accounts for the selected product PNK. No catalog or retracted-product filter is added.
+Zero and signed source quantities are retained. Monthly totals are calculated directly,
+not by summing weekly totals, because a snapshot can be selected differently for each
+period. A displayed period with no contributing order quantities has zero Orders.
+Orders-only periods do not create rows, and advertising errors do not hide Orders.
+
+The overview dashboard uses the same ordered-unit selection once for the selected
+month (through today in the current month), then groups the selected snapshots by
+order date and selling-account company. Returns sums product quantities in finalized
+return requests by request date, counting each returned item once. Its existing
+company-resolution rules remain in effect; unresolved quantities are shown in the
+unassigned-units notice. Both charts therefore show units, rather than transaction or
+return-request counts. Their company attribution follows the selling account, while
+Order Table's visible product labels follow the product catalog.
+
 GMV uses the existing product GMV calculator with the selected internal product code.
 Each row includes the complete Monday–Sunday week or calendar month, with both dates
 inclusive, even when advertising snapshots cover only part of that period. The product's
@@ -120,7 +147,7 @@ distinct from a measured zero.
 
 ## Unsupported columns and errors
 
-The current sources support 66 advertising columns, plus GMV, Stock, and Sales Price.
+The current sources support 66 advertising columns, plus Orders, GMV, Stock, and Sales Price.
 Overall product clicks/conversion, performance classification, average price, review count,
 and rating remain null. TACOS and Total's advertising shares of overall product clicks
 and sales also remain null: advertising summaries do not supply the required overall
@@ -139,11 +166,12 @@ an unknown product/vendor pairing returns HTTP 404, and database failures return
 ## Validation
 
 Unit tests cover weighted formulas, numeric/null serialization, classification errors,
-period boundaries, GMV period alignment and independence from advertising errors,
+period boundaries, Orders/GMV period alignment and independence from advertising errors,
 unavailable columns, and empty inputs. PostgreSQL integration tests
-cover joins, active filters, product attribution, vendor isolation, and classification
-without multiplying metrics. Browser-script tests cover real period requests, stale
-responses, error details, selectors, GMV formatting and refreshes, and row visibility.
+cover joins, active filters, product attribution, vendor isolation, classification,
+Order Table quantity parity, and dashboard quantities without join multiplication.
+Browser-script tests cover real period requests, stale responses, error details,
+selectors, Orders/GMV formatting and refreshes, CSV alignment, and row visibility.
 
 Run `mvn test` and `node --test src/test/js/product-performance.test.mjs`. PostgreSQL
 tests require `ADS_TEST_DB_URL` pointing to a disposable database, optionally with

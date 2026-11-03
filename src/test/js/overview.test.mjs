@@ -121,7 +121,7 @@ test('default report shows exactly two charts with a separate exact daily line f
   assert.equal(page.byId('ReturnsTitle').textContent, 'Returns');
   assert.equal(page.byId('OrdersTotal').textContent, '18');
   assert.equal(page.byId('ReturnsTotal').textContent, '8');
-  assert.equal(page.byId('OrdersScope').textContent, 'All companies · month to date');
+  assert.equal(page.byId('OrdersScope').textContent, 'All companies · ordered units · month to date');
   for (const metric of ['Orders', 'Returns']) {
     const select = page.byId(`${metric}Company`);
     assert.equal(select.value, '');
@@ -145,7 +145,10 @@ test('default report shows exactly two charts with a separate exact daily line f
   assert.equal(orders.data.datasets[0].fill, false);
   assert.equal(orders.data.datasets[0].cubicInterpolationMode, 'monotone');
   assert.equal(orders.data.datasets[0].spanGaps, false);
-  assert.equal(orders.options.scales.y.min, 0);
+  assert.equal(orders.options.scales.y.min, undefined, 'negative source quantities must remain within the automatic axis range');
+  assert.equal(orders.options.scales.y.beginAtZero, true);
+  assert.equal(orders.options.scales.y.title.text, 'Ordered units');
+  assert.equal(returns.options.scales.y.title.text, 'Returned units');
   assert.equal(orders.options.scales.y.ticks.precision, 0);
   assert.equal(orders.options.scales.y.ticks.callback(1.5), '');
   assert.equal(orders.options.scales.x.ticks.color, '#abcdef');
@@ -154,8 +157,8 @@ test('default report shows exactly two charts with a separate exact daily line f
   assert.equal(orders.options.plugins.legend.display, true);
   assert.equal(orders.options.plugins.legend.onClick(), undefined);
   assert.equal(orders.options.plugins.tooltip.callbacks.title([{label: '2026-11-03'}]), '2026-11-03');
-  assert.equal(orders.options.plugins.tooltip.callbacks.label({dataset: {label: 'First Company'}, parsed: {y: 12}}), 'First Company: 12 orders');
-  assert.match(page.byId('OrdersChart').getAttribute('aria-label'), /All companies: daily orders.*2026-11-03/);
+  assert.equal(orders.options.plugins.tooltip.callbacks.label({dataset: {label: 'First Company'}, parsed: {y: 12}}), 'First Company: 12 ordered units');
+  assert.match(page.byId('OrdersChart').getAttribute('aria-label'), /All companies: daily ordered units.*2026-11-03/);
   assert.equal(page.byId('Unassigned').hidden, true);
   assert.equal(page.byId('Empty').hidden, true);
   assert.equal(page.byId('Status').textContent, '');
@@ -176,16 +179,16 @@ test('each chart independently filters cached company data without fetching or c
   assert.equal(page.chart('Returns'), originalReturns);
   assert.equal(page.byId('ReturnsCompany').value, '');
   assert.equal(page.byId('OrdersTotal').textContent, '15');
-  assert.equal(page.byId('OrdersScope').textContent, 'First Company · month to date');
+  assert.equal(page.byId('OrdersScope').textContent, 'First Company · ordered units · month to date');
   assert.deepEqual(page.chart('Orders').config.data.datasets.map(series => series.label), ['First Company']);
   assert.equal(page.chart('Orders').config.data.datasets[0].borderColor, firstColor);
-  assert.match(page.byId('OrdersChart').getAttribute('aria-label'), /^First Company: daily orders/);
+  assert.match(page.byId('OrdersChart').getAttribute('aria-label'), /^First Company: daily ordered units/);
   const filteredOrders = page.chart('Orders');
   page.select('Returns', SECOND);
   assert.equal(originalReturns.destroyed, true);
   assert.equal(page.chart('Orders'), filteredOrders);
   assert.equal(page.byId('ReturnsTotal').textContent, '5');
-  assert.equal(page.byId('ReturnsScope').textContent, 'Second Company · month to date');
+  assert.equal(page.byId('ReturnsScope').textContent, 'Second Company · returned units · month to date');
   assert.deepEqual(page.chart('Returns').config.data.datasets.map(series => series.label), ['Second Company']);
   page.select('Orders', '');
   assert.equal(page.chart('Orders').config.data.datasets.length, 2);
@@ -193,6 +196,34 @@ test('each chart independently filters cached company data without fetching or c
   assert.equal(page.byId('ReturnsCompany').value, SECOND);
   assert.equal(page.requests.length, 1);
   assert.equal(page.activeCharts().length, 2);
+});
+
+test('signed product quantities remain exact, use unit labels, and returns are not deducted from Orders', async () => {
+  const page = fixture();
+  page.respond(0, report({unassignedReturns: -2, companies: [
+    {key: FIRST, name: 'First Company', orders: [10, -2, 0], returns: [3, -1, 0]},
+    {key: SECOND, name: 'Second Company', orders: [0, 1, 0], returns: [0, 0, 0]}
+  ]}));
+  await page.controller.ready;
+  assert.equal(page.byId('Status').dataset.state, 'ready');
+  assert.deepEqual(page.chart('Orders').config.data.datasets[0].data.slice(0, 4), [10, -2, 0, null]);
+  assert.deepEqual(page.chart('Returns').config.data.datasets[0].data.slice(0, 4), [3, -1, 0, null]);
+  assert.equal(page.byId('OrdersTotal').textContent, '9');
+  assert.equal(page.byId('ReturnsTotal').textContent, '2');
+  assert.equal(page.byId('Unassigned').hidden, false);
+  assert.match(page.byId('Unassigned').textContent, /-2 returned units could not be assigned.*are excluded/);
+  for (const metric of ['Orders', 'Returns']) {
+    assert.equal(page.chart(metric).config.options.scales.y.min, undefined);
+  }
+  const orderTooltip = page.chart('Orders').config.options.plugins.tooltip.callbacks.label;
+  const returnTooltip = page.chart('Returns').config.options.plugins.tooltip.callbacks.label;
+  assert.equal(orderTooltip({dataset: {label: 'First Company'}, parsed: {y: -2}}), 'First Company: -2 ordered units');
+  assert.equal(returnTooltip({dataset: {label: 'First Company'}, parsed: {y: -1}}), 'First Company: -1 returned unit');
+  assert.match(page.byId('ReturnsChart').getAttribute('aria-label'), /daily returned units/);
+  page.select('Orders', FIRST);
+  assert.equal(page.byId('OrdersTotal').textContent, '8', 'ordered product units retain their source total independently of returned units');
+  assert.equal(page.byId('ReturnsTotal').textContent, '2');
+  assert.equal(page.requests.length, 1);
 });
 
 test('month changes and Refresh preserve independent keys and colors despite report reordering', async () => {
@@ -205,7 +236,7 @@ test('month changes and Refresh preserve independent keys and colors despite rep
   const returnColor = page.chart('Returns').config.data.datasets[0].borderColor;
   const oldOrdersSelect = page.byId('OrdersCompany');
   const oldCharts = page.activeCharts();
-  assert.match(page.byId('Unassigned').textContent, /1 return could not be assigned.*is excluded/);
+  assert.match(page.byId('Unassigned').textContent, /1 returned unit could not be assigned.*is excluded/);
   page.byId('MonthSelect').value = '2026-10';
   const switching = page.byId('MonthSelect').dispatch('change');
   await page.controller.refresh();
@@ -227,11 +258,11 @@ test('month changes and Refresh preserve independent keys and colors despite rep
   assert.equal(page.chart('Returns').config.data.datasets[0].borderColor, returnColor);
   assert.equal(page.byId('OrdersTotal').textContent, '31');
   assert.equal(page.byId('ReturnsTotal').textContent, '31');
-  assert.equal(page.byId('OrdersScope').textContent, 'First Company · monthly total');
+  assert.equal(page.byId('OrdersScope').textContent, 'First Company · ordered units · monthly total');
   assert.ok(page.chart('Orders').config.data.datasets[0].data.every(count => count === 1));
   assert.match(page.byId('Context').textContent, /through 2026-10-31\. Full month\./);
   assert.doesNotMatch(page.byId('Context').textContent, /Today/);
-  assert.match(page.byId('Unassigned').textContent, /2 returns could not be assigned.*are excluded/);
+  assert.match(page.byId('Unassigned').textContent, /2 returned units could not be assigned.*are excluded/);
   const refreshing = page.byId('Refresh').dispatch('click');
   assert.equal(page.requests[2].url, '/app/overview?month=2026-10');
   page.respond(2, fullMonthReport('2026-10'));
@@ -255,7 +286,7 @@ test('only a disappeared selection resets to All companies while the other selec
   await refreshing;
   assert.equal(page.byId('OrdersCompany').value, '');
   assert.equal(page.byId('ReturnsCompany').value, SECOND);
-  assert.equal(page.byId('OrdersScope').textContent, 'All companies · month to date');
+  assert.equal(page.byId('OrdersScope').textContent, 'All companies · ordered units · month to date');
   assert.equal(page.byId('OrdersTotal').textContent, '3');
   assert.equal(page.chart('Orders').config.data.datasets[0].borderColor, color);
 });
@@ -361,7 +392,7 @@ test('malformed, duplicate-key and incomplete historical reports cannot replace 
   const invalid = [report({days: ['2026-11-02', '2026-11-01', '2026-11-03']}),
     report({throughDate: '2026-11-04'}),
     report({companies: [{key: FIRST, name: 'Bad', orders: [1, 2], returns: [0, 0, 0]}]}),
-    report({companies: [{key: FIRST, name: 'Bad', orders: [1, -2, 3], returns: [0, 0, 0]}]}),
+    report({companies: [{key: FIRST, name: 'Bad', orders: [1, 2.5, 3], returns: [0, 0, 0]}]}),
     report({companies: [{key: FIRST, name: 'Bad', orders: [1, null, 3], returns: [0, 0, 0]}]}),
     report({companies: [{name: 'Missing key', orders: [1, 2, 3], returns: [0, 0, 0]}]}),
     report({companies: [report().companies[0], {...report().companies[1], key: FIRST}]})];

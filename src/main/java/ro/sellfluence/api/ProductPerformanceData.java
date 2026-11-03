@@ -21,7 +21,7 @@ import java.util.TreeMap;
 import java.util.UUID;
 
 /**
- * Product and advertising performance, computed from eligible daily adset and offer snapshots and period GMV.
+ * Product and advertising performance from daily adsets/offers, period GMV, and Order Table quantities.
  *
  * <p>The database supplies vendor/product attribution and same-day active campaign/adset filtering.
  * This class classifies each adset snapshot, sums only the six advertising source primitives,
@@ -36,6 +36,7 @@ public final class ProductPerformanceData {
             new ColumnGroup("overview", "Product metrics", List.of(
                     column("week", "Week", "date"),
                     column("stock", "Stock", "integer"),
+                    column("orders", "Orders", "integer"),
                     column("gmv", "GMV", "integer"),
                     column("clicks", "Clicks", "integer"),
                     column("salesPrice", "Sales Price", "decimal"),
@@ -112,6 +113,13 @@ public final class ProductPerformanceData {
     /** GMV amounts are keyed by period start; they do not create additional advertising periods. */
     public static Response create(Product product, Period period, List<DailyAdset> snapshots,
                                   List<DailyProductOffer> offers, Map<LocalDate, BigDecimal> gmvByPeriod) {
+        return create(product, period, snapshots, offers, gmvByPeriod, Map.of());
+    }
+
+    /** Independent product metrics are keyed by period start and do not create advertising periods. */
+    public static Response create(Product product, Period period, List<DailyAdset> snapshots,
+                                  List<DailyProductOffer> offers, Map<LocalDate, BigDecimal> gmvByPeriod,
+                                  Map<LocalDate, Long> ordersByPeriod) {
         var periods = new TreeMap<LocalDate, PeriodTotals>();
         var errors = new ArrayList<DataError>();
         for (var snapshot : snapshots) {
@@ -125,7 +133,7 @@ public final class ProductPerformanceData {
         }
         var rows = periods.entrySet().stream()
                 .map(entry -> entry.getValue().row(entry.getKey(), latestOffers.get(entry.getKey()),
-                        gmvByPeriod.get(entry.getKey()))).toList();
+                        gmvByPeriod.get(entry.getKey()), ordersByPeriod.get(entry.getKey()))).toList();
         return new Response(false, product, GROUPS, rows, List.copyOf(errors));
     }
 
@@ -212,13 +220,14 @@ public final class ProductPerformanceData {
             return null;
         }
 
-        private Row row(LocalDate start, DailyProductOffer offer, BigDecimal gmv) {
+        private Row row(LocalDate start, DailyProductOffer offer, BigDecimal gmv, Long orders) {
             var values = new LinkedHashMap<String, Object>();
             // Unsupported overview columns, TACOS, and shares of overall product activity remain null.
             for (var group : GROUPS) {
                 for (var column : group.columns()) values.put(column.key(), null);
             }
             values.put("week", start.toString());
+            values.put("orders", orders);
             values.put("gmv", gmv);
             if (offer != null) {
                 if (offer.matchingOffers() == 1) {

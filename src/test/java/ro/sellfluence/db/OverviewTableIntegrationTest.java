@@ -11,6 +11,7 @@ import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 
@@ -57,6 +58,7 @@ class OverviewTableIntegrationTest {
         execute("""
                 CREATE TABLE product_in_order (
                     id INTEGER, emag_order_surrogate_id INTEGER, product_id INTEGER, mkt_id INTEGER,
+                    part_number_key TEXT, quantity INTEGER, initial_qty INTEGER,
                     PRIMARY KEY (id, emag_order_surrogate_id)
                 )
                 """);
@@ -89,10 +91,10 @@ class OverviewTableIntegrationTest {
     void combinesCompanyAccountsAndKeepsMissingCompanyVendorsSeparateIncludingZeroActivity() throws SQLException {
         vendor(FALLBACK_A, "Same fallback", null);
         vendor(FALLBACK_B, "Same fallback", " \t ");
-        order(ALPHA, "main", 1, "2026-11-01T00:00:00", null);
-        order(ALPHA_FBE, "fbe", 4, "2026-11-01T12:00:00", null);
-        order(FALLBACK_A, "first-fallback", 1, "2026-11-02T12:00:00", null);
-        order(FALLBACK_B, "second-fallback", 1, "2026-11-03T12:00:00", null);
+        item(order(ALPHA, "main", 4, "2026-11-01T00:00:00", null), 101, 201);
+        item(order(ALPHA_FBE, "fbe", 4, "2026-11-01T12:00:00", null), 101, 201);
+        item(order(FALLBACK_A, "first-fallback", 4, "2026-11-02T12:00:00", null), 101, 201);
+        item(order(FALLBACK_B, "second-fallback", 4, "2026-11-03T12:00:00", null), 101, 201);
 
         var data = OverviewTable.read(db, THROUGH);
 
@@ -132,34 +134,42 @@ class OverviewTableIntegrationTest {
     }
 
     @Test
-    void countsTransactionsByOriginalPlacementAndUsesLatestStatusBeforeExcludingCancellations() throws SQLException {
-        var original = order(ALPHA, "snapshots", 1, "2026-11-01T09:00:00", "2026-11-01T09:00:00");
-        order(ALPHA, "snapshots", 4, "2026-11-01T09:00:00", "2026-11-02T09:00:00");
-        order(ALPHA, "snapshots", 5, "2026-11-02T09:00:00", "2026-11-03T09:00:00");
-        item(original, 101, 201);
-        item(original, 102, 202);
-        order(ALPHA, "canceled", 5, "2026-11-01T10:00:00", "2026-11-01T10:00:00");
-        order(ALPHA, "canceled", 0, "2026-11-01T10:00:00", "2026-11-03T10:00:00");
-        order(ALPHA, "tie-canceled", 4, "2026-11-02T10:00:00", "2026-11-03T10:00:00");
-        order(ALPHA, "tie-canceled", 0, "2026-11-02T10:00:00", "2026-11-03T10:00:00");
-        order(ALPHA, "reopened", 0, "2026-11-02T11:00:00", "2026-11-02T11:00:00");
-        order(ALPHA, "reopened", 1, "2026-11-02T11:00:00", "2026-11-03T11:00:00");
-        order(ALPHA, "old-sale", 4, "2026-10-31T23:00:00", null);
-        order(ALPHA, "old-sale", 5, "2026-11-01T12:00:00", "2026-11-02T12:00:00");
-        order(ALPHA, "shared-id", 2, "2026-11-03T12:00:00", null);
-        order(BETA, "shared-id", 3, "2026-11-03T12:00:00", null);
-        order(ALPHA, "midnight", 1, "2026-11-01T00:00:00", null);
-        order(ALPHA, "last-second", 1, "2026-11-03T23:59:59", null);
-        order(ALPHA, "tomorrow", 1, "2026-11-04T00:00:00", null);
+    void selectsUnitsOnceForTheMonthThenBucketsTheirSnapshotDatesAndCompanies() throws SQLException {
+        quantityOrder(ALPHA, "snapshots", 4, "2026-11-01T09:00:00", "PNK", 4, 4);
+        quantityOrder(ALPHA, "snapshots", 5, "2026-11-02T09:00:00", "PNK", 3, 4);
+        quantityOrder(ALPHA, "old-sale", 4, "2026-10-31T23:00:00", "PNK", 4, 4);
+        quantityOrder(ALPHA, "old-sale", 5, "2026-11-01T12:00:00", "PNK", 1, 4);
+        quantityOrder(ALPHA, "returned-only", 5, "2026-11-02T10:00:00", "PNK", 1, 5);
+        quantityOrder(ALPHA, "later-canceled", 4, "2026-11-01T10:00:00", "PNK", 2, 2);
+        quantityOrder(ALPHA, "later-canceled", 0, "2026-11-02T10:00:00", "PNK", 0, 2);
+        quantityOrder(ALPHA, "shared-id", 4, "2026-11-03T12:00:00", "PNK", 3, 3);
+        quantityOrder(BETA, "shared-id", 4, "2026-11-03T12:00:00", "PNK", 7, 7);
+        var multiple = order(ALPHA, "multiple-products", 4, "2026-11-02T12:00:00", null);
+        item(multiple, 101, 201, "PNK", 2, 2);
+        item(multiple, 102, 202, "OTHER", 3, 3);
+        quantityOrder(ALPHA, "signed", 4, "2026-11-03T13:00:00", "PNK", -2, 10);
+        quantityOrder(ALPHA, "zero", 4, "2026-11-03T13:00:00", "PNK", 0, 6);
+        quantityOrder(ALPHA, "zero", 5, "2026-11-03T14:00:00", "PNK", 0, 6);
+        quantityOrder(ALPHA, "midnight", 4, "2026-11-01T00:00:00", "PNK", 2, 2);
+        quantityOrder(ALPHA, "last-second", 4, "2026-11-03T23:59:59", "PNK", 6, 6);
+        quantityOrder(ALPHA, "tomorrow", 4, "2026-11-04T00:00:00", "PNK", 11, 11);
+        for (int status = 0; status < 4; status++) {
+            quantityOrder(ALPHA, "ineligible-" + status, status, "2026-11-02T12:00:00", "PNK", 100, 100);
+        }
 
         var data = OverviewTable.read(db, THROUGH);
 
-        assertEquals(List.of(2L, 1L, 2L), company(data, "Alpha SRL").orders());
-        assertEquals(List.of(0L, 0L, 1L), company(data, "Beta SRL").orders());
+        assertEquals(List.of(12L, 10L, 4L), company(data, "Alpha SRL").orders());
+        assertEquals(List.of(0L, 0L, 7L), company(data, "Beta SRL").orders());
+        var period = Map.of(THROUGH.withDayOfMonth(1), THROUGH);
+        var expectedTotal = OrderQuantityTable.countForProductPeriods(db, "PNK", period).get(THROUGH.withDayOfMonth(1))
+                + OrderQuantityTable.countForProductPeriods(db, "OTHER", period).get(THROUGH.withDayOfMonth(1));
+        assertEquals(expectedTotal,
+                data.companies().stream().flatMap(c -> c.orders().stream()).mapToLong(Long::longValue).sum());
     }
 
     @Test
-    void countsFinalizedReturnRequestsOnceRegardlessOfItemsOrSnapshotsUsingRequestDate() throws SQLException {
+    void sumsFinalizedReturnedUnitsOncePerRequestRegardlessOfSnapshotsUsingRequestDate() throws SQLException {
         var first = order(ALPHA, "old-order", 4, "2026-10-01T09:00:00", null);
         var returned = order(ALPHA, "old-order", 5, "2026-10-01T09:00:00", "2026-11-02T09:00:00");
         order(ALPHA_FBE, "old-order", 4, "2026-10-01T09:00:00", null);
@@ -173,15 +183,18 @@ class OverviewTableIntegrationTest {
         rma(101, "old-order", 7, "2026-11-02T12:00:00");
         returnedItem(101, 101, 201, 1);
         rma(102, "old-order", 7, "2026-10-31T23:59:59");
+        returnedItem(102, 101, 201, 90);
         rma(103, "old-order", 7, "2026-11-04T00:00:00");
+        returnedItem(103, 101, 201, 90);
         rma(104, "old-order", 7, "2026-11-03T23:59:59");
         for (int status = 1; status < 7; status++) {
             rma(110 + status, "old-order", status, "2026-11-03T12:00:00");
+            returnedItem(110 + status, 101, 201, 90);
         }
 
         var data = OverviewTable.read(db, THROUGH);
 
-        assertEquals(List.of(1L, 1L, 1L), company(data, "Alpha SRL").returns());
+        assertEquals(List.of(12L, 1L, 0L), company(data, "Alpha SRL").returns());
         assertEquals(List.of(0L, 0L, 0L), company(data, "Alpha SRL").orders());
         assertEquals(List.of(0L, 0L, 0L), company(data, "Beta SRL").returns());
         assertEquals(0, data.unassignedReturns());
@@ -207,9 +220,27 @@ class OverviewTableIntegrationTest {
 
         var data = OverviewTable.read(db, THROUGH);
 
-        assertEquals(List.of(1L, 0L, 0L), company(data, "Alpha SRL").returns());
-        assertEquals(List.of(0L, 1L, 0L), company(data, "Beta SRL").returns());
+        assertEquals(List.of(3L, 0L, 0L), company(data, "Alpha SRL").returns());
+        assertEquals(List.of(0L, 7L, 0L), company(data, "Beta SRL").returns());
         assertEquals(0, data.unassignedReturns());
+    }
+
+    @Test
+    void preservesSignedAndZeroReturnedQuantitiesForAssignedAndUnassignedRequests() throws SQLException {
+        order(ALPHA, "known-owner", 4, "2026-10-01T09:00:00", null);
+        rma(250, "known-owner", 7, "2026-11-01T12:00:00");
+        returnedItem(250, 101, 201, 2);
+        returnedItem(250, 102, 202, 2);
+        returnedItem(250, 103, 203, -5);
+        rma(251, "known-owner", 7, "2026-11-02T12:00:00");
+        returnedItem(251, 101, 201, 0);
+        rma(252, "unknown-owner", 7, "2026-11-01T12:00:00");
+        returnedItem(252, 101, 201, -3);
+
+        var data = OverviewTable.read(db, THROUGH);
+
+        assertEquals(List.of(-1L, 0L, 0L), company(data, "Alpha SRL").returns());
+        assertEquals(-3, data.unassignedReturns());
     }
 
     @Test
@@ -219,22 +250,23 @@ class OverviewTableIntegrationTest {
         item(alpha, 101, 201);
         item(beta, 101, 201);
         rma(300, "missing-order", 7, "2026-11-01T12:00:00");
+        returnedItem(300, 999, 999, 4);
         rma(301, "collision", 7, "2026-11-01T12:00:00");
         rma(302, "collision", 7, "2026-11-02T12:00:00");
-        returnedItem(302, 101, 201, 1);
+        returnedItem(302, 101, 201, 5);
         rma(303, "collision", 7, "2026-11-03T12:00:00");
-        returnedItem(303, 101, 999, 1);
+        returnedItem(303, 101, 999, 6);
 
         var data = OverviewTable.read(db, THROUGH);
 
-        assertEquals(4, data.unassignedReturns());
+        assertEquals(15, data.unassignedReturns());
         assertTrue(data.companies().stream().allMatch(c -> c.returns().equals(List.of(0L, 0L, 0L))));
     }
 
     @Test
     void includesLeapDayAndSupportsAnEmptyCompanyList() throws SQLException {
-        order(ALPHA, "leap-day", 4, "2028-02-29T23:59:59", null);
-        order(ALPHA, "march", 4, "2028-03-01T00:00:00", null);
+        item(order(ALPHA, "leap-day", 4, "2028-02-29T23:59:59", null), 101, 201);
+        item(order(ALPHA, "march", 4, "2028-03-01T00:00:00", null), 101, 201);
 
         var data = OverviewTable.read(db, LocalDate.of(2028, 2, 29));
 
@@ -275,11 +307,25 @@ class OverviewTableIntegrationTest {
     }
 
     private void item(int surrogate, int product, int marketplaceProduct) throws SQLException {
-        try (var statement = db.prepareStatement("INSERT INTO product_in_order VALUES (?, ?, ?, ?)")) {
+        item(surrogate, product, marketplaceProduct, "PNK" + product, 1, 1);
+    }
+
+    private void quantityOrder(UUID vendor, String id, int status, String date,
+                               String pnk, Integer quantity, Integer initial) throws SQLException {
+        var surrogate = order(vendor, id, status, date, null);
+        item(surrogate, 1000 + nextItem, 2000 + nextItem, pnk, quantity, initial);
+    }
+
+    private void item(int surrogate, int product, int marketplaceProduct,
+                      String pnk, Integer quantity, Integer initial) throws SQLException {
+        try (var statement = db.prepareStatement("INSERT INTO product_in_order VALUES (?, ?, ?, ?, ?, ?, ?)")) {
             statement.setInt(1, nextItem++);
             statement.setInt(2, surrogate);
             statement.setInt(3, product);
             statement.setInt(4, marketplaceProduct);
+            statement.setString(5, pnk);
+            statement.setObject(6, quantity);
+            statement.setObject(7, initial);
             statement.executeUpdate();
         }
     }

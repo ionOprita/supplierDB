@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** Transaction counts for the current-month company dashboards. The caller owns the read transaction. */
+/** Product quantities for company dashboards. The caller owns the read transaction. */
 public final class OverviewTable {
     private OverviewTable() {
     }
@@ -37,35 +37,27 @@ public final class OverviewTable {
             """;
 
     private static final String ORDERS_SQL = COMPANY_VENDORS + """
-            , candidate_orders AS (
-              SELECT DISTINCT vendor_id, id
-              FROM emag_order
-              WHERE date >= ? AND date < ?
-            ), ranked_orders AS (
-              SELECT o.vendor_id, o.id, o.status,
-                     MIN(o.date) OVER (PARTITION BY o.vendor_id, o.id) AS placement_date,
-                     ROW_NUMBER() OVER (
-                       PARTITION BY o.vendor_id, o.id
-                       ORDER BY COALESCE(o.modified, o.date) DESC NULLS LAST,
-                                (o.status = 0) DESC NULLS LAST,
-                                o.status DESC NULLS LAST, o.surrogate_id DESC
-                     ) AS position
-              FROM emag_order o
-              JOIN candidate_orders c ON c.vendor_id = o.vendor_id AND c.id = o.id
-            )
-            SELECT v.company_key, o.placement_date::date AS event_date, COUNT(*) AS quantity
-            FROM ranked_orders o
+            , requested_periods AS (
+              SELECT ?::timestamp AS period_start, ?::timestamp AS end_exclusive
+            ),
+            """ + OrderQuantityTable.PICKED_CTE + """
+            SELECT v.company_key, o.event_date, COALESCE(SUM(o.picked_qty), 0)::bigint AS quantity
+            FROM picked_order_quantities o
             JOIN company_vendors v ON v.id = o.vendor_id
-            WHERE o.position = 1 AND o.status BETWEEN 1 AND 5
-              AND o.placement_date >= ? AND o.placement_date < ?
-            GROUP BY v.company_key, o.placement_date::date
+            GROUP BY v.company_key, o.event_date
             """;
 
     private static final String RETURNS_SQL = COMPANY_VENDORS + """
             , month_returns AS (
-              SELECT emag_id, order_id, date::date AS event_date
-              FROM rma_result
-              WHERE request_status = 7 AND date >= ? AND date < ?
+              SELECT r.emag_id, r.order_id, r.date::date AS event_date,
+                     COALESCE(returned.quantity, 0) AS returned_units
+              FROM rma_result r
+              LEFT JOIN LATERAL (
+                SELECT SUM(rp.quantity)::bigint AS quantity
+                FROM emag_returned_products rp
+                WHERE rp.emag_id = r.emag_id
+              ) returned ON TRUE
+              WHERE r.request_status = 7 AND r.date >= ? AND r.date < ?
             ), candidate_companies AS (
               SELECT DISTINCT r.emag_id, v.company_key
               FROM month_returns r
@@ -104,7 +96,7 @@ public final class OverviewTable {
               GROUP BY emag_id
               HAVING COUNT(*) = 1
             )
-            SELECT resolved.company_key, r.event_date, COUNT(*) AS quantity
+            SELECT resolved.company_key, r.event_date, COALESCE(SUM(r.returned_units), 0)::bigint AS quantity
             FROM month_returns r
             LEFT JOIN resolved_returns resolved ON resolved.emag_id = r.emag_id
             GROUP BY resolved.company_key, r.event_date
@@ -121,7 +113,6 @@ public final class OverviewTable {
 
         try (var statement = db.prepareStatement(ORDERS_SQL)) {
             setRange(statement, 1, start, end);
-            setRange(statement, 3, start, end);
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
                     var company = companies.get(rows.getString("company_key"));

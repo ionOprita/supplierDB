@@ -16,7 +16,7 @@ function validateReport(report) {
   const throughIndex = labels.indexOf(report.throughDate);
   if (throughIndex < 0 || !Array.isArray(report.days) || report.days.length !== throughIndex + 1
       || report.days.some((day, index) => day !== labels[index]) || !Array.isArray(report.companies)
-      || !Number.isSafeInteger(report.unassignedReturns) || report.unassignedReturns < 0) {
+      || !Number.isSafeInteger(report.unassignedReturns)) {
     throw new Error('Invalid dashboard report');
   }
   const keys = new Set();
@@ -24,8 +24,8 @@ function validateReport(report) {
     if (typeof company.key !== 'string' || !company.key || keys.has(company.key)
         || typeof company.name !== 'string' || ['orders', 'returns'].some(key =>
       !Array.isArray(company[key]) || company[key].length !== report.days.length
-      || company[key].some(count => !Number.isSafeInteger(count) || count < 0))) {
-      throw new Error('Invalid company counts');
+      || company[key].some(quantity => !Number.isSafeInteger(quantity)))) {
+      throw new Error('Invalid company quantities');
     }
     keys.add(company.key);
   }
@@ -77,7 +77,7 @@ export function initOverview({document = globalThis.document, fetch = globalThis
   }
 
   function series(report, labels, metric, selectedKey, names) {
-    const title = metric === 'orders' ? 'Orders' : 'Returns';
+    const unitLabel = metric === 'orders' ? 'Ordered units' : 'Returned units';
     const visible = selectedKey ? report.companies.filter(company => company.key === selectedKey) : report.companies;
     const scope = selectedKey ? names.get(selectedKey) : 'All companies';
     const total = visible.reduce((sum, company) => sum + company[metric].reduce((count, value) => count + value, 0), 0);
@@ -101,7 +101,7 @@ export function initOverview({document = globalThis.document, fetch = globalThis
           x: {title: {display: true, text: 'Day of month', color: textColor}, grid: {display: false},
             ticks: {color: textColor, maxRotation: 0, autoSkip: true, maxTicksLimit: 12,
               callback(value) { return String(Number(this.getLabelForValue(value).slice(-2))); }}},
-          y: {min: 0, beginAtZero: true, grid: {color: gridColor},
+          y: {beginAtZero: true, title: {display: true, text: unitLabel, color: textColor}, grid: {color: gridColor},
             ticks: {color: textColor, precision: 0, callback: value => Number.isInteger(value) ? integerFormat.format(value) : ''}}
         },
         plugins: {
@@ -109,7 +109,7 @@ export function initOverview({document = globalThis.document, fetch = globalThis
             labels: {color: textColor, usePointStyle: true, boxWidth: 8, boxHeight: 8}},
           tooltip: {callbacks: {
             title: items => items[0]?.label ?? '',
-            label: context => `${context.dataset.label}: ${integerFormat.format(context.parsed.y)} ${title.toLowerCase()}`
+            label: context => `${context.dataset.label}: ${integerFormat.format(context.parsed.y)} ${metric === 'orders' ? 'ordered' : 'returned'} unit${Math.abs(context.parsed.y) === 1 ? '' : 's'}`
           }}
         }
       }
@@ -118,9 +118,10 @@ export function initOverview({document = globalThis.document, fetch = globalThis
 
   function setSummary(panel, selection) {
     const period = panel.report.month === (currentMonth ?? panel.report.month) ? 'month to date' : 'monthly total';
+    const units = panel.metric === 'orders' ? 'ordered units' : 'returned units';
     panel.total.textContent = integerFormat.format(selection.total);
-    panel.scope.textContent = `${selection.scope} · ${period}`;
-    panel.canvas.setAttribute('aria-label', `${selection.scope}: daily ${panel.metric} in ${panel.report.month}, through ${panel.report.throughDate}`);
+    panel.scope.textContent = `${selection.scope} · ${units} · ${period}`;
+    panel.canvas.setAttribute('aria-label', `${selection.scope}: daily ${units} in ${panel.report.month}, through ${panel.report.throughDate}`);
   }
 
   function canvasFor(panel) {
@@ -247,13 +248,14 @@ export function initOverview({document = globalThis.document, fetch = globalThis
     panels = replacements;
     for (const panel of panels) selectedKeys[panel.metric] = panel.selectedKey;
     byId('Month').textContent = monthName(report.month);
-    byId('Context').textContent = `Daily orders and returns through ${report.throughDate}.`
+    byId('Context').textContent = `Daily ordered and returned units through ${report.throughDate}.`
       + (report.month === (currentMonth ?? report.month) ? ' Today is still in progress.' : ' Full month.');
     byId('Empty').hidden = report.companies.length > 0;
     const notice = byId('Unassigned');
     notice.hidden = report.unassignedReturns === 0;
-    notice.textContent = report.unassignedReturns > 0
-      ? `${integerFormat.format(report.unassignedReturns)} return${report.unassignedReturns === 1 ? '' : 's'} could not be assigned to a company and ${report.unassignedReturns === 1 ? 'is' : 'are'} excluded from these charts.`
+    const singular = Math.abs(report.unassignedReturns) === 1;
+    notice.textContent = report.unassignedReturns !== 0
+      ? `${integerFormat.format(report.unassignedReturns)} returned unit${singular ? '' : 's'} could not be assigned to a company and ${singular ? 'is' : 'are'} excluded from these charts.`
       : '';
     hasReport = true;
     displayedMonth = report.month;

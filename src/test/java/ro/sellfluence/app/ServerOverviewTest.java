@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ServerOverviewTest {
     @Test
-    void returnsFreshDailyTransactionCountsAndUnassignedReturns() throws Exception {
+    void returnsFreshDailyProductQuantitiesAndUnassignedReturnUnits() throws Exception {
         var api = new StubAPI();
         var app = Javalin.create(config -> config.routes.get("/app/overview",
                 ctx -> Server.serveOverview(ctx, api))).start(0);

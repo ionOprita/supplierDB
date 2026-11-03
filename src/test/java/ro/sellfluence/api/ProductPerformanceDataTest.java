@@ -35,12 +35,12 @@ class ProductPerformanceDataTest {
         assertFalse(response.mock());
         assertEquals(List.of("overview", "total", "auto", "broad", "exact", "product"),
                 response.groups().stream().map(ProductPerformanceData.ColumnGroup::key).toList());
-        assertEquals(List.of(10, 13, 15, 15, 15, 15),
+        assertEquals(List.of(11, 13, 15, 15, 15, 15),
                 response.groups().stream().map(group -> group.columns().size()).toList());
-        assertEquals(List.of("Week", "Stock", "GMV", "Clicks", "Sales Price", "Conv.",
+        assertEquals(List.of("Week", "Stock", "Orders", "GMV", "Clicks", "Sales Price", "Conv.",
                         "Perform.", "Average price", "# rev.", "rating"),
                 response.groups().getFirst().columns().stream().map(ProductPerformanceData.Column::label).toList());
-        assertEquals(List.of("date", "integer", "integer", "integer", "decimal", "percent", "text", "decimal", "integer", "decimal"),
+        assertEquals(List.of("date", "integer", "integer", "integer", "integer", "decimal", "percent", "text", "decimal", "integer", "decimal"),
                 response.groups().getFirst().columns().stream().map(ProductPerformanceData.Column::type).toList());
         var commonAdsLabels = List.of("Imp.", "Clicks", "Spend", "Sales", "Total Units Sold",
                 "CTR", "Conv.", "CPC", "ROAS", "ACOS", "TACOS");
@@ -64,8 +64,8 @@ class ProductPerformanceDataTest {
         }
         var keys = response.groups().stream().flatMap(group -> group.columns().stream())
                 .map(ProductPerformanceData.Column::key).toList();
-        assertEquals(83, keys.size());
-        assertEquals(83, new HashSet<>(keys).size());
+        assertEquals(84, keys.size());
+        assertEquals(84, new HashSet<>(keys).size());
         var values = response.rows().getFirst().values();
         assertEquals(new HashSet<>(keys), values.keySet());
         assertEquals(66, values.values().stream().filter(Number.class::isInstance).count());
@@ -451,6 +451,50 @@ class ProductPerformanceDataTest {
                 .rows().getFirst().values().get("gmv"));
         assertTrue(ProductPerformanceData.create(PRODUCT, WEEK, List.of(), List.of(),
                 Map.of(LocalDate.parse("2026-09-07"), new BigDecimal("10.25"))).rows().isEmpty());
+    }
+
+    @Test
+    void alignsOrderedUnitsWithObservedPeriodsAndSerializesZeroAndSignedQuantities() {
+        for (var period : List.of(WEEK, MONTH)) {
+            var dates = List.of("2023-12-31", "2024-01-08", "2024-02-29");
+            var snapshots = dates.stream().map(date -> snapshot(date, "auto", List.of(),
+                    metrics(1, 1, "1", "1", 1, 1))).toList();
+            var quantities = Map.of(
+                    period.start(LocalDate.parse(dates.get(0))), 5L,
+                    period.start(LocalDate.parse(dates.get(1))), 0L,
+                    period.start(LocalDate.parse(dates.get(2))), -2L,
+                    period.start(LocalDate.parse("2024-04-01")), 99L);
+            var response = ProductPerformanceData.create(PRODUCT, period, snapshots,
+                    List.of(), Map.of(), quantities);
+
+            assertEquals(List.of(5L, 0L, -2L),
+                    response.rows().stream().map(row -> row.values().get("orders")).toList());
+            assertEquals(3, response.rows().size(), "Order-only periods do not add advertising rows");
+            var jsonRows = new ObjectMapper().valueToTree(response).get("rows");
+            for (int index = 0; index < 3; index++) {
+                var value = jsonRows.get(index).get("values").get("orders");
+                assertTrue(value.isIntegralNumber());
+                assertEquals(List.of(5L, 0L, -2L).get(index).longValue(), value.asLong());
+            }
+        }
+    }
+
+    @Test
+    void advertisingErrorsDoNotHideOrdersOrGmvAndMissingQuantitiesStayUnavailable() {
+        var date = LocalDate.parse("2026-09-08");
+        var snapshots = List.of(snapshot(date.toString(), "unsupported", List.of(),
+                metrics(1, 1, "1", "1", 1, 1)));
+        var response = ProductPerformanceData.create(PRODUCT, WEEK, snapshots, List.of(),
+                Map.of(WEEK.start(date), new BigDecimal("50.00")), Map.of(WEEK.start(date), 5L));
+
+        assertEquals("UNKNOWN_TARGETING", response.errors().getFirst().code());
+        var values = response.rows().getFirst().values();
+        assertEquals(5L, values.get("orders"));
+        assertNumber(values, "gmv", "50.00");
+        assertNull(values.get("total_units"));
+        assertNull(ProductPerformanceData.create(PRODUCT, WEEK, snapshots).rows().getFirst().values().get("orders"));
+        assertTrue(ProductPerformanceData.create(PRODUCT, WEEK, List.of(), List.of(), Map.of(),
+                Map.of(WEEK.start(date), 5L)).rows().isEmpty());
     }
 
     @Test
