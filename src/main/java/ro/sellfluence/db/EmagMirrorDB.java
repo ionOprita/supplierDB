@@ -1145,6 +1145,10 @@ public class EmagMirrorDB {
         return database.readTX(Vendor::selectAllVendorCompanies);
     }
 
+    public OverviewTable.OverviewData getOverview(LocalDate throughDate) throws SQLException {
+        return database.readTX(db -> OverviewTable.read(db, throughDate));
+    }
+
     public @NonNull List<Vendor> getAllVendors() throws SQLException {
         return database.readTX(Vendor::getVendors);
     }

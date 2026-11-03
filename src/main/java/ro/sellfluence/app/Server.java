@@ -1008,6 +1008,7 @@ public class Server {
 
     private static void configureAPI(JavalinDefaultRoutingApi app, API api, BackgroundJob backgroundJob) {
         app.before("/app/*", ctx -> checkRole(ctx, user)); // TODO: Need to protect admin calls
+        app.get("/app/overview", ctx -> serveOverview(ctx, api));
         app.get("/app/gmvForPeriod", ctx -> computeGMVForPeriod(ctx, api));
         app.get("/app/productPerformanceOptions", ctx -> {
             try {
@@ -1375,6 +1376,27 @@ public class Server {
             ctx.header("Cache-Control", "no-store");
             ctx.json(backgroundJob.pausedTaskNames());
         });
+    }
+
+    static void serveOverview(Context ctx, API api) {
+        ctx.header("Cache-Control", "no-store");
+        try {
+            var month = parseOverviewMonth(ctx.queryParam("month"));
+            ctx.json(month == null ? api.getOverview() : api.getOverview(month));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load overview dashboard.", e);
+            ctx.status(500).json(Map.of("error", "Database error"));
+        }
+    }
+
+    static YearMonth parseOverviewMonth(String value) {
+        if (value == null) return null;
+        if (!value.matches("[0-9]{4}-(0[1-9]|1[0-2])") || value.startsWith("0000-")) {
+            throw new IllegalArgumentException("Month must use YYYY-MM format with a year from 0001 to 9999.");
+        }
+        return YearMonth.parse(value);
     }
 
     static void computeGMVForPeriod(Context ctx, API api) {

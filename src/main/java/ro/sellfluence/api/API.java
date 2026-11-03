@@ -10,6 +10,7 @@ import ro.sellfluence.db.AdsReportPeriod;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.GMV;
 import ro.sellfluence.db.OffersTable.DailyProductOffer;
+import ro.sellfluence.db.OverviewTable.OverviewData;
 import ro.sellfluence.db.Vendor;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
 import ro.sellfluence.db.ProductTable.ProductInfo;
@@ -24,7 +25,9 @@ import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Clock;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -55,6 +58,33 @@ public class API {
 
     public API(EmagMirrorDB db) {
         mirrorDB = db;
+    }
+
+    /** Current-month transaction counts using the Romanian business calendar. */
+    public OverviewData getOverview() throws SQLException {
+        return getOverview(null);
+    }
+
+    /** Transaction counts for a completed month, or through today for the current month. */
+    public OverviewData getOverview(YearMonth month) throws SQLException {
+        return mirrorDB.getOverview(overviewThroughDate(month, Clock.systemUTC()));
+    }
+
+    static LocalDate overviewDate(Clock clock) {
+        return LocalDate.now(clock.withZone(ZoneId.of("Europe/Bucharest")));
+    }
+
+    static LocalDate overviewThroughDate(YearMonth month, Clock clock) {
+        var today = overviewDate(clock);
+        var currentMonth = YearMonth.from(today);
+        var requestedMonth = month == null ? currentMonth : month;
+        if (requestedMonth.getYear() < 1 || requestedMonth.getYear() > 9999) {
+            throw new IllegalArgumentException("Overview month must have a year between 0001 and 9999.");
+        }
+        if (requestedMonth.isAfter(currentMonth)) {
+            throw new IllegalArgumentException("Overview month must not be in the future.");
+        }
+        return requestedMonth.equals(currentMonth) ? today : requestedMonth.atEndOfMonth();
     }
 
     /** Compute an inclusive period on demand, or return empty when the product does not exist. */

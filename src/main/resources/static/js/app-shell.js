@@ -27,13 +27,66 @@
       if (active) link.setAttribute('aria-current', 'page');
       else link.removeAttribute('aria-current');
     }
+    return current;
+  }
+
+  function initializeGroups(navigation, current) {
+    const storageKey = 'sellfusion.sidebar.groups.v1';
+    const groups = Array.from(navigation.querySelectorAll('details.app-nav-group[data-nav-group]'));
+    const preferences = {};
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(storageKey));
+      if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+        for (const group of groups) {
+          const id = group.getAttribute('data-nav-group');
+          if (typeof saved[id] === 'boolean') preferences[id] = saved[id];
+        }
+      }
+    } catch { /* Native group controls work when browser storage is unavailable. */ }
+
+    for (const group of groups) group.open = preferences[group.getAttribute('data-nav-group')] === true;
+    for (let parent = current?.parentElement; parent && navigation.contains(parent); parent = parent.parentElement) {
+      if (parent.matches('details.app-nav-group[data-nav-group]')) parent.open = true;
+    }
+    for (const group of groups) {
+      // Native toggle events are queued, including events from initialization.
+      // Only a state change after this snapshot represents a user preference.
+      let lastOpen = group.open;
+      group.addEventListener('toggle', () => {
+        if (group.open === lastOpen) return;
+        lastOpen = group.open;
+        preferences[group.getAttribute('data-nav-group')] = group.open;
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(preferences));
+        } catch { /* A blocked write must not prevent opening the group. */ }
+      });
+    }
+  }
+
+  function directSummary(details) {
+    return Array.from(details.children).find(child => child.tagName === 'SUMMARY');
+  }
+
+  function hiddenByClosedGroup(element) {
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      if (parent.tagName === 'DETAILS' && !parent.open && !directSummary(parent)?.contains(element)) return true;
+    }
+    return false;
+  }
+
+  function visibleGroupTarget(element) {
+    let target = element;
+    for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
+      if (parent.tagName === 'DETAILS' && !parent.open) target = directSummary(parent);
+    }
+    return target;
   }
 
   function initialize() {
     const body = document.body;
     if (!body || !body.classList.contains('app-shell')) return;
     const navigation = document.getElementById('appNavigation');
-    if (navigation) markCurrentPage(navigation);
+    if (navigation) initializeGroups(navigation, markCurrentPage(navigation));
 
     const sidebar = document.getElementById('appSidebar');
     const toggle = document.getElementById('appNavToggle');
@@ -55,9 +108,10 @@
     }
 
     function focusableElements() {
-      return Array.from(sidebar.querySelectorAll('a[href], button, input, select, textarea, [tabindex]'))
+      return Array.from(sidebar.querySelectorAll('a[href], summary, button, input, select, textarea, [tabindex]'))
         .filter(element => !element.disabled && element.tabIndex >= 0
-          && !element.closest('[hidden], [inert]') && element.getClientRects().length > 0);
+          && !element.closest('[hidden], [inert]') && !hiddenByClosedGroup(element)
+          && element.getClientRects().length > 0);
     }
 
     function restoreSidebarAttributes() {
@@ -101,6 +155,18 @@
       previousOverflow = body.style.overflow;
       body.style.overflow = 'hidden';
       (closeButton || focusableElements()[0] || sidebar).focus();
+      // The first frame can still be the hidden start of the visibility transition.
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => {
+          if (open && mobile.matches && !nativeDialogOpen() && !sidebar.contains(document.activeElement)) {
+            window.requestAnimationFrame(() => {
+              if (open && mobile.matches && !nativeDialogOpen() && !sidebar.contains(document.activeElement)) {
+                (closeButton || focusableElements()[0] || sidebar).focus();
+              }
+            });
+          }
+        });
+      }
     }
 
     function synchronizeLayout() {
@@ -110,7 +176,7 @@
       if (!sidebarHadFocus || nativeDialogOpen()) return;
       if (mobile.matches) toggle.focus();
       else if (focused === closeButton) {
-        const current = navigation.querySelector('a[aria-current="page"]');
+        const current = visibleGroupTarget(navigation.querySelector('a[aria-current="page"]'));
         (current || focusableElements()[0] || sidebar).focus();
       }
     }

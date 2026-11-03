@@ -28,16 +28,34 @@ class JteTemplateEngineTest {
 
             assertTrue(html.contains("id=\"appMain\""));
             assertTrue(html.contains("id=\"title\""));
-            assertTrue(html.contains("Select an item from the menu."));
+            assertTrue(html.contains("id=\"overviewDashboard\""));
             assertTrue(html.contains("action=\"/logout\" method=\"post\""));
             assertTrue(html.contains("src=\"/js/app-shell.js\""));
+            assertTrue(html.contains("class=\"app-brand\" href=\"/private/overview\""));
             boolean authorized = role != null && !role.equals("nobody");
+            org.junit.jupiter.api.Assertions.assertEquals(authorized,
+                    html.contains("class=\"app-nav-link\" href=\"/private/overview\">Dashboard</a>"));
             org.junit.jupiter.api.Assertions.assertEquals(authorized, html.contains("id=\"appSidebar\""));
             org.junit.jupiter.api.Assertions.assertEquals(authorized, html.contains("id=\"appNavToggle\""));
             org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("href=\"/admin/users\""));
             org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("id=\"serverStopButton\""));
             org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("id=\"serverStopDialog\""));
+            for (var group : List.of("advertising", "business-data", "orders-returns", "return-analysis", "system")) {
+                org.junit.jupiter.api.Assertions.assertEquals(authorized,
+                        html.contains("<details class=\"app-nav-group\" data-nav-group=\"" + group + "\">"));
+            }
             if (authorized) {
+                var previousGroup = html.indexOf(">Sales performance</h2>");
+                assertTrue(previousGroup >= 0);
+                for (var group : List.of("advertising", "business-data", "orders-returns", "return-analysis", "system")) {
+                    var groupPosition = html.indexOf("data-nav-group=\"" + group + "\"");
+                    assertTrue(groupPosition > previousGroup, "Sidebar order for " + group);
+                    previousGroup = groupPosition;
+                }
+                org.junit.jupiter.api.Assertions.assertEquals(5,
+                        html.lines().filter(line -> line.contains("<summary class=\"app-nav-heading\">")).count());
+                assertTrue(html.indexOf("href=\"/private/overview\">Dashboard</a>")
+                        < html.indexOf("href=\"/private/gmv\">GMV</a>"));
                 for (var route : List.of("orders", "storno", "returns", "storno-rate", "return-rate",
                         "current-rates", "current-rates-categories", "returnCharts", "rrr", "ads-campaigns",
                         "products", "gmv", "product-performance", "categories", "employees", "tasks")) {
@@ -127,7 +145,16 @@ class JteTemplateEngineTest {
                 "pageTitle", "Overview"
         ), output);
 
-        assertTrue(output.toString().contains("Select an item from the menu."));
+        var html = output.toString();
+        assertTrue(html.contains("id=\"overviewCompanies\""));
+        assertTrue(html.contains("id=\"overviewRefresh\""));
+        assertTrue(html.contains("id=\"overviewMonthSelect\""));
+        assertTrue(html.contains("for=\"overviewMonthSelect\""));
+        assertTrue(html.contains("type=\"month\""));
+        assertTrue(html.contains("id=\"overviewStatus\""));
+        assertTrue(html.contains("class=\"overview-chart-pair\""));
+        assertTrue(html.contains("src=\"/js/chart.umd.min.js\""));
+        assertTrue(html.contains("src=\"/js/overview.js\""));
     }
 
     @Test

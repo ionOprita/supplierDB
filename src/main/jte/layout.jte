@@ -26,7 +26,7 @@
             </svg>
         </button>
     @endif
-    <a class="app-brand" href="/private/orders">
+    <a class="app-brand" href="/private/overview">
         <svg class="app-brand-mark" width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false">
             <rect x="1" y="1" width="30" height="30" rx="8" fill="currentColor" />
             <path d="M10 21V17M16 21V11M22 21V14" stroke="white" stroke-width="2.5" stroke-linecap="round" />
@@ -61,20 +61,47 @@
             <section class="app-nav-group">
                 <h2 class="app-nav-heading">Sales performance</h2>
                 <ul class="app-nav-list">
+                    <li><a class="app-nav-link" href="/private/overview">Dashboard</a></li>
                     <li><a class="app-nav-link" href="/private/gmv">GMV</a></li>
                     <li><a class="app-nav-link" href="/private/product-performance">Product Performance</a></li>
                 </ul>
             </section>
-            <section class="app-nav-group">
-                <h2 class="app-nav-heading">Orders &amp; returns</h2>
+            <details class="app-nav-group" data-nav-group="advertising">
+                <summary class="app-nav-heading">
+                    <span>Advertising</span>
+                    <svg class="app-nav-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" /></svg>
+                </summary>
+                <ul class="app-nav-list">
+                    <li><a class="app-nav-link" href="/private/ads-campaigns">Ads Campaigns</a></li>
+                </ul>
+            </details>
+            <details class="app-nav-group" data-nav-group="business-data">
+                <summary class="app-nav-heading">
+                    <span>Business Data</span>
+                    <svg class="app-nav-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" /></svg>
+                </summary>
+                <ul class="app-nav-list">
+                    <li><a class="app-nav-link" href="/private/products">Products</a></li>
+                    <li><a class="app-nav-link" href="/private/categories">Categories</a></li>
+                    <li><a class="app-nav-link" href="/private/employees">Employees</a></li>
+                </ul>
+            </details>
+            <details class="app-nav-group" data-nav-group="orders-returns">
+                <summary class="app-nav-heading">
+                    <span>Orders &amp; Returns</span>
+                    <svg class="app-nav-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" /></svg>
+                </summary>
                 <ul class="app-nav-list">
                     <li><a class="app-nav-link" href="/private/orders">Order Table</a></li>
                     <li><a class="app-nav-link" href="/private/storno">Storno Table</a></li>
                     <li><a class="app-nav-link" href="/private/returns">Return Table</a></li>
                 </ul>
-            </section>
-            <section class="app-nav-group">
-                <h2 class="app-nav-heading">Return analysis</h2>
+            </details>
+            <details class="app-nav-group" data-nav-group="return-analysis">
+                <summary class="app-nav-heading">
+                    <span>Return Analysis</span>
+                    <svg class="app-nav-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" /></svg>
+                </summary>
                 <ul class="app-nav-list">
                     <li><a class="app-nav-link" href="/private/storno-rate">Storno % Table</a></li>
                     <li><a class="app-nav-link" href="/private/return-rate">Return % Table</a></li>
@@ -83,23 +110,12 @@
                     <li><a class="app-nav-link" href="/private/returnCharts">Return Charts</a></li>
                     <li><a class="app-nav-link" href="/private/rrr">RRR (Smoothed)</a></li>
                 </ul>
-            </section>
-            <section class="app-nav-group">
-                <h2 class="app-nav-heading">Advertising</h2>
-                <ul class="app-nav-list">
-                    <li><a class="app-nav-link" href="/private/ads-campaigns">Ads Campaigns</a></li>
-                </ul>
-            </section>
-            <section class="app-nav-group">
-                <h2 class="app-nav-heading">Business data</h2>
-                <ul class="app-nav-list">
-                    <li><a class="app-nav-link" href="/private/products">Products</a></li>
-                    <li><a class="app-nav-link" href="/private/categories">Categories</a></li>
-                    <li><a class="app-nav-link" href="/private/employees">Employees</a></li>
-                </ul>
-            </section>
-            <section class="app-nav-group">
-                <h2 class="app-nav-heading">System</h2>
+            </details>
+            <details class="app-nav-group" data-nav-group="system">
+                <summary class="app-nav-heading">
+                    <span>System</span>
+                    <svg class="app-nav-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" /></svg>
+                </summary>
                 <ul class="app-nav-list">
                     <li><a class="app-nav-link" href="/private/tasks">Tasks</a></li>
                     @if(userRole.equals("admin"))
@@ -108,7 +124,7 @@
                         <li><a class="app-nav-link" href="/admin/logs">Server Logs</a></li>
                     @endif
                 </ul>
-            </section>
+            </details>
         </nav>
         @if(userRole.equals("admin"))
             <div class="app-sidebar-footer">
