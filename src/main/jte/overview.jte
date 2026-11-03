@@ -7,8 +7,6 @@
         <div class="overview-toolbar">
             <div>
                 <h2 id="overviewMonth">Current month</h2>
-                <p id="overviewContext" class="overview-context">Compare daily ordered and returned units across companies.</p>
-                <p class="overview-definitions">Orders show product units from finalized and returned orders by order date. Returns show product units from finalized return requests by request date, without subtracting them from Orders.</p>
             </div>
             <div class="overview-controls">
                 <div class="overview-month-field">

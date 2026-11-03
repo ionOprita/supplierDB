@@ -181,6 +181,11 @@ public class EmagMirrorDB {
         return database.readTX(db -> OffersTable.getDailyProductOffers(db, vendorId, pnk, firstDate, lastDate));
     }
 
+    /** Calculate company GMV for the month through the supplied date without writing stored GMV values. */
+    public GMVDashboardTable.GMVDashboardData getGMVDashboard(LocalDate throughDate) throws SQLException {
+        return database.readTX(db -> GMVDashboardTable.read(db, throughDate));
+    }
+
     public int addOrUpdateAdCampaigns(UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
         return database.writeTX(db -> upsertCampaigns(db, vendorId, campaigns));
     }

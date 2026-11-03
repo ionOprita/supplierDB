@@ -23,6 +23,7 @@ class Element {
   set textContent(value) { this.text = String(value); this.children = []; }
   get textContent() { return this.text + this.children.map(child => child.textContent).join(''); }
   appendChild(child) { this.children.push(child); return child; }
+  contains(node) { return this === node || this.children.some(child => child.contains(node)); }
   replaceChildren(...children) { this.text = ''; this.children = children; }
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.get(name); }
@@ -30,7 +31,7 @@ class Element {
   removeEventListener(name, listener) {
     if (this.listeners.get(name) === listener) this.listeners.delete(name);
   }
-  dispatch(name) { return this.listeners.get(name)?.(); }
+  dispatch(name, event = {}) { event.target ??= this; return this.listeners.get(name)?.(event); }
 }
 
 function report(overrides = {}) {
@@ -48,7 +49,7 @@ function fullMonthReport(month, overrides = {}) {
 }
 
 function fixture() {
-  const elements = Object.fromEntries(['Dashboard', 'Month', 'MonthSelect', 'Context', 'Refresh', 'Status', 'Unassigned', 'Empty', 'Companies']
+  const elements = Object.fromEntries(['Dashboard', 'Month', 'MonthSelect', 'Refresh', 'Status', 'Unassigned', 'Empty', 'Companies']
     .map(suffix => [`overview${suffix}`, new Element()]));
   elements.overviewEmpty.hidden = true;
   elements.overviewUnassigned.hidden = true;
@@ -62,8 +63,20 @@ function fixture() {
     }
     return null;
   }
+  const documentListeners = new Map();
   const document = {getElementById: id => elements[id] ?? find(elements.overviewCompanies, id),
-    createElement: tag => new Element(tag)};
+    createElement: tag => new Element(tag),
+    addEventListener(type, listener) {
+      const listeners = documentListeners.get(type) ?? new Set();
+      listeners.add(listener);
+      documentListeners.set(type, listeners);
+    },
+    removeEventListener(type, listener) { documentListeners.get(type)?.delete(listener); }};
+  const dispatch = (type, event = {}) => {
+    event.target ??= document;
+    for (const listener of documentListeners.get(type) ?? []) listener(event);
+    return event;
+  };
   const requests = [];
   const charts = [];
   const chartState = {attempts: 0, failOnAttempt: null};
@@ -87,7 +100,7 @@ function fixture() {
     input.value = key;
     return input.dispatch('change');
   };
-  return {controller, requests, charts, chartState, byId, respond, activeCharts, chart, select};
+  return {controller, requests, charts, chartState, byId, respond, activeCharts, chart, select, dispatch, documentListeners};
 }
 
 test('builds complete 28, 29, 30 and 31 day calendars without local timezone shifts', () => {
@@ -165,6 +178,146 @@ test('default report shows exactly two charts with a separate exact daily line f
   assert.equal(page.byId('Refresh').disabled, false);
   assert.equal(page.byId('MonthSelect').disabled, false);
   assert.equal(page.byId('Dashboard').getAttribute('aria-busy'), 'false');
+});
+
+test('each circled info button describes its own units and displayed reporting period', async () => {
+  const page = fixture();
+  page.respond(0, report());
+  await page.controller.ready;
+  assert.equal(page.byId('Context'), null);
+  for (const metric of ['Orders', 'Returns']) {
+    const button = page.byId(`${metric}Info`);
+    const tooltip = page.byId(`${metric}InfoText`);
+    assert.equal(button.getAttribute('aria-label'), `About ${metric}`);
+    assert.equal(button.getAttribute('aria-describedby'), tooltip.id);
+    assert.equal(button.getAttribute('aria-controls'), tooltip.id);
+    assert.equal(button.getAttribute('aria-expanded'), 'false');
+    assert.equal(tooltip.getAttribute('role'), 'tooltip');
+    assert.equal(tooltip.hidden, true);
+    assert.match(tooltip.textContent, /through 2026-11-03\. Today is still in progress\./);
+  }
+  assert.match(page.byId('OrdersInfoText').textContent, /^Daily ordered units.*finalized and returned orders by order date/);
+  assert.match(page.byId('OrdersInfoText').textContent, /Returned units are not deducted/);
+  assert.match(page.byId('ReturnsInfoText').textContent, /^Daily returned units.*finalized return requests by request date/);
+  assert.match(page.byId('ReturnsInfoText').textContent, /without subtracting them from Orders/);
+  assert.equal(page.byId('OrdersInfoWrap').children[0], page.byId('OrdersInfo'));
+  assert.equal(page.requests.length, 1);
+});
+
+test('hover and keyboard focus reveal help and pointer movement onto its text keeps it open', async () => {
+  const page = fixture();
+  page.respond(0, report());
+  await page.controller.ready;
+  const wrap = page.byId('OrdersInfoWrap');
+  const button = page.byId('OrdersInfo');
+  const tooltip = page.byId('OrdersInfoText');
+  wrap.dispatch('pointerenter', {pointerType: 'mouse'});
+  assert.equal(tooltip.hidden, false);
+  assert.equal(button.getAttribute('aria-expanded'), 'true');
+  button.dispatch('pointerleave', {relatedTarget: tooltip});
+  tooltip.dispatch('pointerenter', {pointerType: 'mouse'});
+  page.dispatch('pointerdown', {target: tooltip});
+  assert.equal(tooltip.hidden, false);
+  wrap.dispatch('pointerleave');
+  assert.equal(tooltip.hidden, true);
+  button.dispatch('focus');
+  assert.equal(tooltip.hidden, false);
+  button.dispatch('blur', {relatedTarget: page.byId('OrdersCompany')});
+  assert.equal(tooltip.hidden, true);
+  assert.equal(page.byId('ReturnsInfoText').hidden, true);
+});
+
+test('tap toggles help and Escape or outside dismissal stays effective until existing triggers leave', async () => {
+  const page = fixture();
+  page.respond(0, report());
+  await page.controller.ready;
+  const wrap = page.byId('OrdersInfoWrap');
+  const button = page.byId('OrdersInfo');
+  const tooltip = page.byId('OrdersInfoText');
+  wrap.dispatch('pointerenter', {pointerType: 'touch'});
+  assert.equal(tooltip.hidden, true, 'touch does not create a persistent hover state');
+  button.dispatch('focus');
+  button.dispatch('click');
+  assert.equal(tooltip.hidden, false, 'the initial touch focus must not make the first click close help');
+  button.dispatch('click');
+  assert.equal(tooltip.hidden, true, 'a second tap dismisses help even while the button retains focus');
+  button.dispatch('focus');
+  assert.equal(tooltip.hidden, true);
+  button.dispatch('click');
+  assert.equal(tooltip.hidden, false);
+  wrap.dispatch('pointerenter', {pointerType: 'mouse'});
+  const escape = page.dispatch('keydown', {key: 'Escape', defaultPrevented: false,
+    preventDefault() { this.defaultPrevented = true; }});
+  assert.equal(tooltip.hidden, true);
+  assert.equal(escape.defaultPrevented, false, 'help must not consume mobile drawer or native dialog Escape handling');
+  button.dispatch('focus');
+  wrap.dispatch('pointerenter', {pointerType: 'mouse'});
+  assert.equal(tooltip.hidden, true);
+  wrap.dispatch('pointerleave');
+  assert.equal(tooltip.hidden, true, 'focus still remains on the dismissed control');
+  button.dispatch('blur', {relatedTarget: page.byId('Refresh')});
+  button.dispatch('focus');
+  assert.equal(tooltip.hidden, false);
+  page.dispatch('keydown', {key: 'Enter'});
+  assert.equal(tooltip.hidden, false);
+  page.dispatch('pointerdown', {target: page.byId('Refresh')});
+  assert.equal(tooltip.hidden, true);
+  button.dispatch('focus');
+  assert.equal(tooltip.hidden, true, 'outside dismissal also suppresses the existing focus trigger');
+  button.dispatch('blur', {relatedTarget: page.byId('Refresh')});
+  wrap.dispatch('pointerenter', {pointerType: 'mouse'});
+  assert.equal(tooltip.hidden, false);
+});
+
+test('help follows successful reports and retains its old through-date after a failed month change', async () => {
+  const page = fixture();
+  page.respond(0, report());
+  await page.controller.ready;
+  const oldInfo = page.byId('OrdersInfoText');
+  const oldCopy = oldInfo.textContent;
+  page.select('Orders', FIRST);
+  assert.equal(page.byId('OrdersInfoText'), oldInfo, 'local filtering preserves the reporting period and help control');
+  page.byId('MonthSelect').value = '2026-10';
+  const failing = page.controller.refresh();
+  page.respond(1, null, 500);
+  await failing;
+  assert.equal(page.byId('OrdersInfoText'), oldInfo);
+  assert.equal(page.byId('OrdersInfoText').textContent, oldCopy);
+  page.byId('OrdersInfo').dispatch('focus');
+  assert.equal(oldInfo.hidden, false);
+  assert.match(page.byId('Status').textContent, /Displayed figures are for November 2026/);
+  const retry = page.controller.refresh();
+  page.respond(2, fullMonthReport('2026-10'));
+  await retry;
+  for (const metric of ['Orders', 'Returns']) {
+    assert.match(page.byId(`${metric}InfoText`).textContent, /through 2026-10-31\. Full month\./);
+    assert.doesNotMatch(page.byId(`${metric}InfoText`).textContent, /Today|2026-11-03/);
+    assert.equal(page.byId(`${metric}InfoText`).hidden, true);
+  }
+});
+
+test('replacing cards cleans up info handlers without accumulating document listeners', async () => {
+  const page = fixture();
+  page.respond(0, report());
+  await page.controller.ready;
+  const oldButton = page.byId('OrdersInfo');
+  const oldWrap = page.byId('OrdersInfoWrap');
+  for (let index = 1; index <= 2; index++) {
+    const refreshing = page.controller.refresh();
+    page.respond(index, report());
+    await refreshing;
+    assert.equal(page.documentListeners.get('keydown').size, 1);
+    assert.equal(page.documentListeners.get('pointerdown').size, 1);
+  }
+  assert.equal(oldButton.listeners.size, 0);
+  assert.equal(oldWrap.listeners.size, 0);
+  const button = page.byId('ReturnsInfo');
+  const wrap = page.byId('ReturnsInfoWrap');
+  page.controller.destroy();
+  assert.equal(button.listeners.size, 0);
+  assert.equal(wrap.listeners.size, 0);
+  assert.equal(page.documentListeners.get('keydown').size, 0);
+  assert.equal(page.documentListeners.get('pointerdown').size, 0);
 });
 
 test('each chart independently filters cached company data without fetching or changing the other chart', async () => {
@@ -260,8 +413,8 @@ test('month changes and Refresh preserve independent keys and colors despite rep
   assert.equal(page.byId('ReturnsTotal').textContent, '31');
   assert.equal(page.byId('OrdersScope').textContent, 'First Company · ordered units · monthly total');
   assert.ok(page.chart('Orders').config.data.datasets[0].data.every(count => count === 1));
-  assert.match(page.byId('Context').textContent, /through 2026-10-31\. Full month\./);
-  assert.doesNotMatch(page.byId('Context').textContent, /Today/);
+  assert.match(page.byId('OrdersInfoText').textContent, /through 2026-10-31\. Full month\./);
+  assert.doesNotMatch(page.byId('OrdersInfoText').textContent, /Today/);
   assert.match(page.byId('Unassigned').textContent, /2 returned units could not be assigned.*are excluded/);
   const refreshing = page.byId('Refresh').dispatch('click');
   assert.equal(page.requests[2].url, '/app/overview?month=2026-10');
@@ -372,7 +525,7 @@ test('current final day remains month to date while historical leap month includ
   page.respond(0, fullMonthReport('2028-03'));
   await page.controller.ready;
   assert.match(page.byId('OrdersScope').textContent, /month to date/);
-  assert.match(page.byId('Context').textContent, /Today is still in progress/);
+  assert.match(page.byId('OrdersInfoText').textContent, /Today is still in progress/);
   page.byId('MonthSelect').value = '2028-02';
   const switching = page.controller.refresh();
   page.respond(1, fullMonthReport('2028-02'));
@@ -381,7 +534,7 @@ test('current final day remains month to date while historical leap month includ
   assert.equal(page.chart('Orders').config.data.labels.at(-1), '2028-02-29');
   assert.equal(page.byId('OrdersTotal').textContent, '87');
   assert.match(page.byId('OrdersScope').textContent, /monthly total/);
-  assert.doesNotMatch(page.byId('Context').textContent, /Today/);
+  assert.doesNotMatch(page.byId('OrdersInfoText').textContent, /Today/);
 });
 
 test('malformed, duplicate-key and incomplete historical reports cannot replace valid charts', async () => {

@@ -32,9 +32,13 @@ class JteTemplateEngineTest {
             assertTrue(html.contains("action=\"/logout\" method=\"post\""));
             assertTrue(html.contains("src=\"/js/app-shell.js\""));
             assertTrue(html.contains("class=\"app-brand\" href=\"/private/overview\""));
+            assertTrue(html.contains("<img src=\"/img/family-logo.png\" width=\"512\" height=\"451\" alt=\"\">"));
+            assertTrue(html.contains("class=\"app-brand-name\">Koppel, Judios, Zoopie &amp; Sellfusion Family</span>"));
+            assertFalse(html.contains("<svg class=\"app-brand-mark\""));
+            assertFalse(html.contains("<span>Sellfusion</span>"));
             boolean authorized = role != null && !role.equals("nobody");
             org.junit.jupiter.api.Assertions.assertEquals(authorized,
-                    html.contains("class=\"app-nav-link\" href=\"/private/overview\">Dashboard</a>"));
+                    html.contains("class=\"app-nav-link\" href=\"/private/overview\">Sales Dashboard</a>"));
             org.junit.jupiter.api.Assertions.assertEquals(authorized, html.contains("id=\"appSidebar\""));
             org.junit.jupiter.api.Assertions.assertEquals(authorized, html.contains("id=\"appNavToggle\""));
             org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("href=\"/admin/users\""));
@@ -54,11 +58,17 @@ class JteTemplateEngineTest {
                 }
                 org.junit.jupiter.api.Assertions.assertEquals(5,
                         html.lines().filter(line -> line.contains("<summary class=\"app-nav-heading\">")).count());
-                assertTrue(html.indexOf("href=\"/private/overview\">Dashboard</a>")
-                        < html.indexOf("href=\"/private/gmv\">GMV</a>"));
+                var salesEnd = html.indexOf("</section>", html.indexOf(">Sales performance</h2>"));
+                assertTrue(html.indexOf("href=\"/private/overview\">Sales Dashboard</a>") < salesEnd);
+                assertTrue(html.indexOf("href=\"/private/gmv-dashboard\">GMV Dashboard</a>") < salesEnd);
+                var ordersStart = html.indexOf("data-nav-group=\"orders-returns\"");
+                var ordersEnd = html.indexOf("</details>", ordersStart);
+                var gmvLink = html.indexOf("href=\"/private/gmv\">GMV</a>");
+                assertTrue(gmvLink > ordersStart && gmvLink < ordersEnd);
+                assertTrue(html.contains("<span>Orders, Returns &amp; GMV</span>"));
                 for (var route : List.of("orders", "storno", "returns", "storno-rate", "return-rate",
                         "current-rates", "current-rates-categories", "returnCharts", "rrr", "ads-campaigns",
-                        "products", "gmv", "product-performance", "categories", "employees", "tasks")) {
+                        "products", "gmv", "gmv-dashboard", "product-performance", "categories", "employees", "tasks")) {
                     assertTrue(html.contains("href=\"/private/" + route + "\""), route);
                 }
             }

@@ -132,15 +132,100 @@ export function initOverview({document = globalThis.document, fetch = globalThis
     return canvas;
   }
 
+  function chartInfo(metric, report, prefix, title) {
+    const wrap = element('div', 'overview-info');
+    wrap.id = `${prefix}InfoWrap`;
+    const button = element('button', 'overview-info-button');
+    button.id = `${prefix}Info`;
+    button.type = 'button';
+    button.setAttribute('aria-label', `About ${title}`);
+    button.setAttribute('aria-describedby', `${prefix}InfoText`);
+    button.setAttribute('aria-controls', `${prefix}InfoText`);
+    const icon = element('span', 'overview-info-icon', 'i');
+    icon.setAttribute('aria-hidden', 'true');
+    button.appendChild(icon);
+    const tooltip = element('div', 'overview-info-text');
+    tooltip.id = `${prefix}InfoText`;
+    tooltip.setAttribute('role', 'tooltip');
+    const current = report.month === (currentMonth ?? report.month);
+    const units = metric === 'orders' ? 'ordered units' : 'returned units';
+    const definition = metric === 'orders'
+      ? 'Orders show product units from finalized and returned orders by order date. Returned units are not deducted from Orders.'
+      : 'Returns show product units from finalized return requests by request date, without subtracting them from Orders.';
+    tooltip.textContent = `Daily ${units} through ${report.throughDate}. `
+      + (current ? 'Today is still in progress. ' : 'Full month. ') + definition;
+    let hovered = false;
+    let focused = false;
+    let pinned = false;
+    let dismissed = false;
+    function update() {
+      tooltip.hidden = dismissed || !(hovered || focused || pinned);
+      button.setAttribute('aria-expanded', String(!tooltip.hidden));
+    }
+    function resetWhenInactive() {
+      if (!hovered && !focused) dismissed = false;
+    }
+    const enter = event => {
+      if (event.pointerType === 'touch') return;
+      resetWhenInactive();
+      hovered = true;
+      update();
+    };
+    const leave = () => {
+      hovered = false;
+      resetWhenInactive();
+      update();
+    };
+    const focus = () => {
+      resetWhenInactive();
+      focused = true;
+      update();
+    };
+    const blur = event => {
+      if (wrap.contains(event.relatedTarget)) return;
+      focused = false;
+      pinned = false;
+      resetWhenInactive();
+      update();
+    };
+    const click = () => {
+      pinned = !pinned;
+      dismissed = !pinned;
+      update();
+    };
+    const listeners = [[wrap, 'pointerenter', enter], [wrap, 'pointerleave', leave],
+      [button, 'focus', focus], [button, 'blur', blur], [button, 'click', click]];
+    for (const [target, type, listener] of listeners) target.addEventListener(type, listener);
+    wrap.appendChild(button);
+    wrap.appendChild(tooltip);
+    update();
+    return {wrap, tooltip, dismiss() { pinned = false; dismissed = true; update(); },
+      destroy() { for (const [target, type, listener] of listeners) target.removeEventListener(type, listener); }};
+  }
+
+  function dismissInfoOnEscape(event) {
+    if (event.key === 'Escape') panels.forEach(panel => { if (!panel.info.tooltip.hidden) panel.info.dismiss(); });
+  }
+
+  function dismissInfoOutside(event) {
+    for (const panel of panels) {
+      if (!panel.info.wrap.contains(event.target)) panel.info.dismiss();
+    }
+  }
+
   function chartCard(metric, report, labels, names, selectedKey) {
     const title = metric === 'orders' ? 'Orders' : 'Returns';
     const prefix = `overview${title}`;
     const card = element('article', `overview-card overview-card--${metric}`);
     card.setAttribute('aria-labelledby', `${prefix}Title`);
     const header = element('div', 'overview-card-header');
+    const headingWrap = element('div', 'overview-card-heading');
+    const info = chartInfo(metric, report, prefix, title);
     const heading = element('h2', 'overview-card-title', title);
     heading.id = `${prefix}Title`;
-    header.appendChild(heading);
+    headingWrap.appendChild(info.wrap);
+    headingWrap.appendChild(heading);
+    header.appendChild(headingWrap);
     const field = element('div', 'overview-company-field');
     const label = element('label', '', 'Company');
     label.setAttribute('for', `${prefix}Company`);
@@ -171,7 +256,7 @@ export function initOverview({document = globalThis.document, fetch = globalThis
     card.appendChild(summary);
     const wrap = element('div', 'overview-chart');
     card.appendChild(wrap);
-    const panel = {card, prefix, select, total, scope, wrap, metric, report, labels, names, selectedKey};
+    const panel = {card, prefix, select, total, scope, wrap, metric, report, labels, names, selectedKey, info};
     panel.canvas = canvasFor(panel);
     wrap.appendChild(panel.canvas);
     const selection = series(report, labels, metric, selectedKey, names);
@@ -214,6 +299,7 @@ export function initOverview({document = globalThis.document, fetch = globalThis
   }
 
   function destroyPanel(panel) {
+    panel.info.destroy();
     panel.select.removeEventListener('change', panel.onChange);
     panel.chart?.destroy();
   }
@@ -248,8 +334,6 @@ export function initOverview({document = globalThis.document, fetch = globalThis
     panels = replacements;
     for (const panel of panels) selectedKeys[panel.metric] = panel.selectedKey;
     byId('Month').textContent = monthName(report.month);
-    byId('Context').textContent = `Daily ordered and returned units through ${report.throughDate}.`
-      + (report.month === (currentMonth ?? report.month) ? ' Today is still in progress.' : ' Full month.');
     byId('Empty').hidden = report.companies.length > 0;
     const notice = byId('Unassigned');
     notice.hidden = report.unassignedReturns === 0;
@@ -311,11 +395,15 @@ export function initOverview({document = globalThis.document, fetch = globalThis
 
   refreshButton.addEventListener('click', refresh);
   monthInput.addEventListener('change', refresh);
+  document.addEventListener('keydown', dismissInfoOnEscape);
+  document.addEventListener('pointerdown', dismissInfoOutside);
   const ready = refresh();
   return {ready, refresh, destroy() {
     disposed = true;
     refreshButton.removeEventListener('click', refresh);
     monthInput.removeEventListener('change', refresh);
+    document.removeEventListener('keydown', dismissInfoOnEscape);
+    document.removeEventListener('pointerdown', dismissInfoOutside);
     panels.forEach(destroyPanel);
     panels = [];
   }};

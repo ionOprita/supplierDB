@@ -1792,14 +1792,27 @@ body.app-shell .app-brand {
   font-size: 18px;
   font-weight: 750;
   letter-spacing: -.035em;
+  line-height: 1.25;
   text-decoration: none;
 }
 
 body.app-shell .app-brand-mark {
+  display: inline-flex;
+  align-items: center;
   flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  color: var(--primary);
+  padding: 4px;
+  border-radius: 8px;
+}
+
+body.app-shell .app-brand-mark img {
+  display: block;
+  width: auto;
+  height: 36px;
+}
+
+body.app-shell .app-brand-name {
+  min-width: 0;
+  white-space: normal;
 }
 
 body.app-shell .app-account {
@@ -2309,12 +2322,13 @@ body.app-shell dialog {
   }
 
   body.app-shell--enhanced .app-sidebar-header {
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex: 0 0 auto;
     gap: 16px;
-    min-height: var(--app-header-height);
+    min-height: 72px;
     padding: 12px 16px;
     border-bottom: 1px solid var(--border);
   }
@@ -2378,8 +2392,27 @@ body.app-shell dialog {
 }
 
 @media (max-width: 767px) {
+  body.app-shell {
+    --app-header-height: 112px;
+  }
+
   body.app-shell .app-topbar {
-    padding-inline: 16px;
+    flex-wrap: wrap;
+    align-content: center;
+    gap: 8px 12px;
+    padding: 7px 16px 8px;
+  }
+
+  body.app-shell .app-brand {
+    flex: 1 1 0;
+    margin-right: 0;
+    font-size: 15px;
+  }
+
+  body.app-shell .app-account {
+    flex: 0 0 100%;
+    justify-content: flex-end;
+    min-height: 44px;
   }
 
   body.app-shell .app-main {
@@ -2609,11 +2642,6 @@ body.app-shell dialog {
     padding-inline: 12px;
   }
 
-  body.app-shell .app-brand {
-    font-size: 16px;
-  }
-
-  body.app-shell .app-brand-mark,
   body.app-shell .app-account-avatar {
     display: none;
   }
@@ -2651,6 +2679,10 @@ body.app-shell dialog {
     --app-active-bg: #203957;
     --app-active-text: #bfdbfe;
     --app-shadow: none;
+  }
+
+  body.app-shell .app-brand-mark {
+    background: #ffffff;
   }
 
   body.app-shell .primary-action,
@@ -2725,18 +2757,6 @@ body.app-shell dialog {
   }
 }
 
-.overview-dashboard .overview-context {
-  margin: 0;
-  color: var(--muted);
-}
-
-.overview-dashboard .overview-definitions {
-  max-width: 85ch;
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
 .overview-dashboard .overview-status {
   margin: 0 0 16px;
   color: var(--muted);
@@ -2789,6 +2809,62 @@ body.app-shell dialog {
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.overview-dashboard .overview-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.overview-dashboard .overview-info {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.overview-dashboard .overview-info-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.overview-dashboard .overview-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font: 700 12px/1 Georgia, serif;
+}
+
+.overview-dashboard .overview-info-text {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  box-sizing: border-box;
+  width: 320px;
+  max-width: calc(100vw - 72px);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-alt);
+  color: var(--text);
+  box-shadow: 0 6px 20px rgb(15 23 42 / 15%);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .overview-dashboard .overview-company-field {
@@ -2862,4 +2938,29 @@ body.app-shell dialog {
   .overview-dashboard .overview-chart {
     height: 320px;
   }
+}
+
+@media (max-width: 767px) {
+  .overview-dashboard .overview-info-button {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 13px;
+  }
+}
+
+/* The GMV dashboard has one full-width company chart. */
+.gmv-dashboard .gmv-dashboard-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.gmv-dashboard .overview-company-field {
+  width: 260px;
+}
+
+.gmv-dashboard .overview-total strong {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }

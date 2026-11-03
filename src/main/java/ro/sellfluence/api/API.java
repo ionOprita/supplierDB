@@ -11,6 +11,7 @@ import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.GMV;
 import ro.sellfluence.db.OffersTable.DailyProductOffer;
 import ro.sellfluence.db.OverviewTable.OverviewData;
+import ro.sellfluence.db.GMVDashboardTable.GMVDashboardData;
 import ro.sellfluence.db.Vendor;
 import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
 import ro.sellfluence.db.ProductTable.ProductInfo;
@@ -70,6 +71,15 @@ public class API {
         return mirrorDB.getOverview(overviewThroughDate(month, Clock.systemUTC()));
     }
 
+    /** Recalculate VAT-inclusive company GMV from current order data without storing it. */
+    public GMVDashboardData getGMVDashboard() throws SQLException {
+        return getGMVDashboard(null);
+    }
+
+    public GMVDashboardData getGMVDashboard(YearMonth month) throws SQLException {
+        return mirrorDB.getGMVDashboard(overviewThroughDate(month, Clock.systemUTC()));
+    }
+
     static LocalDate overviewDate(Clock clock) {
         return LocalDate.now(clock.withZone(ZoneId.of("Europe/Bucharest")));
     }
@@ -79,10 +89,10 @@ public class API {
         var currentMonth = YearMonth.from(today);
         var requestedMonth = month == null ? currentMonth : month;
         if (requestedMonth.getYear() < 1 || requestedMonth.getYear() > 9999) {
-            throw new IllegalArgumentException("Overview month must have a year between 0001 and 9999.");
+            throw new IllegalArgumentException("Dashboard month must have a year between 0001 and 9999.");
         }
         if (requestedMonth.isAfter(currentMonth)) {
-            throw new IllegalArgumentException("Overview month must not be in the future.");
+            throw new IllegalArgumentException("Dashboard month must not be in the future.");
         }
         return requestedMonth.equals(currentMonth) ? today : requestedMonth.atEndOfMonth();
     }

@@ -179,11 +179,11 @@ function fixture({path = '/private/orders', mobile = true, sidebar = true, serve
     const sales = element('section', 'salesPerformance');
     sales.classes.add('app-nav-group');
     navigation.append(sales);
-    for (const route of ['overview', 'gmv', 'product-performance']) link(route, sales);
+    for (const route of ['overview', 'gmv-dashboard', 'product-performance']) link(route, sales);
     for (const [id, routes] of [
       ['advertising', ['ads-campaigns']],
       ['business-data', ['products', 'categories', 'employees']],
-      ['orders-returns', ['orders', 'storno', 'returns']],
+      ['orders-returns', ['orders', 'storno', 'returns', 'gmv']],
       ['return-analysis', ['rrr', 'returnCharts', 'storno-rate', 'return-rate', 'current-rates', 'current-rates-categories']],
       ['system', ['tasks']]
     ]) {
@@ -257,6 +257,8 @@ function fixture({path = '/private/orders', mobile = true, sidebar = true, serve
 for (const [path, active] of [
   ['/private/overview', 'overview'],
   ['/private/overview/?month=2026-10#charts', 'overview'],
+  ['/private/gmv', 'gmv'],
+  ['/private/gmv-dashboard?month=2026-10', 'gmv-dashboard'],
   ['/private/orders?sort=date#latest', 'orders'],
   ['/private/orders/123', 'orders'],
   ['/private/products/edit?productCode=A%2FB', 'products'],
@@ -286,7 +288,8 @@ test('dashboard leaves all collapsible groups closed while Sales performance rem
   assert.deepEqual([...state.groups.keys()], ['advertising', 'business-data', 'orders-returns', 'return-analysis', 'system']);
   assert.ok([...state.groups.values()].every(group => !group.open));
   assert.equal(state.get('salesPerformance').tag, 'section');
-  assert.ok(['overview', 'gmv', 'product-performance'].every(route => state.links.get(route).getClientRects().length > 0));
+  assert.ok(['overview', 'gmv-dashboard', 'product-performance'].every(route => state.links.get(route).getClientRects().length > 0));
+  assert.equal(state.links.get('gmv').getClientRects().length, 0);
   assert.equal(state.storage.writes.length, 0);
 });
 

@@ -27,11 +27,10 @@
         </button>
     @endif
     <a class="app-brand" href="/private/overview">
-        <svg class="app-brand-mark" width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true" focusable="false">
-            <rect x="1" y="1" width="30" height="30" rx="8" fill="currentColor" />
-            <path d="M10 21V17M16 21V11M22 21V14" stroke="white" stroke-width="2.5" stroke-linecap="round" />
-        </svg>
-        <span>Sellfusion</span>
+        <span class="app-brand-mark" aria-hidden="true">
+            <img src="/img/family-logo.png" width="512" height="451" alt="">
+        </span>
+        <span class="app-brand-name">Koppel, Judios, Zoopie &amp; Sellfusion Family</span>
     </a>
     <div class="app-account" role="group" aria-label="Signed in as ${userName}">
         <span class="app-account-avatar" aria-hidden="true">${userName == null || userName.isBlank() ? "?" : userName.substring(0, 1).toUpperCase(Locale.ROOT)}</span>
@@ -61,8 +60,8 @@
             <section class="app-nav-group">
                 <h2 class="app-nav-heading">Sales performance</h2>
                 <ul class="app-nav-list">
-                    <li><a class="app-nav-link" href="/private/overview">Dashboard</a></li>
-                    <li><a class="app-nav-link" href="/private/gmv">GMV</a></li>
+                    <li><a class="app-nav-link" href="/private/overview">Sales Dashboard</a></li>
+                    <li><a class="app-nav-link" href="/private/gmv-dashboard">GMV Dashboard</a></li>
                     <li><a class="app-nav-link" href="/private/product-performance">Product Performance</a></li>
                 </ul>
             </section>
@@ -88,13 +87,14 @@
             </details>
             <details class="app-nav-group" data-nav-group="orders-returns">
                 <summary class="app-nav-heading">
-                    <span>Orders &amp; Returns</span>
+                    <span>Orders, Returns &amp; GMV</span>
                     <svg class="app-nav-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6" /></svg>
                 </summary>
                 <ul class="app-nav-list">
                     <li><a class="app-nav-link" href="/private/orders">Order Table</a></li>
                     <li><a class="app-nav-link" href="/private/storno">Storno Table</a></li>
                     <li><a class="app-nav-link" href="/private/returns">Return Table</a></li>
+                    <li><a class="app-nav-link" href="/private/gmv">GMV</a></li>
                 </ul>
             </details>
             <details class="app-nav-group" data-nav-group="return-analysis">

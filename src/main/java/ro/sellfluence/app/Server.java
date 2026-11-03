@@ -36,6 +36,7 @@ import ro.sellfluence.db.CategoryDataTable.CategoryInfo;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.EmployeeDataTable.EmployeeColumn;
 import ro.sellfluence.db.EmployeeDataTable.EmployeeInfo;
+import ro.sellfluence.db.GMVDashboardTable.UnsupportedCurrencyException;
 import ro.sellfluence.db.PassKey;
 import ro.sellfluence.db.PassKey.User;
 import ro.sellfluence.db.ProductTable.ProductInfo;
@@ -1009,6 +1010,7 @@ public class Server {
     private static void configureAPI(JavalinDefaultRoutingApi app, API api, BackgroundJob backgroundJob) {
         app.before("/app/*", ctx -> checkRole(ctx, user)); // TODO: Need to protect admin calls
         app.get("/app/overview", ctx -> serveOverview(ctx, api));
+        app.get("/app/gmvDashboard", ctx -> serveGMVDashboard(ctx, api));
         app.get("/app/gmvForPeriod", ctx -> computeGMVForPeriod(ctx, api));
         app.get("/app/productPerformanceOptions", ctx -> {
             try {
@@ -1387,6 +1389,21 @@ public class Server {
             ctx.status(400).json(Map.of("error", e.getMessage()));
         } catch (SQLException e) {
             logger.log(SEVERE, "Failed to load overview dashboard.", e);
+            ctx.status(500).json(Map.of("error", "Database error"));
+        }
+    }
+
+    static void serveGMVDashboard(Context ctx, API api) {
+        ctx.header("Cache-Control", "no-store");
+        try {
+            var month = parseOverviewMonth(ctx.queryParam("month"));
+            ctx.json(month == null ? api.getGMVDashboard() : api.getGMVDashboard(month));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (UnsupportedCurrencyException e) {
+            ctx.status(422).json(Map.of("error", e.getMessage()));
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to calculate GMV dashboard.", e);
             ctx.status(500).json(Map.of("error", "Database error"));
         }
     }
@@ -2847,7 +2864,9 @@ public class Server {
         }
     }
 
-    private static String toPageTitle(String page) {
+    static String toPageTitle(String page) {
+        if ("overview".equals(page)) return "Sales Dashboard";
+        if ("gmv-dashboard".equals(page)) return "GMV Dashboard";
         if ("db-explorer".equals(page)) {
             return "DB Explorer";
         }
