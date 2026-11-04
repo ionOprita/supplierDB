@@ -20,6 +20,8 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
 
+import static java.math.RoundingMode.HALF_EVEN;
+
 /**
  * Product and advertising performance from daily adsets/offers, period GMV, and Order Table quantities.
  *
@@ -39,10 +41,9 @@ public final class ProductPerformanceData {
                     column("orders", "Orders", "integer"),
                     column("gmv", "GMV", "integer"),
                     column("clicks", "Clicks", "integer"),
-                    column("salesPrice", "Sales Price", "decimal"),
+                    column("salesPrice", "Sales Price (incl. VAT)", "decimal"),
                     column("conversion", "Conv.", "percent"),
                     column("performance", "Perform.", "text"),
-                    column("averagePrice", "Average price", "decimal"),
                     column("reviews", "# rev.", "integer"),
                     column("rating", "rating", "decimal")
             )),
@@ -126,15 +127,42 @@ public final class ProductPerformanceData {
             var totals = periods.computeIfAbsent(period.start(snapshot.key().reportDate()), ignored -> new PeriodTotals());
             totals.add(snapshot, errors);
         }
-        var latestOffers = new TreeMap<LocalDate, DailyProductOffer>();
+        var offersByPeriod = new TreeMap<LocalDate, OfferTotals>();
         for (var offer : offers) {
-            latestOffers.merge(period.start(offer.fetchDate()), offer,
-                    (previous, current) -> previous.fetchDate().isAfter(current.fetchDate()) ? previous : current);
+            offersByPeriod.computeIfAbsent(period.start(offer.fetchDate()), ignored -> new OfferTotals()).add(offer);
         }
         var rows = periods.entrySet().stream()
-                .map(entry -> entry.getValue().row(entry.getKey(), latestOffers.get(entry.getKey()),
+                .map(entry -> entry.getValue().row(entry.getKey(), offersByPeriod.get(entry.getKey()), period,
                         gmvByPeriod.get(entry.getKey()), ordersByPeriod.get(entry.getKey()))).toList();
         return new Response(false, product, GROUPS, rows, List.copyOf(errors));
+    }
+
+    /** Stock uses the latest eligible day; monthly price gives each available daily gross price one weight. */
+    private static final class OfferTotals {
+        private DailyProductOffer latest;
+        private BigDecimal priceSum = BigDecimal.ZERO;
+        private long priceDays;
+        private boolean ambiguousPrice;
+
+        private void add(DailyProductOffer offer) {
+            if (latest == null || !latest.fetchDate().isAfter(offer.fetchDate())) latest = offer;
+            if (offer.matchingOffers() > 1) {
+                ambiguousPrice = true;
+            } else if (offer.matchingOffers() == 1 && offer.salesPrice() != null) {
+                priceSum = priceSum.add(offer.salesPrice().setScale(2, HALF_EVEN));
+                priceDays++;
+            }
+        }
+
+        private Object salesPrice(Period period) {
+            if (period == Period.MONTH) {
+                if (ambiguousPrice) return "???";
+                return priceDays == 0 ? null : priceSum.divide(BigDecimal.valueOf(priceDays), 2, HALF_EVEN);
+            }
+            if (latest.matchingOffers() > 1) return "???";
+            return latest.matchingOffers() == 1 && latest.salesPrice() != null
+                    ? latest.salesPrice().setScale(2, HALF_EVEN) : null;
+        }
     }
 
     private static Column column(String key, String label, String type) {
@@ -220,7 +248,7 @@ public final class ProductPerformanceData {
             return null;
         }
 
-        private Row row(LocalDate start, DailyProductOffer offer, BigDecimal gmv, Long orders) {
+        private Row row(LocalDate start, OfferTotals offers, Period period, BigDecimal gmv, Long orders) {
             var values = new LinkedHashMap<String, Object>();
             // Unsupported overview columns, TACOS, and shares of overall product activity remain null.
             for (var group : GROUPS) {
@@ -229,13 +257,13 @@ public final class ProductPerformanceData {
             values.put("week", start.toString());
             values.put("orders", orders);
             values.put("gmv", gmv);
-            if (offer != null) {
+            if (offers != null) {
+                values.put("salesPrice", offers.salesPrice(period));
+                var offer = offers.latest;
                 if (offer.matchingOffers() == 1) {
                     values.put("stock", offer.stock());
-                    values.put("salesPrice", offer.salesPrice());
                 } else if (offer.matchingOffers() > 1) {
                     values.put("stock", "???");
-                    values.put("salesPrice", "???");
                 }
             }
             var total = new Accumulator();

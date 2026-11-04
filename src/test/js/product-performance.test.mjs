@@ -37,7 +37,7 @@ test('shows ambiguous offer cells without treating them as numbers', async t => 
   const page = await openPage(t);
   const data = report(5);
   data.groups[0].columns.push({key: 'stock', label: 'Stock', type: 'integer'},
-    {key: 'salesPrice', label: 'Sales Price', type: 'decimal'});
+    {key: 'salesPrice', label: 'Sales Price (incl. VAT)', type: 'decimal'});
   data.rows = [
     {values: {week: '2026-09-07', stock: 0, salesPrice: 19.875, auto_clicks: 5, total_clicks: 5}},
     {values: {week: '2026-09-14', stock: '???', salesPrice: '???', auto_clicks: 6, total_clicks: 6}},
@@ -49,6 +49,74 @@ test('shows ambiguous offer cells without treating them as numbers', async t => 
   assert.deepEqual(rows.map(row => row.children[2].textContent), ['19.88', '???', '—']);
   assert.equal(rows[1].children[1].getAttribute('aria-label'),
     'Multiple matching offers in the latest daily snapshot');
+  assert.equal(rows[1].children[2].getAttribute('aria-label'),
+    'Multiple matching offers in the latest daily snapshot');
+});
+
+test('monthly Sales Price ambiguity can describe an earlier daily snapshot while Stock still refers to the latest', async t => {
+  const page = await openPage(t, 'month');
+  const data = report(5, '2026-09-01');
+  data.groups[0].columns.push({key: 'stock', label: 'Stock', type: 'integer'},
+    {key: 'salesPrice', label: 'Sales Price (incl. VAT)', type: 'decimal'});
+  data.rows = [
+    {values: {week: '2026-09-01', stock: 7, salesPrice: '???', auto_clicks: 5, total_clicks: 5}},
+    {values: {week: '2026-10-01', stock: '???', salesPrice: '???', auto_clicks: 5, total_clicks: 5}}
+  ];
+  await page.respond(0, data);
+  const rows = page.byId('Body').children;
+  assert.equal(rows[0].children[1].textContent, '7');
+  assert.equal(rows[0].children[2].textContent, '???');
+  assert.equal(rows[0].children[2].title, 'Multiple matching offers in a daily snapshot for this month');
+  assert.equal(rows[0].children[2].getAttribute('aria-label'), rows[0].children[2].title);
+  assert.equal(rows[1].children[1].title, 'Multiple matching offers in the latest daily snapshot');
+  assert.equal(rows[1].children[2].title, 'Multiple matching offers in a daily snapshot for this month');
+});
+
+test('VAT-inclusive Sales Price and its monthly mean render and export without Average price or shifted frozen cells', async t => {
+  const page = await openPage(t);
+  const pricedReport = (date, salesPrice) => {
+    const data = report(5, date);
+    data.groups[0].columns.push(
+      {key: 'stock', label: 'Stock', type: 'integer'},
+      {key: 'orders', label: 'Orders', type: 'integer'},
+      {key: 'gmv', label: 'GMV', type: 'integer'},
+      {key: 'clicks', label: 'Clicks', type: 'integer'},
+      {key: 'salesPrice', label: 'Sales Price (incl. VAT)', type: 'decimal'},
+      {key: 'conversion', label: 'Conv.', type: 'percent'},
+      {key: 'performance', label: 'Perform.', type: 'text'},
+      {key: 'reviews', label: '# rev.', type: 'integer'},
+      {key: 'rating', label: 'rating', type: 'decimal'});
+    Object.assign(data.rows[0].values, {stock: 7, orders: 3, gmv: 600, clicks: 20,
+      salesPrice, conversion: 0.25, performance: 'HOT', reviews: 4, rating: 4.5,
+      averagePrice: 7777.77});
+    return data;
+  };
+  await page.respond(0, pricedReport('2026-09-07', 199.99));
+  const headers = page.byId('Head').children[1].children;
+  assert.deepEqual(headers.slice(0, 9).map(cell => cell.textContent),
+    ['Stock', 'Orders', 'GMV', 'Clicks', 'Sales Price (incl. VAT)', 'Conv.', 'Perform.', '# rev.', 'rating']);
+  assert.equal(page.byId('Head').children[0].children[1].colSpan, 9);
+  assert.equal(page.byId('Table').querySelectorAll('colgroup')[0].span, 10);
+  assert.equal(headers[7].dataset.frozenIndex, 8);
+  assert.equal(headers[8].dataset.frozenIndex, 9);
+  const row = page.byId('Body').children[0];
+  assert.equal(row.cells[5].textContent, '199.99');
+  assert.equal(row.cells[8].dataset.frozenIndex, 8);
+  assert.equal(row.cells[9].dataset.frozenIndex, 9);
+  assert.equal(row.cells.length, 12);
+  assert.doesNotMatch(page.byId('Head').textContent, /Average price/);
+  assert.doesNotMatch(row.textContent, /7,777/);
+  page.byId('DownloadCsv').click();
+  const header = 'Stock,Orders,GMV,Clicks,Sales Price (incl. VAT),Conv.,Perform.,# rev.,rating,Auto - Clicks,Total - Clicks';
+  assert.equal(await page.csv(), `\uFEFFWeek,${header}\r\n07 Sep 26 - 13 Sep 26,7,3,600,20,199.99,25.00%,HOT,4,4.50,5,5`);
+
+  page.periodSelect().value = 'month';
+  page.periodSelect().dispatch('change');
+  assert.equal(page.requests[1].url.searchParams.get('period'), 'month');
+  await page.respond(1, pricedReport('2026-09-01', 193.32));
+  assert.equal(page.byId('Body').children[0].cells[5].textContent, '193.32');
+  page.byId('DownloadCsv').click();
+  assert.equal(await page.csv(), `\uFEFFMonth,${header}\r\nSeptember 2026,7,3,600,20,193.32,25.00%,HOT,4,4.50,5,5`);
 });
 
 test('renders GMV as whole numbers and refreshes it for the selected period and product', async t => {

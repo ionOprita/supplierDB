@@ -266,7 +266,9 @@ export function initProductPerformance() {
         }
         cell.dataset.type = column.type;
         if (['stock', 'salesPrice'].includes(column.key) && row.values?.[column.key] === '???') {
-          cell.title = 'Multiple matching offers in the latest daily snapshot';
+          cell.title = column.key === 'salesPrice' && periodMode === 'month'
+            ? 'Multiple matching offers in a daily snapshot for this month'
+            : 'Multiple matching offers in the latest daily snapshot';
           cell.setAttribute('aria-label', cell.title);
         }
         markFrozen(cell, column.key);

@@ -68,14 +68,32 @@ the available daily reports, including the first/last stored period; missing dat
 filled with invented observations. The category accumulators are combined to produce
 Total, and the same calculator derives all rates after aggregation.
 
-Stock and Sales Price come from `offers_offer.ext_stock` and `ext_sale_price`. Offers are
-matched on vendor and the selected product's PNK (`doc_product_part_number_key`), with
-surrounding whitespace removed. For each displayed period, the latest `offers_snapshot`
-day for that vendor supplies the values. A day with exactly one matching offer supplies
-both fields; a missing snapshot, no matching offer, or a null field displays as “—”.
-A day with multiple matching offers displays “???” in both cells until a rule for
-combining them is established. An empty latest snapshot does not reuse older values.
-Offer snapshots do not create extra periods or affect advertising totals and errors.
+Stock and **Sales Price (incl. VAT)** come from daily offers matched on vendor and the
+selected product's PNK (`doc_product_part_number_key`), with surrounding whitespace
+removed. The existing `ext_stock <> 0` eligibility filter is retained: zero-stock offers
+and empty snapshot days do not supply observations. The latest eligible day in the period
+supplies Stock from `offers_offer.ext_stock`. Multiple matching offers on that day display
+“???”, and a missing stock field displays as “—”.
+
+The stored `ext_sale_price` is converted to a gross price using the same offer's
+`offers_stock.vat_id`, joined on vendor, snapshot date and offer ID. The eMAG Romania
+rate mapping, verified against `vat/read` on 2026-11-04, is ID 5 → 0%, ID 9 → 21%, and
+ID 10 → 11%. An unknown or missing ID leaves the price unavailable; no default rate is
+assumed. Conversion uses the full stored decimal price and `BigDecimal`, rounding each
+daily gross price to two decimals with HALF_EVEN. For example, 165.28 at 21% becomes
+199.99. Stored offers are not rewritten and page loads do not call the external API.
+
+In week mode, Sales Price uses the latest eligible day's gross price. In month mode,
+it is the arithmetic mean of available daily gross prices across the complete calendar
+month, rounded to two decimals with HALF_EVEN. Each observed day has one weight,
+independently of advertising activity and order quantities. Missing prices or VAT rates
+are omitted rather than counted as zero; valid zero prices are included. No available
+prices display “—”. If any eligible day in the month has multiple matching offers, the
+monthly price displays “???” instead of selecting or averaging an ambiguous value.
+Stock still uses the latest eligible day even when an earlier day makes monthly price
+ambiguous. Monthly prices are calculated from daily observations, never from weekly
+averages. The separate Average price column is removed from the API metadata, table
+and CSV. Offer-only periods do not create rows or affect advertising totals and errors.
 
 Orders appears immediately after Stock, before GMV, in the table and CSV. It is the
 number of **ordered product units**, using the same selection as Order Table, rather
@@ -148,7 +166,7 @@ distinct from a measured zero.
 ## Unsupported columns and errors
 
 The current sources support 66 advertising columns, plus Orders, GMV, Stock, and Sales Price.
-Overall product clicks/conversion, performance classification, average price, review count,
+Overall product clicks/conversion, performance classification, review count,
 and rating remain null. TACOS and Total's advertising shares of overall product clicks
 and sales also remain null: advertising summaries do not supply the required overall
 product denominators. These columns retain their positions without fabricated values.
@@ -166,10 +184,10 @@ an unknown product/vendor pairing returns HTTP 404, and database failures return
 ## Validation
 
 Unit tests cover weighted formulas, numeric/null serialization, classification errors,
-period boundaries, Orders/GMV period alignment and independence from advertising errors,
+period boundaries, daily/monthly gross-price aggregation, Orders/GMV period alignment and independence from advertising errors,
 unavailable columns, and empty inputs. PostgreSQL integration tests
 cover joins, active filters, product attribution, vendor isolation, classification,
-Order Table quantity parity, and dashboard quantities without join multiplication.
+Order Table quantity parity, VAT conversion and snapshot isolation, and dashboard quantities without join multiplication.
 Browser-script tests cover real period requests, stale responses, error details,
 selectors, Orders/GMV formatting and refreshes, CSV alignment, and row visibility.
 

@@ -143,44 +143,103 @@ class OffersTableIntegrationTest {
     }
 
     @Test
-    void readsDailyProductValuesWithoutMixingVendorsOrTreatingEmptySnapshotsAsOldValues() throws Exception {
+    void readsGrossDailyPricesAndKeepsTheExistingNonzeroStockSelection() throws Exception {
         OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(
                 offer("""
-                        {"id":"selected", "docProductPartNumberKey":" PNK-1 ", "extStock":0,
-                         "stock2p":99, "extSalePrice":19.87654321}
+                        {"id":"selected", "docProductPartNumberKey":" PNK-1 ", "extStock":7,
+                         "stock2p":99, "extSalePrice":165.28, "offerStock":{"vatId":9}}
+                        """),
+                offer("""
+                        {"id":"zero", "docProductPartNumberKey":"PNK-1", "extStock":0,
+                         "extSalePrice":999, "offerStock":{"vatId":9}}
                         """),
                 offer("""
                         {"id":"other", "docProductPartNumberKey":"PNK-2", "extStock":75,
                          "extSalePrice":5}
                         """)));
         OffersTable.storeSnapshot(db, secondVendor, FIRST_DAY, snapshot(offer("""
-                {"id":"foreign", "docProductPartNumberKey":"PNK-1", "extStock":999,
-                 "extSalePrice":1}
+                {"id":"selected", "docProductPartNumberKey":"PNK-1", "extStock":999,
+                 "extSalePrice":100, "offerStock":{"vatId":10}}
                 """)));
         OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY, snapshot(
                 offer("""
                         {"id":"first", "docProductPartNumberKey":"PNK-1", "extStock":2,
-                         "extSalePrice":20}
+                         "extSalePrice":20, "offerStock":{"vatId":5}}
                         """),
                 offer("""
                         {"id":"second", "docProductPartNumberKey":"PNK-1", "extStock":3,
-                         "extSalePrice":21}
+                         "extSalePrice":21, "offerStock":{"vatId":10}}
                         """)));
         OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY.plusDays(1), snapshot());
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY.plusDays(2), snapshot(offer("""
+                {"id":"only-zero", "docProductPartNumberKey":"PNK-1", "extStock":0,
+                 "extSalePrice":100, "offerStock":{"vatId":9}}
+                """)));
 
         var days = OffersTable.getDailyProductOffers(db, firstVendor, " PNK-1 ",
-                FIRST_DAY, SECOND_DAY.plusDays(1));
-        assertEquals(3, days.size());
-        assertEquals(new OffersTable.DailyProductOffer(FIRST_DAY, 1, 0,
-                new BigDecimal("19.87654321")), days.getFirst());
+                FIRST_DAY, SECOND_DAY.plusDays(2));
+        assertEquals(2, days.size(), "Empty snapshots and zero-stock-only days remain excluded");
+        assertEquals(new OffersTable.DailyProductOffer(FIRST_DAY, 1, 7,
+                new BigDecimal("199.99")), days.getFirst());
         assertEquals(2, days.get(1).matchingOffers());
-        assertEquals(0, days.getLast().matchingOffers());
-        assertNull(days.getLast().stock());
-        assertNull(days.getLast().salesPrice());
+        assertEquals(3, days.get(1).stock());
+        assertNull(days.get(1).salesPrice(), "Different eligible offers must not mix prices and VAT rates");
         assertEquals(List.of(), OffersTable.getDailyProductOffers(db, firstVendor, " ", FIRST_DAY,
                 SECOND_DAY.plusDays(1)));
-        assertEquals(1, OffersTable.getDailyProductOffers(db, secondVendor, "PNK-1", FIRST_DAY, FIRST_DAY)
-                .getFirst().matchingOffers());
+        assertEquals(new OffersTable.DailyProductOffer(FIRST_DAY, 1, 999, new BigDecimal("111.00")),
+                OffersTable.getDailyProductOffers(db, secondVendor, "PNK-1", FIRST_DAY, FIRST_DAY).getFirst());
+    }
+
+    @Test
+    void resolvesVatOnlyFromTheSameVendorDateAndOfferIdentity() throws SQLException {
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(
+                pricedOffer("shared", "PNK-1", "100", 9),
+                pricedOffer("different-offer", "PNK-2", "100", 5)));
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY,
+                snapshot(pricedOffer("shared", "PNK-1", "100", 10)));
+        OffersTable.storeSnapshot(db, secondVendor, FIRST_DAY,
+                snapshot(pricedOffer("shared", "PNK-1", "100", 5)));
+
+        assertEquals(List.of(
+                        new OffersTable.DailyProductOffer(FIRST_DAY, 1, 1, new BigDecimal("121.00")),
+                        new OffersTable.DailyProductOffer(SECOND_DAY, 1, 1, new BigDecimal("111.00"))),
+                OffersTable.getDailyProductOffers(db, firstVendor, "PNK-1", FIRST_DAY, SECOND_DAY));
+        assertEquals(new BigDecimal("100.00"),
+                OffersTable.getDailyProductOffers(db, secondVendor, "PNK-1", FIRST_DAY, FIRST_DAY)
+                        .getFirst().salesPrice());
+        assertEquals(new BigDecimal("100.00"),
+                OffersTable.getDailyProductOffers(db, firstVendor, "PNK-2", FIRST_DAY, FIRST_DAY)
+                        .getFirst().salesPrice());
+    }
+
+    @Test
+    void keepsUnknownVatAndMissingPricesUnavailableWithoutDiscardingStockOrNetPrecision() throws SQLException {
+        var unknownVat = pricedOffer("same", "PNK-1", "100", 1);
+        var missingVat = offer("""
+                {"id":"same", "docProductPartNumberKey":"PNK-1", "extStock":1,
+                 "extSalePrice":100, "offerStock":{}}
+                """);
+        var missingChild = offer("""
+                {"id":"same", "docProductPartNumberKey":"PNK-1", "extStock":1, "extSalePrice":100}
+                """);
+        var missingPrice = pricedOffer("same", "PNK-1", null, 9);
+        var zeroPrice = pricedOffer("same", "PNK-1", "0", 9);
+        var precisePrice = pricedOffer("same", "PNK-1", "0.014", 9);
+        var offers = List.of(unknownVat, missingVat, missingChild, missingPrice, zeroPrice, precisePrice);
+        for (int index = 0; index < offers.size(); index++) {
+            OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY.plusDays(index), snapshot(offers.get(index)));
+        }
+
+        var days = OffersTable.getDailyProductOffers(db, firstVendor, "PNK-1", FIRST_DAY,
+                FIRST_DAY.plusDays(offers.size() - 1));
+        assertEquals(offers.size(), days.size());
+        for (int index = 0; index < days.size(); index++) {
+            assertEquals(1, days.get(index).matchingOffers());
+            assertEquals(1, days.get(index).stock());
+            if (index < 4) assertNull(days.get(index).salesPrice());
+        }
+        assertEquals(new BigDecimal("0.00"), days.get(4).salesPrice());
+        assertEquals(new BigDecimal("0.02"), days.get(5).salesPrice(), "Round only after applying VAT");
     }
 
     @Test
@@ -343,6 +402,13 @@ class OffersTableIntegrationTest {
 
     private static Offer offer(String json) {
         return JSON.readValue(json, Offer.class);
+    }
+
+    private static Offer pricedOffer(String id, String pnk, String netPrice, int vatId) {
+        return offer("""
+                {"id":"%s", "docProductPartNumberKey":"%s", "extStock":1,
+                 "extSalePrice":%s, "offerStock":{"vatId":%d}}
+                """.formatted(id, pnk, netPrice, vatId));
     }
 
     private static Offer fullOffer(String id) throws ReflectiveOperationException {

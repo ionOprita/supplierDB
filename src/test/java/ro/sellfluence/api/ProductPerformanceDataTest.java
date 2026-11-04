@@ -35,12 +35,12 @@ class ProductPerformanceDataTest {
         assertFalse(response.mock());
         assertEquals(List.of("overview", "total", "auto", "broad", "exact", "product"),
                 response.groups().stream().map(ProductPerformanceData.ColumnGroup::key).toList());
-        assertEquals(List.of(11, 13, 15, 15, 15, 15),
+        assertEquals(List.of(10, 13, 15, 15, 15, 15),
                 response.groups().stream().map(group -> group.columns().size()).toList());
-        assertEquals(List.of("Week", "Stock", "Orders", "GMV", "Clicks", "Sales Price", "Conv.",
-                        "Perform.", "Average price", "# rev.", "rating"),
+        assertEquals(List.of("Week", "Stock", "Orders", "GMV", "Clicks", "Sales Price (incl. VAT)", "Conv.",
+                        "Perform.", "# rev.", "rating"),
                 response.groups().getFirst().columns().stream().map(ProductPerformanceData.Column::label).toList());
-        assertEquals(List.of("date", "integer", "integer", "integer", "integer", "decimal", "percent", "text", "decimal", "integer", "decimal"),
+        assertEquals(List.of("date", "integer", "integer", "integer", "integer", "decimal", "percent", "text", "integer", "decimal"),
                 response.groups().getFirst().columns().stream().map(ProductPerformanceData.Column::type).toList());
         var commonAdsLabels = List.of("Imp.", "Clicks", "Spend", "Sales", "Total Units Sold",
                 "CTR", "Conv.", "CPC", "ROAS", "ACOS", "TACOS");
@@ -64,8 +64,9 @@ class ProductPerformanceDataTest {
         }
         var keys = response.groups().stream().flatMap(group -> group.columns().stream())
                 .map(ProductPerformanceData.Column::key).toList();
-        assertEquals(84, keys.size());
-        assertEquals(84, new HashSet<>(keys).size());
+        assertEquals(83, keys.size());
+        assertEquals(83, new HashSet<>(keys).size());
+        assertFalse(keys.contains("averagePrice"));
         var values = response.rows().getFirst().values();
         assertEquals(new HashSet<>(keys), values.keySet());
         assertEquals(66, values.values().stream().filter(Number.class::isInstance).count());
@@ -498,7 +499,7 @@ class ProductPerformanceDataTest {
     }
 
     @Test
-    void usesLatestOfferSnapshotInEachExistingWeekOrMonth() {
+    void usesLatestWeeklyPriceAndMonthlyAverageWhileStockAlwaysUsesTheLatestOffer() {
         assertEquals(LocalDate.parse("2026-09-13"), WEEK.end(LocalDate.parse("2026-09-07")));
         assertEquals(LocalDate.parse("2026-09-30"), MONTH.end(LocalDate.parse("2026-09-14")));
         var ads = List.of(
@@ -521,8 +522,69 @@ class ProductPerformanceDataTest {
         var months = ProductPerformanceData.create(PRODUCT, MONTH, ads, offers).rows();
         assertEquals(1, months.size(), "An offer-only month must not create an advertising row");
         assertEquals(9, months.getFirst().values().get("stock"));
-        assertEquals(new BigDecimal("15.125"), months.getFirst().values().get("salesPrice"));
+        assertEquals(new BigDecimal("13.90"), months.getFirst().values().get("salesPrice"));
         assertEquals(3L, months.getFirst().values().get("total_clicks"));
+    }
+
+    @Test
+    void monthlyPriceGivesEveryAvailableGrossDailyPriceOneWeightWithoutAveragingWeeks() {
+        var ads = List.of(snapshot("2026-09-08", "auto", List.of(), metrics(1, 1, "1", "1", 1, 1)));
+        var offers = new ArrayList<DailyProductOffer>();
+        for (int day = 7; day <= 13; day++) offers.add(offer(LocalDate.of(2026, 9, day).toString(), 1, day, "100.00"));
+        offers.add(offer("2026-09-14", 1, 88, "200.00"));
+
+        var values = ProductPerformanceData.create(PRODUCT, MONTH, ads, offers).rows().getFirst().values();
+
+        assertEquals(new BigDecimal("112.50"), values.get("salesPrice"));
+        assertEquals(88, values.get("stock"));
+        assertEquals(1L, values.get("auto_impressions"));
+    }
+
+    @Test
+    void monthlyPriceAveragesObservedDaysAcrossTheWholeMonthAndOmitsUnavailableDays() {
+        var ads = List.of(snapshot("2026-09-08", "unsupported", List.of(), metrics(1, 1, "1", "1", 1, 1)));
+        var offers = List.of(
+                offer("2026-09-01", 1, 9, "199.99"),
+                offer("2026-09-02", 1, 8, null),
+                offer("2026-09-03", 1, 7, "179.99"),
+                offer("2026-09-04", 0, null, "999.99"),
+                offer("2026-09-05", 1, 6, "199.99"),
+                offer("2026-10-01", 1, 99, "999.99"));
+
+        var response = ProductPerformanceData.create(PRODUCT, MONTH, ads, offers);
+        var values = response.rows().getFirst().values();
+
+        assertEquals(new BigDecimal("193.32"), values.get("salesPrice"));
+        assertEquals(6, values.get("stock"));
+        assertEquals(1, response.rows().size());
+        assertEquals("UNKNOWN_TARGETING", response.errors().getFirst().code());
+        assertNull(values.get("total_units"), "Advertising errors do not invalidate independent offer prices");
+    }
+
+    @Test
+    void monthlyPriceIncludesValidZeroAndRoundsHalfEvenWhileMissingPricesRemainUnavailable() {
+        var ads = List.of(snapshot("2026-09-08", "auto", List.of(), metrics(1, 1, "1", "1", 1, 1)));
+        var offers = List.of(offer("2026-09-07", 1, 9, "0.00"),
+                offer("2026-09-08", 1, 8, null), offer("2026-09-09", 1, 7, "0.01"));
+
+        var values = ProductPerformanceData.create(PRODUCT, MONTH, ads, offers).rows().getFirst().values();
+        assertEquals(new BigDecimal("0.00"), values.get("salesPrice"), "0.005 rounds HALF_EVEN and zero gets a full day's weight");
+        assertNull(ProductPerformanceData.create(PRODUCT, MONTH, ads,
+                List.of(offer("2026-09-08", 1, 8, null))).rows().getFirst().values().get("salesPrice"));
+    }
+
+    @Test
+    void anEarlierAmbiguousDayMakesMonthlyPriceUnknownWhileLatestStockAndWeeklyPriceStayIndependent() {
+        var ads = List.of(snapshot("2026-09-08", "auto", List.of(), metrics(1, 1, "1", "1", 1, 1)));
+        var offers = List.of(offer("2026-09-08", 2, 99, "100.00"), offer("2026-09-09", 1, 8, "199.99"));
+
+        var month = ProductPerformanceData.create(PRODUCT, MONTH, ads, offers).rows().getFirst().values();
+        var week = ProductPerformanceData.create(PRODUCT, WEEK, ads, offers).rows().getFirst().values();
+
+        assertEquals("???", month.get("salesPrice"));
+        assertEquals(8, month.get("stock"));
+        assertEquals(new BigDecimal("199.99"), week.get("salesPrice"));
+        assertEquals(8, week.get("stock"));
     }
 
     @Test
