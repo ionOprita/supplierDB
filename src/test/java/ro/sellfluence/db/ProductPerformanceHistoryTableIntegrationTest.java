@@ -143,6 +143,84 @@ class ProductPerformanceHistoryTableIntegrationTest {
     }
 
     @Test
+    void latestNullCorrectionClearsTheRatingWithoutRevivingOlderEvidenceOrAffectingOtherIdentities() throws Exception {
+        ProductPerformanceHistoryTable.storeBatch(db, new ImportBatch(hash('a'), "{\"revision\":1}", List.of(
+                observation(firstVendor, "P1", DAY, "rating", Map.of("rating", new BigDecimal("4.9")), "original"),
+                observation(firstVendor, "P1", DAY.minusDays(7), "rating",
+                        Map.of("rating", new BigDecimal("4.8")), "original"),
+                observation(firstVendor, "P1", DAY, "reviews", Map.of("reviews", 20), "original"),
+                observation(secondVendor, "P2", DAY, "rating",
+                        Map.of("rating", new BigDecimal("3.9")), "original"))));
+        assertEquals(new BigDecimal("4.9"), history(firstVendor, "P1", DAY, "rating").values().get("rating"));
+
+        ProductPerformanceHistoryTable.storeBatch(db, new ImportBatch(hash('b'), "{\"revision\":2}", List.of(
+                observation(firstVendor, "P1", DAY, "rating", Map.of("rating", new BigDecimal("4.7")), "corrected"))));
+        assertEquals(new BigDecimal("4.7"), history(firstVendor, "P1", DAY, "rating").values().get("rating"));
+
+        var clearedValues = new LinkedHashMap<String, Object>();
+        clearedValues.put("rating", null);
+        clearedValues.put("familyId", "family-1");
+        var clearBatch = new ImportBatch(hash('c'), "{\"revision\":3,\"rating\":null}", List.of(
+                observation(firstVendor, "P1", DAY, "rating", clearedValues, "cleared")));
+        var cleared = ProductPerformanceHistoryTable.storeBatch(db, clearBatch);
+        db.commit();
+
+        var latest = history(firstVendor, "P1", DAY, "rating");
+        assertTrue(latest.values().containsKey("rating"));
+        assertNull(latest.values().get("rating"));
+        assertFalse(latest.hasMetricValues());
+        assertEquals("cleared", latest.sourceSpreadsheetId());
+        var repeated = ProductPerformanceHistoryTable.storeBatch(db, clearBatch);
+        assertFalse(repeated.inserted());
+        assertEquals(cleared.batchId(), repeated.batchId());
+        assertEquals(1, repeated.observationCount());
+        assertEquals(3, count("SELECT COUNT(*) FROM product_performance_history_batch"));
+        assertEquals(6, count("SELECT COUNT(*) FROM product_performance_history_observation"));
+
+        assertEquals(new BigDecimal("4.8"),
+                history(firstVendor, "P1", DAY.minusDays(7), "rating").values().get("rating"));
+        assertEquals(BigInteger.valueOf(20), history(firstVendor, "P1", DAY, "reviews").values().get("reviews"));
+        assertEquals(new BigDecimal("3.9"), history(secondVendor, "P2", DAY, "rating").values().get("rating"));
+        try (var statement = db.prepareStatement("""
+                SELECT o.metric_values ->> 'rating' AS rating
+                FROM product_performance_history_observation o
+                JOIN product_performance_history_batch b ON b.id = o.batch_id
+                WHERE o.vendor_id = ? AND o.product_code = 'P1' AND o.observation_date = ? AND o.domain = 'rating'
+                ORDER BY b.revision
+                """)) {
+            statement.setObject(1, firstVendor);
+            statement.setObject(2, DAY);
+            try (var rows = statement.executeQuery()) {
+                assertTrue(rows.next());
+                assertEquals("4.9", rows.getString("rating"));
+                assertTrue(rows.next());
+                assertEquals("4.7", rows.getString("rating"));
+                assertTrue(rows.next());
+                assertNull(rows.getString("rating"));
+                assertFalse(rows.next());
+            }
+        }
+    }
+
+    @Test
+    void aDeletedSourceRowArchivedInAnEmptyBatchDoesNotDeleteItsPriorObservations() throws Exception {
+        ProductPerformanceHistoryTable.storeBatch(db, new ImportBatch(hash('a'), "{\"rows\":[1]}", List.of(
+                observation(firstVendor, "P1", DAY, "rating", Map.of("rating", new BigDecimal("4.9")), "original"))));
+        var deletedRowBatch = new ImportBatch(hash('b'), "{\"rows\":[]}", List.of());
+
+        var archived = ProductPerformanceHistoryTable.storeBatch(db, deletedRowBatch);
+        var repeated = ProductPerformanceHistoryTable.storeBatch(db, deletedRowBatch);
+
+        assertTrue(archived.inserted());
+        assertEquals(0, archived.observationCount());
+        assertFalse(repeated.inserted());
+        assertEquals(archived.batchId(), repeated.batchId());
+        assertEquals(new BigDecimal("4.9"), history(firstVendor, "P1", DAY, "rating").values().get("rating"));
+        assertEquals(2, count("SELECT COUNT(*) FROM product_performance_history_batch"));
+        assertEquals(1, count("SELECT COUNT(*) FROM product_performance_history_observation"));
+    }
+
+    @Test
     void refusesWrongAccountAndRollsBackTheBatchWithTheCallerTransaction() throws Exception {
         var batch = new ImportBatch(hash('c'), "{}", List.of(
                 observation(firstVendor, "P1", DAY, "organic", Map.of("clicks", 20), "source"),
@@ -205,6 +283,12 @@ class ProductPerformanceHistoryTableIntegrationTest {
                                     Map<String, Object> values, String spreadsheet) {
         return new Observation(vendor, product, "PNK-" + product, date, domain, values,
                 spreadsheet, 12, "Product's history", "A7:CE7");
+    }
+
+    private Observation history(UUID vendor, String product, LocalDate date, String domain) throws SQLException {
+        return ProductPerformanceHistoryTable.getProductPerformanceHistory(db, vendor, product).stream()
+                .filter(row -> row.observationDate().equals(date) && row.domain().equals(domain))
+                .findFirst().orElseThrow();
     }
 
     private static String hash(char value) {

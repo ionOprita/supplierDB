@@ -20,6 +20,7 @@ import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
 import ro.sellfluence.db.ProductPerformanceSource;
+import ro.sellfluence.db.ProductPerformanceHistoryTable.Observation;
 import ro.sellfluence.db.Task;
 import ro.sellfluence.db.TaskHistory;
 import ro.sellfluence.support.DoubleWindow;
@@ -207,12 +208,16 @@ public class API {
         if (firstAd.isPresent() && (firstActivity.isEmpty() || firstAd.get().isBefore(firstActivity.get()))) {
             firstActivity = firstAd;
         }
-        var firstHistorical = history.stream().map(it -> it.observationDate()).min(LocalDate::compareTo);
+        // Explicit blanks supersede old source values but do not establish product activity.
+        // Keep them in history for report selection; only exclude them from period boundaries.
+        var firstHistorical = history.stream().filter(Observation::hasMetricValues)
+                .map(Observation::observationDate).min(LocalDate::compareTo);
         if (firstHistorical.isPresent() && (firstActivity.isEmpty() || firstHistorical.get().isBefore(firstActivity.get()))) {
             firstActivity = firstHistorical;
         }
         var latestSnapshot = source.getLatestCompletedProductVisitsSnapshotDate(vendorId, today);
-        var latestHistorical = history.stream().map(it -> it.observationDate()).filter(it -> it.isBefore(today))
+        var latestHistorical = history.stream().filter(Observation::hasMetricValues)
+                .map(Observation::observationDate).filter(it -> it.isBefore(today))
                 .max(LocalDate::compareTo);
         if (latestHistorical.isPresent() && (latestSnapshot.isEmpty() || latestHistorical.get().isAfter(latestSnapshot.get()))) {
             latestSnapshot = latestHistorical;

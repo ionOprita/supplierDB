@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -140,6 +141,67 @@ class ProductPerformanceReportTest {
     private static Observation history(String date, String clicks) {
         return new Observation(VENDOR, "CODE", "PNK", date(date), "organic",
                 Map.of("clicks", new BigDecimal(clicks)), "source", 1, "Organic", "G4:L4");
+    }
+
+    @Test
+    void explicitBlanksWithSourceMetadataDoNotCreateActivityOrTriggerMetricReads() throws Exception {
+        var source = new Source();
+        source.history = List.of(emptyHistory("2023-12-29", "rating", "rating"),
+                emptyHistory("2026-10-30", "organic", "clicks"),
+                emptyHistory("2026-11-05", "ads", "auto_clicks"));
+
+        var response = API.buildProductPerformance(source, PRODUCT, VENDOR, "CODE", THIRTY_DAYS,
+                Clock.fixed(Instant.parse("2026-11-06T10:00:00Z"), ZoneOffset.UTC));
+
+        assertTrue(response.rows().isEmpty());
+        assertEquals(0, source.gmvReads);
+        assertEquals(0, source.netSalesReads);
+        assertEquals(0, source.visitsReads);
+        assertEquals(0, source.hotnessReads);
+    }
+
+    @Test
+    void emptyObservationsCannotExtendNativeHistoryOrAdvanceTheRollingPreview() throws Exception {
+        var source = new Source();
+        source.first = date("2026-10-01");
+        source.latest = date("2026-11-04");
+        source.history = List.of(emptyHistory("2023-12-29", "reviews", "reviews"),
+                emptyHistory("2026-11-05", "organic", "clicks"),
+                emptyHistory("2026-11-05", "ads", "auto_clicks"));
+
+        var response = API.buildProductPerformance(source, PRODUCT, VENDOR, "CODE", THIRTY_DAYS,
+                Clock.fixed(Instant.parse("2026-11-06T10:00:00Z"), ZoneOffset.UTC));
+
+        assertEquals(List.of(date("2026-10-31"), date("2026-11-04")),
+                response.rows().stream().map(row -> row.period().endDate()).toList());
+        assertEquals(List.of(date("2026-10-02"), date("2026-11-04")), source.offerBounds);
+        assertEquals(99L, response.rows().getLast().values().get("clicks"));
+    }
+
+    @Test
+    void clearedLatestHistoryDoesNotCreateAPreviewAfterTheLastValuedObservation() throws Exception {
+        var source = new Source();
+        source.history = List.of(history("2026-10-30", "80"),
+                emptyHistory("2026-11-05", "organic", "clicks"));
+
+        var response = API.buildProductPerformance(source, PRODUCT, VENDOR, "CODE", THIRTY_DAYS,
+                Clock.fixed(Instant.parse("2026-11-06T10:00:00Z"), ZoneOffset.UTC));
+
+        assertEquals(List.of(date("2026-10-31")),
+                response.rows().stream().map(row -> row.period().endDate()).toList());
+        assertEquals(new BigDecimal("80"), response.rows().getFirst().values().get("clicks"));
+        assertFalse(response.rows().getFirst().period().provisional());
+    }
+
+    private static Observation emptyHistory(String date, String domain, String metric) {
+        var values = new LinkedHashMap<String, Object>();
+        values.put(metric, null);
+        values.put("familyId", 123);
+        values.put("sourceStartDate", "2026-10-07");
+        values.put("sourceEndDate", date);
+        values.put("sourceWindowDays", 30);
+        return new Observation(VENDOR, "CODE", "PNK", date(date), domain, values,
+                "source", 1, "History", "G4:L4");
     }
 
     @Test

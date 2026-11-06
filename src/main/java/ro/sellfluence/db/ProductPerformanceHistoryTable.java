@@ -23,6 +23,11 @@ import java.util.UUID;
 /** Immutable spreadsheet evidence, kept separate from native orders, offers and Ads observations. */
 public final class ProductPerformanceHistoryTable {
     private static final Set<String> DOMAINS = Set.of("organic", "ads", "reviews", "rating");
+    private static final Set<String> ORGANIC_METRICS = Set.of(
+            "stock", "gmv", "clicks", "salesPrice", "sourceConversion", "performance");
+    private static final Set<String> ADS_CATEGORIES = Set.of("auto", "broad", "exact", "product");
+    private static final Set<String> ADS_PRIMITIVES = Set.of(
+            "impressions", "clicks", "spend", "sales", "units", "salesCount");
     private static final JsonMapper JSON = JsonMapper.builder()
             .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
             .enable(DeserializationFeature.USE_BIG_INTEGER_FOR_INTS)
@@ -53,6 +58,26 @@ public final class ProductPerformanceHistoryTable {
             requireText(sourceSheet, "sourceSheet");
             requireText(sourceRange, "sourceRange");
         }
+
+        /** Empty corrections remain stored as evidence, but cannot supply report metrics or date anchors. */
+        public boolean hasMetricValues() {
+            return values.entrySet().stream().anyMatch(entry -> isMetricKey(domain, entry.getKey())
+                    && entry.getValue() != null
+                    && !(entry.getValue() instanceof String text && text.isBlank()));
+        }
+    }
+
+    private static boolean isMetricKey(String domain, String key) {
+        return switch (domain) {
+            case "organic" -> ORGANIC_METRICS.contains(key);
+            case "reviews", "rating" -> domain.equals(key);
+            case "ads" -> {
+                int separator = key.lastIndexOf('_');
+                yield separator > 0 && ADS_CATEGORIES.contains(key.substring(0, separator))
+                        && ADS_PRIMITIVES.contains(key.substring(separator + 1));
+            }
+            default -> false;
+        };
     }
 
     /**

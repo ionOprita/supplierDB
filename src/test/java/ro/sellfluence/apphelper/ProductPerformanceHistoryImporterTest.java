@@ -133,6 +133,93 @@ class ProductPerformanceHistoryImporterTest {
         assertTrue(result.diagnostics().stream().anyMatch(d->d.code().equals("duplicate_observation")));
     }
 
+    @Test void retainsExplicitlyClearedRatingWithItsDateAndSourceIdentity() {
+        var fixture=new Fixture();
+        var original=fixture.run(PRODUCTS);
+        fixture.set("report","Rating Fam./W.",4,6,null);
+        var result=fixture.run(PRODUCTS);
+        assertTrue(result.complete(),result.diagnostics().toString());
+        var rating=result.observations().stream().filter(o->o.domain().equals("rating")).findFirst().orElseThrow();
+        assertTrue(rating.values().containsKey("rating"));
+        assertNull(rating.values().get("rating"));
+        assertEquals(new BigDecimal("123"),rating.values().get("familyId"));
+        assertEquals(LocalDate.of(2023,12,29),rating.observationDate());
+        assertEquals("F4:F4",rating.sourceRange());
+        assertEquals("report",rating.sourceSpreadsheetId());
+        assertNotEquals(original.contentHash(),result.contentHash());
+        assertEquals(result.contentHash(),fixture.run(PRODUCTS).contentHash());
+        assertTrue(result.sourcePayloadJson().contains("product-performance-history-v2"));
+    }
+
+    @Test void retainsEntirelyClearedOrganicAndAdsSnapshotsWithoutInventingZeroes() {
+        var fixture=new Fixture();
+        for(int column=7;column<=12;column++)fixture.set("report","Date Organic/W.",4,column,null);
+        for(int column=7;column<=30;column++)fixture.set("report","eMAG ADS/W.",5,column,null);
+        // Matching raw values are nonzero, so blank matrix cells have no proof of zero.
+        for(int column:new int[]{11,12,15,18,19,20})fixture.set("raw","Introd. Date",4,column,1);
+        var result=fixture.run(PRODUCTS);
+        assertTrue(result.complete(),result.diagnostics().toString());
+        var organic=result.observations().stream().filter(o->o.domain().equals("organic")).findFirst().orElseThrow();
+        assertEquals(DATE,organic.observationDate());
+        for(String metric:List.of("stock","gmv","clicks","salesPrice","sourceConversion","performance")) {
+            assertTrue(organic.values().containsKey(metric),metric);
+            assertNull(organic.values().get(metric),metric);
+        }
+        assertEquals("2026-04-02",organic.values().get("sourceStartDate"));
+        var ads=result.observations().stream().filter(o->o.domain().equals("ads")).findFirst().orElseThrow();
+        for(String category:List.of("auto","broad","exact","product")) {
+            for(String metric:List.of("impressions","clicks","spend","sales","units","salesCount")) {
+                String key=category+"_"+metric;
+                assertTrue(ads.values().containsKey(key),key);
+                assertNull(ads.values().get(key),key);
+            }
+        }
+        assertFalse(ads.values().containsKey("zeroRestoredMetrics"));
+    }
+
+    @Test void retainsAnIndividualClearedMetricAlongsideTheOtherObservedValues() {
+        var fixture=new Fixture();
+        fixture.set("report","Date Organic/W.",4,9,null);
+        var result=fixture.run(PRODUCTS);
+        assertTrue(result.complete(),result.diagnostics().toString());
+        var organic=result.observations().stream().filter(o->o.domain().equals("organic")).findFirst().orElseThrow();
+        assertTrue(organic.values().containsKey("clicks"));
+        assertNull(organic.values().get("clicks"));
+        assertEquals(BigDecimal.ZERO,organic.values().get("stock"));
+        assertEquals(new BigDecimal("199.99"),organic.values().get("salesPrice"));
+    }
+
+    @Test void missingRowsAndUnresolvedIdentitiesDoNotEmitWithdrawals() {
+        var removed=new Fixture();
+        for(int column=1;column<=18;column++)removed.set("report","Date Organic/W.",4,column,null);
+        var result=removed.run(PRODUCTS);
+        assertTrue(result.complete(),result.diagnostics().toString());
+        assertTrue(result.observations().stream().noneMatch(o->o.domain().equals("organic")));
+        assertEquals(3,result.observations().size());
+
+        var unresolved=new Fixture();
+        unresolved.set("report","Date Organic/W.",4,2,"Unverified source product");
+        result=unresolved.run(PRODUCTS);
+        assertTrue(result.complete(),result.diagnostics().toString());
+        assertTrue(result.observations().stream().noneMatch(o->o.domain().equals("organic")));
+        assertTrue(result.diagnostics().stream().anyMatch(d->d.code().equals("unresolved_source_row")));
+    }
+
+    @Test void explicitBlanksStayWithinTheSelectedSourceAndCutoff() {
+        var fixture=new Fixture();
+        for(int column=7;column<=18;column++)fixture.set("report","Date Organic/W.",4,column,null);
+        var result=fixture.run(PRODUCTS);
+        assertTrue(result.complete(),result.diagnostics().toString());
+        assertTrue(result.observations().stream().allMatch(o->o.sourceSpreadsheetId().equals("report")));
+        assertTrue(result.observations().stream().noneMatch(o->o.observationDate().isAfter(DATE)));
+        assertEquals(1,result.observations().stream().filter(o->o.domain().equals("organic")).count());
+        var later=new ProductPerformanceHistoryImporter(fixture,PRODUCTS,DATE.plusDays(7))
+                .read(List.of(new Source("test","report")));
+        assertEquals(2,later.observations().stream().filter(o->o.domain().equals("organic")).count());
+        assertTrue(later.observations().stream().filter(o->o.domain().equals("organic"))
+                .allMatch(o->o.values().get("clicks")==null));
+    }
+
     private static long serial(LocalDate date){return java.time.temporal.ChronoUnit.DAYS.between(LocalDate.of(1899,12,30),date);}
     private static final class Fixture implements Reader {
         final Map<String,Map<String,List<List<Object>>>> data=new HashMap<>();

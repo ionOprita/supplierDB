@@ -111,6 +111,107 @@ class ProductPerformanceHistoryTest {
     }
 
     @Test
+    void newestExplicitlyEmptyRatingAndReviewsSuppressOlderObservationsWithinTheSevenDayWindow() {
+        for (int days : List.of(14, 30)) {
+            var row = apply(nativeReport(period(days), List.of()), List.of(
+                    observation("rating", "2026-05-10", Map.of("rating", bd("4.98"))),
+                    observation("reviews", "2026-05-10", Map.of("reviews", 200)),
+                    observation("rating", "2026-05-15", blankValues("rating")),
+                    observation("reviews", "2026-05-15", blankValues("reviews"))), Set.of());
+            for (String key : List.of("rating", "reviews")) {
+                assertNull(row.values().get(key), "A withdrawn observation must stay unknown: " + key);
+                assertFalse(row.cellProvenance().containsKey(key), key);
+            }
+        }
+    }
+
+    @Test
+    void explicitOrganicBlanksWithdrawOnlyThoseEstimatesWithoutResurrectingOlderValues() {
+        for (int days : List.of(14, 30)) {
+            var newest = blankValues("clicks", "salesPrice");
+            newest.put("stock", 8);
+            newest.put("performance", "");
+            var row = apply(nativeReport(period(days), List.of()), List.of(
+                    observation("organic", "2026-05-10", Map.of("stock", 1, "clicks", 300,
+                            "salesPrice", bd("199.99"), "performance", "SUPER HOT")),
+                    observation("organic", "2026-05-15", newest)), Set.of());
+            assertNumber(row.values(), "stock", bd("8"));
+            assertEquals("estimated", row.cellProvenance().get("stock").quality());
+            assertEquals(date("2026-05-15"), row.cellProvenance().get("stock").sourceDate());
+            for (String key : List.of("clicks", "salesPrice", "performance", "conversion")) {
+                assertNull(row.values().get(key), "Blank history must not become a zero or an older value: " + key);
+                assertFalse(row.cellProvenance().containsKey(key), key);
+            }
+            assertEquals("missing", row.visitsStatus());
+            assertEquals("missing", row.performanceStatus());
+            assertNumber(row.values(), "orders", bd("2"));
+            assertNumber(row.values(), "totalSales", bd("100"));
+        }
+    }
+
+    @Test
+    void allEmptyHistoricalDomainsPreserveNativeMetricsAndFlagAvailableNativeAdsAsPartial() {
+        for (int days : List.of(14, 30)) {
+            var period = period(days);
+            var report = ProductPerformanceData.create(PRODUCT, List.of(period),
+                    List.of(ad(period.endDate(), "auto", List.of(), metrics())),
+                    List.of(new DailyProductOffer(period.endDate(), 1, 7, bd("199.99"))),
+                    Map.of(period.startDate(), bd("121")), Map.of(period.startDate(), 2L),
+                    Map.of(period.endDate(), visits(period, 60)), Map.of(period.startDate(), bd("100")),
+                    Map.of(period.endDate(), new ProductHotness("available", "hot", "Hot", period.endDate())));
+            report = withValues(report, Map.of("reviews", 123, "rating", bd("4.7")));
+            var blankAds = adsValues();
+            blankAds.replaceAll((key, ignored) -> null);
+            var row = apply(report, List.of(
+                    observation("organic", "2026-05-10", Map.of("stock", 99, "clicks", 999,
+                            "salesPrice", bd("999"), "performance", "SUPER HOT")),
+                    observation("ads", "2026-05-10", historicalAds(99)),
+                    observation("organic", "2026-05-15", blankValues("stock", "clicks", "salesPrice", "performance")),
+                    observation("ads", "2026-05-15", blankAds),
+                    observation("rating", "2026-05-15", blankValues("rating")),
+                    observation("reviews", "2026-05-15", blankValues("reviews"))), Set.of(period.endDate()));
+            for (String key : List.of("stock", "clicks", "salesPrice", "orders", "totalSales", "gmv", "reviews", "rating")) {
+                assertEquals(report.rows().getFirst().values().get(key), row.values().get(key), key);
+                assertFalse(row.cellProvenance().containsKey(key), key);
+            }
+            assertEquals("Hot", row.values().get("performance"));
+            assertEquals("available", row.visitsStatus());
+            assertEquals("available", row.performanceStatus());
+            assertFalse(row.cellProvenance().containsKey("performance"));
+            assertNumber(row.values(), "auto_clicks", bd("10"));
+            assertNumber(row.values(), "total_spend", bd("1"));
+            assertNumber(row.values(), "total_sales", bd("20"));
+            assertNear(row.values(), "total_clicks_share", bd("10").divide(bd("60"), PRECISION));
+            for (String key : List.of("auto_clicks", "total_spend", "total_sales", "total_tacos", "total_clicks_share")) {
+                assertEquals("partial", row.cellProvenance().get(key).quality(), key);
+                assertTrue(row.cellProvenance().get(key).method().contains("1/" + days), key);
+            }
+        }
+    }
+
+    @Test
+    void measuredHistoricalZeroRemainsEligibleAndReplacesPartialNativeAdsInsteadOfBeingTreatedAsEmpty() {
+        for (int days : List.of(14, 30)) {
+            var period = period(days);
+            var report = nativeReport(period, List.of(ad(period.endDate(), "auto", List.of(), metrics())));
+            var row = apply(report, List.of(
+                    observation("organic", "2026-05-15", Map.of("stock", 0, "clicks", 0,
+                            "salesPrice", BigDecimal.ZERO)),
+                    observation("ads", "2026-05-15", adsValues()),
+                    observation("rating", "2026-05-15", Map.of("rating", BigDecimal.ZERO)),
+                    observation("reviews", "2026-05-15", Map.of("reviews", 0))), Set.of(period.endDate()));
+            for (String key : List.of("stock", "clicks", "salesPrice", "rating", "reviews", "auto_clicks", "total_spend", "total_sales")) {
+                assertNumber(row.values(), key, BigDecimal.ZERO);
+                assertEquals("estimated", row.cellProvenance().get(key).quality(), key);
+            }
+            assertEquals("estimated", row.visitsStatus());
+            assertNull(row.values().get("conversion"), "Zero visits cannot produce a conversion percentage");
+            assertNumber(row.values(), "orders", bd("2"));
+            assertNumber(row.values(), "totalSales", bd("100"));
+        }
+    }
+
+    @Test
     void measuredNativeZeroAndNativeClassificationTakePrecedenceOverHistoricalOrganicValues() {
         var period = period(14);
         var visits = visits(period, 0L);
@@ -338,6 +439,12 @@ class ProductPerformanceHistoryTest {
         for (String category : CATEGORIES) for (String primitive : PRIMITIVES) {
             values.put(category + "_" + primitive, BigDecimal.ZERO);
         }
+        return values;
+    }
+
+    private static Map<String, Object> blankValues(String... keys) {
+        var values = new LinkedHashMap<String, Object>();
+        for (String key : keys) values.put(key, null);
         return values;
     }
 

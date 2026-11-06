@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
 
 /** Read-only source acquisition and deterministic parsing for the approved historical reports. */
 public final class ProductPerformanceHistoryImporter {
-    public static final String PARSER_VERSION = "product-performance-history-v1";
+    public static final String PARSER_VERSION = "product-performance-history-v2";
     private static final Gson JSON = new GsonBuilder().serializeNulls().disableHtmlEscaping().create();
     private static final LocalDate SHEETS_EPOCH = LocalDate.of(1899, 12, 30);
     private static final Pattern IMPORT_ID = Pattern.compile("/spreadsheets/d/([A-Za-z0-9_-]+)");
@@ -280,7 +280,8 @@ public final class ProductPerformanceHistoryImporter {
             }
             for (var entry : byDate.entrySet()) {
                 var values = entry.getValue();
-                if (values.values().stream().allMatch(Objects::isNull)) continue;
+                // An explicitly blank dated snapshot must supersede any previously imported
+                // values. Missing source rows/identities still produce no observation.
                 if (family) values.put("familyId", normalized(cell(idRows, r, 4)));
                 else {
                     values.put("sourceStartDate", entry.getKey().minusDays(29).toString());

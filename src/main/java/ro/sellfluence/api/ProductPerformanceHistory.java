@@ -60,7 +60,8 @@ final class ProductPerformanceHistory {
             boolean attributionError = nativeReport.errors().stream().anyMatch(error ->
                     !error.reportDate().isBefore(period.startDate()) && !error.reportDate().isAfter(period.endDate()));
             var historicalAds = select(history, "ads", period.endDate());
-            if (observedDays < period.windowDays() && historicalAds != null && !attributionError) {
+            if (observedDays < period.windowDays() && historicalAds != null
+                    && historicalAds.hasMetricValues() && !attributionError) {
                 // Replace the whole block, not just holes in a partial native report.
                 for (var key : adsKeys) {
                     values.put(key, null);
@@ -97,6 +98,7 @@ final class ProductPerformanceHistory {
     }
 
     private static Observation select(List<Observation> history, String domain, LocalDate end) {
+        // Select explicit blanks too: filtering them out would resurrect an older source value.
         return history.stream().filter(observation -> domain.equals(observation.domain())
                         && !observation.observationDate().isAfter(end)
                         && ChronoUnit.DAYS.between(observation.observationDate(), end) <= 7)

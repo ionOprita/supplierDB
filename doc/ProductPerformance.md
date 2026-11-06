@@ -346,6 +346,11 @@ Each domain independently selects its **newest observation at or before the repo
 a maximum lag of seven days. It uses one coherent snapshot for that domain; an empty metric in
 the newest snapshot is not filled from an older snapshot, and future observations are never used.
 Weekly Last30 observations overlap and are never added together or differenced into daily data.
+Explicitly blank dated snapshots are retained when reimported, so clearing source metrics can
+withdraw prior historical values. Empty snapshots do not extend the report's date range or create
+provisional previews. Deleting a source row/header preserves earlier history, and unresolved
+identities do not withdraw verified observations. Reimport requires a newly reviewed v2 parser hash;
+existing raw batches remain immutable and the correction needs no new schema migration.
 
 The 30-day mode uses an eligible Last30 cumulative value unchanged. The 14-day mode estimates
 it as `Last30 × 14/30`, assuming uniform activity. This applies to product Clicks and the six Ads

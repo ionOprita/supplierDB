@@ -50,7 +50,8 @@ The weekly Organic and Ads entries are observations of **rolling 30-day totals**
 the owner. They are not seven-day increments. The original observation date is preserved; it is
 never replaced by the import date. Organic and Ads records retain `sourceStartDate`,
 `sourceEndDate`, and `sourceWindowDays`. The dates are inclusive and end on the source observation
-date. Headers with no measurements do not generate observations, and future headers are ignored.
+date. Future headers are ignored. For an identified product and dated source column, explicitly
+blank metrics are retained as nulls, including when every metric in that domain is blank.
 Review/rating observations are point-in-time family measurements, including older history.
 
 `salesPrice` in the Organic source already includes VAT. The source `gmv` and `sourceConversion`
@@ -143,6 +144,19 @@ the original batch without duplicating observations. Corrections produce a new i
 report reads select the newest normalized revision for each product/date/domain. Prior raw batches
 remain available for audit.
 
+Parser `product-performance-history-v2` also records explicitly empty dated snapshots. Clearing
+a rating cell, an individual Organic/Ads metric, or every metric in an identified snapshot and
+reimporting replaces those historical values with nulls. Empty snapshots do not create report
+periods or provisional preview dates, and do not override native data. Ads blanks are still restored
+to zero only when the raw source proves zero as described above. Deleting a source row or date
+header does **not** withdraw its saved history; unresolved identities likewise emit no withdrawal.
+Only the selected reports and dates through `--through` are considered.
+
+The correction uses existing nullable metric JSON and immutable revisions; it requires no new
+schema migration. Existing imported batches are unchanged. To apply the v2 interpretation, run
+a new dry run, review its new content hash and report, then apply that reviewed hash. An earlier
+v1 hash cannot approve the changed parser output.
+
 The import is a deliberate CLI action, not a recurring collection job. Native daily collection
 continues independently, and historical spreadsheet observations remain separate from native
 order, offer and Ads tables.
@@ -151,7 +165,7 @@ order, offer and Ads tables.
 
 The service-account credential was absent locally, so the four reports and their original Ads
 masters were acquired through the connected Google Sheets reader and replayed through the same
-parser. The completed dry run produced 42,374 observations for 157 products, including 84 withdrawn
+v1 parser. The completed dry run produced 42,374 observations for 157 products, including 84 withdrawn
 products, and restored 739 Ads metric zeroes from raw numeric evidence. There were no unresolved
 real PNK/code/account conflicts. Diagnostics retain catalogue entries without identifiers and the
 43 `KOPPELNOPNK` placeholder rows, without turning them into invented products.
