@@ -14,8 +14,11 @@ remain available under **Orders, Returns & GMV**. `/private/overview` is now lab
 
 ## Calculation
 
-Amounts are RON and include VAT at each product line's stored VAT rate. The existing
-GMV calculator rounds each VAT-inclusive unit price to two decimal places using
+Amounts are RON and include VAT at each product line's stored VAT rate. The
+pages, chart axes, totals and detail export labels explicitly use **GMV (cu TVA)**.
+Product Performance instead displays **Total Sales (fara TVA)**, calculated from net
+order-line prices and net seller vouchers; this does not change the GMV figures here.
+The existing GMV calculator rounds each VAT-inclusive unit price to two decimal places using
 HALF_EVEN before multiplying quantity. Seller-funded voucher values including their
 VAT are added once per product line; eMAG-funded vouchers and shipping are excluded.
 Finalized/storno snapshots and remaining quantities follow the existing GMV rules.

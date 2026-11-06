@@ -28,8 +28,8 @@
             <p>Affected metrics and their dependent totals and shares are unavailable. Unaffected sections and periods remain usable.</p>
             <ul id="productPerformanceErrorList"></ul>
         </details>
-        <div id="productPerformanceWrap" class="wrap pp-wrap" role="region" aria-label="Weekly product performance; scroll to view all advertising groups" aria-busy="true" tabindex="0" hidden>
-            <table id="productPerformanceTable" class="pp-table" aria-label="Weekly product and advertising performance">
+        <div id="productPerformanceWrap" class="wrap pp-wrap" role="region" aria-label="14-day product performance; scroll to view all advertising groups" aria-busy="true" tabindex="0" hidden>
+            <table id="productPerformanceTable" class="pp-table" aria-label="14-day product and advertising performance">
                 <thead id="productPerformanceHead"></thead>
                 <tbody id="productPerformanceBody"></tbody>
             </table>

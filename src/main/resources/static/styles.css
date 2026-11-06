@@ -1549,6 +1549,40 @@ code {
   left: var(--pp-week-width, 112px);
 }
 
+/* Pin only the period when the whole overview would cover the advertising columns. */
+.pp-table[data-compact-overview="true"] {
+  --pp-frozen-width: var(--pp-week-width, 112px) !important;
+}
+
+.pp-table[data-compact-overview="true"] .pp-frozen:not(.pp-week) {
+  position: static;
+  left: auto;
+  z-index: auto;
+  box-shadow: none;
+  transform: none;
+}
+
+.pp-table[data-compact-overview="true"] thead .pp-frozen:not(.pp-week) {
+  position: sticky;
+  top: var(--pp-group-height);
+  left: auto;
+  z-index: 3;
+}
+
+.pp-table[data-compact-overview="true"] .pp-frozen-group {
+  position: sticky;
+  top: 0;
+  left: auto;
+  z-index: 3;
+  box-shadow: none;
+  transform: none;
+}
+
+.pp-table[data-compact-overview="true"] .pp-frozen-group .pp-group-label {
+  position: sticky;
+  left: calc(var(--pp-week-width, 112px) + .65rem);
+}
+
 .pp-table .pp-week {
   min-width: 112px;
   text-align: left;
@@ -2963,4 +2997,159 @@ body.app-shell dialog {
   min-width: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
+}
+
+/* Persistent task history. */
+.task-history .task-history-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-alt);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.task-history .task-history-badge--pending,
+.task-history .task-history-badge--retrying {
+  color: var(--text);
+  border-style: dashed;
+}
+
+.task-history {
+  min-width: 0;
+  margin-top: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--app-shadow);
+}
+
+.task-history > summary {
+  padding: 16px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.task-history .task-history-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+  padding: 0 20px 20px;
+}
+
+.task-history .task-history-content > section {
+  min-width: 0;
+}
+
+.task-history .task-history-filters {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.task-history .task-history-filters label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.task-history .task-history-filters :where(input, select) {
+  width: 100%;
+  max-width: 300px;
+  min-width: 140px;
+  margin: 0;
+}
+
+.task-history .task-history-content > p:empty {
+  display: none;
+}
+
+.task-history h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.task-history p {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+
+.task-history .task-history-wrap {
+  max-height: 520px;
+  overflow: auto;
+}
+
+.task-history .task-history-table {
+  width: 100%;
+  min-width: 780px;
+}
+
+.task-history .task-coverage-table {
+  min-width: 1000px;
+}
+
+.task-history .task-history-table :where(th, td) {
+  vertical-align: top;
+}
+
+.task-history .task-history-table :where(th:first-child, td:first-child) {
+  min-width: 180px;
+  max-width: 300px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.task-history .task-history-error summary {
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.task-history .task-history-error pre {
+  max-width: min(60vw, 600px);
+  max-height: 300px;
+  margin: 8px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.task-history .task-history-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+@media (max-width: 767px) {
+  .task-history > summary {
+    padding: 16px;
+  }
+
+  .task-history .task-history-content {
+    padding: 0 16px 16px;
+  }
+
+  .task-history .task-history-filters label {
+    flex: 1 1 140px;
+  }
+
+  .task-history .task-history-filters :where(input, select) {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .task-history .task-history-error pre {
+    max-width: 260px;
+  }
 }

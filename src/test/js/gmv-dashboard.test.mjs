@@ -106,7 +106,7 @@ test('initial load shows one company chart with signed daily GMV, future nulls a
   await page.controller.ready;
   assert.equal(page.byId('Cards').children.length, 1);
   assert.equal(page.activeCharts().length, 1);
-  assert.equal(page.byId('Title').textContent, 'GMV');
+  assert.equal(page.byId('Title').textContent, 'GMV (cu TVA)');
   assert.equal(page.byId('Total').textContent, '110.16 RON');
   assert.equal(page.byId('Scope').textContent, 'All companies · month to date');
   assert.equal(page.byId('MonthSelect').value, '2026-11');
@@ -123,7 +123,7 @@ test('initial load shows one company chart with signed daily GMV, future nulls a
   assert.equal(config.data.datasets[0].cubicInterpolationMode, 'monotone');
   assert.equal(config.data.datasets[0].spanGaps, false);
   assert.equal(config.options.scales.y.min, undefined);
-  assert.equal(config.options.scales.y.title.text, 'GMV (RON)');
+  assert.equal(config.options.scales.y.title.text, 'GMV (cu TVA) · RON');
   assert.equal(config.options.scales.y.grid.color, '#123456');
   assert.equal(config.options.scales.x.ticks.color, '#abcdef');
   assert.equal(config.options.scales.x.ticks.callback.call({getLabelForValue: () => '2026-11-03'}, 2), '3');
@@ -164,7 +164,7 @@ test('company selection filters cached lines and totals locally while preserving
   assert.equal(page.chart().config.data.datasets[0].borderColor, betaColor);
   assert.equal(page.byId('Total').textContent, '12.21 RON');
   assert.equal(page.byId('Scope').textContent, 'Beta Company · month to date');
-  assert.match(page.byId('Chart').getAttribute('aria-label'), /^Beta Company: daily GMV in RON/);
+  assert.match(page.byId('Chart').getAttribute('aria-label'), /^Beta Company: daily GMV \(cu TVA\) in RON/);
   page.chooseCompany('');
   assert.equal(page.chart().config.data.datasets.length, 2);
   assert.equal(page.byId('Total').textContent, '110.16 RON');
@@ -335,7 +335,7 @@ test('exact cent reconciliation rejects inconsistent or malformed reports while 
 test('info supports hover, focus, tap and dismissal and explains the displayed GMV calculation', async () => {
   const page = fixture(); page.respond(0, report()); await page.controller.ready;
   const button = page.byId('Info'); const wrap = page.byId('InfoWrap'); const tooltip = page.byId('InfoText');
-  assert.equal(button.getAttribute('aria-label'), 'About GMV');
+  assert.equal(button.getAttribute('aria-label'), 'About GMV (cu TVA)');
   assert.equal(button.getAttribute('aria-describedby'), 'gmvDashboardInfoText');
   assert.equal(tooltip.getAttribute('role'), 'tooltip');
   assert.match(tooltip.textContent, /through 2026-11-03\. Today is still in progress/);

@@ -16,6 +16,10 @@ import static ro.sellfluence.support.UsefulMethods.toLocalDate;
 /**
  * Information regarding a product in an order.
  *
+ * All prices and vouchers supplied to one calculation must use the same VAT basis.
+ * GMV readers provide VAT-inclusive amounts; the Product Performance net-sales reader
+ * provides the original VAT-exclusive order prices and voucher values.
+ *
  * @param orderId eMag order ID.
  * @param surrogateId internal ID of order.
  * @param orderDate date the order was placed.
@@ -25,8 +29,8 @@ import static ro.sellfluence.support.UsefulMethods.toLocalDate;
  * @param quantity actual quantity sold.
  * @param initialQuantity quantity initially ordered.
  * @param stornoQuantity quantity cancelled/returned.
- * @param price price including VAT.
- * @param sellerVoucherTotal seller-funded discount for the entire line, including VAT.
+ * @param price unit price in the calculation's VAT basis.
+ * @param sellerVoucherTotal seller-funded discount for the entire line, in the same VAT basis as price.
  */
 public record POInfo(String orderId, int surrogateId, LocalDate orderDate, int orderStatus, int productInOrderId,
                      String productName,

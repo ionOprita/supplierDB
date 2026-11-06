@@ -152,6 +152,65 @@ class OrderQuantityTableIntegrationTest {
     }
 
     @Test
+    void selectedAccountIsAppliedBeforeStatusAndSurrogatePrecedence() throws SQLException {
+        snapshot("status", FIRST_VENDOR, 4, "2026-11-01T23:59:59", PNK, 44, 44);
+        snapshot("status", FIRST_VENDOR, 5, "2026-11-03T12:00:00", PNK, 1, 4);
+        snapshot("status", SECOND_VENDOR, 4, "2026-11-03T12:00:00", PNK, 70, 70);
+        snapshot("surrogate", FIRST_VENDOR, 4, "2026-11-04T12:00:00", PNK, 3, 3);
+        snapshot("surrogate", SECOND_VENDOR, 4, "2026-11-04T12:00:00", PNK, 90, 90);
+        snapshot("paired", FIRST_VENDOR, 4, "2026-11-05T12:00:00", PNK, 5, 5);
+        snapshot("paired", FIRST_VENDOR, 5, "2026-11-06T12:00:00", PNK, 1, 5);
+        snapshot("other-account", SECOND_VENDOR, 4, "2026-11-07T12:00:00", PNK, 100, 100);
+        snapshot("unassigned", null, 4, "2026-11-07T12:00:00", PNK, 30, 30);
+        snapshot("negative", FIRST_VENDOR, 4, "2026-11-08T12:00:00", PNK, -2, 20);
+        snapshot("other-product", FIRST_VENDOR, 4, "2026-11-08T12:00:00", "OTHER", 100, 100);
+        snapshot("ignored-status", FIRST_VENDOR, 3, "2026-11-08T12:00:00", PNK, 100, 100);
+        var start = day("2026-11-02");
+        var periods = Map.of(start, day("2026-11-15"));
+
+        assertEquals(Map.of(start, 10L),
+                OrderQuantityTable.countForProductPeriods(db, FIRST_VENDOR, PNK, periods));
+        assertEquals(Map.of(start, 260L),
+                OrderQuantityTable.countForProductPeriods(db, SECOND_VENDOR, PNK, periods));
+        assertEquals(Map.of(start, 0L),
+                OrderQuantityTable.countForProductPeriods(db, new UUID(0, 3), PNK, periods));
+        // The global reader intentionally retains its legacy cross-account snapshot selection.
+        assertEquals(Map.of(start, 293L), OrderQuantityTable.countForProductPeriods(db, PNK, periods));
+    }
+
+    @Test
+    void computesFourteenAndOverlappingMonthEndThirtyDayWindowsWithIndependentSnapshotSelection() throws SQLException {
+        snapshot("before", FIRST_VENDOR, 4, "2027-01-01T23:59:59", PNK, 1000, 1000);
+        snapshot("thirty-start", FIRST_VENDOR, 4, "2027-01-02T00:00:00", PNK, 1, 1);
+        snapshot("fourteen-start", FIRST_VENDOR, 4, "2027-01-25T00:00:00", PNK, 3, 3);
+        snapshot("paired", FIRST_VENDOR, 4, "2027-01-29T12:00:00", PNK, 4, 4);
+        snapshot("paired", FIRST_VENDOR, 5, "2027-01-30T00:00:00", PNK, 1, 4);
+        snapshot("shared-day", SECOND_VENDOR, 4, "2027-01-31T23:59:59", PNK, 2, 2);
+        snapshot("fourteen-end", FIRST_VENDOR, 4, "2027-02-07T23:59:59", PNK, 5, 5);
+        snapshot("thirty-end", FIRST_VENDOR, 4, "2027-02-28T23:59:59", PNK, 7, 7);
+        snapshot("after", FIRST_VENDOR, 4, "2027-03-01T00:00:00", PNK, 1000, 1000);
+
+        var periods = Map.of(
+                day("2027-01-02"), day("2027-01-31"),
+                day("2027-01-30"), day("2027-02-28"),
+                day("2027-01-25"), day("2027-02-07"),
+                day("2027-02-08"), day("2027-02-21")
+        );
+
+        // Shared dates contribute to every containing window. The paired order is counted once
+        // per window: finalized quantity in January/14 days, initial quantity in February's 30 days.
+        assertEquals(Map.of(day("2027-01-02"), 10L, day("2027-01-30"), 18L,
+                        day("2027-01-25"), 14L, day("2027-02-08"), 0L),
+                OrderQuantityTable.countForProductPeriods(db, PNK, periods));
+        assertEquals(Map.of(day("2027-01-02"), 8L, day("2027-01-30"), 16L,
+                        day("2027-01-25"), 12L, day("2027-02-08"), 0L),
+                OrderQuantityTable.countForProductPeriods(db, FIRST_VENDOR, PNK, periods));
+        assertEquals(Map.of(day("2027-01-02"), 2L, day("2027-01-30"), 2L,
+                        day("2027-01-25"), 2L, day("2027-02-08"), 0L),
+                OrderQuantityTable.countForProductPeriods(db, SECOND_VENDOR, PNK, periods));
+    }
+
+    @Test
     void usesInclusivePeriodBoundariesAndReturnsZeroForEmptyOrNullQuantities() throws SQLException {
         snapshot("before", FIRST_VENDOR, 4, "2026-11-01T23:59:59", PNK, 100, 100);
         snapshot("start", FIRST_VENDOR, 4, "2026-11-02T00:00:00", PNK, 2, 2);
@@ -183,6 +242,14 @@ class OrderQuantityTableIntegrationTest {
     @Test
     void validatesPeriodsAndDoesNotRequireAConnectionForAnEmptyRequest() throws SQLException {
         assertTrue(OrderQuantityTable.countForProductPeriods(null, PNK, Map.of()).isEmpty());
+        assertTrue(OrderQuantityTable.countForProductPeriods(null, FIRST_VENDOR, PNK, Map.of()).isEmpty());
+        assertThrows(NullPointerException.class,
+                () -> OrderQuantityTable.countForProductPeriods(null, null, PNK, Map.of()));
+        assertThrows(NullPointerException.class,
+                () -> OrderQuantityTable.countForProductPeriods(null, FIRST_VENDOR, null, Map.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> OrderQuantityTable.countForProductPeriods(null, FIRST_VENDOR, PNK,
+                        Map.of(day("2026-11-03"), day("2026-11-02"))));
         assertThrows(NullPointerException.class,
                 () -> OrderQuantityTable.validatePeriods(null, Map.of()));
         assertThrows(NullPointerException.class,

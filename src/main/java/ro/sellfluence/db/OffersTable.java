@@ -1,19 +1,29 @@
 package ro.sellfluence.db;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import ro.sellfluence.emagdashboard.Offer;
 import ro.sellfluence.emagdashboard.OffersData;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /** Writes the complete record graph of one vendor's daily offers snapshot. */
@@ -23,6 +33,199 @@ public class OffersTable {
 
     /** One observed day with nonzero-stock offers; salesPrice includes VAT and has two decimals. */
     public record DailyProductOffer(LocalDate fetchDate, long matchingOffers, Integer stock, BigDecimal salesPrice) {
+    }
+
+    /** Observed rolling counters; snapshot date is the collection date, not a verified metric period end. */
+    public record ProductVisits(String status, Long visits14, Long visits30,
+                                @JsonFormat(shape = JsonFormat.Shape.STRING) LocalDate snapshotDate,
+                                @JsonFormat(shape = JsonFormat.Shape.STRING) OffsetDateTime fetchedAt, boolean stale) {
+    }
+
+    /** eMAG classification observed on one day; it is not an aggregate over the report interval. */
+    public record ProductHotness(String status, String hotnessType, String hotnessName,
+                                 @JsonFormat(shape = JsonFormat.Shape.STRING) LocalDate snapshotDate) {
+    }
+
+    static ProductVisits getLatestProductVisits(Connection db, UUID vendorId, String pnk, LocalDate today)
+            throws SQLException {
+        Objects.requireNonNull(db, "db");
+        Objects.requireNonNull(vendorId, "vendorId");
+        Objects.requireNonNull(today, "today");
+        if (pnk == null || pnk.isBlank()) return new ProductVisits("missing", null, null, null, null, false);
+        try (var statement = db.prepareStatement("""
+                WITH latest AS (
+                    SELECT fetch_date, visits_fetched_at
+                    FROM offers_snapshot
+                    WHERE vendor_id = ? AND visits_fetched_at IS NOT NULL AND fetch_date <= ?
+                    ORDER BY fetch_date DESC LIMIT 1
+                )
+                SELECT s.fetch_date, s.visits_fetched_at,
+                       COUNT(o.offer_id) AS matching_offers,
+                       COUNT(o.offer_id) FILTER (WHERE o.ext_stock <> 0) AS preferred_offers,
+                       MAX(o.product_performance_visits_last14) AS visits14,
+                       MAX(o.product_performance_visits) AS visits30,
+                       MAX(o.product_performance_visits_last14) FILTER (WHERE o.ext_stock <> 0) AS preferred_visits14,
+                       MAX(o.product_performance_visits) FILTER (WHERE o.ext_stock <> 0) AS preferred_visits30
+                FROM latest AS s
+                LEFT JOIN offers_offer AS o ON o.vendor_id = ? AND o.fetch_date = s.fetch_date
+                    AND regexp_replace(o.doc_product_part_number_key,
+                        '^[[:space:]]+|[[:space:]]+$', '', 'g') = ?
+                GROUP BY s.fetch_date, s.visits_fetched_at
+                """)) {
+            statement.setObject(1, vendorId);
+            statement.setObject(2, today);
+            statement.setObject(3, vendorId);
+            statement.setString(4, pnk.strip());
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next()) return new ProductVisits("missing", null, null, null, null, false);
+                return readProductVisits(rows, rows.getObject("fetch_date", LocalDate.class).isBefore(today));
+            }
+        }
+    }
+
+    /**
+     * Read exact closing-day observations in one query. Every requested date has an entry; missing
+     * dates never borrow a neighbouring rolling counter. Historical observations are not stale merely
+     * because their closing date is in the past, and imported snapshots have no live provenance.
+     */
+    static Map<LocalDate, ProductVisits> getProductVisitsForDates(
+            Connection db, UUID vendorId, String pnk, Collection<LocalDate> dates) throws SQLException {
+        Objects.requireNonNull(db, "db");
+        Objects.requireNonNull(vendorId, "vendorId");
+        var requestedDates = Set.copyOf(Objects.requireNonNull(dates, "dates"));
+        if (requestedDates.isEmpty()) return Map.of();
+        var result = new HashMap<LocalDate, ProductVisits>();
+        requestedDates.forEach(date -> result.put(date, new ProductVisits("missing", null, null, null, null, false)));
+        if (pnk == null || pnk.isBlank()) return Map.copyOf(result);
+
+        var sqlDates = db.createArrayOf("date", requestedDates.stream().map(java.sql.Date::valueOf).toArray());
+        try (var statement = db.prepareStatement("""
+                SELECT s.fetch_date, s.visits_fetched_at,
+                       COUNT(o.offer_id) AS matching_offers,
+                       COUNT(o.offer_id) FILTER (WHERE o.ext_stock <> 0) AS preferred_offers,
+                       MAX(o.product_performance_visits_last14) AS visits14,
+                       MAX(o.product_performance_visits) AS visits30,
+                       MAX(o.product_performance_visits_last14) FILTER (WHERE o.ext_stock <> 0) AS preferred_visits14,
+                       MAX(o.product_performance_visits) FILTER (WHERE o.ext_stock <> 0) AS preferred_visits30
+                FROM offers_snapshot AS s
+                LEFT JOIN offers_offer AS o ON o.vendor_id = s.vendor_id AND o.fetch_date = s.fetch_date
+                    AND regexp_replace(o.doc_product_part_number_key,
+                        '^[[:space:]]+|[[:space:]]+$', '', 'g') = ?
+                WHERE s.vendor_id = ? AND s.visits_fetched_at IS NOT NULL AND s.fetch_date = ANY (?)
+                GROUP BY s.fetch_date, s.visits_fetched_at
+                """)) {
+            statement.setString(1, pnk.strip());
+            statement.setObject(2, vendorId);
+            statement.setArray(3, sqlDates);
+            try (var rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    var visits = readProductVisits(rows, false);
+                    result.put(visits.snapshotDate(), visits);
+                }
+            }
+        } finally {
+            sqlDates.free();
+        }
+        return Map.copyOf(result);
+    }
+
+    /**
+     * Reads the classification on each exact requested day, including older snapshots collected
+     * before visits provenance was recorded. Select the same unique offer as visits before joining
+     * its stock details; absent classifications never borrow from another offer or another date.
+     */
+    static Map<LocalDate, ProductHotness> getProductHotnessForDates(
+            Connection db, UUID vendorId, String pnk, Collection<LocalDate> dates) throws SQLException {
+        Objects.requireNonNull(db, "db");
+        Objects.requireNonNull(vendorId, "vendorId");
+        var requestedDates = Set.copyOf(Objects.requireNonNull(dates, "dates"));
+        if (requestedDates.isEmpty()) return Map.of();
+        var result = new HashMap<LocalDate, ProductHotness>();
+        requestedDates.forEach(date -> result.put(date, new ProductHotness("missing", null, null, null)));
+        if (pnk == null || pnk.isBlank()) return Map.copyOf(result);
+
+        var sqlDates = db.createArrayOf("date", requestedDates.stream().map(java.sql.Date::valueOf).toArray());
+        try (var statement = db.prepareStatement("""
+                WITH selected AS (
+                    SELECT s.vendor_id, s.fetch_date,
+                           COUNT(o.offer_id) AS matching_offers,
+                           COUNT(o.offer_id) FILTER (WHERE o.ext_stock <> 0) AS preferred_offers,
+                           CASE WHEN COUNT(o.offer_id) FILTER (WHERE o.ext_stock <> 0) = 1
+                                THEN MAX(o.offer_id) FILTER (WHERE o.ext_stock <> 0)
+                                WHEN COUNT(o.offer_id) FILTER (WHERE o.ext_stock <> 0) = 0
+                                     AND COUNT(o.offer_id) = 1 THEN MAX(o.offer_id)
+                           END AS offer_id
+                    FROM offers_snapshot AS s
+                    LEFT JOIN offers_offer AS o ON o.vendor_id = s.vendor_id AND o.fetch_date = s.fetch_date
+                        AND regexp_replace(o.doc_product_part_number_key,
+                            '^[[:space:]]+|[[:space:]]+$', '', 'g') = ?
+                    WHERE s.vendor_id = ? AND s.fetch_date = ANY (?)
+                    GROUP BY s.vendor_id, s.fetch_date
+                )
+                SELECT s.fetch_date, s.matching_offers, s.preferred_offers,
+                       stock.hotness_type, stock.hotness_name
+                FROM selected AS s
+                LEFT JOIN offers_stock AS stock ON stock.vendor_id = s.vendor_id
+                    AND stock.fetch_date = s.fetch_date AND stock.offer_id = s.offer_id
+                """)) {
+            statement.setString(1, pnk.strip());
+            statement.setObject(2, vendorId);
+            statement.setArray(3, sqlDates);
+            try (var rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    var date = rows.getObject("fetch_date", LocalDate.class);
+                    long preferred = rows.getLong("preferred_offers");
+                    long matching = rows.getLong("matching_offers");
+                    if (preferred > 1 || preferred == 0 && matching > 1) {
+                        result.put(date, new ProductHotness("ambiguous", null, null, date));
+                    } else {
+                        var type = rows.getString("hotness_type");
+                        var name = rows.getString("hotness_name");
+                        if (type != null && type.isBlank()) type = null;
+                        if (name != null && name.isBlank()) name = null;
+                        var status = type == null && name == null ? "missing" : "available";
+                        result.put(date, new ProductHotness(status, type, name, date));
+                    }
+                }
+            }
+        } finally {
+            sqlDates.free();
+        }
+        return Map.copyOf(result);
+    }
+
+    /** Today's replaceable snapshot is excluded from the rolling preview's completed observation day. */
+    static Optional<LocalDate> getLatestCompletedProductVisitsSnapshotDate(
+            Connection db, UUID vendorId, LocalDate today) throws SQLException {
+        Objects.requireNonNull(db, "db");
+        Objects.requireNonNull(vendorId, "vendorId");
+        Objects.requireNonNull(today, "today");
+        try (var statement = db.prepareStatement("""
+                SELECT MAX(fetch_date) FROM offers_snapshot
+                WHERE vendor_id = ? AND visits_fetched_at IS NOT NULL AND fetch_date < ?
+                """)) {
+            statement.setObject(1, vendorId);
+            statement.setObject(2, today);
+            try (var rows = statement.executeQuery()) {
+                rows.next();
+                return Optional.ofNullable(rows.getObject(1, LocalDate.class));
+            }
+        }
+    }
+
+    private static ProductVisits readProductVisits(ResultSet rows, boolean stale) throws SQLException {
+        var date = rows.getObject("fetch_date", LocalDate.class);
+        var fetchedAt = rows.getObject("visits_fetched_at", OffsetDateTime.class);
+        long preferred = rows.getLong("preferred_offers");
+        long matching = rows.getLong("matching_offers");
+        if (preferred > 1 || preferred == 0 && matching > 1) {
+            return new ProductVisits("ambiguous", null, null, date, fetchedAt, stale);
+        }
+        var prefix = preferred == 1 ? "preferred_" : "";
+        var visits14 = rows.getObject(prefix + "visits14", Long.class);
+        var visits30 = rows.getObject(prefix + "visits30", Long.class);
+        var status = visits14 == null && visits30 == null ? "missing" : "available";
+        return new ProductVisits(status, visits14, visits30, date, fetchedAt, stale);
     }
 
 
@@ -70,6 +273,12 @@ public class OffersTable {
     /** The caller owns the transaction so a failed replacement preserves the previous snapshot. */
     static int storeSnapshot(Connection db, UUID vendorId, LocalDate fetchDate, OffersData data)
             throws SQLException {
+        return storeSnapshot(db, vendorId, fetchDate, data, null);
+    }
+
+    /** A nonnull fetchedAt is reserved for complete live fetches that requested both visits fields. */
+    static int storeSnapshot(Connection db, UUID vendorId, LocalDate fetchDate, OffersData data, Instant fetchedAt)
+            throws SQLException {
         Objects.requireNonNull(db, "db");
         Objects.requireNonNull(vendorId, "vendorId");
         Objects.requireNonNull(fetchDate, "fetchDate");
@@ -80,14 +289,16 @@ public class OffersTable {
 
         // Upserting the parent locks this vendor/date until commit, serializing concurrent replacements.
         try (var statement = db.prepareStatement("""
-                INSERT INTO offers_snapshot (vendor_id, fetch_date, total_number_of_items)
-                VALUES (?, ?, ?)
+                INSERT INTO offers_snapshot (vendor_id, fetch_date, total_number_of_items, visits_fetched_at)
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT (vendor_id, fetch_date) DO UPDATE
-                    SET total_number_of_items = EXCLUDED.total_number_of_items
+                    SET total_number_of_items = EXCLUDED.total_number_of_items,
+                        visits_fetched_at = EXCLUDED.visits_fetched_at
                 """)) {
             statement.setObject(1, vendorId);
             statement.setObject(2, fetchDate);
             statement.setInt(3, offers.size());
+            statement.setObject(4, fetchedAt == null ? null : fetchedAt.atOffset(ZoneOffset.UTC));
             statement.executeUpdate();
         }
         try (var statement = db.prepareStatement("""
@@ -139,7 +350,8 @@ public class OffersTable {
                 ext_warranty, offer_details_unfair_price, offer_details_locker_eligibility,
                 offer_details_supply_lead_time, offer_details_emag_club, offer_details_emag_club_type,
                 offer_details_emag_club_merged, green_tax, product_performance_suggested_price,
-                product_performance_buy_button_rank, product_performance_needed_stock_next7,
+                product_performance_buy_button_rank, product_performance_visits, product_performance_visits_last14,
+                product_performance_needed_stock_next7,
                 product_performance_needed_stock_next30, product_performance_depletion_days,
                 product_performance_multioffer_offers_count, product_performance_order_value2, rrp, rrp_emag,
                 rrp_emag_type, rrp_seller, rrp_type, rrp_badge, is_stock_supply_needed, platform_id, currency,
@@ -189,6 +401,8 @@ public class OffersTable {
                 statement.setBigDecimal(index++, offer.greenTax());
                 statement.setBigDecimal(index++, offer.productPerformanceSuggestedPrice());
                 statement.setObject(index++, offer.productPerformanceBuyButtonRank());
+                statement.setObject(index++, offer.productPerformanceVisits());
+                statement.setObject(index++, offer.productPerformanceVisitsLast14());
                 statement.setObject(index++, offer.productPerformanceNeededStockNext7());
                 statement.setObject(index++, offer.productPerformanceNeededStockNext30());
                 statement.setObject(index++, offer.productPerformanceDepletionDays());

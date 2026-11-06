@@ -1,14 +1,17 @@
 package ro.sellfluence.api;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
 import ro.sellfluence.db.ProductPerformanceTable.Primitives;
 import ro.sellfluence.db.OffersTable.DailyProductOffer;
+import ro.sellfluence.db.OffersTable.ProductHotness;
+import ro.sellfluence.db.OffersTable.ProductVisits;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
-import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.temporal.TemporalAdjusters;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -17,13 +20,13 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.Objects;
 import java.util.UUID;
 
 import static java.math.RoundingMode.HALF_EVEN;
 
 /**
- * Product and advertising performance from daily adsets/offers, period GMV, and Order Table quantities.
+ * Product and advertising performance from daily adsets/offers, net sales, gross GMV, and Order Table quantities.
  *
  * <p>The database supplies vendor/product attribution and same-day active campaign/adset filtering.
  * This class classifies each adset snapshot, sums only the six advertising source primitives,
@@ -36,14 +39,25 @@ public final class ProductPerformanceData {
 
     private static final List<ColumnGroup> GROUPS = List.of(
             new ColumnGroup("overview", "Product metrics", List.of(
-                    column("week", "Week", "date"),
+                    column("period", "Period", "date"),
                     column("stock", "Stock", "integer"),
-                    column("orders", "Orders", "integer"),
-                    column("gmv", "GMV", "integer"),
+                    column("orders", "Orders", "integer",
+                            "Unități comandate în contul eMAG selectat, cu aceleași reguli de cantitate ca Order Table. "
+                                    + "Retururile nu se scad din acest număr."),
+                    column("totalSales", "Total Sales (fara TVA)", "integer",
+                            "Vânzări fără TVA din liniile comenzilor, cu ajustările nete pentru vouchere și storno. "
+                                    + "Include vânzările organice și din Ads ale produsului din contul eMAG selectat."),
                     column("clicks", "Clicks", "integer"),
-                    column("salesPrice", "Sales Price (incl. VAT)", "decimal"),
-                    column("conversion", "Conv.", "percent"),
-                    column("performance", "Perform.", "text"),
+                    column("salesPrice", "Sales Price (cu TVA)", "decimal",
+                            "Media prețurilor zilnice disponibile ale ofertei, cu TVA, în perioada selectată. "
+                                    + "Fiecare zi are aceeași pondere; nu este prețul mediu plătit în comenzi."),
+                    column("conversion", "Conv.", "percent",
+                            "Orders (unități) / Clicks × 100%, pentru produsul și contul eMAG selectate. "
+                                    + "Include traficul organic și Ads; retururile nu se scad din Orders. "
+                                    + "Intervalul este aproximativ deoarece eMAG nu expune ora exactă de închidere a contorului de clickuri."),
+                    column("performance", "Perform.", "text",
+                            "Clasificarea eMAG pe 30 de zile, observată în ultima zi a intervalului afișat, "
+                                    + "inclusiv pentru rândurile de 14 zile."),
                     column("reviews", "# rev.", "integer"),
                     column("rating", "rating", "decimal")
             )),
@@ -58,25 +72,38 @@ public final class ProductPerformanceData {
     }
 
     public enum Period {
-        WEEK, MONTH;
+        FOURTEEN_DAYS(14), THIRTY_DAYS(30);
+
+        private static final LocalDate FOURTEEN_DAY_ANCHOR = LocalDate.of(2026, 11, 2);
+        private final int windowDays;
+
+        Period(int windowDays) {
+            this.windowDays = windowDays;
+        }
+
+        public int windowDays() {
+            return windowDays;
+        }
 
         public static Period parse(String value) {
-            if (value == null) return WEEK;
+            if (value == null) return FOURTEEN_DAYS;
             return switch (value) {
-                case "week" -> WEEK;
-                case "month" -> MONTH;
-                default -> throw new IllegalArgumentException("period must be week or month");
+                case "14days", "week" -> FOURTEEN_DAYS;
+                case "30days", "month" -> THIRTY_DAYS;
+                default -> throw new IllegalArgumentException("period must be 14days or 30days");
             };
         }
 
-        LocalDate start(LocalDate date) {
-            return this == WEEK ? date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-                    : date.withDayOfMonth(1);
+        public LocalDate start(LocalDate date) {
+            Objects.requireNonNull(date, "date");
+            return this == FOURTEEN_DAYS
+                    ? FOURTEEN_DAY_ANCHOR.plusDays(Math.floorDiv(ChronoUnit.DAYS.between(FOURTEEN_DAY_ANCHOR, date), 14) * 14)
+                    : end(date).minusDays(29);
         }
 
-        LocalDate end(LocalDate date) {
-            var first = start(date);
-            return this == WEEK ? first.plusDays(6) : first.plusMonths(1).minusDays(1);
+        public LocalDate end(LocalDate date) {
+            Objects.requireNonNull(date, "date");
+            return this == FOURTEEN_DAYS ? start(date).plusDays(13) : date.withDayOfMonth(date.lengthOfMonth());
         }
     }
 
@@ -84,13 +111,39 @@ public final class ProductPerformanceData {
     }
 
     /** Percent columns contain fractional numbers, for example 0.0267 means 2.67%. */
-    public record Column(String key, String label, String type) {
+    public record Column(String key, String label, String type, String description) {
+        public Column(String key, String label, String type) {
+            this(key, label, type, null);
+        }
     }
 
     public record ColumnGroup(String key, String label, List<Column> columns) {
     }
 
-    public record Row(Map<String, Object> values) {
+    /** Inclusive calculation dates; the raw eMAG visits counter has an unverified source cutoff. */
+    public record ReportPeriod(@JsonFormat(shape = JsonFormat.Shape.STRING) LocalDate startDate,
+                               @JsonFormat(shape = JsonFormat.Shape.STRING) LocalDate endDate,
+                               int windowDays, boolean provisional) {
+        public ReportPeriod {
+            Objects.requireNonNull(startDate, "startDate");
+            Objects.requireNonNull(endDate, "endDate");
+            if (windowDays != 14 && windowDays != 30) throw new IllegalArgumentException("windowDays must be 14 or 30");
+            if (ChronoUnit.DAYS.between(startDate, endDate) != windowDays - 1L) {
+                throw new IllegalArgumentException("report period must contain exactly " + windowDays + " days");
+            }
+        }
+
+        private boolean contains(LocalDate date) {
+            return !date.isBefore(startDate) && !date.isAfter(endDate);
+        }
+    }
+
+    public record Row(ReportPeriod period, Map<String, Object> values,
+                      @JsonFormat(shape = JsonFormat.Shape.STRING) LocalDate visitsSnapshotDate,
+                      @JsonFormat(shape = JsonFormat.Shape.STRING) Instant visitsCapturedAt,
+                      String visitsStatus, String visitsReason,
+                      @JsonFormat(shape = JsonFormat.Shape.STRING) LocalDate performanceSnapshotDate,
+                      String performanceStatus, String performanceReason, String performanceType) {
     }
 
     public record DataError(String code, UUID vendorId, int campaignId, int adsetId, LocalDate reportDate,
@@ -101,43 +154,47 @@ public final class ProductPerformanceData {
                            List<DataError> errors) {
     }
 
-    /** Only observed periods are emitted; available reports also contribute to partial weeks/months. */
-    public static Response create(Product product, Period period, List<DailyAdset> snapshots) {
-        return create(product, period, snapshots, List.of());
-    }
-
-    public static Response create(Product product, Period period, List<DailyAdset> snapshots,
-                                  List<DailyProductOffer> offers) {
-        return create(product, period, snapshots, offers, Map.of());
-    }
-
-    /** GMV amounts are keyed by period start; they do not create additional advertising periods. */
-    public static Response create(Product product, Period period, List<DailyAdset> snapshots,
-                                  List<DailyProductOffer> offers, Map<LocalDate, BigDecimal> gmvByPeriod) {
-        return create(product, period, snapshots, offers, gmvByPeriod, Map.of());
-    }
-
-    /** Independent product metrics are keyed by period start and do not create advertising periods. */
-    public static Response create(Product product, Period period, List<DailyAdset> snapshots,
+    /**
+     * Aggregate every explicit window independently: 30-day month-end windows can overlap.
+     * Gross GMV, net sales and ordered units are keyed by start date; raw rolling visits are keyed by end date.
+     * A scheduled interval creates a row even when it has no advertising observations.
+     */
+    public static Response create(Product product, List<ReportPeriod> periods, List<DailyAdset> snapshots,
                                   List<DailyProductOffer> offers, Map<LocalDate, BigDecimal> gmvByPeriod,
-                                  Map<LocalDate, Long> ordersByPeriod) {
-        var periods = new TreeMap<LocalDate, PeriodTotals>();
-        var errors = new ArrayList<DataError>();
-        for (var snapshot : snapshots) {
-            var totals = periods.computeIfAbsent(period.start(snapshot.key().reportDate()), ignored -> new PeriodTotals());
-            totals.add(snapshot, errors);
-        }
-        var offersByPeriod = new TreeMap<LocalDate, OfferTotals>();
-        for (var offer : offers) {
-            offersByPeriod.computeIfAbsent(period.start(offer.fetchDate()), ignored -> new OfferTotals()).add(offer);
-        }
-        var rows = periods.entrySet().stream()
-                .map(entry -> entry.getValue().row(entry.getKey(), offersByPeriod.get(entry.getKey()), period,
-                        gmvByPeriod.get(entry.getKey()), ordersByPeriod.get(entry.getKey()))).toList();
-        return new Response(false, product, GROUPS, rows, List.copyOf(errors));
+                                  Map<LocalDate, Long> ordersByPeriod, Map<LocalDate, ProductVisits> visitsByEndDate,
+                                  Map<LocalDate, BigDecimal> totalSalesByPeriod) {
+        return create(product, periods, snapshots, offers, gmvByPeriod, ordersByPeriod, visitsByEndDate,
+                totalSalesByPeriod, Map.of());
     }
 
-    /** Stock uses the latest eligible day; monthly price gives each available daily gross price one weight. */
+    public static Response create(Product product, List<ReportPeriod> periods, List<DailyAdset> snapshots,
+                                  List<DailyProductOffer> offers, Map<LocalDate, BigDecimal> gmvByPeriod,
+                                  Map<LocalDate, Long> ordersByPeriod, Map<LocalDate, ProductVisits> visitsByEndDate,
+                                  Map<LocalDate, BigDecimal> totalSalesByPeriod,
+                                  Map<LocalDate, ProductHotness> hotnessByEndDate) {
+        var errors = new ArrayList<DataError>();
+        var rows = new ArrayList<Row>();
+        for (var period : periods) {
+            var totals = new PeriodTotals();
+            boolean hasAds = false;
+            for (var snapshot : snapshots) {
+                if (period.contains(snapshot.key().reportDate())) {
+                    hasAds = true;
+                    totals.add(snapshot, errors);
+                }
+            }
+            var offerTotals = new OfferTotals();
+            for (var offer : offers) {
+                if (period.contains(offer.fetchDate())) offerTotals.add(offer);
+            }
+            rows.add(totals.row(period, offerTotals, hasAds, gmvByPeriod.get(period.startDate()),
+                    ordersByPeriod.get(period.startDate()), visitsByEndDate.get(period.endDate()),
+                    totalSalesByPeriod.get(period.startDate()), hotnessByEndDate.get(period.endDate())));
+        }
+        return new Response(false, product, GROUPS, List.copyOf(rows), List.copyOf(new LinkedHashSet<>(errors)));
+    }
+
+    /** Stock uses the latest eligible day; both windows give each available daily gross price one weight. */
     private static final class OfferTotals {
         private DailyProductOffer latest;
         private BigDecimal priceSum = BigDecimal.ZERO;
@@ -154,14 +211,9 @@ public final class ProductPerformanceData {
             }
         }
 
-        private Object salesPrice(Period period) {
-            if (period == Period.MONTH) {
-                if (ambiguousPrice) return "???";
-                return priceDays == 0 ? null : priceSum.divide(BigDecimal.valueOf(priceDays), 2, HALF_EVEN);
-            }
-            if (latest.matchingOffers() > 1) return "???";
-            return latest.matchingOffers() == 1 && latest.salesPrice() != null
-                    ? latest.salesPrice().setScale(2, HALF_EVEN) : null;
+        private Object salesPrice() {
+            if (ambiguousPrice) return "???";
+            return priceDays == 0 ? null : priceSum.divide(BigDecimal.valueOf(priceDays), 2, HALF_EVEN);
         }
     }
 
@@ -169,28 +221,52 @@ public final class ProductPerformanceData {
         return new Column(key, label, type);
     }
 
+    private static Column column(String key, String label, String type, String description) {
+        return new Column(key, label, type, description);
+    }
+
     private static List<Column> adsColumns(String group, String shareLabel) {
         var columns = new ArrayList<>(List.of(
                 column(group + "_impressions", "Imp.", "integer"),
                 column(group + "_clicks", "Clicks", "integer"),
-                column(group + "_spend", "Spend", "integer"),
-                column(group + "_sales", "Sales", "integer"),
+                column(group + "_spend", "Spend (fara TVA)", "integer",
+                        "Valoarea eMAG este tratată ca un consum din creditul Ads fără TVA, conform convenției raportului. "
+                                + "API-ul nu indică explicit baza TVA; suma originală nu este modificată."),
+                column(group + "_sales", "Sales (fara TVA)", "integer",
+                        "Vânzări atribuite reclamelor, raportate de eMAG fără TVA. "
+                                + "Păstrăm valoarea originală, fără conversie suplimentară."),
                 column(group + "_units", "Total Units Sold", "integer"),
                 column(group + "_ctr", "CTR", "percent"),
                 column(group + "_conversion", "Conv.", "percent"),
-                column(group + "_cpc", "CPC", "decimal"),
-                column(group + "_roas", "ROAS", "decimal"),
-                column(group + "_acos", "ACOS", "percent"),
-                column(group + "_tacos", "TACOS", "percent")
+                column(group + "_cpc", "CPC (fara TVA)", "decimal",
+                        "Spend / clickuri Ads. Folosește convenția că Spend reprezintă consum din creditul Ads fără TVA."),
+                column(group + "_roas", "ROAS", "decimal",
+                        "Sales / Spend. Ambele sume sunt fără TVA."),
+                column(group + "_acos", "ACOS", "percent",
+                        "Spend / Sales × 100. Ambele sume sunt fără TVA."),
+                column(group + "_tacos", "TACOS", "percent",
+                        (shareLabel == null ? "Spend total Ads" : "Spend din categoria " + shareLabel)
+                                + " / Total Sales din Product metrics × 100. Ambele sume sunt fără TVA, pentru contul eMAG "
+                                + "selectat și perioada rândului. Total Sales include vânzări organice și din Ads. "
+                                + "— înseamnă date lipsă sau Total Sales zero ori negativ; valorile peste 100% nu sunt limitate.")
         ));
         if (shareLabel == null) {
-            columns.add(column(group + "_clicks_share", "% Clicks Ads of Total", "percent"));
-            columns.add(column(group + "_sales_share", "% Sales Ads of Total", "percent"));
+            columns.add(column(group + "_clicks_share", "% Clicks Ads of Total", "percent",
+                    "Clicks din Total Ads / Clicks din Product metrics × 100, pentru contul eMAG selectat. "
+                            + "Fereastra contorului eMAG de 14/30 zile este aproximativă. — înseamnă date lipsă "
+                            + "sau Clicks zero ori negativ; valorile peste 100% nu sunt limitate."));
+            columns.add(column(group + "_sales_share", "% Sales Ads of Total", "percent",
+                    "Sales din Total Ads / Total Sales din Product metrics × 100. Ambele sunt venituri fără TVA, "
+                            + "pentru contul eMAG selectat și perioada rândului. Regulile de atribuire Ads și ajustările "
+                            + "pentru vouchere/storno pot diferi. — înseamnă date lipsă sau Total Sales zero ori negativ; "
+                            + "valorile peste 100% nu sunt limitate."));
         } else {
             columns.add(column(group + "_impressions_share", "% Imp. " + shareLabel + " of Tot. Ads", "percent"));
             columns.add(column(group + "_clicks_share", "% Clicks " + shareLabel + " of Tot. Ads", "percent"));
-            columns.add(column(group + "_spend_share", "% Spend " + shareLabel + " of Tot. Ads", "percent"));
-            columns.add(column(group + "_sales_share", "% Sales " + shareLabel + " of Tot. Ads", "percent"));
+            columns.add(column(group + "_spend_share", "% Spend " + shareLabel + " of Tot. Ads", "percent",
+                    "Spend din categorie / Spend total Ads, pe aceeași bază a consumului din creditul fără TVA."));
+            columns.add(column(group + "_sales_share", "% Sales " + shareLabel + " of Tot. Ads", "percent",
+                    "Sales din categorie / Sales total Ads, folosind valorile eMAG fără TVA pentru ambele sume."));
         }
         return List.copyOf(columns);
     }
@@ -248,17 +324,20 @@ public final class ProductPerformanceData {
             return null;
         }
 
-        private Row row(LocalDate start, OfferTotals offers, Period period, BigDecimal gmv, Long orders) {
+        private Row row(ReportPeriod period, OfferTotals offers, boolean hasAds, BigDecimal gmv, Long orders,
+                        ProductVisits visits, BigDecimal totalSales, ProductHotness hotness) {
             var values = new LinkedHashMap<String, Object>();
-            // Unsupported overview columns, TACOS, and shares of overall product activity remain null.
+            // Unsupported overview columns and metrics with unavailable inputs remain null.
             for (var group : GROUPS) {
                 for (var column : group.columns()) values.put(column.key(), null);
             }
-            values.put("week", start.toString());
+            values.put("period", period.startDate().toString());
             values.put("orders", orders);
+            values.put("totalSales", totalSales);
+            // Keep the legacy gross amount available to API consumers, outside the displayed columns.
             values.put("gmv", gmv);
-            if (offers != null) {
-                values.put("salesPrice", offers.salesPrice(period));
+            if (offers.latest != null) {
+                values.put("salesPrice", offers.salesPrice());
                 var offer = offers.latest;
                 if (offer.matchingOffers() == 1) {
                     values.put("stock", offer.stock());
@@ -266,23 +345,92 @@ public final class ProductPerformanceData {
                     values.put("stock", "???");
                 }
             }
+            var visitValue = visitsFor(period, visits);
+            values.put("clicks", visitValue.clicks());
+            values.put("conversion", productRatio(decimal(orders), decimal(visitValue.clicks())));
+            var performance = hotnessFor(period, hotness);
+            values.put("performance", performance.label());
             var total = new Accumulator();
             for (var category : Category.values()) {
-                if (!invalid.contains(category)) {
+                if (hasAds && !invalid.contains(category)) {
                     var primitives = categories.get(category).value;
                     writeMetrics(values, category.key, primitives);
+                    values.put(category.key + "_tacos", productRatio(primitives.spend(), totalSales));
                     total.add(primitives);
                 }
             }
-            if (invalid.isEmpty()) {
+            if (hasAds && invalid.isEmpty()) {
                 writeMetrics(values, "total", total.value);
+                values.put("total_tacos", productRatio(total.value.spend(), totalSales));
+                values.put("total_clicks_share", productRatio(decimal(total.value.clicks()), decimal(visitValue.clicks())));
+                values.put("total_sales_share", productRatio(total.value.sales(), totalSales));
                 for (var category : Category.values()) {
                     writeShares(values, category.key, categories.get(category).value, total.value);
                 }
             }
             // Map.copyOf rejects nulls, which intentionally represent unavailable cells here.
-            return new Row(Collections.unmodifiableMap(values));
+            return new Row(period, Collections.unmodifiableMap(values), visitValue.snapshotDate(),
+                    visitValue.capturedAt(), visitValue.status(), visitValue.reason(),
+                    performance.snapshotDate(), performance.status(), performance.reason(), performance.type());
         }
+    }
+
+    private record HotnessValue(String label, LocalDate snapshotDate, String status, String reason, String type) {
+    }
+
+    /** Hotness is an observation, never an average or a substitute from a neighbouring snapshot. */
+    private static HotnessValue hotnessFor(ReportPeriod period, ProductHotness hotness) {
+        if (hotness == null || !period.endDate().equals(hotness.snapshotDate())) {
+            return new HotnessValue(null, hotness == null ? null : hotness.snapshotDate(), "missing",
+                    "No hotness snapshot matches this period end date.", null);
+        }
+        if ("ambiguous".equals(hotness.status())) {
+            return new HotnessValue("???", hotness.snapshotDate(), "ambiguous",
+                    "Multiple matching offers prevent a reliable hotness classification.", null);
+        }
+        if (!"available".equals(hotness.status())) {
+            return new HotnessValue(null, hotness.snapshotDate(), "missing",
+                    "The snapshot has no hotness classification for this product.", null);
+        }
+        var type = hotness.hotnessType();
+        if (type != null && type.isBlank()) type = null;
+        var label = hotness.hotnessName();
+        if (label == null || label.isBlank()) {
+            label = type == null ? null : switch (type) {
+                case "super_hot" -> "Super Hot";
+                case "hot" -> "Hot";
+                case "regular" -> "Regular";
+                case "cold" -> "Cold";
+                case "super_cold" -> "Super Cold";
+                default -> type;
+            };
+        }
+        return new HotnessValue(label, hotness.snapshotDate(), label == null ? "missing" : "available",
+                label == null ? "The snapshot has no hotness classification for this product." : null, type);
+    }
+
+    private record VisitsValue(Long clicks, LocalDate snapshotDate, Instant capturedAt, String status, String reason) {
+    }
+
+    /** Never shift a report window by silently substituting an earlier or later rolling snapshot. */
+    private static VisitsValue visitsFor(ReportPeriod period, ProductVisits visits) {
+        if (visits == null) return new VisitsValue(null, null, null, "missing",
+                "No visits snapshot was captured for this period end date.");
+        var capturedAt = visits.fetchedAt() == null ? null : visits.fetchedAt().toInstant();
+        if (!period.endDate().equals(visits.snapshotDate()) || capturedAt == null) {
+            return new VisitsValue(null, visits.snapshotDate(), capturedAt, "missing",
+                    "No live visits snapshot matches this period end date.");
+        }
+        if ("ambiguous".equals(visits.status())) {
+            return new VisitsValue(null, visits.snapshotDate(), capturedAt, "ambiguous",
+                    "Multiple matching offers prevent a reliable visits value.");
+        }
+        Long clicks = period.windowDays() == 14 ? visits.visits14() : visits.visits30();
+        if (!"available".equals(visits.status()) || clicks == null) {
+            return new VisitsValue(null, visits.snapshotDate(), capturedAt, "missing",
+                    "The snapshot has no visits counter for the last " + period.windowDays() + " days.");
+        }
+        return new VisitsValue(clicks, visits.snapshotDate(), capturedAt, "available", null);
     }
 
     private static boolean allZero(Primitives metrics) {
@@ -359,6 +507,12 @@ public final class ProductPerformanceData {
 
     private static BigDecimal decimal(Long value) {
         return value == null ? null : BigDecimal.valueOf(value);
+    }
+
+    /** Product-relative rates require a known positive base; signed source numerators remain unchanged. */
+    private static BigDecimal productRatio(BigDecimal numerator, BigDecimal denominator) {
+        if (numerator == null || denominator == null || denominator.signum() <= 0) return null;
+        return numerator.divide(denominator, MathContext.DECIMAL128);
     }
 
     /** Missing inputs stay unknown, even with a zero denominator; known zero denominators yield zero. */

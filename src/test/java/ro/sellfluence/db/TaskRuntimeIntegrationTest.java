@@ -49,7 +49,12 @@ class TaskRuntimeIntegrationTest {
                             INSERT INTO tasks (name, duration_of_last_run, terminated)
                             VALUES ('previous', INTERVAL '2 minutes', LOCALTIMESTAMP)
                             """);
+                    statement.execute("CREATE TABLE vendor (id UUID PRIMARY KEY)");
                 }
+                var migration = Class.forName("ro.sellfluence.db.versions.EmagMirrorDBVersion47")
+                        .getDeclaredMethod("version47", java.sql.Connection.class);
+                migration.setAccessible(true);
+                migration.invoke(null, db);
 
                 Task.registerTasks(db, List.of("new"));
                 var neverRun = Task.getAllTasks(db).stream()

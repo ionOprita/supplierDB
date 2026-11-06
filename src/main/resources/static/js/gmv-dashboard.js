@@ -114,7 +114,7 @@ export function initGMVDashboard({document = globalThis.document, fetch = global
     const button = element('button', 'overview-info-button');
     button.id = 'gmvDashboardInfo';
     button.type = 'button';
-    button.setAttribute('aria-label', 'About GMV');
+    button.setAttribute('aria-label', 'About GMV (cu TVA)');
     button.setAttribute('aria-describedby', 'gmvDashboardInfoText');
     button.setAttribute('aria-controls', 'gmvDashboardInfoText');
     const icon = element('span', 'overview-info-icon', 'i');
@@ -123,7 +123,7 @@ export function initGMVDashboard({document = globalThis.document, fetch = global
     const tooltip = element('div', 'overview-info-text');
     tooltip.id = 'gmvDashboardInfoText';
     tooltip.setAttribute('role', 'tooltip');
-    tooltip.textContent = `Daily GMV in RON through ${report.throughDate}. `
+    tooltip.textContent = `Daily GMV (cu TVA) in RON through ${report.throughDate}. `
       + (report.month === (currentMonth ?? report.month) ? 'Today is still in progress. ' : 'Full month. ')
       + 'GMV includes VAT and seller-funded voucher adjustments, deducts storno, and excludes shipping. '
       + 'Daily values use the same allocation as monthly GMV. Later changes can revise earlier days.';
@@ -176,7 +176,7 @@ export function initGMVDashboard({document = globalThis.document, fetch = global
           x: {title: {display: true, text: 'Day of month', color: textColor}, grid: {display: false},
             ticks: {color: textColor, maxRotation: 0, maxTicksLimit: 12,
               callback(value) { return String(Number(this.getLabelForValue(value).slice(-2))); }}},
-          y: {beginAtZero: true, title: {display: true, text: 'GMV (RON)', color: textColor},
+          y: {beginAtZero: true, title: {display: true, text: 'GMV (cu TVA) · RON', color: textColor},
             grid: {color: gridColor}, ticks: {color: textColor, callback: value => axisFormat.format(value)}}
         },
         plugins: {
@@ -202,7 +202,7 @@ export function initGMVDashboard({document = globalThis.document, fetch = global
   function setSummary(target, data) {
     target.total.textContent = formatDashboardGMV(data.total);
     target.scope.textContent = `${data.scope} · ${target.report.month === (currentMonth ?? target.report.month) ? 'month to date' : 'monthly total'}`;
-    target.canvas.setAttribute('aria-label', `${data.scope}: daily GMV in RON in ${target.report.month}, through ${target.report.throughDate}`);
+    target.canvas.setAttribute('aria-label', `${data.scope}: daily GMV (cu TVA) in RON in ${target.report.month}, through ${target.report.throughDate}`);
   }
 
   function buildPanel(report, labels, names, key) {
@@ -211,7 +211,7 @@ export function initGMVDashboard({document = globalThis.document, fetch = global
     const header = element('div', 'overview-card-header');
     const heading = element('div', 'overview-card-heading');
     const info = createInfo(report);
-    const title = element('h2', 'overview-card-title', 'GMV');
+    const title = element('h2', 'overview-card-title', 'GMV (cu TVA)');
     title.id = 'gmvDashboardTitle';
     heading.appendChild(info.wrap);
     heading.appendChild(title);

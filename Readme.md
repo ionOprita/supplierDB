@@ -35,10 +35,12 @@ The existing task controls allow pausing automatic runs and requesting a manual 
 logins for the same account.
 
 Migration 41 creates the `offers_` tables. An offer fetch downloads every page before atomically replacing the snapshot
-for that vendor and date, including all nested records. The date is captured once when fetching begins using the server
-JVM's local timezone. The last successful fetch of the day wins: absent offers are removed, and a successful empty result
+for that vendor and date, including all nested records. The date is captured after fetching completes using
+`Europe/Bucharest`. The last successful fetch of the day wins: absent offers are removed, and a successful empty result
 clears that day's offers. Earlier dates and other vendors remain unchanged. Failed or incomplete fetches preserve the
-previous snapshot. Fetch metadata stores only the date; business dates supplied within offer records are retained.
+previous snapshot. Migration 48 also stores the live visits capture timestamp and the rolling Last14/Last30
+counters; imports without live provenance cannot supply report Clicks. Earlier daily snapshots are retained
+permanently. See [eMAG dashboard API](doc/EmagDashboardAPI.md) and [Task history](doc/TaskHistory.md).
 
 Production configuration:
 
@@ -123,8 +125,16 @@ The first-review reference is cleared when that review is excluded.
 
 ### Product performance
 
-The product-performance dashboard aggregates active daily adset/campaign snapshots into
-Monday–Sunday weeks or calendar months. See [Product performance calculations](doc/ProductPerformance.md)
+The product-performance dashboard uses consecutive 14-day intervals and 30-day windows ending at each
+month-end, plus a separately labelled rolling preview. Orders, Total Sales (fara TVA), Ads and average gross offer prices
+use each row's explicit dates; Clicks uses the corresponding raw eMAG visits capture with its approximate
+source-window alignment explained in the tooltip. Sales Price is labelled (cu TVA), Spend/CPC use
+the net-credit convention, and Ads Sales is labelled (fara TVA), as confirmed in the eMAG platform.
+The report scopes Orders and Total Sales to the selected eMAG account, matching Ads and product visits.
+TACOS is available for each Ads group; Total also shows Ads Clicks / product Clicks and
+Ads Sales / Total Sales. Their denominators must be positive; missing data remains unavailable.
+The original Ads values are retained without additional VAT conversion. Existing GMV pages
+retain VAT-inclusive amounts. See [Product performance calculations](doc/ProductPerformance.md)
 for product matching, sources, formulas, unavailable columns, and partial-report errors.
 
 ### Ads, offers, and reviews database tests

@@ -48,15 +48,32 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
      */
     public static int startTask(Connection db, String name) throws SQLException {
         String sql = """
-                INSERT INTO tasks (name, started)
-                VALUES (?, CURRENT_TIMESTAMP)
-                ON CONFLICT (name)
-                DO UPDATE SET started = CURRENT_TIMESTAMP, terminated = NULL
+                WITH latest AS (
+                    INSERT INTO tasks (name, started)
+                    VALUES (?, CURRENT_TIMESTAMP)
+                    ON CONFLICT (name)
+                    DO UPDATE SET started = CURRENT_TIMESTAMP, terminated = NULL
+                    RETURNING name
+                ), interrupted AS (
+                    UPDATE task_runs r SET status = 'INTERRUPTED', finished_at = CURRENT_TIMESTAMP,
+                        error = 'A new attempt started before this attempt was completed.'
+                    FROM latest WHERE r.task_name = latest.name AND r.status = 'RUNNING'
+                    RETURNING r.id
+                ), history AS (
+                    INSERT INTO task_runs (task_name, started_at, status)
+                    SELECT latest.name, CURRENT_TIMESTAMP, 'RUNNING'
+                    FROM latest CROSS JOIN (SELECT COUNT(*) FROM interrupted) previous
+                    RETURNING id
+                )
+                SELECT COUNT(*) FROM latest CROSS JOIN (SELECT COUNT(*) FROM history) recorded
                 """;
 
         try (var s = db.prepareStatement(sql)) {
             s.setString(1, name);
-            return s.executeUpdate();
+            try (var rows = s.executeQuery()) {
+                rows.next();
+                return rows.getInt(1);
+            }
         }
     }
 
@@ -70,7 +87,7 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
      */
     public static int endTask(Connection db, String name, String error) throws SQLException {
         try (var s = db.prepareStatement("""
-                WITH input AS (SELECT ?::text AS new_error)
+                WITH input AS (SELECT ?::text AS new_error), latest AS (
                 UPDATE tasks AS t
                 SET terminated = CURRENT_TIMESTAMP,
                     duration_of_last_run = CURRENT_TIMESTAMP - t.started,
@@ -89,10 +106,24 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
                     END
                 FROM input AS i
                 WHERE t.name = ?
+                RETURNING t.name
+                ), history AS (
+                    UPDATE task_runs r
+                    SET finished_at = CURRENT_TIMESTAMP,
+                        status = CASE WHEN i.new_error IS NULL OR i.new_error = '' THEN 'SUCCESS' ELSE 'FAILED' END,
+                        error = i.new_error
+                    FROM latest, input i
+                    WHERE r.task_name = latest.name AND r.status = 'RUNNING'
+                    RETURNING r.id
+                )
+                SELECT COUNT(*) FROM latest CROSS JOIN (SELECT COUNT(*) FROM history) recorded
                 """)) {
             s.setString(1, error);
             s.setString(2, name);
-            return s.executeUpdate();
+            try (var rows = s.executeQuery()) {
+                rows.next();
+                return rows.getInt(1);
+            }
         }
     }
 
@@ -126,11 +157,23 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
     /** Clear interrupted attempts on startup while preserving completed attempts' scheduling history. */
     public static int resetState(Connection db) throws SQLException {
         String sql = """
-                UPDATE tasks SET started = NULL
-                WHERE started IS NOT NULL AND terminated IS NULL
+                WITH interrupted AS (
+                    UPDATE task_runs SET status = 'INTERRUPTED', finished_at = CURRENT_TIMESTAMP,
+                        error = 'The server restarted before this attempt was completed.'
+                    WHERE status = 'RUNNING'
+                    RETURNING id
+                ), reset AS (
+                    UPDATE tasks SET started = NULL
+                    WHERE started IS NOT NULL AND terminated IS NULL
+                    RETURNING name
+                )
+                SELECT COUNT(*) FROM reset CROSS JOIN (SELECT COUNT(*) FROM interrupted) recorded
                 """;
         try (var s = db.prepareStatement(sql)) {
-            return s.executeUpdate();
+            try (var rows = s.executeQuery()) {
+                rows.next();
+                return rows.getInt(1);
+            }
         }
     }
 
@@ -161,7 +204,7 @@ public record Task(String name, LocalDateTime started, LocalDateTime terminated,
                                 rs.getObject("terminated", LocalDateTime.class),
                                 rs.getObject("last_successful_run", LocalDateTime.class),
                                 rs.getObject("last_successful_start", LocalDateTime.class),
-                                toDuration(rs.getObject("duration_of_last_run", PGInterval.class)),
+                                toDuration((PGInterval) rs.getObject("duration_of_last_run")),
                                 rs.getObject("current_run_seconds", Long.class),
                                 rs.getInt("unsuccessful_runs"),
                                 rs.getString("error")

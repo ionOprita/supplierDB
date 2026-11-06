@@ -42,6 +42,9 @@ class EmagMirrorDBVersion46Test {
         EmagMirrorDBVersion25.version25(db);
         EmagMirrorDBVersion29.version29(db);
         execute("ALTER TABLE tasks ADD COLUMN last_successful_start TIMESTAMP");
+        // Current Task writes attempt history while this test retains the old error-column limit.
+        execute("CREATE TABLE vendor (id UUID PRIMARY KEY)");
+        EmagMirrorDBVersion47.version47(db);
         try (var statement = db.prepareStatement("""
                 INSERT INTO tasks (name, started, terminated, duration_of_last_run, error,
                                    last_successful_run, last_successful_start, unsuccessful_runs)

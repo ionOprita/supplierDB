@@ -10,6 +10,8 @@ import ro.sellfluence.db.AdsReportPeriod;
 import ro.sellfluence.db.EmagMirrorDB;
 import ro.sellfluence.db.GMV;
 import ro.sellfluence.db.OffersTable.DailyProductOffer;
+import ro.sellfluence.db.OffersTable.ProductHotness;
+import ro.sellfluence.db.OffersTable.ProductVisits;
 import ro.sellfluence.db.OverviewTable.OverviewData;
 import ro.sellfluence.db.GMVDashboardTable.GMVDashboardData;
 import ro.sellfluence.db.Vendor;
@@ -17,7 +19,9 @@ import ro.sellfluence.db.EmagMirrorDB.ReturnStornoOrderDetail;
 import ro.sellfluence.db.ProductTable.ProductInfo;
 import ro.sellfluence.db.ProductTable.ProductWithVendor;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
+import ro.sellfluence.db.ProductPerformanceSource;
 import ro.sellfluence.db.Task;
+import ro.sellfluence.db.TaskHistory;
 import ro.sellfluence.support.DoubleWindow;
 import ro.sellfluence.support.Statistics;
 import ro.sellfluence.support.Statistics.Estimate;
@@ -153,9 +157,30 @@ public class API {
         return ProductPerformanceOptions.create(mirrorDB.getAllVendors(), mirrorDB.readProducts());
     }
 
+    /** Retained compatibility endpoint for the most recent rolling observation. */
+    public Optional<ProductVisits> getProductVisits(UUID vendorId, String productCode)
+            throws SQLException {
+        if (vendorId == null || productCode == null || productCode.isBlank()) return Optional.empty();
+        var vendors = mirrorDB.getAllVendors();
+        var product = mirrorDB.readProduct(productCode)
+                .flatMap(info -> ProductPerformanceOptions.resolve(vendors, info, vendorId, productCode));
+        if (product.isEmpty()) return Optional.empty();
+        return Optional.of(mirrorDB.getLatestProductVisits(vendorId, product.get().pnk(), overviewDate(Clock.systemUTC())));
+    }
+
+    public TaskHistory.HistoryPage getTaskHistory(String taskName, String status,
+            LocalDate from, LocalDate to, int page, int pageSize) throws SQLException {
+        return mirrorDB.getTaskHistory(taskName, status, from, to, page, pageSize);
+    }
+
+    public List<TaskHistory.CollectionDay> getOfferCollectionDays(
+            String taskName, LocalDate from, LocalDate to) throws SQLException {
+        return mirrorDB.getOfferCollectionDays(taskName, from, to, overviewDate(Clock.systemUTC()));
+    }
+
     public Optional<ProductPerformanceData.Response> getProductPerformance(UUID vendorId, String productCode)
             throws SQLException {
-        return getProductPerformance(vendorId, productCode, ProductPerformanceData.Period.WEEK);
+        return getProductPerformance(vendorId, productCode, ProductPerformanceData.Period.FOURTEEN_DAYS);
     }
 
     public Optional<ProductPerformanceData.Response> getProductPerformance(
@@ -165,29 +190,45 @@ public class API {
         var product = mirrorDB.readProduct(productCode)
                 .flatMap(info -> ProductPerformanceOptions.resolve(vendors, info, vendorId, productCode));
         if (product.isEmpty()) return Optional.empty();
-        // Validate ownership before querying advertising snapshots. Products without a PNK still
-        // have valid metadata, but no available advertising history can be attributed to them.
-        var metadata = product.orElseThrow();
+        // Ownership is checked before any report source is queried.
+        return Optional.of(buildProductPerformance(mirrorDB, product.orElseThrow(), vendorId, productCode,
+                period, Clock.systemUTC()));
+    }
+
+    static ProductPerformanceData.Response buildProductPerformance(ProductPerformanceSource source,
+            ProductPerformanceData.Product metadata, UUID vendorId, String productCode,
+            ProductPerformanceData.Period period, Clock clock) throws SQLException {
+        var today = overviewDate(clock);
         var snapshots = metadata.pnk() == null ? List.<DailyAdset>of()
-                : mirrorDB.getProductPerformanceAdsets(vendorId, metadata.pnk());
+                : source.getProductPerformanceAdsets(vendorId, metadata.pnk());
+        var firstActivity = source.getFirstProductPerformanceActivity(vendorId, productCode, metadata.pnk());
+        var firstAd = snapshots.stream().map(it -> it.key().reportDate()).min(LocalDate::compareTo);
+        if (firstAd.isPresent() && (firstActivity.isEmpty() || firstAd.get().isBefore(firstActivity.get()))) {
+            firstActivity = firstAd;
+        }
+        var latestSnapshot = source.getLatestCompletedProductVisitsSnapshotDate(vendorId, today);
+        var periods = ProductPerformancePeriods.create(period, firstActivity.orElse(null), today,
+                latestSnapshot.orElse(null));
         List<DailyProductOffer> offers = List.of();
         Map<LocalDate, BigDecimal> gmvByPeriod = Map.of();
+        Map<LocalDate, BigDecimal> totalSalesByPeriod = Map.of();
         Map<LocalDate, Long> ordersByPeriod = Map.of();
+        Map<LocalDate, ProductVisits> visitsByEndDate = Map.of();
+        Map<LocalDate, ProductHotness> hotnessByEndDate = Map.of();
         var periodEnds = new TreeMap<LocalDate, LocalDate>();
-        for (var snapshot : snapshots) {
-            var start = period.start(snapshot.key().reportDate());
-            periodEnds.put(start, period.end(start));
-        }
+        for (var interval : periods) periodEnds.put(interval.startDate(), interval.endDate());
         if (!periodEnds.isEmpty()) {
-            offers = mirrorDB.getProductPerformanceOffers(vendorId, metadata.pnk(),
+            offers = source.getProductPerformanceOffers(vendorId, metadata.pnk(),
                     periodEnds.firstKey(), periodEnds.lastEntry().getValue());
-            gmvByPeriod = mirrorDB.computeGMVForProductPeriods(productCode, periodEnds);
-            // Match Order Table quantities for the PNK across selling accounts. The selected
-            // vendor controls product access and ads attribution, not the legacy order total.
-            ordersByPeriod = mirrorDB.countOrdersForProductPeriods(metadata.pnk(), periodEnds);
+            gmvByPeriod = source.computeGMVForProductPeriods(vendorId, productCode, periodEnds);
+            totalSalesByPeriod = source.computeNetSalesForProductPeriods(vendorId, productCode, periodEnds);
+            // Preserve Order Table's quantity rules, within the same selected account as Ads.
+            ordersByPeriod = source.countOrdersForProductPeriods(vendorId, metadata.pnk(), periodEnds);
+            visitsByEndDate = source.getProductVisitsForDates(vendorId, metadata.pnk(), periodEnds.values());
+            hotnessByEndDate = source.getProductHotnessForDates(vendorId, metadata.pnk(), periodEnds.values());
         }
-        return Optional.of(ProductPerformanceData.create(metadata, period, snapshots, offers,
-                gmvByPeriod, ordersByPeriod));
+        return ProductPerformanceData.create(metadata, periods, snapshots, offers, gmvByPeriod,
+                ordersByPeriod, visitsByEndDate, totalSalesByPeriod, hotnessByEndDate);
     }
 
     record ProductForFrontend(String name, String id) {

@@ -21,6 +21,7 @@ import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -124,6 +125,35 @@ class FetchOffersTest {
     }
 
     @Test
+    void acceptsExplicitNullVisitsAndPreservesLargeCounters() {
+        var disposed = new AtomicBoolean();
+        var response = FetchOffers.decodeResponse(httpResponse(200, """
+                {"data":{"offers":{"items":[
+                  {"id":"one","productPerformanceVisits":5000000000,"productPerformanceVisitsLast14":0},
+                  {"id":"two","productPerformanceVisits":null,"productPerformanceVisitsLast14":null}
+                ],"totalNumberOfItems":2}}}
+                """, disposed));
+
+        assertEquals(5_000_000_000L, response.data().offers().items().getFirst().productPerformanceVisits());
+        assertEquals(0L, response.data().offers().items().getFirst().productPerformanceVisitsLast14());
+        assertNull(response.data().offers().items().getLast().productPerformanceVisits());
+        assertTrue(disposed.get());
+    }
+
+    @Test
+    void rejectsOmittedVisitsFieldsEvenWhenTheOtherCounterIsPresent() {
+        for (var fields : List.of("", ",\"productPerformanceVisits\":null",
+                ",\"productPerformanceVisitsLast14\":0")) {
+            var disposed = new AtomicBoolean();
+            var json = "{\"data\":{\"offers\":{\"items\":[{\"id\":\"one\"" + fields
+                    + "}],\"totalNumberOfItems\":1}}}";
+            assertThrows(IllegalStateException.class,
+                    () -> FetchOffers.decodeResponse(httpResponse(200, json, disposed)));
+            assertTrue(disposed.get());
+        }
+    }
+
+    @Test
     void rejectsHttpErrorsAndDisposesTheirResponses() {
         var disposed = new AtomicBoolean();
 
@@ -153,8 +183,8 @@ class FetchOffersTest {
     }
 
     @Test
-    void storesCompleteSnapshotOnceForTheVendorAndDateWhenFetchStarted() {
-        var instant = new AtomicReference<>(Instant.parse("2026-09-24T21:59:59Z"));
+    void recordsCompletionInstantAndBucharestDateAfterFetchingAcrossMidnight() {
+        var instant = new AtomicReference<>(Instant.parse("2026-09-24T20:59:59Z"));
         var movingClock = new Clock() {
             @Override
             public ZoneId getZone() {
@@ -175,18 +205,19 @@ class FetchOffersTest {
         var writes = new AtomicInteger();
 
         FetchOffers.transferOffersToDB(vendorId, movingClock, () -> {
-            instant.set(Instant.parse("2026-09-24T22:00:01Z"));
+            instant.set(Instant.parse("2026-09-24T21:00:01Z"));
             return complete;
-        }, (vendor, date, data) -> {
+        }, (vendor, date, data, fetchedAt) -> {
             writes.incrementAndGet();
             assertEquals(vendorId, vendor);
-            assertEquals(LocalDate.of(2026, 9, 24), date);
+            assertEquals(LocalDate.of(2026, 9, 25), date);
+            assertEquals(Instant.parse("2026-09-24T21:00:01Z"), fetchedAt);
             assertSame(complete.data(), data);
             return data.offers().items().size();
         });
 
         assertEquals(1, writes.get());
-        assertEquals(LocalDate.of(2026, 9, 25), LocalDate.now(movingClock));
+        assertEquals(LocalDate.of(2026, 9, 24), LocalDate.now(movingClock), "The caller's clock zone is not the snapshot zone");
     }
 
     @Test
@@ -200,7 +231,7 @@ class FetchOffersTest {
                         return page(26, 0, 25);
                     }
                     throw failure;
-                }), (vendor, date, data) -> {
+                }), (vendor, date, data, fetchedAt) -> {
                     stored.set(true);
                     return 0;
                 }));
@@ -214,7 +245,7 @@ class FetchOffersTest {
         var stored = new AtomicBoolean();
 
         assertThrows(IllegalStateException.class, () -> FetchOffers.transferOffersToDB(
-                vendorId, clock, () -> page(26, 0, 25), (vendor, date, data) -> {
+                vendorId, clock, () -> page(26, 0, 25), (vendor, date, data, fetchedAt) -> {
                     stored.set(true);
                     return 0;
                 }));
@@ -227,7 +258,7 @@ class FetchOffersTest {
         var failure = new SQLException("database failure");
 
         var thrown = assertThrows(IllegalStateException.class, () -> FetchOffers.transferOffersToDB(
-                vendorId, clock, () -> page(0, 0, 0), (vendor, date, data) -> {
+                vendorId, clock, () -> page(0, 0, 0), (vendor, date, data, fetchedAt) -> {
                     throw failure;
                 }));
 

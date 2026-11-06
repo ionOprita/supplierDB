@@ -104,7 +104,8 @@ class ProductPerformanceOptionsTest {
                 "https://www.emag.ro/actual-product/pd/ACTUAL-PNK");
         var metadata = ProductPerformanceOptions.resolve(List.of(vendor), product, vendor.id(), "ACTUAL-CODE")
                 .orElseThrow();
-        var response = ProductPerformanceData.create(metadata, ProductPerformanceData.Period.WEEK, List.of());
+        var response = ProductPerformanceData.create(metadata, List.of(), List.of(), List.of(),
+                java.util.Map.of(), java.util.Map.of(), java.util.Map.of(), java.util.Map.of());
 
         assertFalse(response.mock());
         assertEquals(new ProductPerformanceData.Product("Actual vendor", "Actual product", "ACTUAL-PNK",

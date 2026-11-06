@@ -22,7 +22,7 @@
     </div>
 
     <section class="gmv-period" aria-labelledby="gmvPeriodHeading">
-        <h2 id="gmvPeriodHeading">GMV for a period</h2>
+        <h2 id="gmvPeriodHeading">GMV (cu TVA) for a period</h2>
         <form id="gmvPeriodForm" class="gmv-period-form">
             <div class="gmv-period-field gmv-period-product">
                 <label for="gmvProductSelect">Product</label>
@@ -45,20 +45,20 @@
         </form>
         <p class="gmv-period-help">Both dates included. Prices include VAT.</p>
         <div class="gmv-period-summary">
-            <label for="gmvPeriodResult">GMV</label>
+            <label for="gmvPeriodResult">GMV (cu TVA)</label>
             <button id="gmvPeriodResult" type="button" class="gmv-amount-button" title="View contributing orders" aria-label="View contributing orders" hidden></button>
             <span id="gmvPeriodContext"></span>
         </div>
         <p id="gmvPeriodStatus" role="status" aria-live="polite">Select a product to calculate GMV.</p>
     </section>
 
-    <h2 class="gmv-monthly-heading">Monthly GMV</h2>
+    <h2 class="gmv-monthly-heading">Monthly GMV (cu TVA)</h2>
     @if(report.months().isEmpty())
         <p class="gmv-monthly-empty muted">No stored GMV available.</p>
     @endif
 
     <div class="wrap product-sheet-wrap gmv-monthly-wrap">
-        <table id="monthlyGmvTable" class="product-sheet-table gmv-sheet-table">
+        <table id="monthlyGmvTable" class="product-sheet-table gmv-sheet-table" aria-label="Monthly GMV (cu TVA)">
             <thead>
             <tr>
                 <th scope="col" class="sticky-col sticky-col-name">Product</th>
@@ -86,7 +86,7 @@
                         @for(var month : report.months())
                             <td class="numeric">
                                 @if(row.gmvs().containsKey(month))
-                                    <button type="button" class="gmv-amount-button gmv-details-trigger" data-product-code="${row.product().productCode()}" data-product-name="${row.product().name() == null ? "" : row.product().name()}" data-month="${month.toString()}" data-gmv="${row.amount(month)}" title="View contributing orders" aria-label="${"View contributing orders for GMV " + row.amount(month) + " for " + row.product().productCode() + " in " + month.toString()}">${row.amount(month)}</button>
+                                    <button type="button" class="gmv-amount-button gmv-details-trigger" data-product-code="${row.product().productCode()}" data-product-name="${row.product().name() == null ? "" : row.product().name()}" data-month="${month.toString()}" data-gmv="${row.amount(month)}" title="View contributing orders" aria-label="${"View contributing orders for GMV (cu TVA) " + row.amount(month) + " for " + row.product().productCode() + " in " + month.toString()}">${row.amount(month)}</button>
                                 @else
                                     —
                                 @endif
@@ -108,23 +108,23 @@
             <p id="gmvDetailsMismatch" class="gmv-details-mismatch" hidden></p>
         </div>
         <div class="gmv-details-table-wrap">
-            <table id="gmvDetailsTable" class="gmv-details-table" aria-label="Orders contributing to GMV">
+            <table id="gmvDetailsTable" class="gmv-details-table" aria-label="Orders contributing to GMV (cu TVA)">
                 <thead>
                 <tr>
                     <th scope="col">Order ID</th>
                     <th scope="col">Date</th>
                     <th scope="col">Status</th>
                     <th scope="col" class="numeric">Quantity used</th>
-                    <th scope="col" class="numeric">Unit price incl. VAT</th>
-                    <th scope="col" class="numeric">Seller voucher adjustment</th>
-                    <th scope="col" class="numeric">GMV contribution</th>
+                    <th scope="col" class="numeric">Unit price (cu TVA)</th>
+                    <th scope="col" class="numeric">Seller voucher adjustment (cu TVA)</th>
+                    <th scope="col" class="numeric">GMV contribution (cu TVA)</th>
                 </tr>
                 </thead>
                 <tbody id="gmvDetailsBody"></tbody>
             </table>
         </div>
         <div class="gmv-details-footer">
-            <p>Total GMV: <strong id="gmvDetailsTotal">—</strong></p>
+            <p>Total GMV (cu TVA): <strong id="gmvDetailsTotal">—</strong></p>
             <div class="gmv-details-actions">
                 <button id="gmvDetailsDownloadCsv" type="button" disabled>Download CSV</button>
                 <button id="gmvDetailsRetry" type="button" hidden>Retry</button>

@@ -3,7 +3,7 @@
 @param String pageTitle
 
 @template.layout(userName = userName, userRole = userRole, pageTitle = pageTitle, content = @`
-    <section id="gmvDashboard" class="overview-dashboard gmv-dashboard" aria-label="Monthly GMV by company">
+    <section id="gmvDashboard" class="overview-dashboard gmv-dashboard" aria-label="Monthly GMV (cu TVA) by company">
         <div class="overview-toolbar">
             <h2 id="gmvDashboardMonth">Current month</h2>
             <div class="overview-controls">

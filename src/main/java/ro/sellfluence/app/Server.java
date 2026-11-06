@@ -63,6 +63,8 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -1012,6 +1014,7 @@ public class Server {
         app.get("/app/overview", ctx -> serveOverview(ctx, api));
         app.get("/app/gmvDashboard", ctx -> serveGMVDashboard(ctx, api));
         app.get("/app/gmvForPeriod", ctx -> computeGMVForPeriod(ctx, api));
+        app.get("/app/productVisits", ctx -> serveProductVisits(ctx, api));
         app.get("/app/productPerformanceOptions", ctx -> {
             try {
                 ctx.json(api.getProductPerformanceOptions());
@@ -1370,6 +1373,8 @@ public class Server {
                 ctx.json(returns);
             }
         });
+        app.get("/app/tasks/history", ctx -> serveTaskHistory(ctx, api, false));
+        app.get("/app/tasks/coverage", ctx -> serveTaskHistory(ctx, api, true));
         app.get("/app/tasks/active", ctx -> {
             ctx.header("Cache-Control", "no-store");
             ctx.json(new TaskSchedulerStatus(backgroundJob.laneStatuses()));
@@ -1378,6 +1383,90 @@ public class Server {
             ctx.header("Cache-Control", "no-store");
             ctx.json(backgroundJob.pausedTaskNames());
         });
+    }
+
+    static void serveProductVisits(Context ctx, API api) {
+        ctx.header("Cache-Control", "no-store");
+        try {
+            var request = parseProductPerformanceRequest(ctx.queryParam("vendorId"), ctx.queryParam("productCode"), null);
+            var response = api.getProductVisits(request.vendorId(), request.productCode());
+            if (response.isEmpty()) {
+                ctx.status(404).json(Map.of("error", "Product not found for the selected vendor"));
+            } else {
+                ctx.json(response.get());
+            }
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load product visits.", e);
+            ctx.status(500).json(Map.of("error", "Database error"));
+        }
+    }
+
+    record TaskHistoryRequest(String taskName, String status, LocalDate from, LocalDate to, int page, int pageSize) {
+    }
+
+    static TaskHistoryRequest parseTaskHistoryRequest(String taskName, String status, String from, String to,
+                                                      String page, String pageSize, Clock clock) {
+        var today = LocalDate.now(clock.withZone(ZoneId.of("Europe/Bucharest")));
+        var end = to == null || to.isBlank() ? today : historyDate(to);
+        var start = from == null || from.isBlank() ? end.minusDays(29) : historyDate(from);
+        if (start.isAfter(end) || end.isAfter(today) || ChronoUnit.DAYS.between(start, end) >= 366) {
+            throw new IllegalArgumentException("Choose up to 366 days, ending no later than today.");
+        }
+        var filterStatus = status == null || status.isBlank() ? null : status;
+        if (filterStatus != null && !Set.of("RUNNING", "SUCCESS", "FAILED", "INTERRUPTED").contains(filterStatus)) {
+            throw new IllegalArgumentException("Invalid history status.");
+        }
+        var filterName = taskName == null || taskName.isBlank() ? null : taskName;
+        if (filterName != null && filterName.length() > 500) throw new IllegalArgumentException("Invalid task name.");
+        return new TaskHistoryRequest(filterName, filterStatus, start, end,
+                historyNumber(page, 1, 1_000_000, "page"), historyNumber(pageSize, 50, 200, "page size"));
+    }
+
+    private static LocalDate historyDate(String value) {
+        if (!value.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) {
+            throw new IllegalArgumentException("Dates must use YYYY-MM-DD.");
+        }
+        try {
+            var date = LocalDate.parse(value);
+            if (date.getYear() < 1) throw new IllegalArgumentException("Invalid history date.");
+            return date;
+        } catch (DateTimeParseException e) {
+            throw new IllegalArgumentException("Invalid history date.");
+        }
+    }
+
+    private static int historyNumber(String value, int fallback, int maximum, String label) {
+        if (value == null || value.isBlank()) return fallback;
+        try {
+            if (!value.matches("[0-9]+")) throw new NumberFormatException();
+            var result = Integer.parseInt(value);
+            if (result < 1 || result > maximum) throw new NumberFormatException();
+            return result;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid " + label + ".");
+        }
+    }
+
+    static void serveTaskHistory(Context ctx, API api, boolean coverage) {
+        ctx.header("Cache-Control", "no-store");
+        try {
+            var request = parseTaskHistoryRequest(ctx.queryParam("taskName"),
+                    coverage ? null : ctx.queryParam("status"), ctx.queryParam("from"), ctx.queryParam("to"),
+                    ctx.queryParam("page"), ctx.queryParam("pageSize"), Clock.systemUTC());
+            if (coverage) {
+                ctx.json(Map.of("days", api.getOfferCollectionDays(request.taskName(), request.from(), request.to())));
+            } else {
+                ctx.json(api.getTaskHistory(request.taskName(), request.status(), request.from(), request.to(),
+                        request.page(), request.pageSize()));
+            }
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (SQLException e) {
+            logger.log(SEVERE, "Failed to load task history.", e);
+            ctx.status(500).json(Map.of("error", "Database error"));
+        }
     }
 
     static void serveOverview(Context ctx, API api) {
