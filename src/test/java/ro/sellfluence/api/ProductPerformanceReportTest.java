@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import ro.sellfluence.db.AdsCampaignTable.AdsAdsetKey;
 import ro.sellfluence.db.OffersTable.DailyProductOffer;
 import ro.sellfluence.db.OffersTable.ProductHotness;
+import ro.sellfluence.db.ProductPerformanceHistoryTable.Observation;
 import ro.sellfluence.db.OffersTable.ProductVisits;
 import ro.sellfluence.db.ProductPerformanceSource;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
@@ -113,10 +114,55 @@ class ProductPerformanceReportTest {
         assertNull(response.rows().getLast().values().get("total_clicks"));
     }
 
+    @Test
+    void importedHistoryExtendsClosedRowsAndPreviewWithoutUsingTodayOrFutureSnapshots() throws Exception {
+        var source = new Source();
+        source.first = date("2026-10-01");
+        source.history = List.of(history("2026-08-28", "60"), history("2026-10-30", "80"),
+                history("2026-11-05", "90"), history("2026-11-06", "999"), history("2026-11-08", "9999"));
+        var response = API.buildProductPerformance(source, PRODUCT, VENDOR, "CODE", THIRTY_DAYS,
+                Clock.fixed(Instant.parse("2026-11-06T10:00:00Z"), ZoneOffset.UTC));
+        assertEquals(List.of(date("2026-08-31"), date("2026-09-30"), date("2026-10-31"), date("2026-11-05")),
+                response.rows().stream().map(row -> row.period().endDate()).toList());
+        assertEquals(new BigDecimal("60"), response.rows().getFirst().values().get("clicks"));
+        assertNull(response.rows().get(1).values().get("clicks"));
+        var preview = response.rows().getLast();
+        assertTrue(preview.period().provisional());
+        assertEquals(new BigDecimal("90"), preview.values().get("clicks"));
+        assertEquals("estimated", preview.cellProvenance().get("clicks").quality());
+        assertEquals(date("2026-11-05"), preview.cellProvenance().get("clicks").sourceDate());
+        assertEquals(7L, preview.values().get("orders"));
+        assertEquals(new BigDecimal("102.02"), preview.values().get("totalSales"));
+        assertEquals(date("2026-08-02"), source.offerBounds.getFirst());
+        assertEquals(date("2026-11-05"), source.offerBounds.getLast());
+    }
+
+    private static Observation history(String date, String clicks) {
+        return new Observation(VENDOR, "CODE", "PNK", date(date), "organic",
+                Map.of("clicks", new BigDecimal(clicks)), "source", 1, "Organic", "G4:L4");
+    }
+
+    @Test
+    void importedProductWithoutCurrentPnkRemainsReadableAndOrdersStayUnknown() throws Exception {
+        var source = new Source();
+        source.expectedPnk = null;
+        source.history = List.of(history("2026-10-30", "80"));
+        var metadata = new ProductPerformanceData.Product("Product", "Product", null, null);
+        var response = API.buildProductPerformance(source, metadata, VENDOR, "CODE", THIRTY_DAYS,
+                Clock.fixed(Instant.parse("2026-11-06T10:00:00Z"), ZoneOffset.UTC));
+        assertEquals(1, response.rows().size());
+        assertEquals(new BigDecimal("80"), response.rows().getFirst().values().get("clicks"));
+        assertNull(response.rows().getFirst().values().get("orders"));
+        assertNull(source.orderPeriods);
+        assertEquals(new BigDecimal("102.02"), response.rows().getFirst().values().get("totalSales"));
+    }
+
     private static final class Source implements ProductPerformanceSource {
+        String expectedPnk = "PNK";
         LocalDate first, latest, requestedToday;
         List<DailyAdset> ads = List.of();
         List<DailyProductOffer> offers = List.of();
+        List<Observation> history = List.of();
         List<LocalDate> offerBounds;
         Map<LocalDate, LocalDate> gmvPeriods, netSalesPeriods, orderPeriods;
         Collection<LocalDate> visitsDates, hotnessDates;
@@ -126,10 +172,19 @@ class ProductPerformanceReportTest {
             assertEquals(VENDOR, vendor);
             return ads;
         }
+        public List<Observation> getProductPerformanceHistory(UUID vendor, String productCode) {
+            assertEquals(VENDOR, vendor);
+            assertEquals("CODE", productCode);
+            return history;
+        }
+        public Set<LocalDate> getProductPerformanceAdsReportDates(UUID vendor, LocalDate start, LocalDate end) {
+            assertEquals(VENDOR, vendor);
+            return start.datesUntil(end.plusDays(1)).collect(Collectors.toSet());
+        }
         public Optional<LocalDate> getFirstProductPerformanceActivity(UUID vendor, String code, String pnk) {
             assertEquals(VENDOR, vendor);
             assertEquals("CODE", code);
-            assertEquals("PNK", pnk);
+            assertEquals(expectedPnk, pnk);
             return Optional.ofNullable(first);
         }
         public Optional<LocalDate> getLatestCompletedProductVisitsSnapshotDate(UUID vendor, LocalDate today) {
@@ -157,6 +212,7 @@ class ProductPerformanceReportTest {
             return periods.keySet().stream().collect(Collectors.toMap(it -> it, it -> new BigDecimal("102.02")));
         }
         public Map<LocalDate, Long> countOrdersForProductPeriods(UUID vendor, String pnk, Map<LocalDate, LocalDate> periods) {
+            assertNotNull(pnk);
             assertEquals(VENDOR, vendor);
             assertEquals("PNK", pnk);
             orderPeriods = Map.copyOf(periods);
@@ -172,7 +228,7 @@ class ProductPerformanceReportTest {
         }
         public Map<LocalDate, ProductHotness> getProductHotnessForDates(UUID vendor, String pnk, Collection<LocalDate> dates) {
             assertEquals(VENDOR, vendor);
-            assertEquals("PNK", pnk);
+            assertEquals(expectedPnk, pnk);
             hotnessReads++;
             hotnessDates = List.copyOf(dates);
             return dates.stream().distinct().collect(Collectors.toMap(it -> it, it ->

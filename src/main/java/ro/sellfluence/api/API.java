@@ -201,12 +201,22 @@ public class API {
         var today = overviewDate(clock);
         var snapshots = metadata.pnk() == null ? List.<DailyAdset>of()
                 : source.getProductPerformanceAdsets(vendorId, metadata.pnk());
+        var history = source.getProductPerformanceHistory(vendorId, productCode);
         var firstActivity = source.getFirstProductPerformanceActivity(vendorId, productCode, metadata.pnk());
         var firstAd = snapshots.stream().map(it -> it.key().reportDate()).min(LocalDate::compareTo);
         if (firstAd.isPresent() && (firstActivity.isEmpty() || firstAd.get().isBefore(firstActivity.get()))) {
             firstActivity = firstAd;
         }
+        var firstHistorical = history.stream().map(it -> it.observationDate()).min(LocalDate::compareTo);
+        if (firstHistorical.isPresent() && (firstActivity.isEmpty() || firstHistorical.get().isBefore(firstActivity.get()))) {
+            firstActivity = firstHistorical;
+        }
         var latestSnapshot = source.getLatestCompletedProductVisitsSnapshotDate(vendorId, today);
+        var latestHistorical = history.stream().map(it -> it.observationDate()).filter(it -> it.isBefore(today))
+                .max(LocalDate::compareTo);
+        if (latestHistorical.isPresent() && (latestSnapshot.isEmpty() || latestHistorical.get().isAfter(latestSnapshot.get()))) {
+            latestSnapshot = latestHistorical;
+        }
         var periods = ProductPerformancePeriods.create(period, firstActivity.orElse(null), today,
                 latestSnapshot.orElse(null));
         List<DailyProductOffer> offers = List.of();
@@ -217,18 +227,24 @@ public class API {
         Map<LocalDate, ProductHotness> hotnessByEndDate = Map.of();
         var periodEnds = new TreeMap<LocalDate, LocalDate>();
         for (var interval : periods) periodEnds.put(interval.startDate(), interval.endDate());
+        java.util.Set<LocalDate> adsReportDates = java.util.Set.of();
         if (!periodEnds.isEmpty()) {
+            adsReportDates = source.getProductPerformanceAdsReportDates(vendorId,
+                    periodEnds.firstKey(), periodEnds.lastEntry().getValue());
             offers = source.getProductPerformanceOffers(vendorId, metadata.pnk(),
                     periodEnds.firstKey(), periodEnds.lastEntry().getValue());
             gmvByPeriod = source.computeGMVForProductPeriods(vendorId, productCode, periodEnds);
             totalSalesByPeriod = source.computeNetSalesForProductPeriods(vendorId, productCode, periodEnds);
             // Preserve Order Table's quantity rules, within the same selected account as Ads.
-            ordersByPeriod = source.countOrdersForProductPeriods(vendorId, metadata.pnk(), periodEnds);
+            if (metadata.pnk() != null) {
+                ordersByPeriod = source.countOrdersForProductPeriods(vendorId, metadata.pnk(), periodEnds);
+            }
             visitsByEndDate = source.getProductVisitsForDates(vendorId, metadata.pnk(), periodEnds.values());
             hotnessByEndDate = source.getProductHotnessForDates(vendorId, metadata.pnk(), periodEnds.values());
         }
-        return ProductPerformanceData.create(metadata, periods, snapshots, offers, gmvByPeriod,
+        var nativeReport = ProductPerformanceData.create(metadata, periods, snapshots, offers, gmvByPeriod,
                 ordersByPeriod, visitsByEndDate, totalSalesByPeriod, hotnessByEndDate);
+        return ProductPerformanceHistory.apply(nativeReport, history, adsReportDates);
     }
 
     record ProductForFrontend(String name, String id) {

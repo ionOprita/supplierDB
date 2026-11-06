@@ -491,16 +491,41 @@ class OffersTableIntegrationTest {
 
         var days = OffersTable.getDailyProductOffers(db, firstVendor, " PNK-1 ",
                 FIRST_DAY, SECOND_DAY.plusDays(2));
-        assertEquals(2, days.size(), "Empty snapshots and zero-stock-only days remain excluded");
+        assertEquals(3, days.size(), "Only empty snapshots are excluded; an observed zero stock remains available");
         assertEquals(new OffersTable.DailyProductOffer(FIRST_DAY, 1, 7,
                 new BigDecimal("199.99")), days.getFirst());
         assertEquals(2, days.get(1).matchingOffers());
         assertEquals(3, days.get(1).stock());
         assertNull(days.get(1).salesPrice(), "Different eligible offers must not mix prices and VAT rates");
+        assertEquals(new OffersTable.DailyProductOffer(SECOND_DAY.plusDays(2), 1, 0,
+                new BigDecimal("121.00")), days.get(2));
         assertEquals(List.of(), OffersTable.getDailyProductOffers(db, firstVendor, " ", FIRST_DAY,
                 SECOND_DAY.plusDays(1)));
         assertEquals(new OffersTable.DailyProductOffer(FIRST_DAY, 1, 999, new BigDecimal("111.00")),
                 OffersTable.getDailyProductOffers(db, secondVendor, "PNK-1", FIRST_DAY, FIRST_DAY).getFirst());
+    }
+
+    @Test
+    void keepsSoleUnknownStockOfferAndMarksMultipleZeroStockOffersAmbiguous() throws SQLException {
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(offer("""
+                {"id":"unknown", "docProductPartNumberKey":"PNK-1", "extStock":null,
+                 "extSalePrice":100, "offerStock":{"vatId":9}}
+                """)));
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY, snapshot(
+                offer("""
+                        {"id":"zero-one", "docProductPartNumberKey":"PNK-1", "extStock":0,
+                         "extSalePrice":100, "offerStock":{"vatId":9}}
+                        """),
+                offer("""
+                        {"id":"zero-two", "docProductPartNumberKey":"PNK-1", "extStock":0,
+                         "extSalePrice":200, "offerStock":{"vatId":10}}
+                        """)));
+
+        var days = OffersTable.getDailyProductOffers(db, firstVendor, "PNK-1", FIRST_DAY, SECOND_DAY);
+
+        assertEquals(new OffersTable.DailyProductOffer(FIRST_DAY, 1, null, new BigDecimal("121.00")), days.getFirst());
+        assertEquals(2, days.get(1).matchingOffers());
+        assertNull(days.get(1).salesPrice());
     }
 
     @Test

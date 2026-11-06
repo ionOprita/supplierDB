@@ -47,6 +47,9 @@ export function formatPerformancePeriod(period) {
 }
 
 function visitsDescription(row) {
+  if (row.visitsStatus === 'estimated' || row.cellProvenance?.clicks?.quality === 'estimated') {
+    return 'Estimated total eMAG visits, including paid and organic traffic. The historical source window may differ from the displayed report window; see the source and calculation below.';
+  }
   const captured = typeof row.visitsCapturedAt === 'string'
     && /(?:Z|[+-]\d{2}:\d{2})$/.test(row.visitsCapturedAt)
     && !Number.isNaN(Date.parse(row.visitsCapturedAt))
@@ -72,12 +75,39 @@ function conversionDescription(row, column) {
 }
 
 function performanceDescription(row) {
+  if (row.performanceStatus === 'estimated' || row.cellProvenance?.performance?.quality === 'estimated') {
+    return `Historical eMAG 30-day classification. It was observed on ${row.performanceSnapshotDate || row.cellProvenance?.performance?.sourceDate || 'an unavailable date'}, which may differ from this period end date; it is not a separate 14-day classification.`;
+  }
   const availability = row.performanceStatus === 'ambiguous'
     ? 'Multiple matching offers prevent a reliable performance classification.'
     : row.performanceStatus === 'missing' || row.values?.performance == null
       ? 'No performance classification is available for this period end date.'
       : 'Classification reported by eMAG.';
   return `${availability} ${row.performanceReason || ''} This is the eMAG 30-day classification observed at the end of the period, including for 14-day rows. Snapshot: ${row.performanceSnapshotDate || 'unavailable'}.${row.performanceType ? ` Type: ${row.performanceType}.` : ''}`.replace(/ {2,}/g, ' ');
+}
+
+function provenanceDescription(provenance) {
+  const quality = provenance.quality === 'estimated' ? 'Istoric estimat.' : 'Date parțiale; this value does not cover the complete report window.';
+  return [quality,
+    provenance.source && `Source: ${provenance.source}.`,
+    provenance.sourceDate && `Source date: ${provenance.sourceDate}.`,
+    provenance.sourceWindowDays != null && `Source window: ${provenance.sourceWindowDays} days.`,
+    provenance.method && `Method: ${provenance.method}.`,
+    provenance.details,
+    provenance.sourceUrl && `Source URL: ${provenance.sourceUrl}`
+  ].filter(Boolean).join(' ');
+}
+
+function describeProvenance(cell, row, column) {
+  const provenance = row.cellProvenance?.[column.key];
+  if (!provenance || !['estimated', 'partial'].includes(provenance.quality)) return;
+  cell.classList.add(provenance.quality === 'estimated' ? 'pp-estimated' : 'pp-partial');
+  cell.title = [cell.title, provenanceDescription(provenance)].filter(Boolean).join(' ');
+  // A derived conversion must retain the specific source of its estimated Clicks input.
+  if (column.key === 'conversion' && row.cellProvenance?.clicks?.quality === 'estimated') {
+    cell.title += ` Clicks input: ${provenanceDescription(row.cellProvenance.clicks)}`;
+  }
+  cell.setAttribute('aria-label', `${cell.textContent}. ${column.label}. ${cell.title}`);
 }
 
 export function visiblePerformanceRows(rows, showEverything) {
@@ -105,6 +135,8 @@ export function initProductPerformance() {
   const reportErrors = byId('Errors');
   const errorSummary = byId('ErrorSummary');
   const errorList = byId('ErrorList');
+  const estimatedLegend = byId('EstimatedLegend');
+  const partialLegend = byId('PartialLegend');
   let vendors = [];
   let currentVendor = null;
   let currentProduct = null;
@@ -298,6 +330,10 @@ export function initProductPerformance() {
 
   function renderRows(rows) {
     currentRows = rows;
+    const hasQuality = quality => rows.some(row => columns.some(column =>
+      row.cellProvenance?.[column.key]?.quality === quality));
+    estimatedLegend.hidden = !hasQuality('estimated');
+    partialLegend.hidden = !hasQuality('partial');
     body.replaceChildren();
     const fragment = document.createDocumentFragment();
     for (const row of visiblePerformanceRows(rows, showEverything)) {
@@ -340,6 +376,7 @@ export function initProductPerformance() {
           cell.title = performanceDescription(row);
           cell.setAttribute('aria-label', `${cell.textContent}. Perform. ${cell.title}`);
         }
+        describeProvenance(cell, row, column);
         markFrozen(cell, column.key);
         tr.appendChild(cell);
       }
@@ -383,6 +420,8 @@ export function initProductPerformance() {
     download.disabled = true;
     byId('Product').hidden = true;
     currentRows = [];
+    estimatedLegend.hidden = true;
+    partialLegend.hidden = true;
     body.replaceChildren();
     renderErrors([]);
     wrap.hidden = true;
@@ -479,7 +518,7 @@ export function initProductPerformance() {
       if (data.rows.some(row => formatPerformancePeriod(row.period) === '—'
           || ![14, 30].includes(row.period.windowDays)
           || typeof row.period.provisional !== 'boolean'
-          || !['available', 'missing', 'ambiguous'].includes(row.visitsStatus))) {
+          || !['available', 'missing', 'ambiguous', 'estimated'].includes(row.visitsStatus))) {
         throw new Error('Invalid product performance period');
       }
       renderProduct(data.product || {});
@@ -528,7 +567,8 @@ export function initProductPerformance() {
       ['Performance snapshot date', row => row.performanceSnapshotDate],
       ['Performance status', row => row.performanceStatus],
       ['Performance reason', row => row.performanceReason],
-      ['Performance type', row => row.performanceType]
+      ['Performance type', row => row.performanceType],
+      ['Cell provenance', row => JSON.stringify(row.cellProvenance || {})]
     ];
     for (const [label] of metadata) {
       const cell = document.createElement('th');

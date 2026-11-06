@@ -143,7 +143,25 @@ public final class ProductPerformanceData {
                       @JsonFormat(shape = JsonFormat.Shape.STRING) Instant visitsCapturedAt,
                       String visitsStatus, String visitsReason,
                       @JsonFormat(shape = JsonFormat.Shape.STRING) LocalDate performanceSnapshotDate,
-                      String performanceStatus, String performanceReason, String performanceType) {
+                      String performanceStatus, String performanceReason, String performanceType,
+                      Map<String, CellProvenance> cellProvenance) {
+        public Row {
+            cellProvenance = Map.copyOf(cellProvenance);
+        }
+
+        public Row(ReportPeriod period, Map<String, Object> values, LocalDate visitsSnapshotDate,
+                   Instant visitsCapturedAt, String visitsStatus, String visitsReason,
+                   LocalDate performanceSnapshotDate, String performanceStatus, String performanceReason,
+                   String performanceType) {
+            this(period, values, visitsSnapshotDate, visitsCapturedAt, visitsStatus, visitsReason,
+                    performanceSnapshotDate, performanceStatus, performanceReason, performanceType, Map.of());
+        }
+    }
+
+    /** Quality applies to a cell, including ratios derived from imported or partial inputs. */
+    public record CellProvenance(String quality, String source,
+                                 @JsonFormat(shape = JsonFormat.Shape.STRING) LocalDate sourceDate,
+                                 Integer sourceWindowDays, String method, String sourceUrl) {
     }
 
     public record DataError(String code, UUID vendorId, int campaignId, int adsetId, LocalDate reportDate,

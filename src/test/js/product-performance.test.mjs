@@ -184,7 +184,7 @@ test('financial columns expose tax explanations accessibly and export unchanged 
   assert.equal(csvRow, '07 Sept 2026 - 20 Sept 2026,190,199.99,'
     + Array(5).fill('21,121,1.25,17.36%,5.76').join(','));
   assert.doesNotMatch(csv, /GMV|229\.9/, 'Legacy gross GMV remains out of the displayed and exported columns');
-  assert.equal(csv.split('\r\n')[0].split(',').length, cells.length + 12,
+  assert.equal(csv.split('\r\n')[0].split(',').length, cells.length + 13,
     'Descriptions must not add columns beyond the visits and performance metadata');
 });
 
@@ -319,7 +319,8 @@ class Element {
     this.dataset = {};
     this.attributes = new Map();
     this.listeners = new Map();
-    this.classList = {add() {}};
+    const classes = new Set();
+    this.classList = {add(...names) { names.forEach(name => classes.add(name)); }, contains(name) { return classes.has(name); }};
     this.style = {setProperty() {}};
     this.hidden = false;
     this.disabled = false;
@@ -435,7 +436,31 @@ function visitReport(rows) {
 
 // Metadata is verified separately; these assertions retain the existing formatted-metric checks.
 function withoutMetadata(csv) {
-  return csv.split('\r\n').map(line => line.split(',').slice(0, -12).join(',')).join('\r\n');
+  const escape = value => /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+  return parseCsv(csv).map(row => row.slice(0, -13).map(escape).join(',')).join('\r\n');
+}
+
+function parseCsv(csv) {
+  const rows = [];
+  let row = [], value = '', quoted = false;
+  for (let i = 0; i < csv.length; i++) {
+    const char = csv[i];
+    if (char === '"') {
+      if (quoted && csv[i + 1] === '"') { value += '"'; i++; }
+      else quoted = !quoted;
+    } else if (!quoted && (char === ',' || char === '\r' || char === '\n')) {
+      row.push(value);
+      value = '';
+      if (char !== ',') {
+        rows.push(row);
+        row = [];
+        if (char === '\r' && csv[i + 1] === '\n') i++;
+      }
+    } else value += char;
+  }
+  row.push(value);
+  rows.push(row);
+  return rows;
 }
 
 function report(clicks, date = '2026-09-07', errors = []) {
@@ -622,8 +647,8 @@ test('30-day provisional dates and source metadata are preserved in CSV', async 
   assert.match(cells[2].title, /Rolling 30-day counter/);
   assert.match(cells[2].title, /06 Nov 2026, 00:30 \(Romania\)/);
   page.byId('DownloadCsv').click();
-  assert.equal(await page.csv(), '\uFEFFPeriod,Orders,Clicks,Period start,Period end,Window days,Provisional,Visits snapshot date,Visits captured at,Visits status,Visits reason,Performance snapshot date,Performance status,Performance reason,Performance type\r\n'
-    + '07 Oct 2026 - 05 Nov 2026 (provisional),7,"1,234",2026-10-07,2026-11-05,30,true,2026-11-06,2026-11-06T00:30:00+02:00,available,"Provisional, captured before the scheduled close.",,,,');
+  assert.equal(await page.csv(), '\uFEFFPeriod,Orders,Clicks,Period start,Period end,Window days,Provisional,Visits snapshot date,Visits captured at,Visits status,Visits reason,Performance snapshot date,Performance status,Performance reason,Performance type,Cell provenance\r\n'
+    + '07 Oct 2026 - 05 Nov 2026 (provisional),7,"1,234",2026-10-07,2026-11-05,30,true,2026-11-06,2026-11-06T00:30:00+02:00,available,"Provisional, captured before the scheduled close.",,,,,{}');
 });
 
 test('product conversion and historical hotness render independently and export for both report windows', async t => {
@@ -693,17 +718,127 @@ test('product conversion and historical hotness render independently and export 
       page.byId('DownloadCsv').click();
       const csv = await page.csv();
       const lines = csv.split('\r\n');
-      assert.equal(lines[0], '\uFEFFPeriod,Orders,Clicks,Conv.,Perform.,Period start,Period end,Window days,Provisional,Visits snapshot date,Visits captured at,Visits status,Visits reason,Performance snapshot date,Performance status,Performance reason,Performance type');
+      assert.equal(lines[0], '\uFEFFPeriod,Orders,Clicks,Conv.,Perform.,Period start,Period end,Window days,Provisional,Visits snapshot date,Visits captured at,Visits status,Visits reason,Performance snapshot date,Performance status,Performance reason,Performance type,Cell provenance');
       assert.match(lines[1], /,25,"1,000",2\.50%,Super Hot,/);
-      assert.match(lines[1], new RegExp(`,${endDate},available,,super_hot$`));
+      assert.match(lines[1], new RegExp(`,${endDate},available,,super_hot,\\{\\}$`));
       assert.match(lines[2], /,0,100,0\.00%,—,/);
       assert.match(lines[3], /,3,0,—,\?\?\?,/);
-      assert.match(lines[3], /,ambiguous,"Multiple offers, no unique candidate\.",$/);
+      assert.match(lines[3], /,ambiguous,"Multiple offers, no unique candidate\.",,\{\}$/);
       assert.match(lines[4], /,3,2,150\.00%,"<img src=x onerror=alert\(1\)>, ""New hotness""",/);
       assert.match(lines[5], /,3,—,—,Super Cold,/);
-      assert.match(lines[5], new RegExp(`,${endDate},available,,super_cold$`));
+      assert.match(lines[5], new RegExp(`,${endDate},available,,super_cold,\\{\\}$`));
     });
   }
+});
+
+test('mixed provenance colors only estimated cells and keeps full source evidence in tooltips and CSV', async t => {
+  const page = await openPage(t);
+  assert.equal(page.byId('EstimatedLegend').hidden, true);
+  assert.equal(page.byId('PartialLegend').hidden, true);
+  const sheetSource = {
+    quality: 'estimated', source: 'Google Sheets', sourceDate: '2026-05-15', sourceWindowDays: 30,
+    method: 'Historical value scaled to 14 days, with "rounding". <img src=x onerror=alert(1)>',
+    sourceUrl: 'https://docs.google.com/spreadsheets/d/example/edit#gid=12'
+  };
+  const cellProvenance = {
+    clicks: sheetSource,
+    conversion: {...sheetSource, method: 'Orders / Clicks. Orders: native; Clicks: 15 May historical estimate.'},
+    performance: {...sheetSource, method: 'Closest earlier classification; no interpolation.'},
+    auto_clicks: {quality: 'partial', source: 'native', sourceDate: '2026-05-14', sourceWindowDays: 2,
+      method: 'Only 2 of 14 report days have collected Ads data.', sourceUrl: null},
+    salesPrice: {quality: 'unrecognized <script>', source: 'unknown', method: '<script>alert(1)</script>'}
+  };
+  const data = report(5);
+  data.groups[0].columns.push(
+    {key: 'orders', label: 'Orders', type: 'integer'},
+    {key: 'clicks', label: 'Clicks', type: 'integer'},
+    {key: 'conversion', label: 'Conv.', type: 'percent', description: 'Units / Clicks × 100.'},
+    {key: 'performance', label: 'Perform.', type: 'text'},
+    {key: 'salesPrice', label: 'Sales Price', type: 'decimal'});
+  data.rows = [performanceRow('2026-05-04', {
+    orders: 25, clicks: 1000, conversion: 0.025, performance: 'SUPER HOT', salesPrice: 199.99,
+    auto_clicks: 5, total_clicks: null
+  }, {visitsStatus: 'estimated', visitsSnapshotDate: '2026-05-15', visitsCapturedAt: null,
+    performanceStatus: 'estimated', performanceSnapshotDate: '2026-05-15', cellProvenance}),
+  performanceRow('2026-05-18', {
+    orders: 0, clicks: 0, conversion: null, performance: 'Cold', salesPrice: 0,
+    auto_clicks: 0, total_clicks: 0
+  }, {visitsStatus: 'available', visitsSnapshotDate: '2026-05-31', visitsCapturedAt: '2026-05-31T21:00:00Z',
+    performanceStatus: 'available', performanceSnapshotDate: '2026-05-31', cellProvenance: {}})];
+  await page.respond(0, data);
+  const [estimated, native] = page.byId('Body').children;
+  assert.equal(page.byId('EstimatedLegend').hidden, false);
+  assert.equal(page.byId('PartialLegend').hidden, false);
+  assert.match(page.template, /<strong>Istoric estimat<\/strong>/);
+  assert.deepEqual(estimated.cells.map(cell => cell.classList.contains('pp-estimated')),
+    [false, false, true, true, true, false, false, false]);
+  assert.equal(estimated.cells[6].classList.contains('pp-partial'), true);
+  assert.equal(estimated.cells[6].textContent, '5', 'The partial marker must not change the numeric value or CSV');
+  assert.match(estimated.cells[6].title, /Date parțiale.*does not cover the complete report window/);
+  assert.match(estimated.cells[6].title, /Only 2 of 14/);
+  assert.equal(estimated.cells[2].classList.contains('pp-frozen'), true, 'Estimated overview cells remain frozen');
+  assert.match(estimated.cells[2].title, /Istoric estimat/);
+  assert.match(estimated.cells[2].title, /Source: Google Sheets/);
+  assert.match(estimated.cells[2].title, /Source date: 2026-05-15/);
+  assert.match(estimated.cells[2].title, /Source window: 30 days/);
+  assert.match(estimated.cells[2].title, /source window may differ/);
+  assert.doesNotMatch(estimated.cells[2].title, /Captured:|Visits are unavailable|Rolling 14-day counter/);
+  assert.match(estimated.cells[3].title, /Units \/ Clicks × 100/);
+  assert.match(estimated.cells[3].title, /Clicks input: Istoric estimat/);
+  assert.match(estimated.cells[4].title, /observed on 2026-05-15, which may differ/);
+  assert.match(estimated.cells[2].getAttribute('aria-label'), /1,000\. Clicks\. Estimated total eMAG visits/);
+  for (const cell of estimated.cells) assert.equal(cell.children.length, 0, 'Untrusted provenance remains plain text');
+  assert.equal(native.cells.some(cell => cell.classList.contains('pp-estimated') || cell.classList.contains('pp-partial')), false,
+    'Old dates and real zero values alone must never mark native data estimated');
+  assert.match(native.cells[2].title, /Captured:/);
+
+  page.byId('DownloadCsv').click();
+  const csv = parseCsv(await page.csv());
+  assert.equal(csv[0].at(-1), 'Cell provenance');
+  assert.equal(csv[0].length, estimated.cells.length + 13);
+  assert.deepEqual(JSON.parse(csv[1].at(-1)), cellProvenance);
+  assert.deepEqual(JSON.parse(csv[2].at(-1)), {});
+  assert.equal(csv[1][6], '5');
+  assert.equal(csv[1][3], '2.50%');
+  assert.equal(csv[2][3], '—');
+  assert.equal(withoutMetadata(await page.csv()).split('\r\n').length, 3);
+
+  page.periodSelect().value = '30days';
+  page.periodSelect().dispatch('change');
+  assert.equal(page.byId('EstimatedLegend').hidden, true, 'Old provenance must clear while another report loads');
+  assert.equal(page.byId('PartialLegend').hidden, true);
+  const nativeOnly = report(0);
+  await page.respond(1, nativeOnly);
+  assert.equal(page.byId('EstimatedLegend').hidden, true);
+  assert.equal(page.byId('PartialLegend').hidden, true);
+});
+
+test('estimated-history legend remains discoverable when older estimated rows are initially hidden', async t => {
+  const page = await openPage(t);
+  const data = report(5);
+  data.rows = Array.from({length: 21}, (_, index) => performanceRow('2026-05-01', {auto_clicks: 5, total_clicks: 5}, {
+    cellProvenance: index === 0 ? {auto_clicks: {quality: 'estimated', source: 'Google Sheets',
+      sourceDate: '2026-05-01', sourceWindowDays: 30, method: 'Estimated from a source snapshot.', sourceUrl: null}} : {}
+  }));
+  await page.respond(0, data);
+  assert.equal(page.byId('Body').children.length, 20);
+  assert.equal(page.byId('EstimatedLegend').hidden, false);
+  assert.equal(page.byId('PartialLegend').hidden, true);
+  assert.equal(page.byId('Body').children.some(row => row.cells.some(cell => cell.classList.contains('pp-estimated'))), false);
+  page.showEverything().checked = true;
+  page.showEverything().dispatch('change');
+  assert.equal(page.byId('Body').children[0].cells[1].classList.contains('pp-estimated'), true);
+});
+
+test('estimated backgrounds override row hover without weakening sticky positioning or tinting native partial cells', async () => {
+  const css = await readFile(new URL('../../main/resources/static/styles.css', import.meta.url), 'utf8');
+  const estimatedRule = '.pp-table tbody .pp-estimated,\n.pp-table tbody tr:hover > .pp-estimated';
+  assert.ok(css.indexOf(estimatedRule) > css.indexOf('.pp-table tbody tr:hover > *'));
+  assert.match(css, /\.pp-table tbody \.pp-estimated,\s*\.pp-table tbody tr:hover > \.pp-estimated\s*\{[^}]*background: #fff6cc;[^}]*color: #483b13;/);
+  assert.match(css, /\.pp-table \.pp-frozen\s*\{[^}]*position: sticky;/);
+  const partialRule = css.match(/\.pp-table tbody \.pp-partial::after\s*\{([^}]*)\}/)?.[1];
+  assert.match(partialRule, /content: " ◐"/);
+  assert.doesNotMatch(partialRule, /background/);
 });
 
 test('malformed period metadata fails safely without enabling export', async t => {
@@ -747,14 +882,14 @@ test('CSV exports only the latest 20 displayed rows until Show everything is sel
   assert.equal(visible.length, 21);
   assert.equal(visible[1], '09 Feb 2026 - 22 Feb 2026,5,5');
   assert.equal(visible.at(-1), '22 Jun 2026 - 05 Jul 2026,24,24');
-  assert.match((await page.csv()).split('\r\n')[1], /,2026-02-09,2026-02-22,14,false,,,missing,,,,,$/);
+  assert.match((await page.csv()).split('\r\n')[1], /,2026-02-09,2026-02-22,14,false,,,missing,,,,,,\{\}$/);
   page.showEverything().checked = true;
   page.showEverything().dispatch('change');
   page.byId('DownloadCsv').click();
   const all = (withoutMetadata(await page.csv())).split('\r\n');
   assert.equal(all.length, 26);
   assert.equal(all[1], '05 Jan 2026 - 18 Jan 2026,0,0');
-  assert.match((await page.csv()).split('\r\n')[1], /,2026-01-05,2026-01-18,14,false,,,missing,,,,,$/);
+  assert.match((await page.csv()).split('\r\n')[1], /,2026-01-05,2026-01-18,14,false,,,missing,,,,,,\{\}$/);
   assert.deepEqual(all.slice(6), visible.slice(1));
 });
 

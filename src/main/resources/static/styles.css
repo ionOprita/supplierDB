@@ -1647,6 +1647,39 @@ code {
   background: var(--hover);
 }
 
+/* Keep provenance visible on frozen cells and while their row is hovered. */
+.pp-table tbody .pp-estimated,
+.pp-table tbody tr:hover > .pp-estimated {
+  background: #fff6cc;
+  color: #483b13;
+}
+
+.pp-table tbody .pp-partial::after {
+  content: " ◐";
+  color: var(--muted);
+  font-size: .8em;
+}
+
+.pp-provenance-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .35rem;
+  margin: .25rem 0 .65rem;
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+.pp-estimated-swatch {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  border: 1px solid #c8b86c;
+  border-radius: 3px;
+  background: #fff6cc;
+}
+
 @media (prefers-color-scheme: dark) {
   .product-performance {
     --pp-overview: #283444;

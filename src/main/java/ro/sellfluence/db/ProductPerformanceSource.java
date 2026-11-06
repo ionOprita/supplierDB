@@ -7,10 +7,17 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /** Read-only inputs for a product report; each aggregate receives the same explicit intervals. */
 public interface ProductPerformanceSource {
+    List<ProductPerformanceHistoryTable.Observation> getProductPerformanceHistory(UUID vendorId, String productCode)
+            throws SQLException;
+
+    Set<LocalDate> getProductPerformanceAdsReportDates(UUID vendorId, LocalDate start, LocalDate end)
+            throws SQLException;
+
     List<ProductPerformanceTable.DailyAdset> getProductPerformanceAdsets(UUID vendorId, String pnk)
             throws SQLException;
 

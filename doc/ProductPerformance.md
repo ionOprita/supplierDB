@@ -1,5 +1,11 @@
 # Product performance calculations
 
+Historical spreadsheet observations are imported separately through the explicit dry-run/apply
+workflow documented in [ProductPerformanceHistory.md](ProductPerformanceHistory.md). Weekly
+source entries represent rolling 30-day observations, not weekly increments. Their original
+dates, missing values, source ranges and immutable raw revisions are retained; native orders
+remain the source for Orders and Total Sales. The historical average-price sheet is not an input.
+
 `/app/productPerformance?vendorId=…&productCode=…&period=14days` returns database-backed
 product and advertising performance for one vendor/product. `period` accepts `14days` (the default)
 or `30days`; legacy `week` and `month` values are aliases for these new modes, not calendar reports.
@@ -74,14 +80,17 @@ classification observed on that date.
   It can overlap history; it is not a partially elapsed fixed window.
 
 Rows begin at the earliest known eligible Ads, matching offer (including zero stock), or
-status 4/5 order activity in the selected account. Orders from another account cannot extend
+status 4/5 order activity in the selected account, or an imported historical observation.
+Older family review/rating history can therefore extend the report before Ads/Organic history.
+Orders from another account cannot extend
 the report history. Rows exist without Ads and without visits captures, preserving
 historical Orders/GMV. No activity means no rows. Rows are sorted oldest to newest.
 “Closed” refers to elapsed dates: later corrections/imports can still change the underlying data.
 
 Each row exposes `period: {startDate, endDate, windowDays, provisional}`, `values`,
 `visitsSnapshotDate`, `visitsCapturedAt`, `visitsStatus` (`available`, `missing`, `ambiguous`),
-and `visitsReason`. Performance observation metadata is independent: `performanceSnapshotDate`,
+and `visitsReason`. A labelled historical estimate uses `visitsStatus: "estimated"` and has no
+invented capture timestamp. Performance observation metadata is independent: `performanceSnapshotDate`,
 `performanceStatus` (`available`, `missing`, `ambiguous`), `performanceReason`, and the raw
 `performanceType`. Dates/timestamps are ISO strings. The first column key is `period`;
 the UI renders explicit bounds from the row metadata, not a reconstructed week/month label.
@@ -102,10 +111,10 @@ filled with invented observations. An interval with no eligible advertising snap
 Ads values, not invented zero activity. Within intervals containing Ads data, the category
 accumulators are combined to produce Total, and rates are derived after aggregation.
 
-Stock and **Sales Price (cu TVA)** come from daily offers matched on vendor and the
+Native Stock and **Sales Price (cu TVA)** come from daily offers matched on vendor and the
 selected product's PNK (`doc_product_part_number_key`), with surrounding whitespace
-removed. The existing `ext_stock <> 0` eligibility filter is retained: zero-stock offers
-and empty snapshot days do not supply observations. The latest eligible day in the period
+removed. Matching offers remain eligible when stock is zero or unknown, so running out of stock
+does not erase product history or its price observations. The latest eligible day in the period
 supplies Stock from `offers_offer.ext_stock`. Multiple matching offers on that day display
 “???”, and a missing stock field displays as “—”.
 
@@ -318,12 +327,54 @@ actual observation date. The response and CSV preserve the separate performance 
 reason and raw type. Unknown labels remain text rather than being rejected by a fixed enum.
 Page loads use stored observations; no schema migration or new conversion collection is required.
 
-## Unsupported columns and errors
+## Historical estimates and provenance
+
+Imported history supplements unavailable native data for the exact selected account/product.
+Each domain independently selects its **newest observation at or before the report end**, with
+a maximum lag of seven days. It uses one coherent snapshot for that domain; an empty metric in
+the newest snapshot is not filled from an older snapshot, and future observations are never used.
+Weekly Last30 observations overlap and are never added together or differenced into daily data.
+
+The 30-day mode uses an eligible Last30 cumulative value unchanged. The 14-day mode estimates
+it as `Last30 × 14/30`, assuming uniform activity. This applies to product Clicks and the six Ads
+primitives in each category. Fractional estimates are retained internally and formatted for display.
+Stock, gross Sales Price, performance classification, family review count and rating are observed
+states: they use the source value unchanged and carry the source date. They are not scaled,
+summed across dates, or treated as exact period averages. In particular, a historical Sales Price
+is an estimate of the period price, whereas a native Sales Price is the daily gross-price mean
+described above. Historical performance remains a 30-day eMAG classification even on a 14-day row.
+
+Available native overview values take precedence. Ambiguous native Clicks/performance are not
+overwritten by a historical estimate. Orders and Total Sales always use the native Order Table
+rules; source GMV and source conversion remain audit-only values. Product conversion, TACOS and
+Ads shares are recalculated from the final displayed inputs, with estimate provenance propagated.
+
+Ads uses the saved native campaign-report dates for the selected account to assess daily coverage.
+If every date in the period is present, native Ads remains authoritative. If coverage is incomplete
+and an eligible historical Ads snapshot exists, the **whole Ads block** is replaced by that one
+estimated snapshot, then its totals and rates are recalculated. Partial native values are not added
+to overlapping Last30 totals. Unknown category primitives stay unknown; a Total primitive requires
+all four category inputs. Native attribution/classification errors are never hidden by historical
+fallback. If no historical block can replace incomplete native coverage, available native metrics
+remain labelled `partial` with the observed-day count.
+
+Saved report dates are a coverage proxy: they prove stored campaign observations, not that a
+successful empty report was collected on every missing date. This limitation is explicit in the
+partial-data tooltip. A missing date does not prove zero Ads activity.
+
+Each affected cell exposes `cellProvenance` with quality (`estimated` or `partial`), source,
+source date/window, calculation method and original source-cell link when available. The UI shows
+an estimate marker and accessible explanation. CSV exports include cell provenance so a downloaded
+estimate is distinguishable from a native value. Imported historical Clicks/performance also update
+their dedicated observation metadata to `estimated` without inventing a timestamp or raw hotness type.
+
+## Supported columns and errors
 
 The current sources support all 73 advertising columns, plus Orders, Total Sales, Stock, Sales Price
 and raw rolling Clicks, calculated product conversion and observed performance classification
-where the required inputs exist. Review count and rating remain null. These unsupported overview columns retain
-their positions without fabricated values.
+where the required inputs exist. Imported family observations can supply review count and rating;
+they remain null when no eligible observation exists. Other missing measurements retain their
+positions without fabricated values.
 
 Keyword classification errors make Broad, Exact, and Total unavailable for the affected
 period, along with all category shares that depend on Total. Valid Auto and Product

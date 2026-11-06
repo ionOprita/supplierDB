@@ -193,6 +193,51 @@ public class SheetsAPI {
     public record SheetMetaData(int index, int sheetId, String title) {
     }
 
+    /** Grid bounds for read-only importers; retrieving metadata never changes the spreadsheet. */
+    public record SheetGrid(int sheetId, String title, int rows, int columns) {
+    }
+
+    public List<SheetGrid> getSheetGrids() {
+        var request = repeatCellRequest(4, "history grid metadata", () -> getSheetsService()
+                .spreadsheets().get(spreadSheetId)
+                .setFields("sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))"));
+        var response = repeatCellRequest(5, "history grid metadata", request::execute);
+        return response.getSheets().stream().map(sheet -> {
+            var p = sheet.getProperties();
+            return new SheetGrid(p.getSheetId(), p.getTitle(), p.getGridProperties().getRowCount(),
+                    p.getGridProperties().getColumnCount());
+        }).toList();
+    }
+
+    /**
+     * Reads a bounded rectangle without converting numeric cells to strings or filling blanks
+     * with zero. Dates remain Sheets serial numbers. A separate FORMULA read can capture source
+     * formulas. No existing convenience reader is changed by this typed import path.
+     */
+    public List<List<Object>> getBoundedValues(String sheetName, int firstRow, int lastRow,
+                                              int firstColumn, int lastColumn, boolean formulas) {
+        if (firstRow < 1 || firstColumn < 1 || lastRow < firstRow || lastColumn < firstColumn
+                || (long) (lastRow - firstRow + 1) * (lastColumn - firstColumn + 1) > 50_000) {
+            throw new IllegalArgumentException("A positive rectangle of at most 50,000 cells is required");
+        }
+        String range = "'" + sheetName.replace("'", "''") + "'!"
+                + historyColumn(firstColumn) + firstRow + ":" + historyColumn(lastColumn) + lastRow;
+        var request = repeatCellRequest(4, "bounded history read " + range,
+                () -> getSheetsService().spreadsheets().values().get(spreadSheetId, range)
+                        .setMajorDimension(ROWS).setValueRenderOption(formulas ? "FORMULA" : UNFORMATTED_VALUE)
+                        .setDateTimeRenderOption("SERIAL_NUMBER"));
+        var response = repeatCellRequest(5, "bounded history read " + range, request::execute);
+        if (response.getValues() == null) return List.of();
+        return response.getValues().stream()
+                .map(row -> Collections.unmodifiableList(new ArrayList<>(row))).toList();
+    }
+
+    private static String historyColumn(int index) {
+        var result = new StringBuilder();
+        for (int i = index; i > 0; i = (i - 1) / 26) result.append((char) ('A' + (i - 1) % 26));
+        return result.reverse().toString();
+    }
+
     public List<SheetMetaData> getSheetProperties() {
         if (sheetMetaData == null) {
             var spreadsheets = getSheetsService().spreadsheets();

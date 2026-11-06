@@ -23,6 +23,14 @@
             <p id="productPerformanceStatus" class="muted" role="status" aria-live="polite">Loading vendors and products…</p>
             <button id="productPerformanceRetry" type="button" hidden>Retry</button>
         </div>
+        <p id="productPerformanceEstimatedLegend" class="pp-provenance-legend" hidden>
+            <span class="pp-estimated-swatch" aria-hidden="true"></span>
+            <strong>Istoric estimat</strong> — celulele galbene folosesc date istorice estimate. Detaliile sursei și calculului apar la trecerea cursorului peste valoare.
+        </p>
+        <p id="productPerformancePartialLegend" class="pp-provenance-legend" hidden>
+            <span aria-hidden="true">◐</span>
+            <strong>Date parțiale</strong> — sunt disponibile date doar pentru o parte din interval. Detaliile apar la trecerea cursorului peste valoare.
+        </p>
         <details id="productPerformanceErrors" class="pp-errors" hidden>
             <summary id="productPerformanceErrorSummary"></summary>
             <p>Affected metrics and their dependent totals and shares are unavailable. Unaffected sections and periods remain usable.</p>

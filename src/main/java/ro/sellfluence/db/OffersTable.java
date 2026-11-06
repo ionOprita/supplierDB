@@ -31,7 +31,7 @@ public class OffersTable {
     private OffersTable() {
     }
 
-    /** One observed day with nonzero-stock offers; salesPrice includes VAT and has two decimals. */
+    /** One observed day with canonical offer candidates; salesPrice includes VAT and has two decimals. */
     public record DailyProductOffer(LocalDate fetchDate, long matchingOffers, Integer stock, BigDecimal salesPrice) {
     }
 
@@ -236,12 +236,22 @@ public class OffersTable {
         if (pnk == null || pnk.isBlank()) return List.of();
 
         var result = new ArrayList<DailyProductOffer>();
-        // TODO: ext_stock<>0  is a quick fix for one vendor now having several vendor_ids in eMAG.
         try (var statement = db.prepareStatement("""
-                SELECT s.fetch_date, COUNT(o.offer_id) AS matching_offers,
-                       MAX(o.ext_stock) AS stock,
-                       CASE WHEN COUNT(o.offer_id) = 1 THEN MAX(o.ext_sale_price) END AS net_sales_price,
-                       CASE WHEN COUNT(o.offer_id) = 1 THEN MAX(os.vat_id) END AS vat_id
+                SELECT s.fetch_date,
+                       CASE WHEN COUNT(o.offer_id) FILTER (WHERE o.ext_stock <> 0) > 0
+                            THEN COUNT(o.offer_id) FILTER (WHERE o.ext_stock <> 0)
+                            ELSE COUNT(o.offer_id) END AS matching_offers,
+                       CASE WHEN COUNT(o.offer_id) FILTER (WHERE o.ext_stock <> 0) > 0
+                            THEN MAX(o.ext_stock) FILTER (WHERE o.ext_stock <> 0)
+                            ELSE MAX(o.ext_stock) END AS stock,
+                       CASE WHEN COUNT(o.offer_id) FILTER (WHERE o.ext_stock <> 0) = 1
+                            THEN MAX(o.ext_sale_price) FILTER (WHERE o.ext_stock <> 0)
+                            WHEN COUNT(o.offer_id) FILTER (WHERE o.ext_stock <> 0) = 0
+                                 AND COUNT(o.offer_id) = 1 THEN MAX(o.ext_sale_price) END AS net_sales_price,
+                       CASE WHEN COUNT(o.offer_id) FILTER (WHERE o.ext_stock <> 0) = 1
+                            THEN MAX(os.vat_id) FILTER (WHERE o.ext_stock <> 0)
+                            WHEN COUNT(o.offer_id) FILTER (WHERE o.ext_stock <> 0) = 0
+                                 AND COUNT(o.offer_id) = 1 THEN MAX(os.vat_id) END AS vat_id
                 FROM offers_snapshot AS s
                 LEFT JOIN offers_offer AS o ON o.vendor_id = s.vendor_id
                     AND o.fetch_date = s.fetch_date
@@ -250,8 +260,8 @@ public class OffersTable {
                 LEFT JOIN offers_stock AS os ON os.vendor_id = o.vendor_id
                     AND os.fetch_date = o.fetch_date AND os.offer_id = o.offer_id
                 WHERE s.vendor_id = ? AND s.fetch_date BETWEEN ? AND ?
-                  AND o.ext_stock <> 0
                 GROUP BY s.fetch_date
+                HAVING COUNT(o.offer_id) > 0
                 ORDER BY s.fetch_date
                 """)) {
             statement.setString(1, pnk.strip());

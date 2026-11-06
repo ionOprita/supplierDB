@@ -177,6 +177,21 @@ public class EmagMirrorDB implements ProductPerformanceSource {
         return database.readTX(db -> ProductPerformanceTable.getDailyAdsets(db, vendorId, pnk));
     }
 
+    public List<ProductPerformanceHistoryTable.Observation> getProductPerformanceHistory(UUID vendorId, String productCode)
+            throws SQLException {
+        return database.readTX(db -> ProductPerformanceHistoryTable.getProductPerformanceHistory(db, vendorId, productCode));
+    }
+
+    public Set<LocalDate> getProductPerformanceAdsReportDates(UUID vendorId, LocalDate start, LocalDate end)
+            throws SQLException {
+        return database.readTX(db -> ProductPerformanceHistoryTable.getProductPerformanceAdsReportDates(db, vendorId, start, end));
+    }
+
+    public ProductPerformanceHistoryTable.StoreResult storeProductPerformanceHistory(
+            ProductPerformanceHistoryTable.ImportBatch batch) throws SQLException {
+        return database.writeTX(db -> ProductPerformanceHistoryTable.storeBatch(db, batch));
+    }
+
     public List<OffersTable.DailyProductOffer> getProductPerformanceOffers(
             UUID vendorId, String pnk, LocalDate firstDate, LocalDate lastDate) throws SQLException {
         return database.readTX(db -> OffersTable.getDailyProductOffers(db, vendorId, pnk, firstDate, lastDate));
