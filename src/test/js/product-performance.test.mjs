@@ -9,11 +9,13 @@ const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).t
 const common = moduleUrl(await readFile(new URL('../../main/resources/static/js/common.js', import.meta.url), 'utf8'));
 const tableCommon = moduleUrl((await readFile(new URL('../../main/resources/static/js/table-common.js', import.meta.url), 'utf8'))
   .replace('"./common.js"', JSON.stringify(common)));
+const infoTooltip = moduleUrl(await readFile(new URL('../../main/resources/static/js/info-tooltip.js', import.meta.url), 'utf8'));
 const source = await readFile(new URL('../../main/resources/static/js/product-performance.js', import.meta.url), 'utf8');
 const {formatPerformanceValue: format, formatPerformancePeriod: formatPeriod,
   visiblePerformanceRows, normalizePerformancePeriod, initProductPerformance} = await import(moduleUrl(source
     .replace("'./common.js'", JSON.stringify(common))
-    .replace("'./table-common.js'", JSON.stringify(tableCommon))));
+    .replace("'./table-common.js'", JSON.stringify(tableCommon))
+    .replace("'./info-tooltip.js'", JSON.stringify(infoTooltip))));
 
 test('formats numeric values like the spreadsheet, including fractional percentages', () => {
   assert.equal(format(43488, 'integer'), '43,488');
@@ -37,7 +39,7 @@ test('shows ambiguous offer cells without treating them as numbers', async t => 
   const page = await openPage(t);
   const data = report(5);
   data.groups[0].columns.push({key: 'stock', label: 'Stock', type: 'integer'},
-    {key: 'salesPrice', label: 'Sales Price (cu TVA)', type: 'decimal'});
+    {key: 'salesPrice', label: 'Sales Price (incl. VAT)', type: 'decimal'});
   data.rows = [
     performanceRow('2026-09-07', {stock: 0, salesPrice: 19.875, auto_clicks: 5, total_clicks: 5}),
     performanceRow('2026-09-14', {stock: '???', salesPrice: '???', auto_clicks: 6, total_clicks: 6}),
@@ -57,7 +59,7 @@ test('period-average Sales Price ambiguity can describe an earlier daily snapsho
   const page = await openPage(t, '30days');
   const data = report(5, '2026-09-01');
   data.groups[0].columns.push({key: 'stock', label: 'Stock', type: 'integer'},
-    {key: 'salesPrice', label: 'Sales Price (cu TVA)', type: 'decimal'});
+    {key: 'salesPrice', label: 'Sales Price (incl. VAT)', type: 'decimal'});
   data.rows = [
     performanceRow('2026-09-01', {stock: 7, salesPrice: '???', auto_clicks: 5, total_clicks: 5}),
     performanceRow('2026-10-01', {stock: '???', salesPrice: '???', auto_clicks: 5, total_clicks: 5})
@@ -79,9 +81,9 @@ test('VAT-inclusive Sales Price and its period mean render and export without Av
     data.groups[0].columns.push(
       {key: 'stock', label: 'Stock', type: 'integer'},
       {key: 'orders', label: 'Orders', type: 'integer'},
-      {key: 'totalSales', label: 'Total Sales (fara TVA)', type: 'integer'},
+      {key: 'totalSales', label: 'Total Sales (excl. VAT)', type: 'integer'},
       {key: 'clicks', label: 'Clicks', type: 'integer'},
-      {key: 'salesPrice', label: 'Sales Price (cu TVA)', type: 'decimal'},
+      {key: 'salesPrice', label: 'Sales Price (incl. VAT)', type: 'decimal'},
       {key: 'conversion', label: 'Conv.', type: 'percent'},
       {key: 'performance', label: 'Perform.', type: 'text'},
       {key: 'reviews', label: '# rev.', type: 'integer'},
@@ -95,7 +97,7 @@ test('VAT-inclusive Sales Price and its period mean render and export without Av
   await page.respond(0, pricedReport('2026-09-07', 199.99));
   const headers = page.byId('Head').children[1].children;
   assert.deepEqual(headers.slice(0, 9).map(cell => cell.textContent),
-    ['Stock', 'Orders', 'Total Sales (fara TVA)', 'Clicks', 'Sales Price (cu TVA)', 'Conv.', 'Perform.', '# rev.', 'rating']);
+    ['Stock', 'Orders', 'Total Sales (excl. VAT)', 'Clicks', 'Sales Price (incl. VAT)', 'Conv.', 'Perform.', '# rev.', 'rating']);
   assert.equal(page.byId('Head').children[0].children[1].colSpan, 9);
   assert.equal(page.byId('Table').querySelectorAll('colgroup')[0].span, 10);
   assert.equal(headers[7].dataset.frozenIndex, 8);
@@ -109,7 +111,7 @@ test('VAT-inclusive Sales Price and its period mean render and export without Av
   assert.doesNotMatch(row.textContent, /7,777/);
   assert.doesNotMatch(row.textContent, /726/, 'Legacy gross GMV must not replace the net total');
   page.byId('DownloadCsv').click();
-  const header = 'Stock,Orders,Total Sales (fara TVA),Clicks,Sales Price (cu TVA),Conv.,Perform.,# rev.,rating,Auto - Clicks,Total - Clicks';
+  const header = 'Stock,Orders,Total Sales (excl. VAT),Clicks,Sales Price (incl. VAT),Conv.,Perform.,# rev.,rating,Auto - Clicks,Total - Clicks';
   assert.equal(withoutMetadata(await page.csv()), `\uFEFFPeriod,${header}\r\n07 Sept 2026 - 20 Sept 2026,7,3,600,20,199.99,25.00%,HOT,4,4.50,5,5`);
 
   page.periodSelect().value = '30days';
@@ -126,25 +128,25 @@ test('financial columns expose tax explanations accessibly and export unchanged 
   const data = report(5);
   const adGroups = [['total', 'Total'], ['auto', 'Auto'], ['broad', 'Broad'], ['exact', 'Exact'], ['product', 'Product']];
   const descriptions = {
-    spend: 'Consum din creditul Ads fără TVA. API-ul nu indică explicit baza TVA.',
-    sales: 'Vânzări atribuite reclamelor, raportate de eMAG fără TVA, fără conversie suplimentară.',
-    cpc: 'Spend fără TVA împărțit la clickurile Ads.',
-    acos: 'Spend / Sales × 100. Ambele sume sunt fără TVA.',
-    roas: 'Sales / Spend. Ambele sume sunt fără TVA.'
+    spend: 'Consumption of Ads credit excluding VAT. The API does not explicitly identify the tax basis.',
+    sales: 'Advertising sales reported by eMAG excluding VAT, without additional conversion.',
+    cpc: 'Spend excluding VAT divided by Ads clicks.',
+    acos: 'Spend / Sales × 100. Both amounts exclude VAT.',
+    roas: 'Sales / Spend. Both amounts exclude VAT.'
   };
   const metricColumns = [
-    ['spend', 'Spend (fara TVA)', 'integer'],
-    ['sales', 'Sales (fara TVA)', 'integer'],
-    ['cpc', 'CPC (fara TVA)', 'decimal'],
+    ['spend', 'Spend (excl. VAT)', 'integer'],
+    ['sales', 'Sales (excl. VAT)', 'integer'],
+    ['cpc', 'CPC (excl. VAT)', 'decimal'],
     ['acos', 'ACOS', 'percent'],
     ['roas', 'ROAS', 'decimal']
   ];
   data.groups = [{key: 'overview', label: 'Product metrics', columns: [
     {key: 'period', label: 'Period', type: 'date'},
-    {key: 'totalSales', label: 'Total Sales (fara TVA)', type: 'integer',
-      description: 'Venit fără TVA calculat din comenzile produsului.'},
-    {key: 'salesPrice', label: 'Sales Price (cu TVA)', type: 'decimal',
-      description: 'Media prețurilor zilnice ale ofertei, cu TVA.'}
+    {key: 'totalSales', label: 'Total Sales (excl. VAT)', type: 'integer',
+      description: 'Revenue excluding VAT calculated from product orders.'},
+    {key: 'salesPrice', label: 'Sales Price (incl. VAT)', type: 'decimal',
+      description: 'Mean of daily offer prices, including VAT.'}
   ]}, ...adGroups.map(([key, label]) => ({key, label, columns: metricColumns.map(([metric, label, type]) => ({
     key: `${key}_${metric}`, label, type, description: descriptions[metric]
   }))}))];
@@ -159,8 +161,8 @@ test('financial columns expose tax explanations accessibly and export unchanged 
   const cells = page.byId('Body').children[0].cells;
   assert.deepEqual(cells.slice(1, 3).map(cell => cell.textContent), ['190', '199.99']);
   assert.equal(headers[0].title, data.groups[0].columns[1].description);
-  assert.match(headers[0].getAttribute('aria-label'), /^Total Sales \(fara TVA\)\./);
-  assert.match(cells[2].getAttribute('aria-label'), /^199\.99\. Sales Price \(cu TVA\)\./);
+  assert.match(headers[0].getAttribute('aria-label'), /^Total Sales \(excl. VAT\)\./);
+  assert.match(cells[2].getAttribute('aria-label'), /^199\.99\. Sales Price \(incl. VAT\)\./);
   for (let groupIndex = 0; groupIndex < adGroups.length; groupIndex++) {
     const firstHeader = 2 + groupIndex * metricColumns.length;
     const firstCell = firstHeader + 1;
@@ -179,7 +181,7 @@ test('financial columns expose tax explanations accessibly and export unchanged 
   page.byId('DownloadCsv').click();
   const csv = await page.csv();
   const [csvHeader, csvRow] = withoutMetadata(csv).split('\r\n');
-  assert.equal(csvHeader, '\uFEFFPeriod,Total Sales (fara TVA),Sales Price (cu TVA),'
+  assert.equal(csvHeader, '\uFEFFPeriod,Total Sales (excl. VAT),Sales Price (incl. VAT),'
     + adGroups.flatMap(([, group]) => metricColumns.map(([, label]) => `${group} - ${label}`)).join(','));
   assert.equal(csvRow, '07 Sept 2026 - 20 Sept 2026,190,199.99,'
     + Array(5).fill('21,121,1.25,17.36%,5.76').join(','));
@@ -191,11 +193,11 @@ test('financial columns expose tax explanations accessibly and export unchanged 
 test('renders and exports all TACOS groups and product shares without clamping or replacing unknown with zero', async t => {
   const page = await openPage(t);
   const data = report(5);
-  const shareDescription = 'Date pentru contul selectat. Fereastra Clicks este aproximativă; valorile pot depăși 100%.';
+  const shareDescription = 'Data for the selected account. The Clicks window is approximate; values can exceed 100%.';
   data.groups = [{key: 'overview', label: 'Product metrics', columns: [
     {key: 'period', label: 'Period', type: 'date'},
     {key: 'orders', label: 'Orders', type: 'integer'},
-    {key: 'totalSales', label: 'Total Sales (fara TVA)', type: 'integer'}
+    {key: 'totalSales', label: 'Total Sales (excl. VAT)', type: 'integer'}
   ]}, {key: 'total', label: 'Total', columns: [
     {key: 'total_tacos', label: 'TACOS', type: 'percent'},
     {key: 'total_clicks_share', label: '% Clicks Ads of Total', type: 'percent', description: shareDescription},
@@ -228,7 +230,7 @@ test('renders net Total Sales as whole numbers and refreshes it for the selected
   const page = await openPage(t);
   const withNetSales = (amounts, dates, errors = []) => {
     const data = report(5, dates[0], errors);
-    data.groups[0].columns.push({key: 'totalSales', label: 'Total Sales (fara TVA)', type: 'integer'});
+    data.groups[0].columns.push({key: 'totalSales', label: 'Total Sales (excl. VAT)', type: 'integer'});
     data.rows = amounts.map((totalSales, index) => performanceRow(dates[index], {
       totalSales, auto_clicks: 5, total_clicks: errors.length ? null : 5
     }));
@@ -262,7 +264,7 @@ test('renders and exports Orders directly after Stock with integer units and ali
   data.groups[0].columns.push(
     {key: 'stock', label: 'Stock', type: 'integer'},
     {key: 'orders', label: 'Orders', type: 'integer'},
-    {key: 'totalSales', label: 'Total Sales (fara TVA)', type: 'integer'});
+    {key: 'totalSales', label: 'Total Sales (excl. VAT)', type: 'integer'});
   data.rows = [
     performanceRow('2026-09-07', {stock: 10, orders: 0, totalSales: 9.25, auto_clicks: 5, total_clicks: 5}),
     performanceRow('2026-09-14', {stock: 8, orders: 1234, totalSales: 10, auto_clicks: 5, total_clicks: 5}),
@@ -270,7 +272,7 @@ test('renders and exports Orders directly after Stock with integer units and ali
   ];
   await page.respond(0, data);
   const headers = page.byId('Head').children[1].children;
-  assert.deepEqual(headers.slice(0, 3).map(cell => cell.textContent), ['Stock', 'Orders', 'Total Sales (fara TVA)']);
+  assert.deepEqual(headers.slice(0, 3).map(cell => cell.textContent), ['Stock', 'Orders', 'Total Sales (excl. VAT)']);
   assert.equal(page.byId('Head').children[0].children[1].colSpan, 3);
   assert.equal(headers[1].dataset.frozenIndex, 2);
   const rows = page.byId('Body').children;
@@ -278,7 +280,7 @@ test('renders and exports Orders directly after Stock with integer units and ali
   assert.ok(rows.every(row => row.cells[2].dataset.frozenIndex === 2));
   assert.ok(rows.every(row => row.cells[2].dataset.type === 'integer'));
   page.byId('DownloadCsv').click();
-  assert.equal(withoutMetadata(await page.csv()), '\uFEFFPeriod,Stock,Orders,Total Sales (fara TVA),Auto - Clicks,Total - Clicks\r\n'
+  assert.equal(withoutMetadata(await page.csv()), '\uFEFFPeriod,Stock,Orders,Total Sales (excl. VAT),Auto - Clicks,Total - Clicks\r\n'
     + '07 Sept 2026 - 20 Sept 2026,10,0,9,5,5\r\n'
     + '14 Sept 2026 - 27 Sept 2026,8,"1,234",10,5,5\r\n'
     + '21 Sept 2026 - 04 Oct 2026,7,-2,—,5,5');
@@ -395,8 +397,16 @@ class Element {
     this.listeners.set(type, listeners);
   }
 
-  dispatch(type) {
-    for (const listener of this.listeners.get(type) || []) listener();
+  contains(node) { return this === node || this.children.some(child => child.contains(node)); }
+
+  removeEventListener(type, listener) {
+    this.listeners.set(type, (this.listeners.get(type) || []).filter(item => item !== listener));
+  }
+
+  dispatch(type, event = {}) {
+    event.target ??= this;
+    for (const listener of this.listeners.get(type) || []) listener(event);
+    return event;
   }
 
   click() {
@@ -486,7 +496,8 @@ async function openPage(t, period, requestedProductCode = productCode) {
       element.disabled = /\bdisabled\b/.test(markup);
       return [id, element];
     }));
-  const byId = suffix => elements.get(`productPerformance${suffix}`);
+  const byId = suffix => elements.get(`productPerformance${suffix}`)
+    || [...elements.values()].flatMap(element => element.descendants()).find(element => element.id === `productPerformance${suffix}`);
   byId('Table').append(byId('Head'), byId('Body'));
   byId('Errors').append(byId('ErrorSummary'), byId('ErrorList'));
   const originals = new Map(['document', 'window', 'ResizeObserver'].map(key => [key, globalThis[key]]));
@@ -503,7 +514,10 @@ async function openPage(t, period, requestedProductCode = productCode) {
     return url;
   });
   t.mock.method(URL, 'revokeObjectURL', url => revokedUrls.push(url));
+  const documentEvents = new Element('document');
   globalThis.document = {
+    addEventListener: (type, listener) => documentEvents.addEventListener(type, listener),
+    removeEventListener: (type, listener) => documentEvents.removeEventListener(type, listener),
     body: new Element('body'),
     getElementById: id => elements.get(id) || null,
     querySelector: () => null,
@@ -554,6 +568,7 @@ async function openPage(t, period, requestedProductCode = productCode) {
   assert.equal(requests.length, 1);
   return {
     byId, requests, visitsRequests, loggedErrors, template, downloads, revokedUrls,
+    dispatch: (type, event) => documentEvents.dispatch(type, event),
     periodSelect() {
       return byId('Head').descendants().find(element => element.getAttribute('aria-label') === 'Performance period');
     },
@@ -579,7 +594,7 @@ test('CSV downloads align flat grouped headers with the displayed formatted cell
   const data = report(25, '2026-09-07', [classificationError]);
   data.groups[0].columns.push(
     {key: 'stock', label: 'Stock', type: 'integer'},
-    {key: 'totalSales', label: 'Total Sales (fara TVA)', type: 'integer'},
+    {key: 'totalSales', label: 'Total Sales (excl. VAT)', type: 'integer'},
     {key: 'conversion', label: 'Conv.', type: 'percent'},
     {key: 'performance', label: 'Perform.', type: 'text'},
     {key: 'rating', label: 'rating', type: 'decimal'});
@@ -590,7 +605,7 @@ test('CSV downloads align flat grouped headers with the displayed formatted cell
   assert.equal(page.byId('DownloadCsv').disabled, false, 'Partial reports remain exportable');
   page.byId('DownloadCsv').click();
   assert.equal(page.downloads.length, 1);
-  assert.equal(withoutMetadata(await page.csv()), '\uFEFFPeriod,Stock,Total Sales (fara TVA),Conv.,Perform.,rating,Auto - Clicks,Total - Clicks\r\n'
+  assert.equal(withoutMetadata(await page.csv()), '\uFEFFPeriod,Stock,Total Sales (excl. VAT),Conv.,Perform.,rating,Auto - Clicks,Total - Clicks\r\n'
     + '07 Sept 2026 - 20 Sept 2026,???,"1,235",2.67%,"Șură, ""SUPER HOT""",—,25,—');
   assert.equal(page.downloads[0].blob.type, 'text/csv;charset=utf-8;');
   assert.deepEqual(page.revokedUrls, [page.downloads[0].url]);
@@ -733,8 +748,8 @@ test('product conversion and historical hotness render independently and export 
 
 test('mixed provenance colors only estimated cells and keeps full source evidence in tooltips and CSV', async t => {
   const page = await openPage(t);
-  assert.equal(page.byId('EstimatedLegend').hidden, true);
-  assert.equal(page.byId('PartialLegend').hidden, true);
+  assert.equal(page.byId('InfoText').hidden, true);
+  assert.equal(page.byId('Info').disabled, false);
   const sheetSource = {
     quality: 'estimated', source: 'Google Sheets', sourceDate: '2026-05-15', sourceWindowDays: 30,
     method: 'Historical value scaled to 14 days, with "rounding". <img src=x onerror=alert(1)>',
@@ -767,24 +782,23 @@ test('mixed provenance colors only estimated cells and keeps full source evidenc
     performanceStatus: 'available', performanceSnapshotDate: '2026-05-31', cellProvenance: {}})];
   await page.respond(0, data);
   const [estimated, native] = page.byId('Body').children;
-  assert.equal(page.byId('EstimatedLegend').hidden, false);
-  assert.equal(page.byId('PartialLegend').hidden, false);
-  assert.match(page.template, /<strong>Istoric estimat<\/strong>/);
+  assert.match(page.byId('InfoText').textContent, /Estimated history — yellow cells/);
+  assert.doesNotMatch(page.template, /EstimatedLegend|PartialLegend/);
   assert.deepEqual(estimated.cells.map(cell => cell.classList.contains('pp-estimated')),
     [false, false, true, true, true, false, false, false]);
   assert.equal(estimated.cells[6].classList.contains('pp-partial'), true);
   assert.equal(estimated.cells[6].textContent, '5', 'The partial marker must not change the numeric value or CSV');
-  assert.match(estimated.cells[6].title, /Date parțiale.*does not cover the complete report window/);
+  assert.match(estimated.cells[6].title, /Partial data.*does not cover the complete report window/);
   assert.match(estimated.cells[6].title, /Only 2 of 14/);
   assert.equal(estimated.cells[2].classList.contains('pp-frozen'), true, 'Estimated overview cells remain frozen');
-  assert.match(estimated.cells[2].title, /Istoric estimat/);
+  assert.match(estimated.cells[2].title, /Estimated history/);
   assert.match(estimated.cells[2].title, /Source: Google Sheets/);
   assert.match(estimated.cells[2].title, /Source date: 2026-05-15/);
   assert.match(estimated.cells[2].title, /Source window: 30 days/);
   assert.match(estimated.cells[2].title, /source window may differ/);
   assert.doesNotMatch(estimated.cells[2].title, /Captured:|Visits are unavailable|Rolling 14-day counter/);
   assert.match(estimated.cells[3].title, /Units \/ Clicks × 100/);
-  assert.match(estimated.cells[3].title, /Clicks input: Istoric estimat/);
+  assert.match(estimated.cells[3].title, /Clicks input: Estimated history/);
   assert.match(estimated.cells[4].title, /observed on 2026-05-15, which may differ/);
   assert.match(estimated.cells[2].getAttribute('aria-label'), /1,000\. Clicks\. Estimated total eMAG visits/);
   for (const cell of estimated.cells) assert.equal(cell.children.length, 0, 'Untrusted provenance remains plain text');
@@ -805,15 +819,15 @@ test('mixed provenance colors only estimated cells and keeps full source evidenc
 
   page.periodSelect().value = '30days';
   page.periodSelect().dispatch('change');
-  assert.equal(page.byId('EstimatedLegend').hidden, true, 'Old provenance must clear while another report loads');
-  assert.equal(page.byId('PartialLegend').hidden, true);
+  assert.equal(page.byId('InfoText').hidden, true, 'Open help dismisses while another report loads');
+  assert.equal(page.byId('Info').disabled, false);
   const nativeOnly = report(0);
   await page.respond(1, nativeOnly);
-  assert.equal(page.byId('EstimatedLegend').hidden, true);
-  assert.equal(page.byId('PartialLegend').hidden, true);
+  assert.equal(page.byId('InfoText').hidden, true);
+  assert.equal(page.byId('Info').disabled, false);
 });
 
-test('estimated-history legend remains discoverable when older estimated rows are initially hidden', async t => {
+test('report help remains discoverable when older estimated rows are initially hidden', async t => {
   const page = await openPage(t);
   const data = report(5);
   data.rows = Array.from({length: 21}, (_, index) => performanceRow('2026-05-01', {auto_clicks: 5, total_clicks: 5}, {
@@ -822,19 +836,65 @@ test('estimated-history legend remains discoverable when older estimated rows ar
   }));
   await page.respond(0, data);
   assert.equal(page.byId('Body').children.length, 20);
-  assert.equal(page.byId('EstimatedLegend').hidden, false);
-  assert.equal(page.byId('PartialLegend').hidden, true);
+  assert.equal(page.byId('Info').disabled, false);
+  assert.match(page.byId('InfoText').textContent, /Estimated history — yellow cells/);
   assert.equal(page.byId('Body').children.some(row => row.cells.some(cell => cell.classList.contains('pp-estimated'))), false);
   page.showEverything().checked = true;
   page.showEverything().dispatch('change');
   assert.equal(page.byId('Body').children[0].cells[1].classList.contains('pp-estimated'), true);
 });
 
+test('permanent English report help explains estimates and provisional timing independently through loading, errors and empty reports', async t => {
+  const page = await openPage(t);
+  const button = page.byId('Info');
+  const wrap = page.byId('InfoWrap');
+  const tooltip = page.byId('InfoText');
+  assert.equal(button.getAttribute('aria-label'), 'About report periods and data quality');
+  assert.equal(button.getAttribute('aria-describedby'), tooltip.id);
+  assert.equal(tooltip.getAttribute('role'), 'tooltip');
+  assert.equal(page.byId('InfoHost').children[0], wrap);
+  assert.equal(page.byId('Table').descendants().includes(wrap), false, 'Help stays outside scrolling cells and CSV');
+  assert.equal(button.disabled, false);
+  assert.equal(tooltip.hidden, true);
+  for (const explanation of ['Estimated history — yellow cells', '14/30', 'not scaled', 'Partial data — ◐',
+    'Missing values (—)', 'Provisional period', 'full rolling 14- or 30-day preview', 'overlap earlier rows',
+    'do not add it to closed rows', 'not whether clicks are estimated', 'not necessarily a calendar month']) {
+    assert.ok(tooltip.textContent.includes(explanation), explanation);
+  }
+  assert.doesNotMatch(tooltip.textContent, /Istoric|parțiale|TVA|celulele/);
+  wrap.dispatch('pointerenter', {pointerType: 'touch'});
+  assert.equal(tooltip.hidden, true);
+  button.dispatch('focus');
+  button.dispatch('click');
+  assert.equal(tooltip.hidden, false);
+  button.dispatch('click');
+  assert.equal(tooltip.hidden, true);
+  button.dispatch('click');
+  page.dispatch('keydown', {key: 'Escape'});
+  assert.equal(tooltip.hidden, true);
+  button.dispatch('blur');
+  button.dispatch('focus');
+  assert.equal(tooltip.hidden, false);
+  page.requests[0].fail();
+  await setImmediate();
+  assert.equal(page.byId('Info'), button, 'Failure does not replace or disable the help control');
+  assert.equal(button.disabled, false);
+  page.byId('Retry').click();
+  await page.respond(1, {...report(0), rows: []});
+  assert.equal(page.byId('Info'), button);
+  button.dispatch('click');
+  assert.equal(tooltip.hidden, false, 'Empty reports still have useful help');
+  page.dispatch('pointerdown', {target: page.byId('Status')});
+  assert.equal(tooltip.hidden, true);
+});
+
 test('estimated backgrounds override row hover without weakening sticky positioning or tinting native partial cells', async () => {
   const css = await readFile(new URL('../../main/resources/static/styles.css', import.meta.url), 'utf8');
   const estimatedRule = '.pp-table tbody .pp-estimated,\n.pp-table tbody tr:hover > .pp-estimated';
   assert.ok(css.indexOf(estimatedRule) > css.indexOf('.pp-table tbody tr:hover > *'));
-  assert.match(css, /\.pp-table tbody \.pp-estimated,\s*\.pp-table tbody tr:hover > \.pp-estimated\s*\{[^}]*background: #fff6cc;[^}]*color: #483b13;/);
+  assert.match(css, /\.pp-table tbody \.pp-estimated,\s*\.pp-table tbody tr:hover > \.pp-estimated\s*\{[^}]*background: var\(--estimated-bg\);[^}]*color: var\(--estimated-text\);/);
+  for (const declaration of ['--estimated-bg: #fff6cc', '--estimated-text: #483b13',
+    '--estimated-bg: #3b321e', '--estimated-text: #f7df98']) assert.ok(css.includes(declaration), declaration);
   assert.match(css, /\.pp-table \.pp-frozen\s*\{[^}]*position: sticky;/);
   const partialRule = css.match(/\.pp-table tbody \.pp-partial::after\s*\{([^}]*)\}/)?.[1];
   assert.match(partialRule, /content: " ◐"/);

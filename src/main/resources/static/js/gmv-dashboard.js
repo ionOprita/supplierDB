@@ -1,3 +1,6 @@
+import {createThemedChart, observeChartTheme} from './chart-theme.js';
+import {createInfoTooltip} from './info-tooltip.js';
+
 const monthFormat = new Intl.DateTimeFormat('en-US', {month: 'long', year: 'numeric', timeZone: 'UTC'});
 const axisFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits: 2});
 const palette = ['#3b82f6', '#f97316', '#14b8a6', '#a855f7', '#ef4444', '#06b6d4', '#eab308', '#ec4899', '#6366f1', '#84cc16', '#d97706', '#64748b'];
@@ -57,10 +60,11 @@ function validateReport(report, currentMonth, requestedMonth) {
 }
 
 export function initGMVDashboard({document = globalThis.document, fetch = globalThis.fetch,
-  Chart = globalThis.Chart, getComputedStyle = globalThis.getComputedStyle} = {}) {
+  Chart = globalThis.Chart, getComputedStyle = globalThis.getComputedStyle, window = globalThis.window} = {}) {
   const byId = suffix => document.getElementById(`gmvDashboard${suffix}`);
   const dashboard = byId('');
   if (!dashboard) return null;
+  const createChart = (canvas, config) => createThemedChart(Chart, canvas, config, {element: dashboard, getComputedStyle});
   const monthInput = byId('MonthSelect');
   const calculate = byId('Calculate');
   const status = byId('Status');
@@ -109,49 +113,11 @@ export function initGMVDashboard({document = globalThis.document, fetch = global
   }
 
   function createInfo(report) {
-    const wrap = element('div', 'overview-info');
-    wrap.id = 'gmvDashboardInfoWrap';
-    const button = element('button', 'overview-info-button');
-    button.id = 'gmvDashboardInfo';
-    button.type = 'button';
-    button.setAttribute('aria-label', 'About GMV (cu TVA)');
-    button.setAttribute('aria-describedby', 'gmvDashboardInfoText');
-    button.setAttribute('aria-controls', 'gmvDashboardInfoText');
-    const icon = element('span', 'overview-info-icon', 'i');
-    icon.setAttribute('aria-hidden', 'true');
-    button.appendChild(icon);
-    const tooltip = element('div', 'overview-info-text');
-    tooltip.id = 'gmvDashboardInfoText';
-    tooltip.setAttribute('role', 'tooltip');
-    tooltip.textContent = `Daily GMV (cu TVA) in RON through ${report.throughDate}. `
-      + (report.month === (currentMonth ?? report.month) ? 'Today is still in progress. ' : 'Full month. ')
-      + 'GMV includes VAT and seller-funded voucher adjustments, deducts storno, and excludes shipping. '
-      + 'Daily values use the same allocation as monthly GMV. Later changes can revise earlier days.';
-    let hovered = false;
-    let focused = false;
-    let pinned = false;
-    let dismissed = false;
-    const update = () => {
-      tooltip.hidden = dismissed || !(hovered || focused || pinned);
-      button.setAttribute('aria-expanded', String(!tooltip.hidden));
-    };
-    const reset = () => { if (!hovered && !focused) dismissed = false; };
-    const enter = event => { if (event.pointerType !== 'touch') { reset(); hovered = true; update(); } };
-    const leave = () => { hovered = false; reset(); update(); };
-    const focus = () => { reset(); focused = true; update(); };
-    const blur = event => {
-      if (wrap.contains(event.relatedTarget)) return;
-      focused = false; pinned = false; reset(); update();
-    };
-    const click = () => { pinned = !pinned; dismissed = !pinned; update(); };
-    const listeners = [[wrap, 'pointerenter', enter], [wrap, 'pointerleave', leave],
-      [button, 'focus', focus], [button, 'blur', blur], [button, 'click', click]];
-    listeners.forEach(([target, type, listener]) => target.addEventListener(type, listener));
-    wrap.appendChild(button);
-    wrap.appendChild(tooltip);
-    update();
-    return {wrap, tooltip, dismiss() { pinned = false; dismissed = true; update(); },
-      destroy() { listeners.forEach(([target, type, listener]) => target.removeEventListener(type, listener)); }};
+    return createInfoTooltip({document, prefix: 'gmvDashboard', label: 'About GMV (incl. VAT)',
+      text: `Daily GMV (incl. VAT) in RON through ${report.throughDate}. `
+        + (report.month === (currentMonth ?? report.month) ? 'Today is still in progress. ' : 'Full month. ')
+        + 'GMV includes VAT and seller-funded voucher adjustments, deducts storno, and excludes shipping. '
+        + 'Daily values use the same allocation as monthly GMV. Later changes can revise earlier days.'});
   }
 
   function selection(report, labels, names, key) {
@@ -176,7 +142,7 @@ export function initGMVDashboard({document = globalThis.document, fetch = global
           x: {title: {display: true, text: 'Day of month', color: textColor}, grid: {display: false},
             ticks: {color: textColor, maxRotation: 0, maxTicksLimit: 12,
               callback(value) { return String(Number(this.getLabelForValue(value).slice(-2))); }}},
-          y: {beginAtZero: true, title: {display: true, text: 'GMV (cu TVA) · RON', color: textColor},
+          y: {beginAtZero: true, title: {display: true, text: 'GMV (incl. VAT) · RON', color: textColor},
             grid: {color: gridColor}, ticks: {color: textColor, callback: value => axisFormat.format(value)}}
         },
         plugins: {
@@ -202,7 +168,7 @@ export function initGMVDashboard({document = globalThis.document, fetch = global
   function setSummary(target, data) {
     target.total.textContent = formatDashboardGMV(data.total);
     target.scope.textContent = `${data.scope} · ${target.report.month === (currentMonth ?? target.report.month) ? 'month to date' : 'monthly total'}`;
-    target.canvas.setAttribute('aria-label', `${data.scope}: daily GMV (cu TVA) in RON in ${target.report.month}, through ${target.report.throughDate}`);
+    target.canvas.setAttribute('aria-label', `${data.scope}: daily GMV (incl. VAT) in RON in ${target.report.month}, through ${target.report.throughDate}`);
   }
 
   function buildPanel(report, labels, names, key) {
@@ -211,7 +177,7 @@ export function initGMVDashboard({document = globalThis.document, fetch = global
     const header = element('div', 'overview-card-header');
     const heading = element('div', 'overview-card-heading');
     const info = createInfo(report);
-    const title = element('h2', 'overview-card-title', 'GMV (cu TVA)');
+    const title = element('h2', 'overview-card-title', 'GMV (incl. VAT)');
     title.id = 'gmvDashboardTitle';
     heading.appendChild(info.wrap);
     heading.appendChild(title);
@@ -261,7 +227,7 @@ export function initGMVDashboard({document = globalThis.document, fetch = global
     const canvas = newCanvas();
     target.wrap.replaceChildren(canvas);
     try {
-      const replacement = new Chart(canvas, data.config);
+      const replacement = createChart(canvas, data.config);
       target.chart.destroy();
       target.chart = replacement;
       target.canvas = canvas;
@@ -301,7 +267,7 @@ export function initGMVDashboard({document = globalThis.document, fetch = global
     const replacement = buildPanel(report, labels, companyNames(report), key);
     const oldCards = Array.from(cards.children);
     cards.replaceChildren(replacement.card);
-    try { replacement.chart = new Chart(replacement.canvas, replacement.config); }
+    try { replacement.chart = createChart(replacement.canvas, replacement.config); }
     catch (error) { destroyPanel(replacement); cards.replaceChildren(...oldCards); throw error; }
     destroyPanel(panel);
     panel = replacement;
@@ -366,21 +332,18 @@ export function initGMVDashboard({document = globalThis.document, fetch = global
       status.textContent = `Choose a valid month up to ${monthName(currentMonth)}.`;
     }
   }
-  const escape = event => { if (event.key === 'Escape' && panel && !panel.info.tooltip.hidden) panel.info.dismiss(); };
-  const outside = event => { if (panel && !panel.info.wrap.contains(event.target)) panel.info.dismiss(); };
   calculate.addEventListener('click', load);
   monthInput.addEventListener('input', inputMonth);
   monthInput.addEventListener('change', load);
-  document.addEventListener('keydown', escape);
-  document.addEventListener('pointerdown', outside);
+  const stopThemeObserver = observeChartTheme(() => [panel?.chart],
+    {window, element: dashboard, getComputedStyle});
   const ready = load();
   return {ready, calculate: load, destroy() {
     disposed = true;
+    stopThemeObserver();
     calculate.removeEventListener('click', load);
     monthInput.removeEventListener('input', inputMonth);
     monthInput.removeEventListener('change', load);
-    document.removeEventListener('keydown', escape);
-    document.removeEventListener('pointerdown', outside);
     destroyPanel(panel);
     panel = null;
   }};

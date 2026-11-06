@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 
-const source = await readFile(new URL('../../main/resources/static/js/gmv-dashboard.js', import.meta.url), 'utf8');
+const infoTooltip = `data:text/javascript;base64,${Buffer.from(await readFile(new URL('../../main/resources/static/js/info-tooltip.js', import.meta.url), 'utf8')).toString('base64')}`;
+const chartTheme = `data:text/javascript;base64,${Buffer.from(await readFile(new URL('../../main/resources/static/js/chart-theme.js', import.meta.url), 'utf8')).toString('base64')}`;
+const source = (await readFile(new URL('../../main/resources/static/js/gmv-dashboard.js', import.meta.url), 'utf8')).replace("'./info-tooltip.js'", JSON.stringify(infoTooltip)).replace("'./chart-theme.js'", JSON.stringify(chartTheme));
 const {initGMVDashboard, gmvCalendar, gmvCents, formatDashboardGMV} =
   await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const FIRST = 'company:first';
@@ -64,11 +66,13 @@ function fixture() {
       if (++chartState.attempts === chartState.failOnAttempt) throw new Error('Chart failed');
       Object.assign(this, {canvas, config, destroyed: false}); charts.push(this);
     }
+    update(mode) { this.updates ??= []; this.updates.push(mode); }
     destroy() { this.destroyed = true; }
   }
   const fetch = (url, options) => new Promise((resolve, reject) => requests.push({url, options, resolve, reject, jsonCalls: 0}));
-  const controller = initGMVDashboard({document, fetch, Chart,
-    getComputedStyle: () => ({getPropertyValue: key => key === '--muted' ? '#abcdef' : '#123456'})});
+  const theme = {muted: '#abcdef', other: '#123456'};
+  const controller = initGMVDashboard({document, fetch, Chart, window: document,
+    getComputedStyle: () => ({getPropertyValue: key => key === '--muted' ? theme.muted : theme.other})});
   const byId = suffix => document.getElementById(`gmvDashboard${suffix}`);
   const respond = (index, data, {status = 200, redirected = false, contentType = 'application/json'} = {}) => {
     const request = requests[index];
@@ -79,7 +83,7 @@ function fixture() {
   const chart = () => activeCharts()[0];
   const chooseCompany = key => { byId('Company').value = key; return byId('Company').dispatch('change'); };
   const dispatch = (type, event = {}) => { for (const listener of listeners.get(type) ?? []) listener(event); return event; };
-  return {controller, byId, respond, requests, charts, chartState, activeCharts, chart, chooseCompany, dispatch, listeners};
+  return {controller, theme, byId, respond, requests, charts, chartState, activeCharts, chart, chooseCompany, dispatch, listeners};
 }
 
 test('calendar and exact money helpers preserve signed cents and amounts above JavaScript safe integers', () => {
@@ -96,6 +100,34 @@ test('calendar and exact money helpers preserve signed cents and amounts above J
   for (const month of ['0000-01', '2026-00', '2026-13', '2026-1', 'bad']) assert.throws(() => gmvCalendar(month));
 });
 
+test('theme changes repaint GMV without recalculation or loss of the selected company and exact amounts', async () => {
+  const page = fixture();
+  page.respond(0, report());
+  await page.controller.ready;
+  page.chooseCompany(SECOND);
+  const chart = page.chart();
+  const datasets = chart.config.data.datasets;
+  const total = page.byId('Total').textContent;
+  const tooltip = chart.config.options.plugins.tooltip.callbacks;
+  page.theme.muted = '#aabbcc'; page.theme.other = '#112233';
+  page.dispatch('app:themechange');
+  assert.equal(page.chart(), chart);
+  assert.equal(chart.config.data.datasets, datasets);
+  assert.equal(chart.config.options.plugins.tooltip.callbacks, tooltip);
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.byId('Company').value, SECOND);
+  assert.equal(page.byId('MonthSelect').value, '2026-11');
+  assert.equal(page.byId('Total').textContent, total);
+  assert.deepEqual(chart.updates, ['none']);
+  assert.equal(chart.config.options.scales.y.ticks.color, '#aabbcc');
+  assert.equal(chart.config.options.plugins.legend.labels.color, '#aabbcc');
+  assert.equal(chart.config.options.plugins.tooltip.backgroundColor, '#112233');
+  page.controller.destroy();
+  page.dispatch('app:themechange');
+  assert.deepEqual(chart.updates, ['none']);
+  assert.equal(page.listeners.get('app:themechange').size, 0);
+});
+
 test('initial load shows one company chart with signed daily GMV, future nulls and exact RON totals', async () => {
   const page = fixture();
   assert.equal(page.requests[0].url, '/app/gmvDashboard');
@@ -106,7 +138,7 @@ test('initial load shows one company chart with signed daily GMV, future nulls a
   await page.controller.ready;
   assert.equal(page.byId('Cards').children.length, 1);
   assert.equal(page.activeCharts().length, 1);
-  assert.equal(page.byId('Title').textContent, 'GMV (cu TVA)');
+  assert.equal(page.byId('Title').textContent, 'GMV (incl. VAT)');
   assert.equal(page.byId('Total').textContent, '110.16 RON');
   assert.equal(page.byId('Scope').textContent, 'All companies · month to date');
   assert.equal(page.byId('MonthSelect').value, '2026-11');
@@ -123,7 +155,7 @@ test('initial load shows one company chart with signed daily GMV, future nulls a
   assert.equal(config.data.datasets[0].cubicInterpolationMode, 'monotone');
   assert.equal(config.data.datasets[0].spanGaps, false);
   assert.equal(config.options.scales.y.min, undefined);
-  assert.equal(config.options.scales.y.title.text, 'GMV (cu TVA) · RON');
+  assert.equal(config.options.scales.y.title.text, 'GMV (incl. VAT) · RON');
   assert.equal(config.options.scales.y.grid.color, '#123456');
   assert.equal(config.options.scales.x.ticks.color, '#abcdef');
   assert.equal(config.options.scales.x.ticks.callback.call({getLabelForValue: () => '2026-11-03'}, 2), '3');
@@ -164,7 +196,7 @@ test('company selection filters cached lines and totals locally while preserving
   assert.equal(page.chart().config.data.datasets[0].borderColor, betaColor);
   assert.equal(page.byId('Total').textContent, '12.21 RON');
   assert.equal(page.byId('Scope').textContent, 'Beta Company · month to date');
-  assert.match(page.byId('Chart').getAttribute('aria-label'), /^Beta Company: daily GMV \(cu TVA\) in RON/);
+  assert.match(page.byId('Chart').getAttribute('aria-label'), /^Beta Company: daily GMV \(incl. VAT\) in RON/);
   page.chooseCompany('');
   assert.equal(page.chart().config.data.datasets.length, 2);
   assert.equal(page.byId('Total').textContent, '110.16 RON');
@@ -335,7 +367,7 @@ test('exact cent reconciliation rejects inconsistent or malformed reports while 
 test('info supports hover, focus, tap and dismissal and explains the displayed GMV calculation', async () => {
   const page = fixture(); page.respond(0, report()); await page.controller.ready;
   const button = page.byId('Info'); const wrap = page.byId('InfoWrap'); const tooltip = page.byId('InfoText');
-  assert.equal(button.getAttribute('aria-label'), 'About GMV (cu TVA)');
+  assert.equal(button.getAttribute('aria-label'), 'About GMV (incl. VAT)');
   assert.equal(button.getAttribute('aria-describedby'), 'gmvDashboardInfoText');
   assert.equal(tooltip.getAttribute('role'), 'tooltip');
   assert.match(tooltip.textContent, /through 2026-11-03\. Today is still in progress/);

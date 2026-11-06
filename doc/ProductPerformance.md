@@ -74,7 +74,8 @@ classification observed on that date.
   For example, Dec 2–31; in leap-year February, Jan 31–Feb 29. These windows can overlap
   or leave gaps and must not be summed as calendar-month totals.
 - A window becomes closed only after its closing date has elapsed in Romania.
-- A separate **provisional** rolling row ends on the latest live vendor snapshot date strictly
+- A separate **provisional** rolling row ends on the latest completed live vendor snapshot or
+  imported historical observation date strictly
   before today, with exactly 14/30 dates. It is omitted if its end is at or before the latest
   closed boundary, if it predates the product's first activity, or if it duplicates a closed row.
   It can overlap history; it is not a partially elapsed fixed window.
@@ -97,6 +98,15 @@ the UI renders explicit bounds from the row metadata, not a reconstructed week/m
 The UI initially shows the latest 20 rows; “Show everything” reveals all returned periods.
 Switching modes requests new aggregates rather than relabelling rows.
 
+The permanent circled **i** beside the report status explains estimated history, partial data,
+and provisional periods in English. Yellow cells identify historical estimates independently of
+the provisional flag; a provisional row is a full rolling preview, not a partially elapsed window
+or a claim that its clicks are estimates. Its dates can overlap closed rows and must not be added
+to them. The help uses the same component as Sales Dashboard and GMV Dashboard: hover or keyboard
+focus opens it, tapping toggles it, and Escape or an outside click dismisses it. It stays within
+the viewport and uses the selected light/dark theme. It remains available during loading, errors,
+empty reports and when older rows are hidden. Cell source details and CSV provenance remain intact.
+
 “Download CSV” exports the displayed rows and values, including their numeric formatting.
 Check “Show everything” to include the full history for the selected product and period mode.
 The CSV has one flat header row, with advertising labels qualified by their group (for
@@ -111,7 +121,7 @@ filled with invented observations. An interval with no eligible advertising snap
 Ads values, not invented zero activity. Within intervals containing Ads data, the category
 accumulators are combined to produce Total, and rates are derived after aggregation.
 
-Native Stock and **Sales Price (cu TVA)** come from daily offers matched on vendor and the
+Native Stock and **Sales Price (incl. VAT)** come from daily offers matched on vendor and the
 selected product's PNK (`doc_product_part_number_key`), with surrounding whitespace
 removed. Matching offers remain eligible when stock is zero or unknown, so running out of stock
 does not erase product history or its price observations. The latest eligible day in the period
@@ -166,7 +176,7 @@ unassigned-units notice. Both charts therefore show units, rather than transacti
 return-request counts. Their company attribution follows the selling account, while
 Order Table's visible product labels follow the product catalog.
 
-**Total Sales (fara TVA)** replaces the displayed GMV column. It uses the existing product
+**Total Sales (excl. VAT)** replaces the displayed GMV column. It uses the existing product
 GMV allocation with the selected internal product code, but supplies net inputs:
 `product_in_order.sale_price` without adding VAT, and the sum of seller-funded
 `voucher_split.value` without `vat_value`. Each line retains its own source amount;
@@ -192,12 +202,12 @@ classification errors do not hide a row's Total Sales or legacy GMV.
 
 ### VAT labels and advertising source limits
 
-All five Ads groups label **Spend (fara TVA)** and **CPC (fara TVA)** using the agreed
+All five Ads groups label **Spend (excl. VAT)** and **CPC (excl. VAT)** using the agreed
 convention that Spend consumes the VAT-exclusive Ads credit. The seller's credit display
 confirms the credit basis; the Ads API itself does not provide an explicit VAT flag.
 Raw Spend is not converted or rewritten; CPC remains Spend divided by Ads clicks.
 
-**Sales (fara TVA)** retains eMAG's original attributed sales amount. On 2026-11-06,
+**Sales (excl. VAT)** retains eMAG's original attributed sales amount. On 2026-11-06,
 the user confirmed directly in the eMAG platform that Ads Sales excludes VAT. No
 additional VAT conversion is applied. ACOS (Spend / Sales), ROAS (Sales / Spend), and
 category Sales shares retain their existing formulas and use VAT-exclusive Sales,
@@ -205,9 +215,11 @@ with Spend using the net-credit convention above. API keys and numeric values ar
 Counts and percentage labels have no VAT suffix.
 
 Column metadata has an optional `description`, displayed as header/cell hover text and
-accessible labels. CSV uses the same column labels, including **Sales (fara TVA)**, and includes
+accessible labels. All application-authored Product Performance labels and explanations are English;
+original product, vendor and source-sheet names are preserved. CSV uses the same column labels,
+including **Sales (excl. VAT)**, and includes
 the eight period/visits metadata fields plus four performance observation fields. Dedicated GMV pages and their detail
-exports use **GMV (cu TVA)** and retain their existing calculations.
+exports use **GMV (incl. VAT)** and retain their existing calculations.
 
 | Displayed metric | Primitive or calculation within the period |
 |---|---|

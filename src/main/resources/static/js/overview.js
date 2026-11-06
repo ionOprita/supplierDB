@@ -1,3 +1,6 @@
+import {createThemedChart, observeChartTheme} from './chart-theme.js';
+import {createInfoTooltip} from './info-tooltip.js';
+
 const integerFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits: 0});
 const monthFormat = new Intl.DateTimeFormat('en-US', {month: 'long', year: 'numeric', timeZone: 'UTC'});
 const companyPalette = ['#3b82f6', '#f97316', '#14b8a6', '#a855f7', '#ef4444', '#06b6d4', '#eab308', '#ec4899', '#6366f1', '#84cc16', '#d97706', '#64748b'];
@@ -33,10 +36,11 @@ function validateReport(report) {
 }
 
 export function initOverview({document = globalThis.document, fetch = globalThis.fetch,
-  Chart = globalThis.Chart, getComputedStyle = globalThis.getComputedStyle} = {}) {
+  Chart = globalThis.Chart, getComputedStyle = globalThis.getComputedStyle, window = globalThis.window} = {}) {
   const byId = suffix => document.getElementById(`overview${suffix}`);
   const dashboard = byId('Dashboard');
   if (!dashboard) return null;
+  const createChart = (canvas, config) => createThemedChart(Chart, canvas, config, {element: dashboard, getComputedStyle});
   const refreshButton = byId('Refresh');
   const monthInput = byId('MonthSelect');
   const status = byId('Status');
@@ -133,84 +137,14 @@ export function initOverview({document = globalThis.document, fetch = globalThis
   }
 
   function chartInfo(metric, report, prefix, title) {
-    const wrap = element('div', 'overview-info');
-    wrap.id = `${prefix}InfoWrap`;
-    const button = element('button', 'overview-info-button');
-    button.id = `${prefix}Info`;
-    button.type = 'button';
-    button.setAttribute('aria-label', `About ${title}`);
-    button.setAttribute('aria-describedby', `${prefix}InfoText`);
-    button.setAttribute('aria-controls', `${prefix}InfoText`);
-    const icon = element('span', 'overview-info-icon', 'i');
-    icon.setAttribute('aria-hidden', 'true');
-    button.appendChild(icon);
-    const tooltip = element('div', 'overview-info-text');
-    tooltip.id = `${prefix}InfoText`;
-    tooltip.setAttribute('role', 'tooltip');
     const current = report.month === (currentMonth ?? report.month);
     const units = metric === 'orders' ? 'ordered units' : 'returned units';
     const definition = metric === 'orders'
       ? 'Orders show product units from finalized and returned orders by order date. Returned units are not deducted from Orders.'
       : 'Returns show product units from finalized return requests by request date, without subtracting them from Orders.';
-    tooltip.textContent = `Daily ${units} through ${report.throughDate}. `
-      + (current ? 'Today is still in progress. ' : 'Full month. ') + definition;
-    let hovered = false;
-    let focused = false;
-    let pinned = false;
-    let dismissed = false;
-    function update() {
-      tooltip.hidden = dismissed || !(hovered || focused || pinned);
-      button.setAttribute('aria-expanded', String(!tooltip.hidden));
-    }
-    function resetWhenInactive() {
-      if (!hovered && !focused) dismissed = false;
-    }
-    const enter = event => {
-      if (event.pointerType === 'touch') return;
-      resetWhenInactive();
-      hovered = true;
-      update();
-    };
-    const leave = () => {
-      hovered = false;
-      resetWhenInactive();
-      update();
-    };
-    const focus = () => {
-      resetWhenInactive();
-      focused = true;
-      update();
-    };
-    const blur = event => {
-      if (wrap.contains(event.relatedTarget)) return;
-      focused = false;
-      pinned = false;
-      resetWhenInactive();
-      update();
-    };
-    const click = () => {
-      pinned = !pinned;
-      dismissed = !pinned;
-      update();
-    };
-    const listeners = [[wrap, 'pointerenter', enter], [wrap, 'pointerleave', leave],
-      [button, 'focus', focus], [button, 'blur', blur], [button, 'click', click]];
-    for (const [target, type, listener] of listeners) target.addEventListener(type, listener);
-    wrap.appendChild(button);
-    wrap.appendChild(tooltip);
-    update();
-    return {wrap, tooltip, dismiss() { pinned = false; dismissed = true; update(); },
-      destroy() { for (const [target, type, listener] of listeners) target.removeEventListener(type, listener); }};
-  }
-
-  function dismissInfoOnEscape(event) {
-    if (event.key === 'Escape') panels.forEach(panel => { if (!panel.info.tooltip.hidden) panel.info.dismiss(); });
-  }
-
-  function dismissInfoOutside(event) {
-    for (const panel of panels) {
-      if (!panel.info.wrap.contains(event.target)) panel.info.dismiss();
-    }
+    return createInfoTooltip({document, prefix, label: `About ${title}`,
+      text: `Daily ${units} through ${report.throughDate}. `
+        + (current ? 'Today is still in progress. ' : 'Full month. ') + definition});
   }
 
   function chartCard(metric, report, labels, names, selectedKey) {
@@ -275,7 +209,7 @@ export function initOverview({document = globalThis.document, fetch = globalThis
     const canvas = canvasFor(panel);
     panel.wrap.replaceChildren(canvas);
     try {
-      const replacement = new Chart(canvas, selection.config);
+      const replacement = createChart(canvas, selection.config);
       panel.chart.destroy();
       panel.chart = replacement;
       panel.canvas = canvas;
@@ -324,7 +258,7 @@ export function initOverview({document = globalThis.document, fetch = globalThis
     const oldChildren = Array.from(companies.children);
     companies.replaceChildren(...replacements.map(panel => panel.card));
     try {
-      for (const panel of replacements) panel.chart = new Chart(panel.canvas, panel.config);
+      for (const panel of replacements) panel.chart = createChart(panel.canvas, panel.config);
     } catch (error) {
       replacements.forEach(destroyPanel);
       companies.replaceChildren(...oldChildren);
@@ -395,15 +329,14 @@ export function initOverview({document = globalThis.document, fetch = globalThis
 
   refreshButton.addEventListener('click', refresh);
   monthInput.addEventListener('change', refresh);
-  document.addEventListener('keydown', dismissInfoOnEscape);
-  document.addEventListener('pointerdown', dismissInfoOutside);
+  const stopThemeObserver = observeChartTheme(() => panels.map(panel => panel.chart),
+    {window, element: dashboard, getComputedStyle});
   const ready = refresh();
   return {ready, refresh, destroy() {
     disposed = true;
+    stopThemeObserver();
     refreshButton.removeEventListener('click', refresh);
     monthInput.removeEventListener('change', refresh);
-    document.removeEventListener('keydown', dismissInfoOnEscape);
-    document.removeEventListener('pointerdown', dismissInfoOutside);
     panels.forEach(destroyPanel);
     panels = [];
   }};

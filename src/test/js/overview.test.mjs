@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 
-const source = await readFile(new URL('../../main/resources/static/js/overview.js', import.meta.url), 'utf8');
+const infoTooltip = `data:text/javascript;base64,${Buffer.from(await readFile(new URL('../../main/resources/static/js/info-tooltip.js', import.meta.url), 'utf8')).toString('base64')}`;
+const chartTheme = `data:text/javascript;base64,${Buffer.from(await readFile(new URL('../../main/resources/static/js/chart-theme.js', import.meta.url), 'utf8')).toString('base64')}`;
+const source = (await readFile(new URL('../../main/resources/static/js/overview.js', import.meta.url), 'utf8')).replace("'./info-tooltip.js'", JSON.stringify(infoTooltip)).replace("'./chart-theme.js'", JSON.stringify(chartTheme));
 const {initOverview, overviewCalendar} = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 const FIRST = 'company:first';
 const SECOND = 'company:second';
@@ -86,11 +88,13 @@ function fixture() {
       Object.assign(this, {canvas, config, destroyed: false});
       charts.push(this);
     }
+    update(mode) { this.updates ??= []; this.updates.push(mode); }
     destroy() { this.destroyed = true; }
   }
   const fetch = (url, options) => new Promise((resolve, reject) => requests.push({url, options, resolve, reject}));
-  const controller = initOverview({document, fetch, Chart,
-    getComputedStyle: () => ({getPropertyValue: name => name === '--muted' ? '#abcdef' : '#123456'})});
+  const theme = {muted: '#abcdef', other: '#123456'};
+  const controller = initOverview({document, fetch, Chart, window: document,
+    getComputedStyle: () => ({getPropertyValue: name => name === '--muted' ? theme.muted : theme.other})});
   const byId = suffix => document.getElementById(`overview${suffix}`);
   const respond = (index, data, status = 200) => requests[index].resolve({ok: status < 400, status, json: async () => data});
   const activeCharts = () => charts.filter(chart => !chart.destroyed);
@@ -100,7 +104,7 @@ function fixture() {
     input.value = key;
     return input.dispatch('change');
   };
-  return {controller, requests, charts, chartState, byId, respond, activeCharts, chart, select, dispatch, documentListeners};
+  return {controller, theme, requests, charts, chartState, byId, respond, activeCharts, chart, select, dispatch, documentListeners};
 }
 
 test('builds complete 28, 29, 30 and 31 day calendars without local timezone shifts', () => {
@@ -111,6 +115,32 @@ test('builds complete 28, 29, 30 and 31 day calendars without local timezone shi
     assert.equal(days.at(-1), `${month}-${length}`);
   }
   for (const month of ['', 'bad', '2026-00', '2026-13', '2026-1', null]) assert.throws(() => overviewCalendar(month));
+});
+
+test('theme changes repaint both current charts without resetting selections or requesting data', async () => {
+  const page = fixture();
+  page.respond(0, report());
+  await page.controller.ready;
+  page.select('Orders', SECOND);
+  const charts = page.activeCharts();
+  const datasets = charts.map(chart => chart.config.data.datasets);
+  page.theme.muted = '#aabbcc'; page.theme.other = '#112233';
+  page.dispatch('app:themechange');
+  assert.deepEqual(page.activeCharts(), charts);
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.byId('OrdersCompany').value, SECOND);
+  assert.equal(page.byId('MonthSelect').value, '2026-11');
+  charts.forEach((chart, index) => {
+    assert.equal(chart.config.data.datasets, datasets[index]);
+    assert.deepEqual(chart.updates, ['none']);
+    assert.equal(chart.config.options.scales.x.ticks.color, '#aabbcc');
+    assert.equal(chart.config.options.scales.y.grid.color, '#112233');
+    assert.equal(chart.config.options.plugins.tooltip.backgroundColor, '#112233');
+  });
+  page.controller.destroy();
+  page.dispatch('app:themechange');
+  charts.forEach(chart => assert.deepEqual(chart.updates, ['none']));
+  assert.equal(page.documentListeners.get('app:themechange').size, 0);
 });
 
 test('default report shows exactly two charts with a separate exact daily line for each company', async () => {

@@ -85,6 +85,16 @@
   function initialize() {
     const body = document.body;
     if (!body || !body.classList.contains('app-shell')) return;
+    // The header can wrap with a long brand/account name or increased text size.
+    // Keep desktop sticky navigation below its real height instead of clipping it.
+    const header = document.getElementById('appHeader');
+    if (header && typeof window.ResizeObserver === 'function') {
+      const observer = new window.ResizeObserver(() => {
+        const height = Math.ceil(header.getBoundingClientRect().height);
+        if (height > 0) body.style.setProperty('--app-header-height', `${height}px`);
+      });
+      observer.observe(header);
+    }
     const navigation = document.getElementById('appNavigation');
     if (navigation) initializeGroups(navigation, markCurrentPage(navigation));
 

@@ -1,5 +1,6 @@
 import {fetchJSON} from './common.js';
 import {downloadCsvFromTable, sanitizeFileNamePart} from './table-common.js';
+import {createInfoTooltip} from './info-tooltip.js';
 
 const numberFormats = {
   integer: new Intl.NumberFormat('en-US', {maximumFractionDigits: 0}),
@@ -87,7 +88,7 @@ function performanceDescription(row) {
 }
 
 function provenanceDescription(provenance) {
-  const quality = provenance.quality === 'estimated' ? 'Istoric estimat.' : 'Date parțiale; this value does not cover the complete report window.';
+  const quality = provenance.quality === 'estimated' ? 'Estimated history.' : 'Partial data; this value does not cover the complete report window.';
   return [quality,
     provenance.source && `Source: ${provenance.source}.`,
     provenance.sourceDate && `Source date: ${provenance.sourceDate}.`,
@@ -135,8 +136,16 @@ export function initProductPerformance() {
   const reportErrors = byId('Errors');
   const errorSummary = byId('ErrorSummary');
   const errorList = byId('ErrorList');
-  const estimatedLegend = byId('EstimatedLegend');
-  const partialLegend = byId('PartialLegend');
+  const help = createInfoTooltip({document, prefix: 'productPerformance',
+    label: 'About report periods and data quality', sections: [
+      {title: 'Estimated history — yellow cells',
+        text: 'Historical observations fill gaps in native data. Rolling 30-day totals are scaled by 14/30 for 14-day rows, assuming uniform activity, and used unchanged for 30-day rows. Source dates can differ from the row end. Stock, price, classification, rating and review observations are not scaled. Cell details and CSV retain the source date and calculation.'},
+      {title: 'Partial data — ◐',
+        text: 'Only part of the reporting window has native data. The value covers the available observations; it is not a complete-period total. Missing values (—) are different from known zeroes.'},
+      {title: 'Provisional period',
+        text: 'A full rolling 14- or 30-day preview ending on the latest completed observation before the next scheduled report close. It can overlap earlier rows; do not add it to closed rows. Provisional describes the reporting date, not whether clicks are estimated. Yellow cells independently identify estimates. A 30-day window is not necessarily a calendar month.'}
+    ]});
+  byId('InfoHost').appendChild(help.wrap);
   let vendors = [];
   let currentVendor = null;
   let currentProduct = null;
@@ -330,10 +339,6 @@ export function initProductPerformance() {
 
   function renderRows(rows) {
     currentRows = rows;
-    const hasQuality = quality => rows.some(row => columns.some(column =>
-      row.cellProvenance?.[column.key]?.quality === quality));
-    estimatedLegend.hidden = !hasQuality('estimated');
-    partialLegend.hidden = !hasQuality('partial');
     body.replaceChildren();
     const fragment = document.createDocumentFragment();
     for (const row of visiblePerformanceRows(rows, showEverything)) {
@@ -420,8 +425,7 @@ export function initProductPerformance() {
     download.disabled = true;
     byId('Product').hidden = true;
     currentRows = [];
-    estimatedLegend.hidden = true;
-    partialLegend.hidden = true;
+    help.dismiss();
     body.replaceChildren();
     renderErrors([]);
     wrap.hidden = true;

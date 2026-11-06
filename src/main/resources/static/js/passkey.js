@@ -1,7 +1,11 @@
-    function log(msg) {
-      const div = document.getElementById('log');
-      div.textContent = msg;
-    }
+// These conversion helpers also support the administrator's Stop Server confirmation.
+function log(message, state = 'info') {
+  const status = document.getElementById('log');
+  if (!status) return;
+  status.textContent = message;
+  status.dataset.state = state;
+  status.hidden = !message;
+}
 
     // --- Helpers: base64url <-> ArrayBuffer -----------------------------------
 
@@ -118,108 +122,160 @@
       };
     }
 
-    // --- Registration flow -----------------------------------------------------
+// --- Public authentication forms -------------------------------------------
 
-    async function registerPasskey() {
-      const username = document.getElementById('newname').value.trim();
-      if (!username) {
-        log('Please enter a username to register.');
-        return;
-      }
-      try {
-        log('Requesting registration options…');
+const authFormState = {busy: false, completed: false, redirectTimer: null};
 
-        const resp = await fetch(`/webauthn/register/options?username=${encodeURIComponent(username)}`, {
-          method: 'POST'
-        });
-        if (!resp.ok) {
-          log(`Error from server: ${resp.status} ${resp.statusText}`);
-          return;
-        }
-        const { requestId, publicKey } = await resp.json();
+function authElements(registration) {
+  return {
+    form: document.getElementById(registration ? 'registerForm' : 'loginForm'),
+    input: document.getElementById(registration ? 'newname' : 'username'),
+    button: document.getElementById(registration ? 'registerButton' : 'loginButton')
+  };
+}
 
-        const creationOpts = prepareCreationOptionsFromServer(publicKey);
+function setAuthBusy(elements, busy, registration) {
+  elements.form.setAttribute('aria-busy', String(busy));
+  elements.input.disabled = busy;
+  elements.button.disabled = busy;
+  elements.button.textContent = busy
+    ? registration ? 'Creating your passkey…' : 'Signing in…'
+    : registration ? 'Create account with passkey' : 'Sign in with passkey';
+}
 
-        log('Creating credential with authenticator…');
-        const cred = await navigator.credentials.create({ publicKey: creationOpts });
-
-        if (!cred) {
-          log('No credential created (user cancelled?).');
-          return;
-        }
-
-        const credJSON = registrationCredentialToJSON(cred);
-
-        log('Sending credential to server for verification…');
-
-        const verifyResp = await fetch(`/webauthn/register/verify?requestId=${encodeURIComponent(requestId)}`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(credJSON)
-        });
-
-        if (verifyResp.ok) {
-          log('Passkey registered successfully ✔ You can now sign in with it.');
-          window.setTimeout(function(){window.location.href = "/";},3000);
-        } else {
-          log(`Registration verification failed: ${verifyResp.status}`);
-        }
-
-      } catch (e) {
-        console.error(e);
-        log('Error during registration: ' + e);
-      }
+async function authServerMessage(response, registration, verification) {
+  let detail = '';
+  try { detail = await response.text(); } catch (_) { /* Use the safe fallback below. */ }
+  if (response.status === 400 && !verification) {
+    if (registration && /already exists/i.test(detail)) {
+      return 'This username is already registered. Sign in, or ask an administrator for help if registration was interrupted.';
     }
-
-    // --- Authentication flow ---------------------------------------------------
-
-    async function loginWithPasskey() {
-      const username = document.getElementById('username').value.trim();
-      if (!username) {
-        log('Please enter username for this simple example.');
-        return;
-      }
-      try {
-        log('Requesting authentication options…');
-
-        const resp = await fetch(`/webauthn/authenticate/options?username=${encodeURIComponent(username)}`, {
-          method: 'POST'
-        });
-        if (!resp.ok) {
-          log(`Error from server: ${resp.status}`);
-          return;
-        }
-        const { requestId, publicKey } = await resp.json();
-
-        const requestOpts = prepareRequestOptionsFromServer(publicKey);
-
-        log('Asking authenticator to sign assertion…');
-
-        const assertion = await navigator.credentials.get({ publicKey: requestOpts });
-
-        if (!assertion) {
-          log('No assertion (user cancelled?).');
-          return;
-        }
-
-        const assertionJSON = assertionCredentialToJSON(assertion);
-
-        log('Sending assertion to server for verification…');
-
-        const verifyResp = await fetch(`/webauthn/authenticate/verify?requestId=${encodeURIComponent(requestId)}`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(assertionJSON)
-        });
-
-        if (verifyResp.ok) {
-          //log('Signed in ✔ You should now have a session on the server.');
-          window.location.href = '/private/overview';
-        } else {
-          log(`Authentication verification failed: ${verifyResp.status}`);
-        }
-      } catch (e) {
-        console.error(e);
-        log('Error during authentication: ' + e);
-      }
+    if (!registration && /not found/i.test(detail)) {
+      return 'We could not find that username. Check it and try again.';
     }
+    if (/Invalid username/i.test(detail)) return 'Use only letters, numbers and underscores in your username.';
+  }
+  if (verification) {
+    return registration
+      ? 'Your passkey could not be saved. Ask an administrator for help if this username is now unavailable.'
+      : 'Your passkey could not be verified. Please try signing in again.';
+  }
+  return 'The server could not start this request. Please try again shortly.';
+}
+
+function authCancelledMessage(registration) {
+  return registration
+    ? 'Passkey creation was cancelled or timed out. If this username is now unavailable, ask an administrator for help.'
+    : 'Sign-in was cancelled or timed out. You can try again when you are ready.';
+}
+
+async function runPasskeyFlow(registration) {
+  const elements = authElements(registration);
+  if (!elements.form || !elements.input || !elements.button || authFormState.busy || authFormState.completed) return;
+  const username = elements.input.value.trim();
+  if (!username || !/^[A-Za-z0-9_]+$/.test(username) || username.length > 255) {
+    elements.input.setAttribute('aria-invalid', 'true');
+    log(!username ? 'Enter your username to continue.' : 'Use only letters, numbers and underscores, up to 255 characters.', 'error');
+    elements.input.focus();
+    return;
+  }
+  elements.input.removeAttribute('aria-invalid');
+  if (window.isSecureContext === false) {
+    log('Open the secure server address to use your passkey.', 'error');
+    return;
+  }
+  const method = registration ? 'create' : 'get';
+  if (!window.PublicKeyCredential || !navigator.credentials || typeof navigator.credentials[method] !== 'function') {
+    log('This browser does not support passkeys. Try an up-to-date browser on your phone or computer.', 'error');
+    return;
+  }
+
+  authFormState.busy = true;
+  setAuthBusy(elements, true, registration);
+  const endpoint = registration ? 'register' : 'authenticate';
+  try {
+    log(registration ? 'Preparing your passkey…' : 'Preparing sign-in…');
+    const optionsResponse = await fetch(`/webauthn/${endpoint}/options?username=${encodeURIComponent(username)}`, {
+      method: 'POST', redirect: 'error'
+    });
+    if (!optionsResponse.ok) {
+      log(await authServerMessage(optionsResponse, registration, false), 'error');
+      return;
+    }
+    const {requestId, publicKey} = await optionsResponse.json();
+    const options = registration ? prepareCreationOptionsFromServer(publicKey) : prepareRequestOptionsFromServer(publicKey);
+    log(registration ? 'Follow your browser’s instructions to create a passkey.' : 'Confirm with your passkey to continue.');
+    const credential = await navigator.credentials[method]({publicKey: options});
+    if (!credential) {
+      log(authCancelledMessage(registration));
+      return;
+    }
+    const credentialJSON = registration ? registrationCredentialToJSON(credential) : assertionCredentialToJSON(credential);
+    log(registration ? 'Saving your passkey…' : 'Completing sign-in…');
+    const verifyResponse = await fetch(`/webauthn/${endpoint}/verify?requestId=${encodeURIComponent(requestId)}`, {
+      method: 'POST', redirect: 'error', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(credentialJSON)
+    });
+    if (verifyResponse.status !== 204) {
+      log(await authServerMessage(verifyResponse, registration, true), 'error');
+      return;
+    }
+    authFormState.completed = true;
+    elements.form.setAttribute('aria-busy', 'false');
+    elements.button.textContent = registration ? 'Account created' : 'Signed in';
+    if (registration) {
+      log('Your passkey is ready. Sign in next, then ask an administrator to activate your account. Returning to sign-in…', 'success');
+      authFormState.redirectTimer = window.setTimeout(() => { window.location.href = '/'; }, 3000);
+    } else {
+      log('Signed in. Opening your dashboard…', 'success');
+      window.location.href = '/private/overview';
+    }
+  } catch (error) {
+    if (error?.name === 'NotAllowedError' || error?.name === 'AbortError') {
+      log(authCancelledMessage(registration));
+    } else if (error?.name === 'InvalidStateError' && registration) {
+      log('A passkey for this account may already exist. Try signing in, or ask an administrator for help.', 'error');
+    } else if (error?.name === 'SecurityError') {
+      log('A passkey could not be used on this address. Open the usual secure server link and try again.', 'error');
+    } else {
+      log('We could not complete the request. Check your connection and try again.', 'error');
+    }
+  } finally {
+    authFormState.busy = false;
+    if (!authFormState.completed) setAuthBusy(elements, false, registration);
+  }
+}
+
+async function registerPasskey() { return runPasskeyFlow(true); }
+async function loginWithPasskey() { return runPasskeyFlow(false); }
+
+function initializeAuthForms() {
+  for (const registration of [false, true]) {
+    const elements = authElements(registration);
+    if (!elements.form || !elements.input || !elements.button) continue;
+    elements.form.addEventListener('submit', event => {
+      event.preventDefault();
+      return runPasskeyFlow(registration);
+    });
+    elements.input.addEventListener('input', () => {
+      elements.input.removeAttribute('aria-invalid');
+      if (!authFormState.busy && !authFormState.completed) log('');
+    });
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) {
+        if (authFormState.redirectTimer !== null) window.clearTimeout(authFormState.redirectTimer);
+        authFormState.redirectTimer = null;
+        authFormState.busy = false;
+        authFormState.completed = false;
+        setAuthBusy(elements, false, registration);
+        log('');
+      }
+      if (!registration && document.activeElement === document.body && !elements.input.disabled) elements.input.focus();
+    });
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeAuthForms, {once: true});
+} else {
+  initializeAuthForms();
+}

@@ -12,7 +12,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
     <title>${pageTitle}</title>
+    <script src="/js/theme.js"></script>
     <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/info-tooltip.css">
+    <link rel="stylesheet" href="/auth.css">
 </head>
 
 <body class="${userRole != null && !userRole.equals("nobody") ? "app-shell app-shell--with-nav" : "app-shell"}">
@@ -33,6 +36,14 @@
         <span class="app-brand-name">Koppel, Judios, Zoopie &amp; Sellfusion Family</span>
     </a>
     <div class="app-account" role="group" aria-label="Signed in as ${userName}">
+        <label class="app-theme-control" for="appTheme">
+            <span>Theme</span>
+            <select id="appTheme" data-theme-select>
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+            </select>
+        </label>
         <span class="app-account-avatar" aria-hidden="true">${userName == null || userName.isBlank() ? "?" : userName.substring(0, 1).toUpperCase(Locale.ROOT)}</span>
         <div class="app-account-details">
             <strong class="app-account-name">${userName}</strong>

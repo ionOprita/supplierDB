@@ -42,22 +42,22 @@ public final class ProductPerformanceData {
                     column("period", "Period", "date"),
                     column("stock", "Stock", "integer"),
                     column("orders", "Orders", "integer",
-                            "Unități comandate în contul eMAG selectat, cu aceleași reguli de cantitate ca Order Table. "
-                                    + "Retururile nu se scad din acest număr."),
-                    column("totalSales", "Total Sales (fara TVA)", "integer",
-                            "Vânzări fără TVA din liniile comenzilor, cu ajustările nete pentru vouchere și storno. "
-                                    + "Include vânzările organice și din Ads ale produsului din contul eMAG selectat."),
+                            "Ordered units in the selected eMAG account, using the same quantity rules as Order Table. "
+                                    + "Returns are not subtracted from this number."),
+                    column("totalSales", "Total Sales (excl. VAT)", "integer",
+                            "Order-line sales excluding VAT, with net voucher and storno adjustments. "
+                                    + "Includes the product's organic and Ads sales in the selected eMAG account."),
                     column("clicks", "Clicks", "integer"),
-                    column("salesPrice", "Sales Price (cu TVA)", "decimal",
-                            "Media prețurilor zilnice disponibile ale ofertei, cu TVA, în perioada selectată. "
-                                    + "Fiecare zi are aceeași pondere; nu este prețul mediu plătit în comenzi."),
+                    column("salesPrice", "Sales Price (incl. VAT)", "decimal",
+                            "Mean of the available daily offer prices, including VAT, during the selected period. "
+                                    + "Each day has equal weight; this is not the average price paid in orders."),
                     column("conversion", "Conv.", "percent",
-                            "Orders (unități) / Clicks × 100%, pentru produsul și contul eMAG selectate. "
-                                    + "Include traficul organic și Ads; retururile nu se scad din Orders. "
-                                    + "Intervalul este aproximativ deoarece eMAG nu expune ora exactă de închidere a contorului de clickuri."),
+                            "Orders (units) / Clicks × 100%, for the selected product and eMAG account. "
+                                    + "Includes organic and Ads traffic; returns are not subtracted from Orders. "
+                                    + "The window is approximate because eMAG does not expose the clicks counter's exact cutoff time."),
                     column("performance", "Perform.", "text",
-                            "Clasificarea eMAG pe 30 de zile, observată în ultima zi a intervalului afișat, "
-                                    + "inclusiv pentru rândurile de 14 zile."),
+                            "The eMAG 30-day classification observed on the displayed period's final day, "
+                                    + "including for 14-day rows. Historical estimates identify their original observation date."),
                     column("reviews", "# rev.", "integer"),
                     column("rating", "rating", "decimal")
             )),
@@ -247,44 +247,44 @@ public final class ProductPerformanceData {
         var columns = new ArrayList<>(List.of(
                 column(group + "_impressions", "Imp.", "integer"),
                 column(group + "_clicks", "Clicks", "integer"),
-                column(group + "_spend", "Spend (fara TVA)", "integer",
-                        "Valoarea eMAG este tratată ca un consum din creditul Ads fără TVA, conform convenției raportului. "
-                                + "API-ul nu indică explicit baza TVA; suma originală nu este modificată."),
-                column(group + "_sales", "Sales (fara TVA)", "integer",
-                        "Vânzări atribuite reclamelor, raportate de eMAG fără TVA. "
-                                + "Păstrăm valoarea originală, fără conversie suplimentară."),
+                column(group + "_spend", "Spend (excl. VAT)", "integer",
+                        "Consumption of Ads credit excluding VAT, using the confirmed reporting convention. "
+                                + "The API does not explicitly identify the tax basis; the original amount is unchanged."),
+                column(group + "_sales", "Sales (excl. VAT)", "integer",
+                        "Sales attributed to advertising, reported by eMAG excluding VAT. "
+                                + "The original amount is retained without any additional tax conversion."),
                 column(group + "_units", "Total Units Sold", "integer"),
                 column(group + "_ctr", "CTR", "percent"),
                 column(group + "_conversion", "Conv.", "percent"),
-                column(group + "_cpc", "CPC (fara TVA)", "decimal",
-                        "Spend / clickuri Ads. Folosește convenția că Spend reprezintă consum din creditul Ads fără TVA."),
+                column(group + "_cpc", "CPC (excl. VAT)", "decimal",
+                        "Spend / Ads clicks. Spend is consumption of Ads credit excluding VAT."),
                 column(group + "_roas", "ROAS", "decimal",
-                        "Sales / Spend. Ambele sume sunt fără TVA."),
+                        "Sales / Spend. Both amounts exclude VAT."),
                 column(group + "_acos", "ACOS", "percent",
-                        "Spend / Sales × 100. Ambele sume sunt fără TVA."),
+                        "Spend / Sales × 100. Both amounts exclude VAT."),
                 column(group + "_tacos", "TACOS", "percent",
-                        (shareLabel == null ? "Spend total Ads" : "Spend din categoria " + shareLabel)
-                                + " / Total Sales din Product metrics × 100. Ambele sume sunt fără TVA, pentru contul eMAG "
-                                + "selectat și perioada rândului. Total Sales include vânzări organice și din Ads. "
-                                + "— înseamnă date lipsă sau Total Sales zero ori negativ; valorile peste 100% nu sunt limitate.")
+                        (shareLabel == null ? "Total Ads Spend" : shareLabel + " category Spend")
+                                + " / Total Sales in Product metrics × 100. Both amounts exclude VAT and use the selected eMAG "
+                                + "account and the row's period. Total Sales includes organic and Ads sales. "
+                                + "— means missing data or zero/negative Total Sales; values above 100% are not capped.")
         ));
         if (shareLabel == null) {
             columns.add(column(group + "_clicks_share", "% Clicks Ads of Total", "percent",
-                    "Clicks din Total Ads / Clicks din Product metrics × 100, pentru contul eMAG selectat. "
-                            + "Fereastra contorului eMAG de 14/30 zile este aproximativă. — înseamnă date lipsă "
-                            + "sau Clicks zero ori negativ; valorile peste 100% nu sunt limitate."));
+                    "Total Ads Clicks / Clicks in Product metrics × 100, for the selected eMAG account. "
+                            + "The eMAG 14/30-day counter window is approximate. — means missing data "
+                            + "or zero/negative Clicks; values above 100% are not capped."));
             columns.add(column(group + "_sales_share", "% Sales Ads of Total", "percent",
-                    "Sales din Total Ads / Total Sales din Product metrics × 100. Ambele sunt venituri fără TVA, "
-                            + "pentru contul eMAG selectat și perioada rândului. Regulile de atribuire Ads și ajustările "
-                            + "pentru vouchere/storno pot diferi. — înseamnă date lipsă sau Total Sales zero ori negativ; "
-                            + "valorile peste 100% nu sunt limitate."));
+                    "Total Ads Sales / Total Sales in Product metrics × 100. Both are revenue excluding VAT, "
+                            + "for the selected eMAG account and the row's period. Ads attribution and voucher/storno "
+                            + "adjustments can differ. — means missing data or zero/negative Total Sales; "
+                            + "values above 100% are not capped."));
         } else {
             columns.add(column(group + "_impressions_share", "% Imp. " + shareLabel + " of Tot. Ads", "percent"));
             columns.add(column(group + "_clicks_share", "% Clicks " + shareLabel + " of Tot. Ads", "percent"));
             columns.add(column(group + "_spend_share", "% Spend " + shareLabel + " of Tot. Ads", "percent",
-                    "Spend din categorie / Spend total Ads, pe aceeași bază a consumului din creditul fără TVA."));
+                    "Category Spend / Total Ads Spend, both using Ads credit consumption excluding VAT."));
             columns.add(column(group + "_sales_share", "% Sales " + shareLabel + " of Tot. Ads", "percent",
-                    "Sales din categorie / Sales total Ads, folosind valorile eMAG fără TVA pentru ambele sume."));
+                    "Category Sales / Total Ads Sales, using eMAG's VAT-exclusive values for both amounts."));
         }
         return List.copyOf(columns);
     }

@@ -42,13 +42,13 @@ class ProductPerformanceDataTest {
                 response.groups().stream().map(ProductPerformanceData.ColumnGroup::key).toList());
         assertEquals(List.of(10, 13, 15, 15, 15, 15),
                 response.groups().stream().map(group -> group.columns().size()).toList());
-        assertEquals(List.of("Period", "Stock", "Orders", "Total Sales (fara TVA)", "Clicks", "Sales Price (cu TVA)", "Conv.",
+        assertEquals(List.of("Period", "Stock", "Orders", "Total Sales (excl. VAT)", "Clicks", "Sales Price (incl. VAT)", "Conv.",
                         "Perform.", "# rev.", "rating"),
                 response.groups().getFirst().columns().stream().map(ProductPerformanceData.Column::label).toList());
         assertEquals(List.of("date", "integer", "integer", "integer", "integer", "decimal", "percent", "text", "integer", "decimal"),
                 response.groups().getFirst().columns().stream().map(ProductPerformanceData.Column::type).toList());
-        var commonAdsLabels = List.of("Imp.", "Clicks", "Spend (fara TVA)", "Sales (fara TVA)", "Total Units Sold",
-                "CTR", "Conv.", "CPC (fara TVA)", "ROAS", "ACOS", "TACOS");
+        var commonAdsLabels = List.of("Imp.", "Clicks", "Spend (excl. VAT)", "Sales (excl. VAT)", "Total Units Sold",
+                "CTR", "Conv.", "CPC (excl. VAT)", "ROAS", "ACOS", "TACOS");
         for (var group : response.groups().subList(1, 6)) {
             assertEquals(commonAdsLabels, group.columns().subList(0, 11).stream()
                     .map(ProductPerformanceData.Column::label).toList());

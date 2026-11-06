@@ -3,6 +3,7 @@
 // Uses the existing DOM structure/IDs from index.html
 
 import {fetchJSON} from "./common.js";
+import {createThemedChart, observeChartTheme} from "./chart-theme.js";
 
 const selectEl = document.getElementById("productSelect");
 
@@ -76,6 +77,7 @@ const SERIES = [
 
 // Hold active Chart instances so we can destroy/recreate cleanly
 const charts = new Map();
+observeChartTheme(() => charts.values());
 const numberFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 /** Build (or rebuild) the product dropdown **/
@@ -127,7 +129,7 @@ function renderLineChart(def, points, productId) {
   if (prevOnCanvas) prevOnCanvas.destroy();
   const ctx = canvasEl.getContext("2d");
 
-  const chart = new Chart(ctx, {
+  const chart = createThemedChart(Chart, ctx, {
     type: "line",
     data: {
       datasets: [{

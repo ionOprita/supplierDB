@@ -31,6 +31,12 @@ class JteTemplateEngineTest {
             assertTrue(html.contains("id=\"overviewDashboard\""));
             assertTrue(html.contains("action=\"/logout\" method=\"post\""));
             assertTrue(html.contains("src=\"/js/app-shell.js\""));
+            assertTrue(html.indexOf("src=\"/js/theme.js\"") < html.indexOf("href=\"/styles.css\""),
+                    "Apply the saved appearance before loading page styles");
+            assertTrue(html.contains("id=\"appTheme\" data-theme-select"));
+            for (var theme : List.of("system", "light", "dark")) {
+                assertTrue(html.contains("value=\"" + theme + "\""));
+            }
             assertTrue(html.contains("class=\"app-brand\" href=\"/private/overview\""));
             assertTrue(html.contains("<img src=\"/img/family-logo.png\" width=\"512\" height=\"451\" alt=\"\">"));
             assertTrue(html.contains("class=\"app-brand-name\">Koppel, Judios, Zoopie &amp; Sellfusion Family</span>"));
