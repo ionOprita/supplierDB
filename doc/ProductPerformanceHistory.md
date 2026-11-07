@@ -135,14 +135,22 @@ java -cp "target/classes:$(cat target/rebuild-classpath.txt)" \
   --apply --expected-hash=THE_REVIEWED_SHA256
 ```
 
-Apply requires a local database host, rereads the selected live/captured sources and refuses a
-changed hash or incomplete run. It runs only the feature's
-schema migration from version 48 to 49, then stores the raw batch and normalized observations in
-one database transaction. It does not run general application startup migrations. A failure rolls
+Apply rereads the selected live/captured sources and refuses a changed hash or incomplete run.
+By default writes require a local database host. Local apply can run only the feature's schema
+migration from version 48 to 49. Remote dry runs are already permitted; remote writes require the
+explicit `--allow-remote` flag together with `--apply --expected-hash=<reviewed-hash>`. Remote apply
+requires schema version 49 to be installed already and never runs a migration. Both paths store
+the raw batch and normalized observations in one database transaction without running general
+application startup migrations. A failure rolls
 back the transaction and records a failed apply report. Reapplying the same content hash returns
 the original batch without duplicating observations. Corrections produce a new immutable revision;
 report reads select the newest normalized revision for each product/date/domain. Prior raw batches
 remain available for audit.
+
+Normalized observations are sent in JDBC batches of at most 500 rows, avoiding a network round
+trip for every observation during remote imports. Every row must report exactly one insertion,
+including its product/account ownership check. All batches share the same transaction; a failure
+in a later batch rolls back the earlier batches and the raw archive record as well.
 
 Parser `product-performance-history-v2` also records explicitly empty dated snapshots. Clearing
 a rating cell, an individual Organic/Ads metric, or every metric in an identified snapshot and
@@ -186,3 +194,31 @@ The reviewed content hash is
 `63e430fdd582c6dfdc10f232e74ef4bba5e0e8ebdae72e1c69be2e6f19eeb505`.
 It was applied to the local database as batch `11494e51-320b-40f1-a4f2-bda4cd4fc81c`.
 This is a local import record, not evidence of deployment or import on the production server.
+
+## Verified production import on 6 November 2026
+
+Merging application code does not transfer imported database history. The read-only production
+check found schema version 49 installed on `emagRemote` and no historical observations, while the
+earlier local import contained 42,374 valued observations.
+
+A v2 dry run against `emagRemote`, using the four existing captured source reports and
+`--through=2026-11-06`, completed with 61,620 normalized observations: 42,374 with metric values
+and 19,246 explicitly empty dated snapshots. The valued observations cover 157 products.
+Diagnostics concern catalogue entries without identifiers and the `KOPPELNOPNK` placeholders;
+they do not introduce invented product identities.
+
+The prepared production dry-run hash is
+`7c6d98560143eca5ef7d2a6cb28a6c0fab44e1731e09d84e8580b86d865d8e6d`.
+Apply must reuse those same four capture files, target alias and cutoff, with
+`--db=emagRemote --through=2026-11-06 --allow-remote --apply
+--expected-hash=7c6d98560143eca5ef7d2a6cb28a6c0fab44e1731e09d84e8580b86d865d8e6d`.
+The import was applied to `emagRemote` on 6 November 2026 at 20:45 Romania time as batch
+`47215489-c0bf-4f4f-898b-6b1afc3a0208`, with all 61,620 observations committed in one transaction.
+Schema version remained 49 and the apply report records `schemaMigrated=false`.
+
+Read-only checks through the actual Product Performance API verified a product in each of
+`judios`, `koppelfbe`, `sellfusion`, `zoopieconcept`, and `zoopiesolutions`, in both 14-day and
+30-day modes. Every checked report returned historical Clicks with `estimated` provenance,
+which the existing interface renders as yellow cells. Production live visits captures were also
+confirmed for Sellfusion and Zoopie Solutions on 6 November; the current day's captures become
+eligible for provisional previews the following day.

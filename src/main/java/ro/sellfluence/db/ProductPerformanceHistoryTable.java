@@ -8,6 +8,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -22,6 +23,7 @@ import java.util.UUID;
 
 /** Immutable spreadsheet evidence, kept separate from native orders, offers and Ads observations. */
 public final class ProductPerformanceHistoryTable {
+    private static final int INSERT_BATCH_SIZE = 500;
     private static final Set<String> DOMAINS = Set.of("organic", "ads", "reviews", "rating");
     private static final Set<String> ORGANIC_METRICS = Set.of(
             "stock", "gmv", "clicks", "salesPrice", "sourceConversion", "performance");
@@ -168,6 +170,7 @@ public final class ProductPerformanceHistoryTable {
                 WHERE EXISTS (SELECT 1 FROM product WHERE product_code = ? AND vendor = ?)
                 """)) {
             int index = 0;
+            var pending = new ArrayList<Observation>(INSERT_BATCH_SIZE);
             for (var observation : batch.observations()) {
                 statement.setObject(1, batchId);
                 statement.setInt(2, index++);
@@ -183,13 +186,34 @@ public final class ProductPerformanceHistoryTable {
                 statement.setString(12, observation.sourceRange());
                 statement.setString(13, observation.productCode());
                 statement.setObject(14, observation.vendorId());
-                if (statement.executeUpdate() != 1) {
-                    throw new SQLException("History product does not belong to the selected account: "
-                            + observation.productCode());
+                statement.addBatch();
+                pending.add(observation);
+                if (pending.size() == INSERT_BATCH_SIZE) {
+                    insertObservations(statement, pending);
+                    pending.clear();
                 }
             }
+            if (!pending.isEmpty()) insertObservations(statement, pending);
         }
         return new StoreResult(batchId, true, batch.observations().size());
+    }
+
+    /** Require an exact ownership-confirming insert count for every row; the caller rolls back all batches on failure. */
+    private static void insertObservations(PreparedStatement statement, List<Observation> observations)
+            throws SQLException {
+        var counts = statement.executeBatch();
+        if (counts.length != observations.size()) {
+            throw new SQLException("History insert did not report a result for every observation");
+        }
+        for (int index = 0; index < counts.length; index++) {
+            if (counts[index] != 1) {
+                // Zero denotes a failed account ownership check. Unknown/failed JDBC counts are
+                // also unsafe: they cannot prove that every selected product was inserted once.
+                throw new SQLException("History product ownership or insert count could not be verified: "
+                        + observations.get(index).productCode() + " (update count " + counts[index] + ")");
+            }
+        }
+        statement.clearBatch();
     }
 
     private static StoreResult findBatch(Connection db, String hash) throws SQLException {

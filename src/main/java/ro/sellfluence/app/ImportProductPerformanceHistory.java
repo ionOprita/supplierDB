@@ -36,13 +36,17 @@ public final class ImportProductPerformanceHistory {
             System.out.println("ImportProductPerformanceHistory [--db=emagLocal] [--through=YYYY-MM-DD] "
                     + "[--out=/tmp/product-performance-history] [--only=Judios] "
                     + "[--capture-file=/path/to/capture.json,...] "
-                    + "[--apply --expected-hash=<dry-run-hash>]");
+                    + "[--apply --expected-hash=<dry-run-hash> [--allow-remote]]");
             return;
         }
         boolean apply = options.hasFlag("apply");
         if (apply && !options.hasOption("expected-hash"))
             throw new IllegalArgumentException("--apply requires --expected-hash from a reviewed dry run");
         String alias = options.getOption("db", "emagLocal");
+        var database = DBPass.findDB(alias);
+        boolean allowRemote = options.hasFlag("allow-remote");
+        boolean remote = !isLocalHost(database.dbHost());
+        if (apply) validateWriteTarget(database, allowRemote);
         LocalDate through = LocalDate.parse(options.getOption("through",
                 LocalDate.now(ZoneId.of("Europe/Bucharest")).toString()));
         Path output = Path.of(options.getOption("out", "/tmp/product-performance-history"));
@@ -54,7 +58,7 @@ public final class ImportProductPerformanceHistory {
         }
         Result result;
         var accounts = new TreeMap<String,String>();
-        try (Connection db = connect(alias, true)) {
+        try (Connection db = connect(database, true, allowRemote)) {
             var products = identities(db);
             for (var product : products) accounts.put(product.vendorId().toString(), product.account());
             db.rollback();
@@ -74,6 +78,7 @@ public final class ImportProductPerformanceHistory {
         else if (!Files.readString(archive).equals(result.sourcePayloadJson()))
             throw new IllegalStateException("Existing archive does not match its content hash");
         var report = report(result, alias, archive, accounts);
+        report.put("remoteTarget", remote);
         Path reportFile = output.resolve(result.contentHash()+"-report.json");
         Files.writeString(reportFile, JSON.toJson(report));
         System.out.println("History dry run: " + result.observations().size()+" observations, "
@@ -82,11 +87,10 @@ public final class ImportProductPerformanceHistory {
         System.out.println("Report: "+reportFile);
         if (!result.complete()) throw new IllegalStateException("Source errors must be resolved before applying; see report");
         if (!apply) return;
-        if (!result.contentHash().equals(options.getOption("expected-hash")))
-            throw new IllegalStateException("Source/mapping content changed since the reviewed dry run; review the new report");
-        try (Connection db = connect(alias, false)) {
+        validateApply(result, options.getOption("expected-hash"));
+        try (Connection db = connect(database, false, allowRemote)) {
             try {
-                boolean migrated = ProductPerformanceHistoryTable.prepareSchema(db);
+                boolean migrated = prepareApplySchema(db, remote);
                 var stored = ProductPerformanceHistoryTable.storeBatch(db,
                         new ImportBatch(result.contentHash(), result.sourcePayloadJson(), result.observations()));
                 db.commit();
@@ -97,7 +101,11 @@ public final class ImportProductPerformanceHistory {
                 Files.writeString(reportFile, JSON.toJson(report));
                 System.out.println("History import "+report.get("status")+": batch "+stored.batchId());
             } catch (Exception ex) {
-                db.rollback();
+                try {
+                    db.rollback();
+                } catch (SQLException rollbackFailure) {
+                    ex.addSuppressed(rollbackFailure);
+                }
                 report.put("status","failed"); report.put("phase","database apply");
                 report.put("exception",ex.getClass().getSimpleName());
                 Files.writeString(reportFile,JSON.toJson(report));
@@ -106,10 +114,39 @@ public final class ImportProductPerformanceHistory {
         }
     }
 
-    private static Connection connect(String alias, boolean readOnly) throws Exception {
-        var spec = DBPass.findDB(alias);
-        if (!readOnly && !List.of("localhost", "127.0.0.1", "::1", "[::1]").contains(spec.dbHost()))
-            throw new IllegalArgumentException("History apply requires a local database host");
+    private static boolean isLocalHost(String host) {
+        return List.of("localhost", "127.0.0.1", "::1", "[::1]").contains(host);
+    }
+
+    static void validateWriteTarget(DBPass spec, boolean allowRemote) {
+        if (!isLocalHost(spec.dbHost()) && !allowRemote)
+            throw new IllegalArgumentException("History apply to a remote database requires --allow-remote");
+    }
+
+    static void validateApply(Result result, String expectedHash) {
+        if (!result.complete())
+            throw new IllegalStateException("Source errors must be resolved before applying; see report");
+        if (expectedHash == null || !expectedHash.matches("[0-9a-f]{64}")
+                || !result.contentHash().equals(expectedHash))
+            throw new IllegalStateException("Source/mapping content changed since the reviewed dry run; review the new report");
+    }
+
+    /** Remote imports only append history to an already deployed schema; they never run migrations. */
+    static boolean prepareApplySchema(Connection db, boolean remote) throws SQLException {
+        if (db.getAutoCommit()) throw new SQLException("History imports require an explicit transaction");
+        if (!remote) return ProductPerformanceHistoryTable.prepareSchema(db);
+        try (var statement = db.createStatement();
+             var rows = statement.executeQuery("SELECT MAX(version) FROM version_info")) {
+            rows.next();
+            int version = rows.getInt(1);
+            if (version != 49)
+                throw new SQLException("Remote history import requires schema version 49 already installed; found " + version);
+        }
+        return false;
+    }
+
+    private static Connection connect(DBPass spec, boolean readOnly, boolean allowRemote) throws Exception {
+        if (!readOnly) validateWriteTarget(spec, allowRemote);
         Connection db = DriverManager.getConnection(spec.connect(), spec.user(), spec.pw());
         db.setAutoCommit(false);
         db.setReadOnly(readOnly);

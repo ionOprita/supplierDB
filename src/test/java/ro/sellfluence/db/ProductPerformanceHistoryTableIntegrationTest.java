@@ -12,6 +12,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -238,6 +239,46 @@ class ProductPerformanceHistoryTableIntegrationTest {
     }
 
     @Test
+    void storesAndReimportsMoreThanTwoInsertBatchesWithoutLosingRowsOrIndices() throws Exception {
+        var observations = validObservations(1_001);
+        var batch = new ImportBatch(hash('a'), "{\"bulk\":1001}", observations);
+
+        var stored = ProductPerformanceHistoryTable.storeBatch(db, batch);
+        db.commit();
+        var repeated = ProductPerformanceHistoryTable.storeBatch(db, batch);
+
+        assertTrue(stored.inserted());
+        assertEquals(1_001, stored.observationCount());
+        assertFalse(repeated.inserted());
+        assertEquals(stored.batchId(), repeated.batchId());
+        assertEquals(1_001, repeated.observationCount());
+        assertEquals(1, count("SELECT COUNT(*) FROM product_performance_history_batch"));
+        assertEquals(1_001, count("SELECT COUNT(*) FROM product_performance_history_observation"));
+        assertEquals(0, count("SELECT MIN(observation_index) FROM product_performance_history_observation"));
+        assertEquals(1_000, count("SELECT MAX(observation_index) FROM product_performance_history_observation"));
+        var history = ProductPerformanceHistoryTable.getProductPerformanceHistory(db, firstVendor, "P1");
+        assertEquals(1_001, history.size());
+        assertEquals(BigInteger.ZERO, history.getFirst().values().get("clicks"));
+        assertEquals(BigInteger.valueOf(1_000), history.getLast().values().get("clicks"));
+    }
+
+    @Test
+    void wrongAccountAfterACompletedInsertBatchRollsBackEveryObservationAndTheAuditBatch() throws Exception {
+        var observations = validObservations(501);
+        observations.add(observation(firstVendor, "P2", DAY, "organic", Map.of("clicks", 99), "wrong-account"));
+        var batch = new ImportBatch(hash('b'), "{\"bulk\":502}", observations);
+
+        assertThrows(SQLException.class, () -> ProductPerformanceHistoryTable.storeBatch(db, batch));
+        assertEquals(501, count("SELECT COUNT(*) FROM product_performance_history_observation"),
+                "Earlier chunks remain uncommitted in the caller's transaction until it handles the failure");
+        db.rollback();
+
+        assertEquals(0, count("SELECT COUNT(*) FROM product_performance_history_batch"));
+        assertEquals(0, count("SELECT COUNT(*) FROM product_performance_history_observation"));
+        assertTrue(ProductPerformanceHistoryTable.getProductPerformanceHistory(db, firstVendor, "P1").isEmpty());
+    }
+
+    @Test
     void permitsRawOnlyArchiveBatchesWithoutFabricatingMappedMetrics() throws Exception {
         var stored = ProductPerformanceHistoryTable.storeBatch(db,
                 new ImportBatch(hash('d'), "{\"unmapped\":[1,2,3]}", List.of()));
@@ -289,6 +330,15 @@ class ProductPerformanceHistoryTableIntegrationTest {
         return ProductPerformanceHistoryTable.getProductPerformanceHistory(db, vendor, product).stream()
                 .filter(row -> row.observationDate().equals(date) && row.domain().equals(domain))
                 .findFirst().orElseThrow();
+    }
+
+    private ArrayList<Observation> validObservations(int size) {
+        var result = new ArrayList<Observation>(size);
+        for (int index = 0; index < size; index++) {
+            result.add(observation(firstVendor, "P1", DAY.plusDays(index), "organic",
+                    Map.of("clicks", index), "bulk-source"));
+        }
+        return result;
     }
 
     private static String hash(char value) {
