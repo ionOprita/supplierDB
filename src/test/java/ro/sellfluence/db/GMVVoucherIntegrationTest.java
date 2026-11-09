@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class GMVVoucherIntegrationTest {
+    private static final UUID FIRST_VENDOR = new UUID(0, 1);
+    private static final UUID SECOND_VENDOR = new UUID(0, 2);
     private Connection db;
     private String schema;
 
@@ -35,7 +37,8 @@ class GMVVoucherIntegrationTest {
         schema = "gmv_voucher_" + UUID.randomUUID().toString().replace("-", "");
         sql("CREATE SCHEMA " + schema); db.setSchema(schema);
         sql("CREATE TABLE product (name TEXT, emag_pnk TEXT, product_code TEXT)");
-        sql("CREATE TABLE emag_order (id TEXT, surrogate_id INT, status INT, date TIMESTAMP, modified TIMESTAMP)");
+        sql("CREATE TABLE emag_order (id TEXT, surrogate_id INT, status INT, date TIMESTAMP, modified TIMESTAMP, "
+                + "vendor_id UUID DEFAULT '" + FIRST_VENDOR + "')");
         sql("""
                 CREATE TABLE product_in_order (id INT, emag_order_surrogate_id INT, part_number_key TEXT,
                     quantity INT, initial_qty INT, storno_qty INT, sale_price NUMERIC, vat TEXT,
@@ -93,6 +96,76 @@ class GMVVoucherIntegrationTest {
     void sumsNullableComponentsAndRoundsOnlyAfterSummingTheVoucher() throws Exception {
         sql("INSERT INTO voucher_split VALUES (6,100,1,NULL,-0.015,'0','seller','VAT only'), (7,100,1,-0.015,NULL,'0','seller','Net only')");
         assertEquals(new BigDecimal("-40.03"), load().get("ORDER").getFirst().sellerVoucherTotal());
+    }
+
+    @Test
+    void netSalesPreservePricePrecisionAndUseOnlyNetSellerVouchersWhileGmvStaysGross() throws Exception {
+        sql("UPDATE product_in_order SET sale_price = 100.005, vat = '0.21' WHERE emag_order_surrogate_id = 1 AND part_number_key = 'PNK'");
+        sql("UPDATE product_in_order SET sale_price = 100.005, vat = '0.11' WHERE emag_order_surrogate_id = 2 AND part_number_key = 'PNK'");
+        var january = LocalDate.of(2026, 1, 1);
+        var february = LocalDate.of(2026, 2, 1);
+        var combined = LocalDate.of(2026, 1, 10);
+        var periods = Map.of(january, LocalDate.of(2026, 1, 31),
+                february, LocalDate.of(2026, 2, 28), combined, LocalDate.of(2026, 2, 10));
+
+        assertEquals(Map.of(january, new BigDecimal("365.02"), february, new BigDecimal("-90.00"),
+                        combined, new BigDecimal("275.02")),
+                EmagMirrorDB.computeNetSalesForProductPeriods(db, "CODE", periods));
+        assertEquals(Map.of(january, new BigDecimal("444.04"), february, new BigDecimal("-101.01"),
+                        combined, new BigDecimal("303.03")),
+                EmagMirrorDB.computeGMVForProductPeriods(db, "CODE", periods));
+    }
+
+    @Test
+    void selectedVendorFiltersSameOrderIdBeforeStornoPairingAndKeepsOutsidePeriodPartners() throws Exception {
+        var january = LocalDate.of(2026, 1, 1);
+        var february = LocalDate.of(2026, 2, 1);
+        var combined = LocalDate.of(2026, 1, 10);
+        var periods = Map.of(january, LocalDate.of(2026, 1, 31),
+                february, LocalDate.of(2026, 2, 28), combined, LocalDate.of(2026, 2, 10));
+        var originalNet = EmagMirrorDB.computeNetSalesForProductPeriods(db, "CODE", periods);
+        var originalGross = EmagMirrorDB.computeGMVForProductPeriods(db, "CODE", periods);
+        sql("INSERT INTO emag_order VALUES ('ORDER', 4, 4, '2025-12-10', NULL, '" + SECOND_VENDOR
+                + "'), ('ORDER', 5, 5, '2026-01-20', NULL, '" + SECOND_VENDOR + "')");
+        sql("""
+                INSERT INTO product_in_order VALUES
+                  (100,4,'PNK',10,10,0,200,'0.21',NULL,NULL),
+                  (100,5,'PNK',4,10,6,250,'0.21',NULL,NULL)
+                """);
+        sql("""
+                INSERT INTO voucher_split VALUES
+                  (6,100,4,-20,-4.2,'0.21','seller','Foreign finalized'),
+                  (7,100,5,-10,-2.1,'0.21','seller','Foreign remaining'),
+                  (8,100,5,-999,0,'0','emag','Platform')
+                """);
+
+        assertEquals(originalNet,
+                EmagMirrorDB.computeNetSalesForProductPeriods(db, FIRST_VENDOR, "CODE", periods));
+        assertEquals(originalGross,
+                EmagMirrorDB.computeGMVForProductPeriods(db, FIRST_VENDOR, "CODE", periods));
+        assertEquals(Map.of(january, new BigDecimal("365.00"), february, new BigDecimal("-90.00"),
+                combined, new BigDecimal("275.00")), originalNet);
+        assertEquals(Map.of(january, new BigDecimal("360.00"), february, new BigDecimal("-90.00"),
+                combined, new BigDecimal("270.00")), originalGross);
+        assertEquals(new BigDecimal("-1490.00"),
+                EmagMirrorDB.computeNetSalesForProductPeriods(db, SECOND_VENDOR, "CODE", periods).get(january));
+        assertEquals(new BigDecimal("-1802.90"),
+                EmagMirrorDB.computeGMVForProductPeriods(db, SECOND_VENDOR, "CODE", periods).get(january));
+        assertEquals(Map.of(january, new BigDecimal("0.00")),
+                EmagMirrorDB.computeNetSalesForProductPeriods(db, new UUID(0, 3), "CODE",
+                        Map.of(january, LocalDate.of(2026, 1, 31))));
+    }
+
+    @Test
+    void globalProductMethodsStillIncludeMultipleVendors() throws Exception {
+        sql("INSERT INTO emag_order VALUES ('OTHER-VENDOR', 4, 4, '2026-01-20', NULL, '" + SECOND_VENDOR + "')");
+        sql("INSERT INTO product_in_order VALUES (100,4,'PNK',2,2,0,50,'0.21',NULL,NULL)");
+        var start = LocalDate.of(2026, 1, 1);
+        var periods = Map.of(start, LocalDate.of(2026, 1, 31));
+        assertEquals(new BigDecimal("465.00"), EmagMirrorDB.computeNetSalesForProductPeriods(db, "CODE", periods).get(start));
+        assertEquals(new BigDecimal("481.00"), EmagMirrorDB.computeGMVForProductPeriods(db, "CODE", periods).get(start));
+        assertEquals(new BigDecimal("365.00"),
+                EmagMirrorDB.computeNetSalesForProductPeriods(db, FIRST_VENDOR, "CODE", periods).get(start));
     }
 
     @Test

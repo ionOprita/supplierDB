@@ -136,21 +136,22 @@ class ProductPerformanceTableIntegrationTest {
     }
 
     @Test
-    void keywordClassificationUsesFullSnapshotKeyAndIgnoresOnlyNegatives() throws SQLException {
+    void keywordClassificationUsesFullSnapshotKeyAndOnlyActiveNonnegativeKeywords() throws SQLException {
         addAdset(vendor, FIRST_DAY, 1, 10, PNK, "campaign", "keywords", "active", "active", 5);
         addAdset(vendor, SECOND_DAY, 1, 10, PNK, "campaign", "keywords", "active", "active", 6);
         addAdset(vendor, FIRST_DAY, 2, 10, PNK, "campaign", "keywords", "active", "active", 7);
         addAdset(otherVendor, FIRST_DAY, 1, 10, FOREIGN_PNK, "campaign", "keywords", "active", "active", 900);
         addKeyword(vendor, FIRST_DAY, 1, 10, 1, "broad", "active");
-        addKeyword(vendor, FIRST_DAY, 1, 10, 2, "broad", "paused");
+        addKeyword(vendor, FIRST_DAY, 1, 10, 2, "exact", "paused");
         addKeyword(vendor, FIRST_DAY, 1, 10, 3, "negative", "active");
+        addKeyword(vendor, FIRST_DAY, 1, 10, 4, "broad", "active");
         addKeyword(vendor, SECOND_DAY, 1, 10, 1, "exact", "paused");
         addKeyword(vendor, FIRST_DAY, 2, 10, 1, "exact", "active");
         addKeyword(otherVendor, FIRST_DAY, 1, 10, 1, "exact", "active");
 
         var rows = ProductPerformanceTable.getDailyAdsets(db, vendor, PNK);
         assertEquals(3, rows.size(), "Multiple keywords must never multiply daily adset primitives");
-        assertEquals(List.of(List.of("broad"), List.of("exact"), List.of("exact")),
+        assertEquals(List.of(List.of("broad"), List.of("exact"), List.of()),
                 rows.stream().map(ProductPerformanceTable.DailyAdset::matchTypes).toList());
         assertEquals(List.of(5L, 7L, 6L), rows.stream().map(row -> row.metrics().clicks()).toList());
         var metrics = rows.getFirst().metrics();

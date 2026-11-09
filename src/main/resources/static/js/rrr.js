@@ -1,4 +1,5 @@
 import { fetchJSON } from "./common.js";
+import {createThemedChart, observeChartTheme} from "./chart-theme.js";
 
 const selectEl = document.getElementById("productSelect");
 const rrrCanvasEl = document.getElementById("rrrChart");
@@ -33,6 +34,7 @@ const COUNT_SERIES = [
 ];
 
 const charts = new Map();
+observeChartTheme(() => charts.values());
 let currentProductId = null;
 let currentData = null;
 let latestLoadSeq = 0;
@@ -160,7 +162,7 @@ function renderSmoothedChart(points, productId, range) {
     returnedQty: pt.returnedQty
   }));
 
-  const chart = new Chart(rrrCanvasEl.getContext("2d"), {
+  const chart = createThemedChart(Chart, rrrCanvasEl.getContext("2d"), {
     type: "line",
     data: {
       datasets: [
@@ -245,7 +247,7 @@ function renderCountChart(def, points, productId, range) {
   const previous = Chart.getChart(canvasEl);
   if (previous) previous.destroy();
 
-  const chart = new Chart(canvasEl.getContext("2d"), {
+  const chart = createThemedChart(Chart, canvasEl.getContext("2d"), {
     type: "line",
     data: {
       datasets: [{

@@ -127,7 +127,7 @@ function fixture(vendorIds = [FIRST_VENDOR, SECOND_VENDOR, ''], selectedVendor =
   };
   const detailHead = new Element('thead');
   const detailHeader = new Element('tr');
-  for (const label of ['Order ID', 'Date', 'Status', 'Quantity used', 'Unit price incl. VAT', 'Seller voucher adjustment', 'GMV contribution']) {
+  for (const label of ['Order ID', 'Date', 'Status', 'Quantity used', 'Unit price (incl. VAT)', 'Seller voucher adjustment (incl. VAT)', 'GMV contribution (incl. VAT)']) {
     const cell = new Element('th');
     cell.textContent = label;
     detailHeader.appendChild(cell);
@@ -566,7 +566,7 @@ test('a stored zero opens details while a missing value cannot trigger a request
   assert.equal(requests.length, 1);
   assert.equal(page.details.dialog.open, true);
   assert.equal(page.details.total.textContent, '0.00');
-  assert.equal(page.details.reference.textContent, 'Stored monthly GMV: 0.00');
+  assert.equal(page.details.reference.textContent, 'Stored monthly GMV (incl. VAT): 0.00');
   assert.equal(page.details.mismatch.hidden, true);
   assert.deepEqual(Object.fromEntries(new URL(requests[0], 'https://example.test').searchParams),
     {productCode: 'CODE-0', startDate: '2026-01-01', endDate: '2026-01-31'});
@@ -580,10 +580,10 @@ for (const liveTotal of ['123.40', '100.00']) {
     await page.openMonthly();
 
     assert.equal(page.details.total.textContent, liveTotal);
-    assert.equal(page.details.reference.textContent, 'Stored monthly GMV: 123.40');
+    assert.equal(page.details.reference.textContent, 'Stored monthly GMV (incl. VAT): 123.40');
     assert.equal(page.details.mismatch.hidden, liveTotal === '123.40');
     if (liveTotal !== '123.40') {
-      assert.match(page.details.mismatch.textContent, /Stored monthly GMV is 123\.40.*current calculation is 100\.00/);
+      assert.match(page.details.mismatch.textContent, /Stored monthly GMV \(incl. VAT\) is 123\.40.*current calculation \(incl. VAT\) is 100\.00/);
     }
     assert.equal(page.rows[0].cells[3], '123.40', 'Stored table values are preserved');
   });
@@ -606,9 +606,9 @@ test('calculated GMV opens the cached contributing rows without another request 
   assert.equal(calls, 1);
   assert.equal(page.details.dialog.open, true);
   assert.equal(page.details.total.textContent, row.gmv);
-  assert.equal(page.details.reference.textContent, `Calculated GMV: ${row.gmv}`);
+  assert.equal(page.details.reference.textContent, `Calculated GMV (incl. VAT): ${row.gmv}`);
   assert.equal(page.result.attributes.get('aria-label'),
-    `GMV ${row.gmv} for Product 0 (CODE-0), ${START} to ${END}. View contributing orders.`);
+    `GMV (incl. VAT) ${row.gmv} for Product 0 (CODE-0), ${START} to ${END}. View contributing orders.`);
   assert.equal(page.details.mismatch.hidden, true);
   assert.deepEqual(page.details.body.children[0].children.map(cell => cell.textContent),
     [row.orderId, START, 'Storno deduction', '-2', row.unitPrice, row.sellerVoucherAdjustment, row.gmv]);
@@ -761,7 +761,7 @@ test('cached calculated details replace a pending monthly request without anothe
 
   assert.equal(calls, 2);
   assert.equal(page.details.total.textContent, '1234.56');
-  assert.equal(page.details.reference.textContent, 'Calculated GMV: 1234.56');
+  assert.equal(page.details.reference.textContent, 'Calculated GMV (incl. VAT): 1234.56');
   assert.match(page.details.context.textContent, /Product 0 \(CODE-0\)/);
   assert.equal(page.details.mismatch.hidden, true);
   page.closeDetails();
@@ -833,7 +833,7 @@ for (const [label, rows] of [
   });
 }
 
-const CSV_HEADER = 'Order ID,Date,Status,Quantity used,Unit price incl. VAT,Seller voucher adjustment,GMV contribution';
+const CSV_HEADER = 'Order ID,Date,Status,Quantity used,Unit price (incl. VAT),Seller voucher adjustment (incl. VAT),GMV contribution (incl. VAT)';
 
 function captureDownloads(t, page) {
   const oldDocument = globalThis.document;
@@ -946,7 +946,7 @@ test('mismatched monthly CSV contains current contribution rows and excludes sum
   captured.click();
 
   assert.equal(await captured.text(), `\uFEFF${CSV_HEADER}\r\n000123,${START},Storno deduction,-2,12.35,0.00,-24.70`);
-  assert.equal(page.details.reference.textContent, 'Stored monthly GMV: 123.40');
+  assert.equal(page.details.reference.textContent, 'Stored monthly GMV (incl. VAT): 123.40');
   assert.equal(page.details.total.textContent, '-24.70');
   assert.equal(page.rows[0].cells[3], '123.40');
   assert.equal(page.details.context.textContent, context);

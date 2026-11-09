@@ -14,10 +14,12 @@ class ServerProductPerformanceTest {
         var vendorId = UUID.randomUUID();
         var code = " product/code with spaces? ";
 
-        assertEquals(new Server.ProductPerformanceRequest(vendorId, code, Period.WEEK),
+        assertEquals(new Server.ProductPerformanceRequest(vendorId, code, Period.FOURTEEN_DAYS),
                 Server.parseProductPerformanceRequest(vendorId.toString().toUpperCase(), code, null));
-        assertEquals(Period.WEEK, Server.parseProductPerformanceRequest(vendorId.toString(), code, "week").period());
-        assertEquals(Period.MONTH, Server.parseProductPerformanceRequest(vendorId.toString(), code, "month").period());
+        assertEquals(Period.FOURTEEN_DAYS, Server.parseProductPerformanceRequest(vendorId.toString(), code, "14days").period());
+        assertEquals(Period.THIRTY_DAYS, Server.parseProductPerformanceRequest(vendorId.toString(), code, "30days").period());
+        assertEquals(Period.FOURTEEN_DAYS, Server.parseProductPerformanceRequest(vendorId.toString(), code, "week").period());
+        assertEquals(Period.THIRTY_DAYS, Server.parseProductPerformanceRequest(vendorId.toString(), code, "month").period());
     }
 
     @Test

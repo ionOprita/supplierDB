@@ -44,6 +44,8 @@ public record Offer(
         BigDecimal greenTax,
         BigDecimal productPerformanceSuggestedPrice,
         Integer productPerformanceBuyButtonRank,
+        Long productPerformanceVisits,
+        Long productPerformanceVisitsLast14,
         Integer productPerformanceNeededStockNext7,
         Integer productPerformanceNeededStockNext30,
         Integer productPerformanceDepletionDays,

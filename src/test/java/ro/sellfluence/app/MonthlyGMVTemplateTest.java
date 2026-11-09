@@ -67,10 +67,10 @@ class MonthlyGMVTemplateTest {
     void rendersPeriodCalculatorWithRequiredCalendarDefaultsAndAccessibleStatus() {
         var html = render(MonthlyGMVPage.from(Map.of()), List.of());
 
-        assertTrue(html.contains(">GMV for a period</h2>"));
-        assertTrue(html.contains(">Monthly GMV</h2>"));
+        assertTrue(html.contains(">GMV (incl. VAT) for a period</h2>"));
+        assertTrue(html.contains(">Monthly GMV (incl. VAT)</h2>"));
         assertTrue(html.indexOf("id=\"gmvVendorFilterSelect\"") < html.indexOf("id=\"gmvPeriodForm\""));
-        assertTrue(html.indexOf("id=\"gmvPeriodForm\"") < html.indexOf(">Monthly GMV</h2>"));
+        assertTrue(html.indexOf("id=\"gmvPeriodForm\"") < html.indexOf(">Monthly GMV (incl. VAT)</h2>"));
         assertTrue(openingTag(html, "select", "gmvProductSelect").contains("required"));
         var start = openingTag(html, "input", "gmvStartDate");
         assertTrue(start.contains("type=\"date\""));
@@ -152,7 +152,7 @@ class MonthlyGMVTemplateTest {
         assertTrue(dialogTag.contains("aria-labelledby=\"gmvDetailsTitle\""));
         var dialog = elementContent(html, "dialog", "gmvDetailsDialog");
         assertTrue(openingTag(dialog, "table", "gmvDetailsTable").contains("class=\"gmv-details-table\""));
-        assertEquals(List.of("Order ID", "Date", "Status", "Quantity used", "Unit price incl. VAT", "Seller voucher adjustment", "GMV contribution"),
+        assertEquals(List.of("Order ID", "Date", "Status", "Quantity used", "Unit price (incl. VAT)", "Seller voucher adjustment (incl. VAT)", "GMV contribution (incl. VAT)"),
                 elementTexts(dialog, "th"));
         assertEquals("Contributing orders", elementContent(dialog, "h2", "gmvDetailsTitle"));
         assertEquals("", elementContent(dialog, "p", "gmvDetailsContext"));
@@ -188,7 +188,7 @@ class MonthlyGMVTemplateTest {
         var html = render(MonthlyGMVPage.from(Map.of(product, Map.of())), List.of());
 
         assertTrue(html.contains("No stored GMV available."));
-        assertTrue(html.indexOf("No stored GMV available.") > html.indexOf(">Monthly GMV</h2>"));
+        assertTrue(html.indexOf("No stored GMV available.") > html.indexOf(">Monthly GMV (incl. VAT)</h2>"));
         assertTrue(elementContent(html, "select", "gmvProductSelect").contains(
                 "<option value=\"CODE-EMPTY\" data-vendor-id=\"\">S. 1 - Empty (CODE-EMPTY)</option>"));
     }

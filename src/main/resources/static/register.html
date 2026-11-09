@@ -3,18 +3,45 @@
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <title>Login</title>
-    <link rel="stylesheet" href="styles.css"/>
-    <script src="js/passkey.js"></script>
+    <title>Create an account · Sellfusion Family</title>
+    <script src="/js/theme.js"></script>
+    <link rel="stylesheet" href="/styles.css"/>
+    <link rel="stylesheet" href="/auth.css"/>
+    <script src="/js/passkey.js" defer></script>
 </head>
-<body>
-<h1>Registration page</h1>
-
-<label for="newname">Please enter your desired user name</label>
-<input id="newname" type="text" autocomplete="username" placeholder="alice" onkeydown="if (event.key === 'Enter') registerPasskey()">
-<p>The username may contain only letters ('a'-'z'), digits ('0'-'9') and the underscore '_' character.</p>
-
-<div id="log"></div>
-
+<body class="auth-page">
+<header class="auth-toolbar">
+    <label class="auth-theme-control" for="authTheme">
+        <span>Appearance</span>
+        <select id="authTheme" data-theme-select>
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+        </select>
+    </label>
+</header>
+<main class="auth-main">
+    <section class="auth-card" aria-labelledby="authTitle">
+        <a class="auth-brand" href="/" aria-label="Sellfusion Family sign in">
+            <span class="auth-brand-mark" aria-hidden="true"><img src="/img/family-logo.png" width="512" height="451" alt=""/></span>
+            <span>Koppel, Judios, Zoopie &amp; Sellfusion Family</span>
+        </a>
+        <h1 id="authTitle">Create your account</h1>
+        <p class="auth-intro">Choose a username, then create a passkey to sign in.</p>
+        <form id="registerForm" class="auth-form" data-auth-flow="register" novalidate>
+            <div class="auth-field">
+                <label for="newname">Username</label>
+                <input id="newname" name="username" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="255" pattern="[A-Za-z0-9_]+" required aria-describedby="usernameHelp log"/>
+                <p id="usernameHelp" class="auth-help">Letters, numbers and underscores only.</p>
+            </div>
+            <button id="registerButton" class="auth-submit" type="submit">Create account with passkey</button>
+        </form>
+        <p class="auth-passkey-note">An administrator will need to activate your account before you can access the workspace.</p>
+        <div id="log" class="auth-status" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+        <noscript><p class="auth-status" data-state="error">JavaScript is needed to use a passkey. Enable it in your browser, then reload this page.</p></noscript>
+        <p class="auth-switch">Already have an account? <a href="/">Sign in</a></p>
+    </section>
+</main>
+<footer class="auth-footer">Your workspace. One family.</footer>
 </body>
 </html>

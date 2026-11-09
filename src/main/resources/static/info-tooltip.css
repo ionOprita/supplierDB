@@ -1,0 +1,89 @@
+.info-tooltip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
+.info-tooltip .info-tooltip-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.info-tooltip .info-tooltip-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.info-tooltip .info-tooltip-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.info-tooltip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font: 700 12px/1 Georgia, serif;
+}
+
+.info-tooltip-text {
+  position: fixed;
+  z-index: 100;
+  display: block;
+  box-sizing: border-box;
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-alt);
+  color: var(--text);
+  box-shadow: 0 6px 20px rgb(15 23 42 / 20%);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.info-tooltip-text[hidden] {
+  display: none;
+}
+
+.info-tooltip-section,
+.info-tooltip-heading {
+  display: block;
+}
+
+.info-tooltip-section + .info-tooltip-section {
+  margin-top: .7rem;
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .info-tooltip .info-tooltip-button {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 13px;
+  }
+}

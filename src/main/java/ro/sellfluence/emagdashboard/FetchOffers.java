@@ -15,8 +15,10 @@ import tools.jackson.databind.module.SimpleModule;
 import java.net.URI;
 import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -110,6 +112,8 @@ public class FetchOffers {
                       greenTax
                       productPerformanceSuggestedPrice
                       productPerformanceBuyButtonRank
+                      productPerformanceVisits
+                      productPerformanceVisitsLast14
                       productPerformanceNeededStockNext7
                       productPerformanceNeededStockNext30
                       productPerformanceDepletionDays
@@ -208,8 +212,14 @@ public class FetchOffers {
                         .formatted(response.status(), response.statusText()));
             }
             try {
-                var decoded = jsonMapper.readValue(response.text(), OffersResponse.class);
+                var tree = jsonMapper.readTree(response.text());
+                var decoded = jsonMapper.treeToValue(tree, OffersResponse.class);
                 requireOffers(decoded);
+                for (var item : tree.path("data").path("offers").path("items")) {
+                    if (!item.has("productPerformanceVisits") || !item.has("productPerformanceVisitsLast14")) {
+                        throw new IllegalStateException("eMAG offers response omitted requested visits fields.");
+                    }
+                }
                 return decoded;
             } catch (RuntimeException exception) {
                 throw new IllegalStateException("Could not deserialize offers response", exception);
@@ -282,18 +292,19 @@ public class FetchOffers {
 
     @FunctionalInterface
     interface SnapshotStore {
-        int store(UUID vendorId, LocalDate fetchDate, OffersData data) throws SQLException;
+        int store(UUID vendorId, LocalDate fetchDate, OffersData data, Instant fetchedAt) throws SQLException;
     }
 
     static void transferOffersToDB(UUID vendorId, Clock clock, Supplier<OffersResponse> fetch, SnapshotStore store) {
-        var fetchDate = LocalDate.now(clock);
         var response = fetch.get();
         var offers = requireOffers(response);
         if (offers.items().size() != offers.totalNumberOfItems()) {
             throw new IllegalStateException("Cannot store an incomplete offers snapshot.");
         }
+        var fetchedAt = clock.instant();
+        var fetchDate = fetchedAt.atZone(ZoneId.of("Europe/Bucharest")).toLocalDate();
         try {
-            var rows = store.store(vendorId, fetchDate, response.data());
+            var rows = store.store(vendorId, fetchDate, response.data(), fetchedAt);
             logger.log(INFO, "Stored %d offers for %s (vendor %s).".formatted(rows, fetchDate, vendorId));
         } catch (SQLException exception) {
             logger.log(SEVERE, "Could not store offers for %s (vendor %s).".formatted(fetchDate, vendorId));

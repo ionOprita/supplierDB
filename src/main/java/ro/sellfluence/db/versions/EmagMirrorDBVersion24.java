@@ -7,7 +7,7 @@ import static ro.sellfluence.db.versions.EmagMirrorDBVersion1.executeStatement;
 
 class EmagMirrorDBVersion24 {
     /**
-     * Cache the tab within the employee sheet.
+     * Add storno storage and ensure the version table has a primary key.
      *
      * @param db database connection to use.
      * @throws SQLException all errors are passed back to the caller.
@@ -22,7 +22,16 @@ class EmagMirrorDBVersion24 {
                 );
                 """);
         executeStatement(db, """
-                ALTER TABLE version_info ADD PRIMARY KEY (version);
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conrelid = 'version_info'::regclass AND contype = 'p'
+                    ) THEN
+                        ALTER TABLE version_info ADD PRIMARY KEY (version);
+                    END IF;
+                END;
+                $$;
                 """);
     }
 }

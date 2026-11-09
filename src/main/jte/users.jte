@@ -40,8 +40,8 @@
                             @if(managedUser.username().equals(userName))
                                 <button type="button" disabled title="Another administrator must change your role">Current user</button>
                             @else
-                                <form action="/admin/users/${managedUser.id()}/role" method="post" style="display:flex; gap:.4rem; align-items:center;">
-                                    <select name="role">
+                                <form action="/admin/users/${managedUser.id()}/role" method="post" class="user-role-form">
+                                    <select name="role" aria-label="Role for ${managedUser.username()}">
                                         @for(var roleOption : Role.values())
                                             @if(roleOption == managedUser.role())
                                                 <option value="${roleOption.name()}" selected>${roleOption.name()}</option>

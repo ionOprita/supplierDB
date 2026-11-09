@@ -16,9 +16,12 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -112,15 +115,325 @@ class OffersTableIntegrationTest {
                 WHERE table_schema = current_schema() AND table_name LIKE 'offers_%'
                     AND column_name = 'fetch_date' AND data_type = 'date'
                 """));
-        assertEquals(3, count("""
+        assertEquals(4, count("""
                 SELECT count(*) FROM information_schema.columns
                 WHERE table_schema = current_schema() AND table_name = 'offers_snapshot'
-                """), "Snapshot metadata contains only vendor, date and count");
-        assertEquals(0, count("""
+                """), "Snapshot metadata also records live visits collection time");
+        assertEquals(1, count("""
                 SELECT count(*) FROM information_schema.columns
                 WHERE table_schema = current_schema() AND table_name LIKE 'offers_%'
                     AND data_type = 'timestamp with time zone'
                 """));
+        assertEquals(0, count("SELECT count(*) FROM offers_snapshot WHERE visits_fetched_at IS NOT NULL"),
+                "The compatibility overload must not label an imported snapshot as a live visits collection");
+    }
+
+    @Test
+    void readsHotnessOnExactDatesForSelectedVendorAndTrimmedPnkWithoutVisitsProvenance() throws Exception {
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(
+                hotnessOffer("shared", " PNK-1 ", 0, "cold", "COLD"),
+                hotnessOffer("different-product", "PNK-2", 2, "hot", "HOT")));
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY,
+                snapshot(hotnessOffer("shared", "PNK-1", 2, "super_hot", "SUPER HOT")));
+        OffersTable.storeSnapshot(db, secondVendor, FIRST_DAY,
+                snapshot(hotnessOffer("shared", "PNK-1", 3, "hot", "OTHER ACCOUNT")));
+        var missingDay = SECOND_DAY.plusDays(1);
+
+        var result = OffersTable.getProductHotnessForDates(db, firstVendor, "  PNK-1  ",
+                List.of(FIRST_DAY, SECOND_DAY, missingDay));
+
+        assertEquals(new OffersTable.ProductHotness("available", "cold", "COLD", FIRST_DAY), result.get(FIRST_DAY));
+        assertEquals(new OffersTable.ProductHotness("available", "super_hot", "SUPER HOT", SECOND_DAY),
+                result.get(SECOND_DAY));
+        assertEquals(new OffersTable.ProductHotness("missing", null, null, null), result.get(missingDay));
+        assertEquals("OTHER ACCOUNT", OffersTable.getProductHotnessForDates(db, secondVendor, "PNK-1",
+                List.of(FIRST_DAY)).get(FIRST_DAY).hotnessName());
+        assertEquals(0, count("SELECT count(*) FROM offers_snapshot WHERE visits_fetched_at IS NOT NULL"));
+    }
+
+    @Test
+    void selectsHotnessFromTheSameUniqueOfferAsVisitsIncludingZeroAndUnknownStock() throws Exception {
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(
+                hotnessOffer("preferred", "PNK-1", 1, "super_hot", "SUPER HOT"),
+                hotnessOffer("old-zero", "PNK-1", 0, "cold", "COLD"),
+                hotnessOffer("unknown-stock", "PNK-1", null, "hot", "HOT"),
+                hotnessOffer("only-zero", "PNK-2", 0, null, "COLD"),
+                hotnessOffer("only-unknown", "PNK-3", null, "unfamiliar_type", null),
+                hotnessOffer("negative-stock", "PNK-4", -1, "new_type", "NEW CLASSIFICATION"),
+                hotnessOffer("zero-stock", "PNK-4", 0, "cold", "COLD")));
+
+        assertEquals(new OffersTable.ProductHotness("available", "super_hot", "SUPER HOT", FIRST_DAY),
+                OffersTable.getProductHotnessForDates(db, firstVendor, "PNK-1", List.of(FIRST_DAY)).get(FIRST_DAY));
+        assertEquals(new OffersTable.ProductHotness("available", null, "COLD", FIRST_DAY),
+                OffersTable.getProductHotnessForDates(db, firstVendor, "PNK-2", List.of(FIRST_DAY)).get(FIRST_DAY));
+        assertEquals(new OffersTable.ProductHotness("available", "unfamiliar_type", null, FIRST_DAY),
+                OffersTable.getProductHotnessForDates(db, firstVendor, "PNK-3", List.of(FIRST_DAY)).get(FIRST_DAY));
+        assertEquals(new OffersTable.ProductHotness("available", "new_type", "NEW CLASSIFICATION", FIRST_DAY),
+                OffersTable.getProductHotnessForDates(db, firstVendor, "PNK-4", List.of(FIRST_DAY)).get(FIRST_DAY));
+    }
+
+    @Test
+    void keepsHotnessAmbiguousForMultipleEffectiveOffersEvenWhenClassificationsMatch() throws Exception {
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(
+                hotnessOffer("active-one", "PNK-1", 1, "hot", "HOT"),
+                hotnessOffer("active-two", "PNK-1", 2, "cold", "COLD"),
+                hotnessOffer("zero-one", "PNK-2", 0, "hot", "HOT"),
+                hotnessOffer("zero-two", "PNK-2", 0, "hot", "HOT")));
+
+        for (var pnk : List.of("PNK-1", "PNK-2")) {
+            assertEquals(new OffersTable.ProductHotness("ambiguous", null, null, FIRST_DAY),
+                    OffersTable.getProductHotnessForDates(db, firstVendor, pnk, List.of(FIRST_DAY)).get(FIRST_DAY));
+        }
+    }
+
+    @Test
+    void doesNotBorrowMissingHotnessFromAnotherOfferOrEarlierSnapshot() throws Exception {
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY,
+                snapshot(hotnessOffer("preferred", "PNK-1", 1, "hot", "HOT")));
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY, snapshot(
+                offer("""
+                        {"id":"preferred", "docProductPartNumberKey":"PNK-1", "extStock":1}
+                        """),
+                hotnessOffer("old-zero", "PNK-1", 0, "cold", "COLD"),
+                hotnessOffer("blank", "PNK-2", 0, "  ", "\t"),
+                hotnessOffer("null", "PNK-3", null, null, null)));
+
+        for (var pnk : List.of("PNK-1", "PNK-2", "PNK-3", "ABSENT-PRODUCT")) {
+            assertEquals(new OffersTable.ProductHotness("missing", null, null, SECOND_DAY),
+                    OffersTable.getProductHotnessForDates(db, firstVendor, pnk, List.of(SECOND_DAY)).get(SECOND_DAY));
+        }
+        assertEquals(Map.of(), OffersTable.getProductHotnessForDates(db, firstVendor, "PNK-1", List.of()));
+        assertEquals(Map.of(SECOND_DAY, new OffersTable.ProductHotness("missing", null, null, null)),
+                OffersTable.getProductHotnessForDates(db, firstVendor, " ", List.of(SECOND_DAY)));
+    }
+
+    @Test
+    void selectsLatestLiveSnapshotAndKeepsRollingCountersIndependentAcrossVendors() throws SQLException {
+        var firstFetch = FIRST_DAY.atTime(10, 5).toInstant(ZoneOffset.UTC);
+        var secondFetch = SECOND_DAY.atTime(10, 6).toInstant(ZoneOffset.UTC);
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY,
+                snapshot(visitsOffer("one", " PNK-1 ", 5, 200L, 100L)), firstFetch);
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY,
+                snapshot(visitsOffer("one", "PNK-1", 5, 5_000_000_000L, 0L)), secondFetch);
+        OffersTable.storeSnapshot(db, secondVendor, SECOND_DAY,
+                snapshot(visitsOffer("one", "PNK-1", 5, 999L, 555L)), secondFetch);
+        // A legacy/imported snapshot must not claim the new metric was fetched, even if it has values.
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY.plusDays(1),
+                snapshot(visitsOffer("one", "PNK-1", 5, 123L, 123L)));
+
+        assertEquals(new OffersTable.ProductVisits("available", 0L, 5_000_000_000L, SECOND_DAY,
+                        secondFetch.atOffset(ZoneOffset.UTC), false),
+                OffersTable.getLatestProductVisits(db, firstVendor, " PNK-1 ", SECOND_DAY));
+        assertTrue(OffersTable.getLatestProductVisits(db, firstVendor, "PNK-1", SECOND_DAY.plusDays(1)).stale());
+        assertEquals(555L, OffersTable.getLatestProductVisits(db, secondVendor, "PNK-1", SECOND_DAY).visits14());
+        assertEquals(100L, OffersTable.getLatestProductVisits(db, firstVendor, "PNK-1", FIRST_DAY).visits14());
+        assertEquals(2, count("SELECT count(*) FROM offers_snapshot WHERE vendor_id = '" + firstVendor
+                + "' AND visits_fetched_at IS NOT NULL"), "Older live snapshots remain available for future analysis");
+    }
+
+    @Test
+    void readsExactHistoricalDaysInOneBatchWithoutBorrowingMissingOrImportedObservations() throws SQLException {
+        var firstFetch = FIRST_DAY.atTime(22, 15).toInstant(ZoneOffset.UTC);
+        var missingProductDay = FIRST_DAY.plusDays(2);
+        var importedDay = FIRST_DAY.plusDays(3);
+        var missingCounterDay = FIRST_DAY.plusDays(4);
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY,
+                snapshot(visitsOffer("one", " PNK-1 ", 0, 5_000_000_000L, 0L)), firstFetch);
+        OffersTable.storeSnapshot(db, secondVendor, FIRST_DAY,
+                snapshot(visitsOffer("one", "PNK-1", 1, 999L, 999L)), firstFetch);
+        OffersTable.storeSnapshot(db, firstVendor, missingProductDay, snapshot(),
+                missingProductDay.atTime(22, 15).toInstant(ZoneOffset.UTC));
+        OffersTable.storeSnapshot(db, firstVendor, importedDay,
+                snapshot(visitsOffer("one", "PNK-1", 1, 100L, 50L)));
+        OffersTable.storeSnapshot(db, firstVendor, missingCounterDay,
+                snapshot(visitsOffer("one", "PNK-1", 1, null, null)),
+                missingCounterDay.atTime(22, 15).toInstant(ZoneOffset.UTC));
+
+        var dates = List.of(FIRST_DAY, SECOND_DAY, missingProductDay, importedDay, missingCounterDay, FIRST_DAY);
+        var result = OffersTable.getProductVisitsForDates(db, firstVendor, " PNK-1 ", dates);
+        assertEquals(5, result.size());
+        assertEquals(new OffersTable.ProductVisits("available", 0L, 5_000_000_000L, FIRST_DAY,
+                firstFetch.atOffset(ZoneOffset.UTC), false), result.get(FIRST_DAY));
+        for (var day : List.of(SECOND_DAY, importedDay)) {
+            assertEquals("missing", result.get(day).status());
+            assertNull(result.get(day).snapshotDate());
+            assertNull(result.get(day).fetchedAt());
+        }
+        for (var day : List.of(missingProductDay, missingCounterDay)) {
+            assertEquals("missing", result.get(day).status());
+            assertEquals(day, result.get(day).snapshotDate());
+            assertNotNull(result.get(day).fetchedAt());
+            assertNull(result.get(day).visits14());
+            assertNull(result.get(day).visits30());
+            assertFalse(result.get(day).stale());
+        }
+        assertEquals(Map.of(), OffersTable.getProductVisitsForDates(db, firstVendor, "PNK-1", List.of()));
+        var blank = OffersTable.getProductVisitsForDates(db, firstVendor, " ", List.of(FIRST_DAY));
+        assertEquals("missing", blank.get(FIRST_DAY).status());
+    }
+
+    @Test
+    void historicalVisitsKeepUniqueOfferSelectionAndUseTheLastSuccessfulSameDaySnapshot() throws SQLException {
+        var firstFetch = FIRST_DAY.atTime(10, 5).toInstant(ZoneOffset.UTC);
+        var finalFetch = FIRST_DAY.atTime(22, 55).toInstant(ZoneOffset.UTC);
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY,
+                snapshot(visitsOffer("selected", "PNK-1", 5, 100L, 50L)), firstFetch);
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(
+                visitsOffer("selected", "PNK-1", 5, null, 0L),
+                visitsOffer("ignored", "PNK-1", 0, 999L, 999L)), finalFetch);
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY, snapshot(
+                visitsOffer("one", "PNK-1", 1, 10L, 5L),
+                visitsOffer("two", "PNK-1", 2, 20L, 6L)),
+                SECOND_DAY.atTime(22, 55).toInstant(ZoneOffset.UTC));
+
+        var result = OffersTable.getProductVisitsForDates(db, firstVendor, "PNK-1", List.of(FIRST_DAY, SECOND_DAY));
+        assertEquals(new OffersTable.ProductVisits("available", 0L, null, FIRST_DAY,
+                finalFetch.atOffset(ZoneOffset.UTC), false), result.get(FIRST_DAY));
+        assertEquals("ambiguous", result.get(SECOND_DAY).status());
+        assertNull(result.get(SECOND_DAY).visits14());
+        assertNull(result.get(SECOND_DAY).visits30());
+        assertEquals(SECOND_DAY, result.get(SECOND_DAY).snapshotDate());
+    }
+
+    @Test
+    void previewUsesLatestCompletedLiveVendorSnapshotEvenWhenProductIsMissing() throws SQLException {
+        var today = FIRST_DAY.plusDays(3);
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY,
+                snapshot(visitsOffer("one", "PNK-1", 1, 100L, 50L)),
+                FIRST_DAY.atTime(22, 15).toInstant(ZoneOffset.UTC));
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY, snapshot(),
+                SECOND_DAY.atTime(22, 15).toInstant(ZoneOffset.UTC));
+        OffersTable.storeSnapshot(db, firstVendor, today.minusDays(1),
+                snapshot(visitsOffer("one", "PNK-1", 1, 200L, 100L)));
+        OffersTable.storeSnapshot(db, firstVendor, today,
+                snapshot(visitsOffer("one", "PNK-1", 1, 300L, 150L)),
+                today.atTime(10, 15).toInstant(ZoneOffset.UTC));
+        OffersTable.storeSnapshot(db, firstVendor, today.plusDays(1), snapshot(),
+                today.plusDays(1).atTime(10, 15).toInstant(ZoneOffset.UTC));
+        OffersTable.storeSnapshot(db, secondVendor, today.minusDays(1), snapshot(),
+                today.minusDays(1).atTime(22, 15).toInstant(ZoneOffset.UTC));
+
+        assertEquals(SECOND_DAY,
+                OffersTable.getLatestCompletedProductVisitsSnapshotDate(db, firstVendor, today).orElseThrow());
+        assertEquals(today.minusDays(1),
+                OffersTable.getLatestCompletedProductVisitsSnapshotDate(db, secondVendor, today).orElseThrow());
+        assertTrue(OffersTable.getLatestCompletedProductVisitsSnapshotDate(db, firstVendor, FIRST_DAY).isEmpty());
+        assertTrue(OffersTable.getLatestCompletedProductVisitsSnapshotDate(db, UUID.randomUUID(), today).isEmpty());
+    }
+
+    @Test
+    void firstProductActivityIncludesZeroStockOffersAndQualifyingOrdersWithoutDependingOnAds() throws SQLException {
+        execute("CREATE TABLE product (product_code TEXT, emag_pnk TEXT)");
+        execute("CREATE TABLE emag_order (surrogate_id INTEGER PRIMARY KEY, status INTEGER, date TIMESTAMP, "
+                + "vendor_id UUID DEFAULT '" + firstVendor + "')");
+        execute("CREATE TABLE product_in_order (emag_order_surrogate_id INTEGER, part_number_key TEXT)");
+        execute("INSERT INTO product VALUES ('SKU-1', 'GMV-PNK'), ('OTHER', 'OTHER-PNK')");
+        execute("""
+                INSERT INTO emag_order VALUES
+                (1, 1, '2026-01-01'), (2, 4, '2026-02-01'), (3, 5, '2026-08-01'), (4, 4, '2026-07-01')
+                """);
+        execute("""
+                INSERT INTO product_in_order VALUES
+                (1, 'PNK-1'), (2, 'OTHER-PNK'), (3, 'PNK-1'), (4, 'GMV-PNK')
+                """);
+        execute("INSERT INTO emag_order VALUES (5, 4, '2025-12-01', '" + secondVendor
+                + "'), (6, 5, '2025-12-02', '" + secondVendor + "'), (7, 4, '2025-11-01', NULL)");
+        execute("INSERT INTO product_in_order VALUES (5, 'GMV-PNK'), (6, 'PNK-1'), (7, 'GMV-PNK')");
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY,
+                snapshot(visitsOffer("one", " PNK-1 ", 0, null, null)));
+        OffersTable.storeSnapshot(db, secondVendor, LocalDate.of(2026, 1, 1),
+                snapshot(visitsOffer("one", "PNK-1", 1, null, null)));
+
+        assertEquals(LocalDate.of(2026, 7, 1), EmagMirrorDB.getFirstProductPerformanceActivity(
+                db, firstVendor, "SKU-1", " PNK-1 ").orElseThrow());
+        assertEquals(LocalDate.of(2026, 7, 1), EmagMirrorDB.getFirstProductPerformanceActivity(
+                db, firstVendor, "SKU-1", null).orElseThrow());
+        assertEquals(LocalDate.of(2026, 8, 1), EmagMirrorDB.getFirstProductPerformanceActivity(
+                db, firstVendor, "UNKNOWN", "PNK-1").orElseThrow());
+        assertEquals(LocalDate.of(2025, 12, 1), EmagMirrorDB.getFirstProductPerformanceActivity(
+                db, secondVendor, "SKU-1", null).orElseThrow());
+        assertTrue(EmagMirrorDB.getFirstProductPerformanceActivity(
+                db, UUID.randomUUID(), "SKU-1", "PNK-1").isEmpty());
+        execute("DELETE FROM product_in_order WHERE part_number_key = 'PNK-1'");
+        assertEquals(FIRST_DAY, EmagMirrorDB.getFirstProductPerformanceActivity(
+                db, firstVendor, "UNKNOWN", "PNK-1").orElseThrow());
+        assertTrue(EmagMirrorDB.getFirstProductPerformanceActivity(db, firstVendor, "UNKNOWN", "UNKNOWN").isEmpty());
+    }
+
+    @Test
+    void prefersUniqueNonzeroStockOfferAndAcceptsASingleOutOfStockOffer() throws SQLException {
+        var fetchedAt = FIRST_DAY.atTime(10, 5).toInstant(ZoneOffset.UTC);
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(
+                visitsOffer("active", "PNK-1", 5, 20L, 10L),
+                visitsOffer("old-zero", "PNK-1", 0, 900L, 800L),
+                visitsOffer("unknown-stock", "PNK-1", null, 700L, 600L),
+                visitsOffer("only-zero", "PNK-2", 0, 40L, 30L),
+                visitsOffer("only-unknown", "PNK-3", null, null, 0L)), fetchedAt);
+
+        assertEquals(10L, OffersTable.getLatestProductVisits(db, firstVendor, "PNK-1", FIRST_DAY).visits14());
+        assertEquals(30L, OffersTable.getLatestProductVisits(db, firstVendor, "PNK-2", FIRST_DAY).visits14());
+        var oneUnknown = OffersTable.getLatestProductVisits(db, firstVendor, "PNK-3", FIRST_DAY);
+        assertEquals("available", oneUnknown.status());
+        assertEquals(0L, oneUnknown.visits14());
+        assertNull(oneUnknown.visits30());
+    }
+
+    @Test
+    void doesNotSumOrGuessBetweenDuplicateCanonicalOffers() throws SQLException {
+        var fetchedAt = FIRST_DAY.atTime(10, 5).toInstant(ZoneOffset.UTC);
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(
+                visitsOffer("first", "PNK-1", 1, 20L, 10L),
+                visitsOffer("second", "PNK-1", 2, 20L, 10L),
+                visitsOffer("zero-one", "PNK-2", 0, 40L, 30L),
+                visitsOffer("zero-two", "PNK-2", 0, null, null)), fetchedAt);
+
+        for (var pnk : List.of("PNK-1", "PNK-2")) {
+            var visits = OffersTable.getLatestProductVisits(db, firstVendor, pnk, FIRST_DAY);
+            assertEquals("ambiguous", visits.status());
+            assertNull(visits.visits14());
+            assertNull(visits.visits30());
+            assertEquals(FIRST_DAY, visits.snapshotDate());
+        }
+    }
+
+    @Test
+    void latestMissingCountersOrProductDoNotFallBackToEarlierSnapshots() throws SQLException {
+        var firstFetch = FIRST_DAY.atTime(10, 5).toInstant(ZoneOffset.UTC);
+        var secondFetch = SECOND_DAY.atTime(10, 6).toInstant(ZoneOffset.UTC);
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY,
+                snapshot(visitsOffer("one", "PNK-1", 5, 200L, 100L)), firstFetch);
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY,
+                snapshot(visitsOffer("one", "PNK-1", 5, null, null)), secondFetch);
+
+        var expected = new OffersTable.ProductVisits("missing", null, null, SECOND_DAY,
+                secondFetch.atOffset(ZoneOffset.UTC), false);
+        assertEquals(expected, OffersTable.getLatestProductVisits(db, firstVendor, "PNK-1", SECOND_DAY));
+        assertEquals(expected, OffersTable.getLatestProductVisits(db, firstVendor, "absent", SECOND_DAY));
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY, snapshot(), secondFetch);
+        assertEquals(expected, OffersTable.getLatestProductVisits(db, firstVendor, "PNK-1", SECOND_DAY));
+        assertEquals(new OffersTable.ProductVisits("missing", null, null, null, null, false),
+                OffersTable.getLatestProductVisits(db, secondVendor, "PNK-1", SECOND_DAY));
+        assertEquals(new OffersTable.ProductVisits("missing", null, null, null, null, false),
+                OffersTable.getLatestProductVisits(db, firstVendor, " ", SECOND_DAY));
+    }
+
+    @Test
+    void failedLiveReplacementPreservesPreviousCountsAndCollectionTime() throws SQLException {
+        var firstFetch = FIRST_DAY.atTime(10, 5).toInstant(ZoneOffset.UTC);
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY,
+                snapshot(visitsOffer("one", "PNK-1", 5, 200L, 100L)), firstFetch);
+        db.commit();
+        var broken = visitsOffer("broken", "PNK-1", 1, 999L, 888L);
+        // Force a real SQL failure after the parent snapshot has been updated.
+        execute("ALTER TABLE offers_offer ADD CONSTRAINT reject_broken_offer CHECK (offer_id <> 'broken')");
+        db.commit();
+        assertThrows(SQLException.class, () -> OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY,
+                snapshot(broken), firstFetch.plusSeconds(3600)));
+        db.rollback();
+
+        assertEquals(new OffersTable.ProductVisits("available", 100L, 200L, FIRST_DAY,
+                        firstFetch.atOffset(ZoneOffset.UTC), false),
+                OffersTable.getLatestProductVisits(db, firstVendor, "PNK-1", FIRST_DAY));
     }
 
     @Test
@@ -143,44 +456,128 @@ class OffersTableIntegrationTest {
     }
 
     @Test
-    void readsDailyProductValuesWithoutMixingVendorsOrTreatingEmptySnapshotsAsOldValues() throws Exception {
+    void readsGrossDailyPricesAndKeepsTheExistingNonzeroStockSelection() throws Exception {
         OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(
                 offer("""
-                        {"id":"selected", "docProductPartNumberKey":" PNK-1 ", "extStock":0,
-                         "stock2p":99, "extSalePrice":19.87654321}
+                        {"id":"selected", "docProductPartNumberKey":" PNK-1 ", "extStock":7,
+                         "stock2p":99, "extSalePrice":165.28, "offerStock":{"vatId":9}}
+                        """),
+                offer("""
+                        {"id":"zero", "docProductPartNumberKey":"PNK-1", "extStock":0,
+                         "extSalePrice":999, "offerStock":{"vatId":9}}
                         """),
                 offer("""
                         {"id":"other", "docProductPartNumberKey":"PNK-2", "extStock":75,
                          "extSalePrice":5}
                         """)));
         OffersTable.storeSnapshot(db, secondVendor, FIRST_DAY, snapshot(offer("""
-                {"id":"foreign", "docProductPartNumberKey":"PNK-1", "extStock":999,
-                 "extSalePrice":1}
+                {"id":"selected", "docProductPartNumberKey":"PNK-1", "extStock":999,
+                 "extSalePrice":100, "offerStock":{"vatId":10}}
                 """)));
         OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY, snapshot(
                 offer("""
                         {"id":"first", "docProductPartNumberKey":"PNK-1", "extStock":2,
-                         "extSalePrice":20}
+                         "extSalePrice":20, "offerStock":{"vatId":5}}
                         """),
                 offer("""
                         {"id":"second", "docProductPartNumberKey":"PNK-1", "extStock":3,
-                         "extSalePrice":21}
+                         "extSalePrice":21, "offerStock":{"vatId":10}}
                         """)));
         OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY.plusDays(1), snapshot());
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY.plusDays(2), snapshot(offer("""
+                {"id":"only-zero", "docProductPartNumberKey":"PNK-1", "extStock":0,
+                 "extSalePrice":100, "offerStock":{"vatId":9}}
+                """)));
 
         var days = OffersTable.getDailyProductOffers(db, firstVendor, " PNK-1 ",
-                FIRST_DAY, SECOND_DAY.plusDays(1));
-        assertEquals(3, days.size());
-        assertEquals(new OffersTable.DailyProductOffer(FIRST_DAY, 1, 0,
-                new BigDecimal("19.87654321")), days.getFirst());
+                FIRST_DAY, SECOND_DAY.plusDays(2));
+        assertEquals(3, days.size(), "Only empty snapshots are excluded; an observed zero stock remains available");
+        assertEquals(new OffersTable.DailyProductOffer(FIRST_DAY, 1, 7,
+                new BigDecimal("199.99")), days.getFirst());
         assertEquals(2, days.get(1).matchingOffers());
-        assertEquals(0, days.getLast().matchingOffers());
-        assertNull(days.getLast().stock());
-        assertNull(days.getLast().salesPrice());
+        assertEquals(3, days.get(1).stock());
+        assertNull(days.get(1).salesPrice(), "Different eligible offers must not mix prices and VAT rates");
+        assertEquals(new OffersTable.DailyProductOffer(SECOND_DAY.plusDays(2), 1, 0,
+                new BigDecimal("121.00")), days.get(2));
         assertEquals(List.of(), OffersTable.getDailyProductOffers(db, firstVendor, " ", FIRST_DAY,
                 SECOND_DAY.plusDays(1)));
-        assertEquals(1, OffersTable.getDailyProductOffers(db, secondVendor, "PNK-1", FIRST_DAY, FIRST_DAY)
-                .getFirst().matchingOffers());
+        assertEquals(new OffersTable.DailyProductOffer(FIRST_DAY, 1, 999, new BigDecimal("111.00")),
+                OffersTable.getDailyProductOffers(db, secondVendor, "PNK-1", FIRST_DAY, FIRST_DAY).getFirst());
+    }
+
+    @Test
+    void keepsSoleUnknownStockOfferAndMarksMultipleZeroStockOffersAmbiguous() throws SQLException {
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(offer("""
+                {"id":"unknown", "docProductPartNumberKey":"PNK-1", "extStock":null,
+                 "extSalePrice":100, "offerStock":{"vatId":9}}
+                """)));
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY, snapshot(
+                offer("""
+                        {"id":"zero-one", "docProductPartNumberKey":"PNK-1", "extStock":0,
+                         "extSalePrice":100, "offerStock":{"vatId":9}}
+                        """),
+                offer("""
+                        {"id":"zero-two", "docProductPartNumberKey":"PNK-1", "extStock":0,
+                         "extSalePrice":200, "offerStock":{"vatId":10}}
+                        """)));
+
+        var days = OffersTable.getDailyProductOffers(db, firstVendor, "PNK-1", FIRST_DAY, SECOND_DAY);
+
+        assertEquals(new OffersTable.DailyProductOffer(FIRST_DAY, 1, null, new BigDecimal("121.00")), days.getFirst());
+        assertEquals(2, days.get(1).matchingOffers());
+        assertNull(days.get(1).salesPrice());
+    }
+
+    @Test
+    void resolvesVatOnlyFromTheSameVendorDateAndOfferIdentity() throws SQLException {
+        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY, snapshot(
+                pricedOffer("shared", "PNK-1", "100", 9),
+                pricedOffer("different-offer", "PNK-2", "100", 5)));
+        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY,
+                snapshot(pricedOffer("shared", "PNK-1", "100", 10)));
+        OffersTable.storeSnapshot(db, secondVendor, FIRST_DAY,
+                snapshot(pricedOffer("shared", "PNK-1", "100", 5)));
+
+        assertEquals(List.of(
+                        new OffersTable.DailyProductOffer(FIRST_DAY, 1, 1, new BigDecimal("121.00")),
+                        new OffersTable.DailyProductOffer(SECOND_DAY, 1, 1, new BigDecimal("111.00"))),
+                OffersTable.getDailyProductOffers(db, firstVendor, "PNK-1", FIRST_DAY, SECOND_DAY));
+        assertEquals(new BigDecimal("100.00"),
+                OffersTable.getDailyProductOffers(db, secondVendor, "PNK-1", FIRST_DAY, FIRST_DAY)
+                        .getFirst().salesPrice());
+        assertEquals(new BigDecimal("100.00"),
+                OffersTable.getDailyProductOffers(db, firstVendor, "PNK-2", FIRST_DAY, FIRST_DAY)
+                        .getFirst().salesPrice());
+    }
+
+    @Test
+    void keepsUnknownVatAndMissingPricesUnavailableWithoutDiscardingStockOrNetPrecision() throws SQLException {
+        var unknownVat = pricedOffer("same", "PNK-1", "100", 1);
+        var missingVat = offer("""
+                {"id":"same", "docProductPartNumberKey":"PNK-1", "extStock":1,
+                 "extSalePrice":100, "offerStock":{}}
+                """);
+        var missingChild = offer("""
+                {"id":"same", "docProductPartNumberKey":"PNK-1", "extStock":1, "extSalePrice":100}
+                """);
+        var missingPrice = pricedOffer("same", "PNK-1", null, 9);
+        var zeroPrice = pricedOffer("same", "PNK-1", "0", 9);
+        var precisePrice = pricedOffer("same", "PNK-1", "0.014", 9);
+        var offers = List.of(unknownVat, missingVat, missingChild, missingPrice, zeroPrice, precisePrice);
+        for (int index = 0; index < offers.size(); index++) {
+            OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY.plusDays(index), snapshot(offers.get(index)));
+        }
+
+        var days = OffersTable.getDailyProductOffers(db, firstVendor, "PNK-1", FIRST_DAY,
+                FIRST_DAY.plusDays(offers.size() - 1));
+        assertEquals(offers.size(), days.size());
+        for (int index = 0; index < days.size(); index++) {
+            assertEquals(1, days.get(index).matchingOffers());
+            assertEquals(1, days.get(index).stock());
+            if (index < 4) assertNull(days.get(index).salesPrice());
+        }
+        assertEquals(new BigDecimal("0.00"), days.get(4).salesPrice());
+        assertEquals(new BigDecimal("0.02"), days.get(5).salesPrice(), "Round only after applying VAT");
     }
 
     @Test
@@ -345,6 +742,32 @@ class OffersTableIntegrationTest {
         return JSON.readValue(json, Offer.class);
     }
 
+    private static Offer pricedOffer(String id, String pnk, String netPrice, int vatId) {
+        return offer("""
+                {"id":"%s", "docProductPartNumberKey":"%s", "extStock":1,
+                 "extSalePrice":%s, "offerStock":{"vatId":%d}}
+                """.formatted(id, pnk, netPrice, vatId));
+    }
+
+    private static Offer visitsOffer(String id, String pnk, Integer stock, Long visits30, Long visits14) {
+        return offer("""
+                {"id":"%s", "docProductPartNumberKey":"%s", "extStock":%s,
+                 "productPerformanceVisits":%s, "productPerformanceVisitsLast14":%s}
+                """.formatted(id, pnk, stock, visits30, visits14));
+    }
+
+    private static Offer hotnessOffer(String id, String pnk, Integer stock, String type, String name) {
+        var details = new HashMap<String, Object>();
+        details.put("hotnessType", type);
+        details.put("hotnessName", name);
+        var fields = new HashMap<String, Object>();
+        fields.put("id", id);
+        fields.put("docProductPartNumberKey", pnk);
+        fields.put("extStock", stock);
+        fields.put("offerStock", details);
+        return offer(JSON.writeValueAsString(fields));
+    }
+
     private static Offer fullOffer(String id) throws ReflectiveOperationException {
         return sampleRecord(Offer.class, 1, Map.of("id", id));
     }
@@ -363,6 +786,7 @@ class OffersTableIntegrationTest {
             if (overrides.containsKey(field.getName())) values[index] = overrides.get(field.getName());
             else if (fieldType == String.class) values[index] = field.getName() + "-" + value;
             else if (fieldType == Integer.class) values[index] = value;
+            else if (fieldType == Long.class) values[index] = 5_000_000_000L + value;
             else if (fieldType == Boolean.class) values[index] = index % 2 == 0;
             else if (fieldType == BigDecimal.class) values[index] = new BigDecimal(value + ".123456789");
             else if (fieldType == LocalDate.class) values[index] = FIRST_DAY.plusDays(index);
@@ -455,14 +879,16 @@ class OffersTableIntegrationTest {
     }
 
     private void applyMigration() throws Exception {
-        var type = Class.forName("ro.sellfluence.db.versions.EmagMirrorDBVersion41");
-        var method = type.getDeclaredMethod("version41", Connection.class);
-        method.setAccessible(true);
-        try {
-            method.invoke(null, db);
-        } catch (InvocationTargetException exception) {
-            if (exception.getCause() instanceof Exception failure) throw failure;
-            throw exception;
+        for (int version : List.of(41, 48)) {
+            var type = Class.forName("ro.sellfluence.db.versions.EmagMirrorDBVersion" + version);
+            var method = type.getDeclaredMethod("version" + version, Connection.class);
+            method.setAccessible(true);
+            try {
+                method.invoke(null, db);
+            } catch (InvocationTargetException exception) {
+                if (exception.getCause() instanceof Exception failure) throw failure;
+                throw exception;
+            }
         }
     }
 

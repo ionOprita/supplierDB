@@ -140,7 +140,7 @@ export function initMonthlyGMV(documentRoot = document) {
       calculatedResponse = {data, label: product.textContent.trim()};
       result.textContent = data.gmv;
       context.textContent = `${calculatedResponse.label} · ${request.startDate} to ${request.endDate}`;
-      result.setAttribute('aria-label', `GMV ${data.gmv} for ${calculatedResponse.label}, ${request.startDate} to ${request.endDate}. View contributing orders.`);
+      result.setAttribute('aria-label', `GMV (incl. VAT) ${data.gmv} for ${calculatedResponse.label}, ${request.startDate} to ${request.endDate}. View contributing orders.`);
       result.hidden = false;
       setStatus('');
     } catch (error) {

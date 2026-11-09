@@ -104,7 +104,7 @@ export function createGMVDetails(documentRoot) {
     }
     title.textContent = 'Contributing orders';
     context.textContent = `${label} · ${request.startDate} to ${request.endDate}`;
-    reference.textContent = `${kind === 'monthly' ? 'Stored monthly' : 'Calculated'} GMV: ${referenceValue}`;
+    reference.textContent = `${kind === 'monthly' ? 'Stored monthly' : 'Calculated'} GMV (incl. VAT): ${referenceValue}`;
     mismatch.hidden = true;
     mismatch.textContent = '';
     body.replaceChildren();
@@ -132,7 +132,7 @@ export function createGMVDetails(documentRoot) {
     total.textContent = data.gmv;
     mismatch.hidden = storedValue === null || storedValue === data.gmv;
     mismatch.textContent = mismatch.hidden ? ''
-      : `Stored monthly GMV is ${storedValue}; the current calculation is ${data.gmv}.`;
+      : `Stored monthly GMV (incl. VAT) is ${storedValue}; the current calculation (incl. VAT) is ${data.gmv}.`;
     setStatus(data.contributions.length ? `${data.contributions.length} contributions.`
       : 'No contributing orders for this period.');
     dialog.setAttribute('aria-busy', 'false');

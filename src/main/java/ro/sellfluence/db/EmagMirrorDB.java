@@ -40,6 +40,7 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -94,7 +95,7 @@ import static ro.sellfluence.support.UsefulMethods.toYearMonth;
  * while it handles operations that need multiple tables itself.</p>
  */
 // TODO: Does this need to be stored in the database?
-public class EmagMirrorDB {
+public class EmagMirrorDB implements ProductPerformanceSource {
 
     private static final Map<String, EmagMirrorDB> openDatabases = new HashMap<>();
 
@@ -176,9 +177,29 @@ public class EmagMirrorDB {
         return database.readTX(db -> ProductPerformanceTable.getDailyAdsets(db, vendorId, pnk));
     }
 
+    public List<ProductPerformanceHistoryTable.Observation> getProductPerformanceHistory(UUID vendorId, String productCode)
+            throws SQLException {
+        return database.readTX(db -> ProductPerformanceHistoryTable.getProductPerformanceHistory(db, vendorId, productCode));
+    }
+
+    public Set<LocalDate> getProductPerformanceAdsReportDates(UUID vendorId, LocalDate start, LocalDate end)
+            throws SQLException {
+        return database.readTX(db -> ProductPerformanceHistoryTable.getProductPerformanceAdsReportDates(db, vendorId, start, end));
+    }
+
+    public ProductPerformanceHistoryTable.StoreResult storeProductPerformanceHistory(
+            ProductPerformanceHistoryTable.ImportBatch batch) throws SQLException {
+        return database.writeTX(db -> ProductPerformanceHistoryTable.storeBatch(db, batch));
+    }
+
     public List<OffersTable.DailyProductOffer> getProductPerformanceOffers(
             UUID vendorId, String pnk, LocalDate firstDate, LocalDate lastDate) throws SQLException {
         return database.readTX(db -> OffersTable.getDailyProductOffers(db, vendorId, pnk, firstDate, lastDate));
+    }
+
+    /** Calculate company GMV for the month through the supplied date without writing stored GMV values. */
+    public GMVDashboardTable.GMVDashboardData getGMVDashboard(LocalDate throughDate) throws SQLException {
+        return database.readTX(db -> GMVDashboardTable.read(db, throughDate));
     }
 
     public int addOrUpdateAdCampaigns(UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
@@ -195,6 +216,78 @@ public class EmagMirrorDB {
         return database.writeTX(db -> OffersTable.storeSnapshot(db, vendorId, fetchDate, data));
     }
 
+    public int storeOffersSnapshot(UUID vendorId, LocalDate fetchDate, OffersData data, Instant fetchedAt)
+            throws SQLException {
+        return database.writeTX(db -> OffersTable.storeSnapshot(db, vendorId, fetchDate, data, fetchedAt));
+    }
+
+    public OffersTable.ProductVisits getLatestProductVisits(UUID vendorId, String pnk, LocalDate today)
+            throws SQLException {
+        return database.readTX(db -> OffersTable.getLatestProductVisits(db, vendorId, pnk, today));
+    }
+
+    public Map<LocalDate, OffersTable.ProductVisits> getProductVisitsForDates(
+            UUID vendorId, String pnk, Collection<LocalDate> dates) throws SQLException {
+        return database.readTX(db -> OffersTable.getProductVisitsForDates(db, vendorId, pnk, dates));
+    }
+
+    public Map<LocalDate, OffersTable.ProductHotness> getProductHotnessForDates(
+            UUID vendorId, String pnk, Collection<LocalDate> dates) throws SQLException {
+        return database.readTX(db -> OffersTable.getProductHotnessForDates(db, vendorId, pnk, dates));
+    }
+
+    public Optional<LocalDate> getLatestCompletedProductVisitsSnapshotDate(UUID vendorId, LocalDate today)
+            throws SQLException {
+        return database.readTX(db -> OffersTable.getLatestCompletedProductVisitsSnapshotDate(db, vendorId, today));
+    }
+
+    /**
+     * Earliest offer or qualifying order observation for row generation, including zero-stock offers
+     * from the selected vendor. The caller also considers its already-loaded eligible Ads report dates.
+     * Internal product-code attribution mirrors GMV even if the caller has no PNK metadata.
+     */
+    public Optional<LocalDate> getFirstProductPerformanceActivity(UUID vendorId, String productCode, String pnk)
+            throws SQLException {
+        return database.readTX(db -> getFirstProductPerformanceActivity(db, vendorId, productCode, pnk));
+    }
+
+    static Optional<LocalDate> getFirstProductPerformanceActivity(
+            Connection db, UUID vendorId, String productCode, String pnk) throws SQLException {
+        Objects.requireNonNull(db, "db");
+        Objects.requireNonNull(vendorId, "vendorId");
+        Objects.requireNonNull(productCode, "productCode");
+        var normalizedPnk = pnk == null || pnk.isBlank() ? null : pnk.strip();
+        try (var statement = db.prepareStatement("""
+                WITH requested_pnks AS (
+                    SELECT ?::text AS pnk
+                    UNION
+                    SELECT emag_pnk FROM product WHERE product_code = ?
+                ), activity AS (
+                    SELECT MIN(fetch_date) AS activity_date
+                    FROM offers_offer
+                    WHERE vendor_id = ? AND regexp_replace(doc_product_part_number_key,
+                        '^[[:space:]]+|[[:space:]]+$', '', 'g') = ?
+                    UNION ALL
+                    SELECT MIN(o.date)::date
+                    FROM product_in_order AS pio
+                    JOIN emag_order AS o ON o.surrogate_id = pio.emag_order_surrogate_id
+                    WHERE o.status IN (4, 5) AND o.vendor_id = ?
+                      AND pio.part_number_key IN (SELECT pnk FROM requested_pnks)
+                )
+                SELECT MIN(activity_date) FROM activity
+                """)) {
+            statement.setString(1, normalizedPnk);
+            statement.setString(2, productCode);
+            statement.setObject(3, vendorId);
+            statement.setString(4, normalizedPnk);
+            statement.setObject(5, vendorId);
+            try (var rows = statement.executeQuery()) {
+                rows.next();
+                return Optional.ofNullable(rows.getObject(1, LocalDate.class));
+            }
+        }
+    }
+
     /** Stores a complete product fetch atomically, retaining reviews and comments no longer returned by eMAG. */
     public ReviewsTable.StoreResult storeReviews(String pnk, Instant fetchedAt, ReviewsResponse response)
             throws SQLException {
@@ -207,6 +300,7 @@ public class EmagMirrorDB {
     }
 
     /** Reads one product's publication history and distinguishes unfetched from known empty history. */
+    @Override
     public ReviewsTable.ReviewHistory readProductReviews(String pnk) throws SQLException {
         return database.readTX(db -> ReviewsTable.readProductReviews(db, pnk));
     }
@@ -326,11 +420,19 @@ public class EmagMirrorDB {
     }
 
     public int registerTasks(List<String> taskNames) throws SQLException {
-        return database.writeTX(db -> Task.registerTasks(db, taskNames));
+        return database.writeTX(db -> {
+            var inserted = Task.registerTasks(db, taskNames);
+            TaskHistory.registerOfferSources(db, taskNames);
+            return inserted;
+        });
     }
 
     public int startTask(String name) throws SQLException {
-        return database.writeTX(db -> Task.startTask(db, name));
+        return database.writeTX(db -> {
+            // A newly configured account may acquire its vendor mapping after server startup.
+            if (name.startsWith("Fetch offers for ")) TaskHistory.registerOfferSources(db, List.of(name));
+            return Task.startTask(db, name);
+        });
     }
 
     public int endTask(String name, String error) throws SQLException {
@@ -347,6 +449,16 @@ public class EmagMirrorDB {
 
     public List<Task> getAllTasks() throws SQLException {
         return database.readTX(Task::getAllTasks);
+    }
+
+    public TaskHistory.HistoryPage getTaskHistory(String taskName, String status, LocalDate from, LocalDate to,
+                                                 int page, int pageSize) throws SQLException {
+        return database.readTX(db -> TaskHistory.readHistory(db, taskName, status, from, to, page, pageSize));
+    }
+
+    public List<TaskHistory.CollectionDay> getOfferCollectionDays(String taskName, LocalDate from, LocalDate to,
+                                                                 LocalDate today) throws SQLException {
+        return database.readTX(db -> TaskHistory.readCollectionDays(db, taskName, from, to, today));
     }
 
     public record ReturnStornoOrderDetail(LocalDateTime time, String orderId, String vendor, String pnk, String name,
@@ -759,9 +871,67 @@ public class EmagMirrorDB {
 
     static Map<LocalDate, BigDecimal> computeGMVForProductPeriods(
             Connection db, String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
+        return computeProductSalesForPeriods(db, productCode, periodEnds, SalesTaxBasis.INCLUDING_VAT, null);
+    }
+
+    /** VAT-inclusive product sales restricted to the exact selected selling-account vendor. */
+    @Override
+    public Map<LocalDate, BigDecimal> computeGMVForProductPeriods(
+            UUID vendorId, String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
+        Objects.requireNonNull(vendorId, "vendorId");
         validateGMVPeriods(productCode, periodEnds);
         if (periodEnds.isEmpty()) return Map.of();
-        var orders = getOrderDataByProduct(db, productCode);
+        return database.readTX(db -> computeGMVForProductPeriods(db, vendorId, productCode, periodEnds));
+    }
+
+    static Map<LocalDate, BigDecimal> computeGMVForProductPeriods(
+            Connection db, UUID vendorId, String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
+        Objects.requireNonNull(vendorId, "vendorId");
+        return computeProductSalesForPeriods(db, productCode, periodEnds, SalesTaxBasis.INCLUDING_VAT, vendorId);
+    }
+
+    /**
+     * Compute VAT-exclusive sales using the same period, storno and seller voucher allocation as GMV.
+     * Net prices and net voucher values come directly from each order snapshot; no aggregate VAT rate
+     * is assumed. The existing product attribution includes all selling accounts.
+     *
+     * @return net sales rounded to two decimals for each period, including 0.00 when nothing contributes.
+     */
+    public Map<LocalDate, BigDecimal> computeNetSalesForProductPeriods(
+            String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
+        validateGMVPeriods(productCode, periodEnds);
+        if (periodEnds.isEmpty()) return Map.of();
+        return database.readTX(db -> computeNetSalesForProductPeriods(db, productCode, periodEnds));
+    }
+
+    static Map<LocalDate, BigDecimal> computeNetSalesForProductPeriods(
+            Connection db, String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
+        return computeProductSalesForPeriods(db, productCode, periodEnds, SalesTaxBasis.EXCLUDING_VAT, null);
+    }
+
+    /** Net product sales restricted to the exact selected selling-account vendor. */
+    @Override
+    public Map<LocalDate, BigDecimal> computeNetSalesForProductPeriods(
+            UUID vendorId, String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
+        Objects.requireNonNull(vendorId, "vendorId");
+        validateGMVPeriods(productCode, periodEnds);
+        if (periodEnds.isEmpty()) return Map.of();
+        return database.readTX(db -> computeNetSalesForProductPeriods(db, vendorId, productCode, periodEnds));
+    }
+
+    static Map<LocalDate, BigDecimal> computeNetSalesForProductPeriods(
+            Connection db, UUID vendorId, String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
+        Objects.requireNonNull(vendorId, "vendorId");
+        return computeProductSalesForPeriods(db, productCode, periodEnds, SalesTaxBasis.EXCLUDING_VAT, vendorId);
+    }
+
+    private static Map<LocalDate, BigDecimal> computeProductSalesForPeriods(
+            Connection db, String productCode, Map<LocalDate, LocalDate> periodEnds, SalesTaxBasis taxBasis,
+            UUID vendorId)
+            throws SQLException {
+        validateGMVPeriods(productCode, periodEnds);
+        if (periodEnds.isEmpty()) return Map.of();
+        var orders = getOrderDataByProduct(db, productCode, taxBasis, vendorId);
         var result = new HashMap<LocalDate, BigDecimal>();
         periodEnds.forEach((start, end) -> result.put(start, GMV.computeGMVForPeriod(orders, start, end)));
         return Map.copyOf(result);
@@ -1150,6 +1320,10 @@ public class EmagMirrorDB {
         return database.readTX(Vendor::selectAllVendorCompanies);
     }
 
+    public OverviewTable.OverviewData getOverview(LocalDate throughDate) throws SQLException {
+        return database.readTX(db -> OverviewTable.read(db, throughDate));
+    }
+
     public @NonNull List<Vendor> getAllVendors() throws SQLException {
         return database.readTX(Vendor::getVendors);
     }
@@ -1489,27 +1663,7 @@ public class EmagMirrorDB {
      * @return map from PNK to number of orders.
      */
     public @NonNull Map<String, Integer> countOrdersByMonth(@NonNull YearMonth month) throws SQLException {
-        return countByMonth(month, """
-                WITH picked AS (
-                  SELECT DISTINCT ON (o.id, pio.part_number_key)
-                         CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS picked_qty,
-                         pio.part_number_key AS pnk
-                  FROM emag_order AS o
-                  JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
-                  WHERE o.status IN (4,5)
-                    AND o.date >= ?
-                    AND o.date < ?
-                  ORDER BY
-                    o.id,
-                    pio.part_number_key,
-                    o.status,          -- prefer status 4; fallback to 5
-                    o.surrogate_id DESC
-                )
-                SELECT SUM(picked_qty) AS quantity, pnk
-                FROM picked
-                GROUP BY pnk
-                ORDER BY pnk;
-                """);
+        return countByMonth(month, OrderQuantityTable.MONTH_SQL);
     }
 
     /**
@@ -1521,29 +1675,28 @@ public class EmagMirrorDB {
      */
     public @NonNull Map<String, Map<YearMonth, Integer>> countOrdersByMonth(@NonNull YearMonth startMonth,
                                                                              @NonNull YearMonth endMonth) throws SQLException {
-        return countByMonthRange(startMonth, endMonth, """
-                WITH picked AS (
-                  SELECT DISTINCT ON (o.id, pio.part_number_key, DATE_TRUNC('month', o.date)::date)
-                         CASE WHEN o.status = 4 THEN pio.quantity ELSE pio.initial_qty END AS picked_qty,
-                         pio.part_number_key AS pnk,
-                         DATE_TRUNC('month', o.date)::date AS month_start
-                  FROM emag_order AS o
-                  JOIN product_in_order AS pio ON o.surrogate_id = pio.emag_order_surrogate_id
-                  WHERE o.status IN (4,5)
-                    AND o.date >= ?
-                    AND o.date < ?
-                  ORDER BY
-                    o.id,
-                    pio.part_number_key,
-                    DATE_TRUNC('month', o.date)::date,
-                    o.status,          -- prefer status 4; fallback to 5
-                    o.surrogate_id DESC
-                )
-                SELECT pnk, month_start, SUM(picked_qty) AS quantity
-                FROM picked
-                GROUP BY pnk, month_start
-                ORDER BY pnk, month_start;
-                """);
+        return countByMonthRange(startMonth, endMonth, OrderQuantityTable.MONTHS_SQL);
+    }
+
+    /**
+     * Sum product units using the Orders table's snapshot rules independently inside each inclusive period.
+     * Counts span order vendors and return zero for empty periods; no storno quantities are deducted.
+     */
+    public Map<LocalDate, Long> countOrdersForProductPeriods(
+            String pnk, Map<LocalDate, LocalDate> inclusivePeriodEnds) throws SQLException {
+        OrderQuantityTable.validatePeriods(pnk, inclusivePeriodEnds);
+        if (inclusivePeriodEnds.isEmpty()) return Map.of();
+        return database.readTX(db -> OrderQuantityTable.countForProductPeriods(db, pnk, inclusivePeriodEnds));
+    }
+
+    /** Ordered units for one selling account, preserving the Orders table's snapshot and quantity rules. */
+    @Override
+    public Map<LocalDate, Long> countOrdersForProductPeriods(
+            UUID vendorId, String pnk, Map<LocalDate, LocalDate> inclusivePeriodEnds) throws SQLException {
+        Objects.requireNonNull(vendorId, "vendorId");
+        OrderQuantityTable.validatePeriods(pnk, inclusivePeriodEnds);
+        if (inclusivePeriodEnds.isEmpty()) return Map.of();
+        return database.readTX(db -> OrderQuantityTable.countForProductPeriods(db, vendorId, pnk, inclusivePeriodEnds));
     }
 
     /**
@@ -2079,11 +2232,24 @@ public class EmagMirrorDB {
         return list;
     }
 
+    private enum SalesTaxBasis { INCLUDING_VAT, EXCLUDING_VAT }
+
     private static Map<String, List<POInfo>> getOrderDataByProduct(Connection db, String productCode) throws SQLException {
+        return getOrderDataByProduct(db, productCode, SalesTaxBasis.INCLUDING_VAT);
+    }
+
+    private static Map<String, List<POInfo>> getOrderDataByProduct(
+            Connection db, String productCode, SalesTaxBasis taxBasis) throws SQLException {
+        return getOrderDataByProduct(db, productCode, taxBasis, null);
+    }
+
+    private static Map<String, List<POInfo>> getOrderDataByProduct(
+            Connection db, String productCode, SalesTaxBasis taxBasis, UUID vendorId) throws SQLException {
         var result = new HashMap<String, List<POInfo>>();
         try (var s = db.prepareStatement("""
                 SELECT p.name AS productName,
                 seller_voucher.total AS sellerVoucherTotal,
+                seller_voucher.net_total AS sellerVoucherNetTotal,
                 pio.quantity AS quantity,
                 pio.initial_qty AS initialQuantity,
                 pio.storno_qty AS stornoQuantity,
@@ -2100,15 +2266,18 @@ public class EmagMirrorDB {
                 INNER JOIN product AS p ON p.emag_pnk = pio.part_number_key
                 INNER JOIN emag_order AS o ON pio.emag_order_surrogate_id = o.surrogate_id
                 LEFT JOIN LATERAL (
-                    SELECT SUM(COALESCE(v.value, 0) + COALESCE(v.vat_value, 0)) AS total
+                    SELECT SUM(COALESCE(v.value, 0) + COALESCE(v.vat_value, 0)) AS total,
+                           SUM(COALESCE(v.value, 0)) AS net_total
                     FROM voucher_split AS v
                     WHERE v.product_id = pio.id AND v.emag_order_surrogate_id = pio.emag_order_surrogate_id
                       AND v.offered_by = 'seller'
                 ) AS seller_voucher ON TRUE
                 WHERE p.product_code = ? AND (o.status = 4 OR o.status = 5)
+                """ + (vendorId == null ? "" : "AND o.vendor_id = ?\n") + """
                 ORDER BY o.id, o.status
                 """)) {
             s.setObject(1, productCode);
+            if (vendorId != null) s.setObject(2, vendorId);
             try (var rs = s.executeQuery()) {
                 while (rs.next()) {
                     var orderId = rs.getString("orderId");
@@ -2117,8 +2286,11 @@ public class EmagMirrorDB {
                     var initialQuantity = rs.getInt("initialQuantity");
                     var stornoQuantity = rs.getInt("stornoQuantity");
                     var salePrice = rs.getBigDecimal("salePrice");
-                    var vat = new BigDecimal(rs.getString("vat"));
-                    var price = vat.add(BigDecimal.ONE).multiply(salePrice).setScale(2, HALF_EVEN);
+                    var price = salePrice;
+                    if (taxBasis == SalesTaxBasis.INCLUDING_VAT) {
+                        var vat = new BigDecimal(rs.getString("vat"));
+                        price = vat.add(BigDecimal.ONE).multiply(salePrice).setScale(2, HALF_EVEN);
+                    }
                     var poInfo = new POInfo(
                             orderId,
                             rs.getInt("orderSurrogateId"),
@@ -2130,7 +2302,8 @@ public class EmagMirrorDB {
                             initialQuantity,
                             stornoQuantity,
                             price,
-                            rs.getBigDecimal("sellerVoucherTotal")
+                            rs.getBigDecimal(taxBasis == SalesTaxBasis.INCLUDING_VAT
+                                    ? "sellerVoucherTotal" : "sellerVoucherNetTotal")
                     );
                     poInfos.add(poInfo);
                     result.put(orderId, poInfos);
