@@ -1,4 +1,4 @@
-/* Common styles for all pages */
+/* Theme tokens shared by application and authentication pages. */
 :root {
   color-scheme: light;
   --bg: #f4f6fb;
@@ -108,6 +108,7 @@
   }
 }
 
+/* Document defaults; the application frame and auth.css define their own layouts. */
 body {
   font-family: system-ui, Arial, sans-serif;
   margin: 2rem;
@@ -174,26 +175,32 @@ h1 {
   font-weight: 600;
 }
 
-.page-actions {
+/* Shared filters; individual pages only set control dimensions. */
+.current-rates-filter-controls,
+.ads-campaigns-filter-controls,
+.ads-period-anchor-controls,
+.ads-period-custom-controls,
+.task-filter-controls,
+.log-filter-controls,
+.task-filter-field,
+.log-filter-field {
   display: flex;
   align-items: center;
-  gap: .5rem;
-  justify-content: flex-end;
+  gap: 8px;
+}
+
+.current-rates-filter-controls,
+.ads-campaigns-filter-controls,
+.ads-period-anchor-controls,
+.ads-period-custom-controls,
+.task-filter-controls,
+.log-filter-controls {
   flex-wrap: wrap;
-  margin: .75rem 0;
+  min-width: 0;
+  max-width: 100%;
 }
 
-.current-rates-actions {
-  justify-content: space-between;
-}
-
-.current-rates-filter-controls {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  flex-wrap: wrap;
-}
-
+/* Page-specific filter dimensions and form layouts. */
 .current-rates-filter-controls select {
   min-width: 90px;
 }
@@ -235,7 +242,9 @@ h1 {
   min-width: 220px;
 }
 
-.row-actions form {
+.row-actions form,
+.product-list-actions form,
+.product-form-actions form {
   margin: 0;
 }
 
@@ -246,7 +255,8 @@ h1 {
   gap: .4rem;
 }
 
-.month-filter-select {
+.month-filter-select,
+.ads-period-select {
   min-width: 130px;
 }
 
@@ -254,31 +264,8 @@ h1 {
   min-width: 150px;
 }
 
-.ads-period-select {
-  min-width: 130px;
-}
-
-.ads-campaigns-actions {
-  justify-content: space-between;
-}
-
-.ads-campaigns-filter-controls {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  flex-wrap: wrap;
-}
-
 .ads-campaigns-filter-controls label {
   padding-left: 0;
-}
-
-.ads-period-anchor-controls,
-.ads-period-custom-controls {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  flex-wrap: wrap;
 }
 
 .ads-period-anchor-controls[hidden],
@@ -287,9 +274,7 @@ h1 {
 }
 
 .ads-period-date-input {
-  box-sizing: border-box;
   min-width: 145px;
-  padding: .3rem;
 }
 
 @media (max-width: 720px) {
@@ -321,10 +306,6 @@ h1 {
   min-width: 260px;
   max-width: 420px;
   white-space: normal;
-}
-
-.product-list-actions form {
-  margin: 0;
 }
 
 .flash-message {
@@ -382,34 +363,10 @@ h1 {
   margin-top: 1rem;
 }
 
-.product-form-actions form {
-  margin: 0;
-}
-
-.primary-action {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--primary-text);
-}
-
-.primary-action:hover {
-  background: var(--primary-hover);
-  border-color: var(--primary-hover);
-}
-
-.primary-action:disabled {
-  cursor: progress;
-  opacity: .7;
-}
-
-/* Table wrapper styles */
+/* Table wrappers keep low specificity so specialized scroll regions can size themselves. */
 .wrap {
-  max-width: 100%;
   max-height: 70vh;
   overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
 }
 
 /* Table styles */
@@ -465,9 +422,9 @@ td.qty {
 
 .sticky-col-1 {
   left: 0;
-  box-shadow: 2px 0 0 var(--sticky-separator);
 }
 
+.sticky-col-1,
 .sticky-col-2 {
   box-shadow: 2px 0 0 var(--sticky-separator);
 }
@@ -483,54 +440,8 @@ tbody tr:nth-child(even) td {
   background: var(--surface-alt);
 }
 
-tbody tr:nth-child(even) .sticky-col-1,
-tbody tr:nth-child(even) .sticky-col-2 {
-  background: var(--surface-alt);
-}
-
 .product-sheet-wrap {
   max-height: calc(100dvh - 18rem);
-}
-
-@supports selector(body:has(#productsTable)) {
-  html:has(#productsTable),
-  html:has(#employeeDataTable),
-  html:has(#categoryDataTable),
-  html:has(#monthlyGmvTable) {
-    height: 100%;
-    overflow: hidden;
-  }
-
-  body:has(#productsTable),
-  body:has(#employeeDataTable),
-  body:has(#categoryDataTable),
-  body:has(#monthlyGmvTable) {
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    height: calc(100dvh - 4rem);
-    overflow: hidden;
-  }
-
-  body:has(#productsTable) main,
-  body:has(#employeeDataTable) main,
-  body:has(#categoryDataTable) main,
-  body:has(#monthlyGmvTable) main {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  body:has(#productsTable) .product-sheet-wrap,
-  body:has(#employeeDataTable) .product-sheet-wrap,
-  body:has(#categoryDataTable) .product-sheet-wrap,
-  body:has(#monthlyGmvTable) .product-sheet-wrap {
-    flex: 1 1 auto;
-    min-height: 0;
-    max-height: none;
-  }
 }
 
 .product-sheet-table {
@@ -565,7 +476,8 @@ tbody tr:nth-child(even) .sticky-col-2 {
   z-index: 5;
 }
 
-.product-sheet-table .sticky-col-name {
+.product-sheet-table .sticky-col-name,
+.employee-sheet-table .sticky-col-employee-name {
   left: 0;
   min-width: 260px;
   width: 260px;
@@ -615,10 +527,6 @@ tbody tr:nth-child(even) .sticky-col-2 {
 
 .gmv-period {
   margin-bottom: .9rem;
-  padding: .75rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
 }
 
 .gmv-period h2,
@@ -650,31 +558,12 @@ tbody tr:nth-child(even) .sticky-col-2 {
 }
 
 .gmv-period-field select,
-.gmv-period-field input,
-.gmv-period-form button,
-#gmvVendorFilterSelect {
-  box-sizing: border-box;
-  min-width: 0;
-  padding: .4rem .5rem;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  font: inherit;
-}
-
-.gmv-period-field select,
 .gmv-period-field input {
   width: 100%;
-  color: var(--text);
-  background: var(--surface);
 }
 
 .gmv-period-form button {
   flex: 0 0 auto;
-  cursor: pointer;
-}
-
-.gmv-period-form button:disabled {
-  cursor: default;
 }
 
 .gmv-period-help,
@@ -713,49 +602,41 @@ tbody tr:nth-child(even) .sticky-col-2 {
   color: var(--danger);
 }
 
-.gmv-amount-button {
-  padding: .15rem .1rem;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--primary);
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  text-decoration: underline;
-  text-underline-offset: .2em;
-  cursor: pointer;
+/* Shared dialogs. Page rules below retain their dimensions and scrolling. */
+.gmv-details-dialog,
+.task-error-dialog,
+.product-review-dialog,
+.server-stop-dialog {
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 24px 64px rgb(15 23 42 / 24%);
 }
 
-.gmv-amount-button:hover {
-  color: var(--primary-hover);
-  background: var(--hover);
-}
-
-.gmv-amount-button:focus-visible,
-.gmv-details-actions button:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
+.gmv-details-dialog,
+.task-error-dialog {
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow: hidden;
 }
 
 .gmv-details-dialog {
-  box-sizing: border-box;
   width: min(64rem, calc(100vw - 2rem));
-  max-width: calc(100vw - 2rem);
-  max-height: calc(100dvh - 2rem);
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
 }
 
-.gmv-details-dialog[open] {
+.gmv-details-dialog[open],
+.task-error-dialog[open] {
   display: flex;
   flex-direction: column;
 }
 
-.gmv-details-dialog::backdrop {
+.gmv-details-dialog::backdrop,
+.task-error-dialog::backdrop,
+.product-review-dialog::backdrop,
+.server-stop-dialog::backdrop {
   background: rgb(17 24 39 / 55%);
 }
 
@@ -767,7 +648,9 @@ tbody tr:nth-child(even) .sticky-col-2 {
   overflow-wrap: anywhere;
 }
 
-.gmv-details-heading h2 {
+.gmv-details-heading h2,
+.product-review-content h2,
+.server-stop-dialog-content h2 {
   margin: 0;
   font-size: 1.05rem;
 }
@@ -835,38 +718,14 @@ tbody tr:nth-child(even) .sticky-col-2 {
   font-variant-numeric: tabular-nums;
 }
 
-.gmv-details-actions {
+.gmv-details-actions,
+.product-review-actions,
+.server-stop-dialog-actions,
+.task-error-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: .5rem;
-}
-
-.gmv-details-actions button {
-  padding: .35rem .7rem;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--surface-alt);
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-}
-
-.gmv-details-actions button:disabled {
-  opacity: .6;
-  cursor: default;
-}
-
-body:has(#gmvPeriodForm) main {
-  overflow: auto;
-}
-
-body:has(#gmvPeriodForm) main > :not(.gmv-monthly-wrap) {
-  flex-shrink: 0;
-}
-
-body:has(#gmvPeriodForm) .gmv-monthly-wrap {
-  min-height: 9rem;
 }
 
 @media (max-width: 540px) {
@@ -882,13 +741,6 @@ body:has(#gmvPeriodForm) .gmv-monthly-wrap {
     flex: 1 1 12rem;
     max-width: 100%;
   }
-}
-
-.employee-sheet-table .sticky-col-employee-name {
-  left: 0;
-  min-width: 260px;
-  width: 260px;
-  max-width: 260px;
 }
 
 .employee-sheet-table .sticky-col-employee-company {
@@ -947,16 +799,7 @@ body:has(#gmvPeriodForm) .gmv-monthly-wrap {
 .product-sheet-input,
 .product-sheet-select,
 .product-sheet-textarea {
-  box-sizing: border-box;
   width: 100%;
-  min-width: 0;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  padding: .38rem .45rem;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
 }
 
 .product-sheet-checkbox {
@@ -967,16 +810,11 @@ body:has(#gmvPeriodForm) .gmv-monthly-wrap {
   accent-color: var(--primary);
 }
 
-.product-sheet-select {
-  min-width: 0;
-}
-
 .product-sheet-select-boolean {
   text-align: center;
 }
 
 .product-sheet-textarea {
-  min-height: 2.15rem;
   resize: vertical;
 }
 
@@ -994,26 +832,13 @@ body:has(#gmvPeriodForm) .gmv-monthly-wrap {
 .product-review-dialog {
   width: min(980px, calc(100vw - 2rem));
   max-height: calc(100vh - 2rem);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0;
-  background: var(--surface);
-  color: var(--text);
 }
 
-.product-review-dialog::backdrop {
-  background: rgb(17 24 39 / 55%);
-}
-
-.product-review-content {
+.product-review-content,
+.server-stop-dialog-content {
   display: grid;
   gap: .75rem;
   padding: 1rem;
-}
-
-.product-review-content h2 {
-  margin: 0;
-  font-size: 1.05rem;
 }
 
 .product-review-changes-wrap {
@@ -1032,13 +857,6 @@ body:has(#gmvPeriodForm) .gmv-monthly-wrap {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   vertical-align: top;
-}
-
-.product-review-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: .5rem;
-  flex-wrap: wrap;
 }
 
 /* Clickable cells */
@@ -1062,13 +880,7 @@ header {
   font-size: .9rem;
 }
 
-.toolbar {
-  display: flex;
-  gap: .5rem;
-  margin-left: auto;
-}
-
-/* Buttons */
+/* Standalone button defaults; app-shell controls share the appearance defined below. */
 button {
   padding: .35rem .6rem;
   border: 1px solid var(--border);
@@ -1094,53 +906,16 @@ button:hover {
   background: var(--surface-alt);
 }
 
-.danger-action {
-  background: var(--danger-fill);
-  border-color: var(--danger);
-  color: var(--danger-text);
-}
-
-.danger-action:hover {
-  background: var(--danger-hover);
-  border-color: var(--danger-hover);
-  color: var(--danger-text);
-}
-
-.danger-action:disabled {
-  cursor: progress;
-  opacity: .7;
-}
-
 .server-stop-button {
   font-weight: 600;
 }
 
 .server-stop-dialog {
   width: min(420px, calc(100vw - 2rem));
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0;
-  background: var(--surface);
-  color: var(--text);
 }
 
-.server-stop-dialog::backdrop {
-  background: rgb(17 24 39 / 55%);
-}
-
-.server-stop-dialog-content {
-  display: grid;
-  gap: .75rem;
-  padding: 1rem;
-}
-
-.server-stop-dialog-content h2,
 .server-stop-dialog-content p {
   margin: 0;
-}
-
-.server-stop-dialog-content h2 {
-  font-size: 1.05rem;
 }
 
 .server-stop-status {
@@ -1152,31 +927,9 @@ button:hover {
   color: var(--danger);
 }
 
-.server-stop-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: .5rem;
-  flex-wrap: wrap;
-}
-
 /* Status messages */
 #status {
   margin-top: .5rem;
-}
-
-/* Details page specific */
-.details-page {
-  margin: 1rem;
-}
-
-.details-page .wrap {
-  margin-top: 1rem;
-  max-height: 75vh;
-}
-
-.details-page th,
-.details-page td {
-  padding: .45rem .6rem;
 }
 
 /* Chart pages */
@@ -1189,12 +942,6 @@ button:hover {
 select {
   min-width: 320px;
   padding: .3rem;
-}
-
-.card {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1rem;
 }
 
 canvas {
@@ -1236,45 +983,15 @@ code {
   justify-content: flex-start;
 }
 
-.task-page-actions {
-  justify-content: space-between;
-}
-
-.task-filter-controls,
-.task-filter-field,
-.log-filter-controls,
-.log-filter-field {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-}
-
-.task-filter-controls,
-.log-filter-controls {
-  flex-wrap: wrap;
-  gap: .75rem;
-}
-
 .task-filter-field label,
 .log-filter-field label {
   padding: 0;
 }
 
-.task-filter-controls select {
-  min-width: 0;
-}
-
 #taskNameFilter,
 .log-name-filter {
-  box-sizing: border-box;
   width: 220px;
   margin: 0;
-  padding: .35rem .5rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
 }
 
 .task-runtime-estimate {
@@ -1324,51 +1041,8 @@ code {
   margin-left: 0.4rem;
 }
 
-.task-error-button {
-  padding: 0;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--primary);
-  font: inherit;
-  text-align: left;
-  text-decoration: underline;
-  text-underline-offset: .2em;
-  cursor: pointer;
-}
-
-.task-error-button:hover {
-  color: var(--primary-hover);
-  background: var(--hover);
-}
-
-.task-error-button:focus-visible,
-.task-error-actions button:focus-visible,
-.task-error-content:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-
 .task-error-dialog {
-  box-sizing: border-box;
   width: min(70rem, calc(100vw - 2rem));
-  max-width: calc(100vw - 2rem);
-  max-height: calc(100dvh - 2rem);
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
-}
-
-.task-error-dialog[open] {
-  display: flex;
-  flex-direction: column;
-}
-
-.task-error-dialog::backdrop {
-  background: rgb(17 24 39 / 55%);
 }
 
 .task-error-heading {
@@ -1381,13 +1055,6 @@ code {
   margin: 0 0 .75rem;
   font-size: 1.05rem;
   overflow-wrap: anywhere;
-}
-
-.task-error-actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: .5rem;
 }
 
 .task-error-content {
@@ -1428,10 +1095,6 @@ code {
   margin-top: 1rem;
 }
 
-.product-performance [hidden] {
-  display: none;
-}
-
 .pp-heading,
 .pp-product,
 .pp-product-details,
@@ -1444,10 +1107,6 @@ code {
 
 .pp-heading {
   justify-content: space-between;
-  padding: .85rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
 }
 
 .pp-product,
@@ -1456,28 +1115,8 @@ code {
   max-width: 100%;
 }
 
-.pp-header-select {
-  box-sizing: border-box;
-  min-width: 0;
-  max-width: 100%;
-  padding: .25rem .5rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--text);
-  font-family: inherit;
-  font-weight: 700;
-}
-
-.pp-header-select:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-
 .pp-vendor-select {
   max-width: min(18rem, 100%);
-  padding: .2rem .45rem;
-  background: var(--pp-overview);
   font-size: .75rem;
   letter-spacing: .04em;
 }
@@ -1494,11 +1133,6 @@ code {
 
 .pp-product-code {
   color: var(--muted);
-}
-
-.pp-product a {
-  color: var(--primary);
-  text-underline-offset: .2em;
 }
 
 .pp-errors {
@@ -1533,11 +1167,6 @@ code {
   max-height: 65vh;
   isolation: isolate;
   scrollbar-gutter: stable;
-}
-
-.pp-wrap:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
 }
 
 .pp-table {
@@ -1683,15 +1312,7 @@ code {
 }
 
 .pp-period-select {
-  box-sizing: border-box;
   min-width: 90px;
-  padding: .2rem .35rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  background: var(--surface);
-  font: inherit;
-  font-weight: 600;
 }
 
 .pp-everything-label {
@@ -1702,12 +1323,6 @@ code {
   font-size: .72rem;
   font-weight: 600;
   white-space: nowrap;
-}
-
-.pp-period-select:focus-visible,
-.pp-everything-label input:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
 }
 
 .pp-table thead .pp-week {
@@ -1796,6 +1411,7 @@ body.app-shell [hidden] {
   display: none !important;
 }
 
+/* Shared application controls and states. Page rules only add functional variants. */
 body.app-shell :where(button, input, select, textarea) {
   font: inherit;
 }
@@ -1822,7 +1438,7 @@ body.app-shell :where(button:disabled, input:disabled, select:disabled) {
   cursor: default;
 }
 
-body.app-shell :where(input[type="text"], input[type="search"], input[type="date"], input[type="number"], select, textarea) {
+body.app-shell :where(input[type="text"], input[type="search"], input[type="date"], input[type="month"], input[type="number"], select, textarea) {
   min-width: 0;
   max-width: 100%;
   min-height: 40px;
@@ -1871,6 +1487,7 @@ body.app-shell .danger-action:hover:not(:disabled) {
   background: var(--danger-hover);
 }
 
+/* Application navigation and account header. */
 body.app-shell .app-skip-link {
   position: fixed;
   z-index: 100;
@@ -2184,7 +1801,10 @@ body.app-shell .app-footer {
   font-size: 11px;
 }
 
+/* Shared toolbars, tables, and editing controls. */
 body.app-shell .page-actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
   gap: 8px 12px;
@@ -2215,15 +1835,6 @@ body.app-shell .page-actions :where(input[type="text"], input[type="search"], se
   margin-bottom: 0;
 }
 
-body.app-shell .task-filter-controls,
-body.app-shell .log-filter-controls,
-body.app-shell .ads-campaigns-filter-controls,
-body.app-shell .current-rates-filter-controls {
-  min-width: 0;
-  max-width: 100%;
-  gap: 8px;
-}
-
 body.app-shell .current-rates-actions,
 body.app-shell .task-page-actions,
 body.app-shell .ads-campaigns-actions {
@@ -2235,7 +1846,7 @@ body.app-shell .wrap {
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  border-color: var(--border);
+  border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--app-shadow);
@@ -2296,6 +1907,22 @@ body.app-shell .log-sort-button {
 body.app-shell .gmv-amount-button,
 body.app-shell .task-error-button {
   color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: .2em;
+}
+
+body.app-shell .gmv-amount-button {
+  font-variant-numeric: tabular-nums;
+}
+
+body.app-shell .task-error-button {
+  text-align: left;
+}
+
+body.app-shell .gmv-amount-button:hover,
+body.app-shell .task-error-button:hover {
+  color: var(--primary-hover);
+  background: var(--hover);
 }
 
 body.app-shell .row {
@@ -2304,17 +1931,21 @@ body.app-shell .row {
   min-width: 0;
 }
 
+/* Shared surfaces for charts, summaries, and history. */
 body.app-shell .card,
 body.app-shell .gmv-period,
-body.app-shell .pp-heading {
-  border-color: var(--border);
+body.app-shell .pp-heading,
+.overview-dashboard .overview-card,
+.task-history {
+  min-width: 0;
+  border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--app-shadow);
 }
 
-body.app-shell .card {
-  min-width: 0;
+body.app-shell .card,
+.overview-dashboard .overview-card {
   padding: 20px;
 }
 
@@ -2345,18 +1976,13 @@ body.app-shell .product-performance {
   margin-top: 0;
 }
 
-body.app-shell .product-form-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
-}
-
-body.app-shell dialog {
-  border-color: var(--border);
-  border-radius: 14px;
-  box-shadow: 0 24px 64px rgb(15 23 42 / 24%);
-}
-
-/* Spreadsheet pages use the frame's remaining height instead of the former menu's fixed offset. */
+/* Spreadsheet layouts fill the frame; their own wrappers handle scrolling. */
 @supports selector(body:has(#productsTable)) {
+  html:has(body.app-shell :is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) {
+    height: 100%;
+    overflow: hidden;
+  }
+
   body.app-shell:has(:is(#productsTable, #employeeDataTable, #categoryDataTable, #monthlyGmvTable)) {
     display: grid;
     height: 100dvh;
@@ -2574,11 +2200,11 @@ body.app-shell dialog {
     padding: 12px 16px;
   }
 
-  body.app-shell :where(button, input[type="text"], input[type="search"], input[type="date"], input[type="number"], select, textarea) {
+  body.app-shell :where(button, input[type="text"], input[type="search"], input[type="date"], input[type="month"], input[type="number"], select, textarea) {
     min-height: 44px;
   }
 
-  body.app-shell :where(input[type="text"], input[type="search"], input[type="date"], input[type="number"], select, textarea) {
+  body.app-shell :where(input[type="text"], input[type="search"], input[type="date"], input[type="month"], input[type="number"], select, textarea) {
     font-size: 16px;
   }
 
@@ -2867,24 +2493,8 @@ body.app-shell dialog {
 }
 
 .overview-dashboard .overview-month-field input {
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 40px;
   width: 170px;
-  max-width: 100%;
   margin: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text);
-  line-height: 1.35;
-}
-
-@media (max-width: 767px) {
-  .overview-dashboard .overview-month-field input {
-    min-height: 44px;
-  }
 }
 
 .overview-dashboard .overview-status {
@@ -2914,15 +2524,6 @@ body.app-shell dialog {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
-}
-
-.overview-dashboard .overview-card {
-  min-width: 0;
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--app-shadow);
 }
 
 .overview-dashboard .overview-card-title {
@@ -3114,12 +2715,7 @@ body.app-shell dialog {
 }
 
 .task-history {
-  min-width: 0;
   margin-top: 24px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--app-shadow);
 }
 
 .task-history > summary {
