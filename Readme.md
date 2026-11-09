@@ -329,7 +329,7 @@ Production defaults:
 - Public router forwarding: `443 -> Windows machine port 8443`
 - Required for automatic Let's Encrypt renewal: `80 -> Windows machine port 8080`
 
-The Windows scripts use win-acme for ACME account handling, certificate issuance, and scheduled renewal. The Java server participates by serving HTTP-01 challenge files from `ACME_CHALLENGE_WEBROOT` and by loading the generated PFX configured through `TLS_KEYSTORE_PATH` and `TLS_KEYSTORE_PASSWORD_FILE`.
+The Windows scripts use win-acme for ACME account handling, certificate issuance, and scheduled renewal. A dedicated listener started by the Java server serves only HTTP-01 challenge files from `ACME_CHALLENGE_WEBROOT` and by loading the generated PFX configured through `TLS_KEYSTORE_PATH` and `TLS_KEYSTORE_PASSWORD_FILE`.
 
 ### Installing win-acme (`wacs.exe`)
 
@@ -367,7 +367,7 @@ The setup script automatically looks for `wacs.exe` in `PATH`, `C:\Program Files
    - `$WinAcmeExecutable`, only if `wacs.exe` is not on `PATH` or in one of the common install locations
 5. Run PowerShell as Administrator and execute `scripts/setup-scheduled-task.ps1`.
 
-The setup script starts the Java scheduled task first, waits for `http://localhost:8080/health`, then asks win-acme to create `C:\Users\Oprita\Desktop\JavaServer\certs\server.sellfusion.ro.pfx`. win-acme also creates its own renewal task and runs `scripts/restart-java-task.ps1` after successful issuance or renewal so Jetty reloads the new PFX on process restart.
+The application requires an existing TLS keystore to start. For a first installation, provision a temporary PKCS#12 certificate at the configured certificate path and its matching password file, then set `$ForceLetsEncryptSetup = $true`. The setup script starts the Java scheduled task, waits for `https://localhost:8443/health`, then asks win-acme to create `C:\Users\Oprita\Desktop\JavaServer\certs\server.sellfusion.ro.pfx`. win-acme also creates its own renewal task and runs `scripts/restart-java-task.ps1` after successful issuance or renewal so Jetty reloads the new PFX on process restart.
 
 The scheduled task runs `C:\Users\Oprita\Desktop\JavaServer\app\scripts\run-java-app.ps1`, in the checkout that it updates. Restart the task after changing that script, so PowerShell loads its new contents.
 

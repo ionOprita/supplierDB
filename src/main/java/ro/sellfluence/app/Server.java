@@ -28,6 +28,7 @@ import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
 import ro.sellfluence.api.ProductPerformanceData.Period;
 import ro.sellfluence.api.WebAuthnServer;
+import ro.sellfluence.apphelper.ACME;
 import ro.sellfluence.apphelper.BackgroundJob;
 import ro.sellfluence.db.AdsReportPeriod;
 import ro.sellfluence.db.Brand;
@@ -104,11 +105,7 @@ public class Server {
     private static final String tlsKeystorePathConfigName = "TLS_KEYSTORE_PATH";
     private static final String tlsKeystorePasswordConfigName = "TLS_KEYSTORE_PASSWORD";
     private static final String tlsKeystorePasswordFileConfigName = "TLS_KEYSTORE_PASSWORD_FILE";
-    private static final String acmeChallengeWebRootConfigName = "ACME_CHALLENGE_WEBROOT";
-    private static final String publicOriginConfigName = "ORIGIN";
-    private static final String publicHttpsOriginConfigName = "PUBLIC_HTTPS_ORIGIN";
     private static final String logDirectoryConfigName = "LOG_DIRECTORY";
-    private static final String acmeChallengePrefix = "/.well-known/acme-challenge/";
     private static final ObjectMapper mapper = (new ObjectMapper());
     private static final AtomicBoolean serverShutdownRequested = new AtomicBoolean(false);
     private static final User unsafeUser = new User("unsafe-without-authentication", admin);
@@ -245,8 +242,8 @@ public class Server {
     ) {
     }
 
-    private static void configure(JavalinConfig config, int port, int securePort) {
-        configureSsl(config, port, securePort);
+    private static void configure(JavalinConfig config, int securePort) {
+        configureSsl(config, securePort);
         config.requestLogger.http((ctx, elapsedMs) -> {
             int status = ctx.statusCode();
             if (status >= 400) {
@@ -264,30 +261,19 @@ public class Server {
     private record TlsKeystoreConfig(Path path, String password) {
     }
 
-    private static void configureSsl(JavalinConfig config, int port, int securePort) {
-        TlsKeystoreConfig tlsKeystoreConfig = loadTlsKeystoreConfig();
-        SslPlugin sslPlugin = new SslPlugin(ssl -> {
-            if (tlsKeystoreConfig == null) {
-                logger.log(WARNING, "No TLS keystore found. HTTPS is disabled; HTTP remains available on port {0}.",
-                        port);
-                ssl.secure = false;
-            } else {
-                logger.log(INFO, "Using TLS keystore {0} on port {1}.",
-                        new Object[]{tlsKeystoreConfig.path(), securePort});
-                try {
-                    ssl.keystoreFromPath(tlsKeystoreConfig.path().toString(), tlsKeystoreConfig.password());
-                    ssl.securePort = securePort;
-                    ssl.secure = true;
-                } catch (RuntimeException e) {
-                    logger.log(WARNING, "Could not load TLS keystore " + tlsKeystoreConfig.path()
-                            + ". HTTPS is disabled; HTTP remains available on port " + port + ".", e);
-                    ssl.secure = false;
-                }
-            }
-            ssl.insecurePort = port;
-            ssl.insecure = true;
-        });
-        config.registerPlugin(sslPlugin);
+    private static void configureSsl(JavalinConfig config, int securePort) {
+        TlsKeystoreConfig keystore = loadTlsKeystoreConfig();
+        if (keystore == null) {
+            throw new IllegalStateException("A TLS keystore is required to start the server");
+        }
+        config.registerPlugin(new SslPlugin(ssl -> {
+            logger.log(INFO, "Using TLS keystore {0} on port {1}.",
+                    new Object[]{keystore.path(), securePort});
+            ssl.keystoreFromPath(keystore.path().toString(), keystore.password());
+            ssl.securePort = securePort;
+            ssl.secure = true;
+            ssl.insecure = false;
+        }));
     }
 
     private static TlsKeystoreConfig loadTlsKeystoreConfig() {
@@ -365,9 +351,6 @@ public class Server {
                                         API api,
                                         RelyingParty rp,
                                         BackgroundJob backgroundJob) {
-        configureAcmeChallenge(app);
-        configureHttpToHttpsRedirect(app);
-
         if (withoutAuthenticationAndTotalyUnsafe) {
             logger.log(WARNING, "withoutAuthenticationAndTotalyUnsafe=true. Authentication and role checks are disabled.");
             app.get("/", ctx -> ctx.redirect("/private/overview"));
@@ -489,11 +472,6 @@ public class Server {
         ctx.header("Cache-Control", "no-store")
                 .status(shutdownRequested ? 503 : 200)
                 .result(shutdownRequested ? "stopping" : "ok");
-    }
-
-    private static void configureAcmeChallenge(JavalinDefaultRoutingApi app) {
-        Path webRoot = acmeChallengeWebRoot();
-        app.get(acmeChallengePrefix + "{token}", ctx -> serveAcmeChallenge(ctx, webRoot));
     }
 
     private static void setTaskPaused(Context ctx, BackgroundJob backgroundJob, boolean paused) {
@@ -628,56 +606,6 @@ public class Server {
         ctx.header("X-Content-Type-Options", "nosniff");
     }
 
-    private static Path acmeChallengeWebRoot() {
-        return configuredPath(acmeChallengeWebRootConfigName)
-                .orElse(certsDir.resolve("acme-challenge-webroot"));
-    }
-
-    private static void serveAcmeChallenge(Context ctx, Path webRoot) throws IOException {
-        String token = ctx.pathParam("token");
-        if (!token.matches("[A-Za-z0-9_-]+")) {
-            ctx.status(404);
-            return;
-        }
-
-        Path challengeDirectory = webRoot.resolve(".well-known").resolve("acme-challenge").normalize();
-        Path challengeFile = challengeDirectory.resolve(token).normalize();
-        if (!challengeFile.startsWith(challengeDirectory) || !Files.isRegularFile(challengeFile)) {
-            ctx.status(404);
-            return;
-        }
-
-        ctx.contentType("text/plain").result(Files.readString(challengeFile, StandardCharsets.UTF_8));
-    }
-
-    private static void configureHttpToHttpsRedirect(JavalinDefaultRoutingApi app) {
-        app.before(ctx -> {
-            if (ctx.req().isSecure()) {
-                return;
-            }
-
-            String requestUri = ctx.req().getRequestURI();
-            if (requestUri.startsWith(acmeChallengePrefix) || "/health".equals(requestUri)) {
-                return;
-            }
-
-            String query = ctx.req().getQueryString();
-            String location = publicHttpsOrigin() + requestUri + (query == null ? "" : "?" + query);
-            ctx.status(308).header("Location", location).result("");
-        });
-    }
-
-    private static String publicHttpsOrigin() {
-        String origin = configValue(publicHttpsOriginConfigName);
-        if (origin == null) {
-            origin = configValue(publicOriginConfigName);
-        }
-        if (origin == null) {
-            origin = "https://localhost:8443";
-        }
-        return origin.endsWith("/") ? origin.substring(0, origin.length() - 1) : origin;
-    }
-
     private static final Logger logger = Logs.getFileLogger("Server", INFO, 10, 1_000_000);
 
     static void main(String[] args) throws Exception {
@@ -687,10 +615,7 @@ public class Server {
 
         API api = new API(mirrorDB);
 
-        String configNamePort = "PORT";
         String configNameSecurePort = "PORT_SECURE";
-        int port = Integer.parseInt(System.getProperty(configNamePort,
-                System.getenv().getOrDefault(configNamePort, arguments.getOption("port", "8080"))));
         int securePort = Integer.parseInt(System.getProperty(configNameSecurePort,
                 System.getenv().getOrDefault(configNameSecurePort, arguments.getOption("secport", "8443"))));
 
@@ -719,11 +644,18 @@ public class Server {
         var rp = WebAuthnServer.create(new MyCredentialRepo(mirrorDB));
 
         var app = Javalin.create(config -> {
-            configure(config, port, securePort);
+            configure(config, securePort);
             configureRoutes(config.routes, mirrorDB, api, rp, backgroundJob);
         });
 
         app.start();
+        Javalin acmeListener;
+        try {
+            acmeListener = ACME.startAcmeListener(arguments);
+        } catch (Exception e) {
+            app.stop();
+            throw e;
+        }
 
         // Graceful shutdown
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -731,6 +663,7 @@ public class Server {
             dispatcher.shutdown();
             backgroundJob.shutdown();
             awaitTermination(dispatcher, "background-job dispatcher");
+            acmeListener.stop();
             app.stop();
         }));
     }

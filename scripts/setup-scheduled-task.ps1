@@ -11,6 +11,7 @@ $EnableLetsEncrypt = $true
 $LetsEncryptHostName = "server.sellfusion.ro"
 $LetsEncryptEmail = "office@sellfusion.ro"
 $LocalHttpPort = 8080
+$LocalHttpsPort = 8443
 $LetsEncryptCertificateDirectory = "C:\Users\Oprita\Desktop\JavaServer\certs"
 $LetsEncryptChallengeWebRoot = "C:\Users\Oprita\Desktop\JavaServer\acme-challenge"
 $LetsEncryptCertificatePath = Join-Path $LetsEncryptCertificateDirectory "$LetsEncryptHostName.pfx"
@@ -108,7 +109,10 @@ function Resolve-WinAcmeExecutable {
 }
 
 function Wait-ApplicationHealth {
-    $url = "http://localhost:$LocalHttpPort/health"
+    $url = "https://localhost:$LocalHttpsPort/health"
+    # The production certificate is issued for the public host, not localhost.
+    $previousValidationCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
     $deadline = (Get-Date).AddSeconds($WaitForAppTimeoutSeconds)
 
     while ((Get-Date) -lt $deadline) {
@@ -116,6 +120,7 @@ function Wait-ApplicationHealth {
             $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
             if ($response.StatusCode -eq 200) {
                 Write-Host "Application health check is available at $url."
+                [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $previousValidationCallback
                 return
             }
         }
@@ -124,7 +129,8 @@ function Wait-ApplicationHealth {
         }
     }
 
-    throw "Application did not answer $url within $WaitForAppTimeoutSeconds seconds."
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $previousValidationCallback
+    throw "Application did not answer $url within $WaitForAppTimeoutSeconds seconds. A valid TLS keystore must be installed before starting the application."
 }
 
 function Invoke-LetsEncryptSetup {
