@@ -163,6 +163,12 @@ public class API {
         return ProfitCalculatorOptions.create(mirrorDB.readVendorGroupCategories());
     }
 
+    public ProfitCalculatorCategory.Response getProfitCalculatorCategory(String vendorGroup, String category)
+            throws SQLException {
+        return ProfitCalculatorCategory.create(vendorGroup, category,
+                mirrorDB.readProfitCalculatorProducts(vendorGroup, category));
+    }
+
     /** Retained compatibility endpoint for the most recent rolling observation. */
     public Optional<ProductVisits> getProductVisits(UUID vendorId, String productCode)
             throws SQLException {

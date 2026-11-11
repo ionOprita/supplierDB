@@ -68,7 +68,7 @@ public final class ProductPerformanceOptions {
         return product.name() == null || product.name().isBlank() ? product.productCode() : product.name();
     }
 
-    private static int compareProductNames(String first, String second) {
+    static int compareProductNames(String first, String second) {
         boolean firstSupported = supportsProductNameOrder(first);
         boolean secondSupported = supportsProductNameOrder(second);
         if (firstSupported != secondSupported) return firstSupported ? -1 : 1;

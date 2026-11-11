@@ -1855,7 +1855,121 @@ body.app-shell .profit-calculator-filters select {
 }
 
 body.app-shell .profit-calculator-filters label:has(#profitCategorySelect) {
-  flex: 0 1 360px;
+  flex: 0 1 auto;
+  width: 360px;
+}
+
+/* Spreadsheet-shaped profit calculator: products across, metrics down. */
+body.app-shell .profit-category-summary {
+  width: min(100%, 38rem);
+  min-width: 0;
+  margin: 0 0 16px;
+  border-collapse: collapse;
+}
+
+body.app-shell .profit-category-summary th {
+  width: 65%;
+  text-align: left;
+  background: var(--surface-alt);
+}
+
+body.app-shell .profit-category-summary td {
+  background: var(--surface);
+}
+
+body.app-shell .profit-category-wrap {
+  max-height: 72vh;
+  overflow: auto;
+  margin-top: 16px;
+}
+
+body.app-shell .profit-category-table {
+  --profit-label-width: clamp(12rem, 34vw, 28rem);
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+body.app-shell .profit-category-table caption {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--surface-alt);
+}
+
+body.app-shell .profit-category-table :where(th, td) {
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+body.app-shell .profit-category-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+body.app-shell .profit-category-table thead th {
+  position: static;
+  top: auto;
+}
+
+body.app-shell .profit-category-table .profit-category-label {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: var(--profit-label-width);
+  min-width: var(--profit-label-width);
+  max-width: var(--profit-label-width);
+  text-align: left;
+  font-weight: 500;
+  background: var(--surface-alt);
+  box-shadow: 1px 0 var(--border);
+}
+
+body.app-shell .profit-category-table thead .profit-category-label {
+  z-index: 4;
+  font-weight: 650;
+}
+
+body.app-shell .profit-category-table .profit-category-value {
+  width: 14rem;
+  min-width: 14rem;
+  max-width: 14rem;
+  text-align: center;
+}
+
+body.app-shell .profit-category-table thead .profit-category-value {
+  vertical-align: middle;
+  background: var(--surface-alt);
+}
+
+body.app-shell .profit-category-table .profit-category-section {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--primary);
+  font-weight: 750;
+}
+
+body.app-shell .profit-category-table .profit-category-note .profit-category-label {
+  font-style: italic;
+  color: var(--muted);
+}
+
+body.app-shell .profit-category-table .profit-category-spacer :where(th, td) {
+  height: 12px;
+  padding: 0;
+  background: var(--bg);
+}
+
+body.app-shell .profit-category-table input[type="checkbox"]:disabled {
+  opacity: 1;
+  accent-color: var(--primary);
 }
 
 body.app-shell .current-rates-actions,

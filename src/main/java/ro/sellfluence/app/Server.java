@@ -956,6 +956,21 @@ public class Server {
                 ctx.status(500).json(Map.of("error", "Database error"));
             }
         });
+        app.get("/app/profitCalculatorCategory", ctx -> {
+            final ProfitCalculatorCategoryRequest request;
+            try {
+                request = parseProfitCalculatorCategoryRequest(ctx.queryParam("vendorGroup"), ctx.queryParam("category"));
+            } catch (IllegalArgumentException e) {
+                ctx.status(400).json(Map.of("error", e.getMessage()));
+                return;
+            }
+            try {
+                ctx.json(api.getProfitCalculatorCategory(request.vendorGroup(), request.category()));
+            } catch (SQLException e) {
+                logger.log(SEVERE, "Failed to load profit calculator products.", e);
+                ctx.status(500).json(Map.of("error", "Database error"));
+            }
+        });
         app.get("/app/productPerformanceOptions", ctx -> {
             try {
                 ctx.json(api.getProductPerformanceOptions());
@@ -2702,6 +2717,19 @@ public class Server {
             throw new IllegalArgumentException("End date must be on or after start date.");
         }
         return new GMVPeriodRequest(productCode, start, end);
+    }
+
+    record ProfitCalculatorCategoryRequest(String vendorGroup, String category) {
+    }
+
+    static ProfitCalculatorCategoryRequest parseProfitCalculatorCategoryRequest(String vendorGroup, String category) {
+        if (vendorGroup == null || vendorGroup.isBlank()) {
+            throw new IllegalArgumentException("Invalid or missing vendorGroup");
+        }
+        if (category == null || category.isBlank()) {
+            throw new IllegalArgumentException("Invalid or missing category");
+        }
+        return new ProfitCalculatorCategoryRequest(vendorGroup.strip(), category.strip());
     }
 
     record ProductPerformanceRequest(UUID vendorId, String productCode, Period period) {
