@@ -814,6 +814,27 @@ public class EmagMirrorDB implements ProductPerformanceSource {
         return database.readTX(ProductTable::getProducts);
     }
 
+    public record VendorGroupCategory(String vendorGroup, String category) {
+    }
+
+    /** Read selector metadata without loading complete product records or dropping empty vendor groups. */
+    public List<VendorGroupCategory> readVendorGroupCategories() throws SQLException {
+        return database.readTX(db -> {
+            var rows = new ArrayList<VendorGroupCategory>();
+            try (var statement = db.prepareStatement("""
+                    SELECT DISTINCT v.vendor_group, p.category
+                    FROM vendor v
+                    LEFT JOIN product p ON p.vendor = v.id
+                    """);
+                 var result = statement.executeQuery()) {
+                while (result.next()) {
+                    rows.add(new VendorGroupCategory(result.getString("vendor_group"), result.getString("category")));
+                }
+            }
+            return rows;
+        });
+    }
+
     public Optional<ProductInfo> readProduct(String productCode) throws SQLException {
         return database.readTX(db -> ProductTable.getProducts(db).stream()
                 .filter(product -> productCode.equals(product.productCode()))

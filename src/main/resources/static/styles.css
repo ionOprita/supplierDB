@@ -1835,6 +1835,29 @@ body.app-shell .page-actions :where(input[type="text"], input[type="search"], se
   margin-bottom: 0;
 }
 
+body.app-shell .profit-calculator-filters {
+  align-items: flex-end;
+}
+
+body.app-shell .profit-calculator-filters label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--muted);
+}
+
+body.app-shell .profit-calculator-filters select {
+  width: 100%;
+  min-width: min(180px, 100%);
+  max-width: 100%;
+  margin: 0;
+}
+
+body.app-shell .profit-calculator-filters label:has(#profitCategorySelect) {
+  flex: 0 1 360px;
+}
+
 body.app-shell .current-rates-actions,
 body.app-shell .task-page-actions,
 body.app-shell .ads-campaigns-actions {

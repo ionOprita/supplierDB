@@ -948,6 +948,14 @@ public class Server {
         app.get("/app/gmvDashboard", ctx -> serveGMVDashboard(ctx, api));
         app.get("/app/gmvForPeriod", ctx -> computeGMVForPeriod(ctx, api));
         app.get("/app/productVisits", ctx -> serveProductVisits(ctx, api));
+        app.get("/app/profitCalculatorOptions", ctx -> {
+            try {
+                ctx.json(api.getProfitCalculatorOptions());
+            } catch (SQLException e) {
+                logger.log(SEVERE, "Failed to load profit calculator options.", e);
+                ctx.status(500).json(Map.of("error", "Database error"));
+            }
+        });
         app.get("/app/productPerformanceOptions", ctx -> {
             try {
                 ctx.json(api.getProductPerformanceOptions());
@@ -2889,6 +2897,8 @@ public class Server {
     static String toPageTitle(String page) {
         if ("overview".equals(page)) return "Sales Dashboard";
         if ("gmv-dashboard".equals(page)) return "GMV Dashboard";
+        if ("profit-exposure".equals(page)) return "Calc. Expunere & Profit";
+        if ("profit-by-category".equals(page)) return "By Category";
         if ("db-explorer".equals(page)) {
             return "DB Explorer";
         }

@@ -76,6 +76,13 @@
                     <li><a class="app-nav-link" href="/private/product-performance">Product Performance</a></li>
                 </ul>
             </section>
+            <section class="app-nav-group">
+                <h2 class="app-nav-heading">Profit calculator</h2>
+                <ul class="app-nav-list">
+                    <li><a class="app-nav-link" href="/private/profit-exposure">Calc. Expunere &amp; Profit</a></li>
+                    <li><a class="app-nav-link" href="/private/profit-by-category">By Category</a></li>
+                </ul>
+            </section>
             <details class="app-nav-group" data-nav-group="advertising">
                 <summary class="app-nav-heading">
                     <span>Advertising</span>

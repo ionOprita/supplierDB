@@ -159,6 +159,10 @@ public class API {
         return ProductPerformanceOptions.create(mirrorDB.getAllVendors(), mirrorDB.readProducts());
     }
 
+    public ProfitCalculatorOptions.Response getProfitCalculatorOptions() throws SQLException {
+        return ProfitCalculatorOptions.create(mirrorDB.readVendorGroupCategories());
+    }
+
     /** Retained compatibility endpoint for the most recent rolling observation. */
     public Optional<ProductVisits> getProductVisits(UUID vendorId, String productCode)
             throws SQLException {
