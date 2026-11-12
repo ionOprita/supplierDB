@@ -237,7 +237,7 @@ class AdsCampaignTableIntegrationTest {
         var product = new AdsTargetedProduct(505, name + " product", BigDecimal.TEN, BigDecimal.ONE,
                 "shared-pnk", "category", 606, "brand", 707, ADSET_ID, clicks, clicks * 100,
                 BigDecimal.ONE, BigDecimal.TWO, BigDecimal.valueOf(clicks * 2L), BigDecimal.valueOf(20),
-                BigDecimal.valueOf(clicks * 10L), clicks, clicks, null, BigDecimal.valueOf(5), BigDecimal.valueOf(100));
+                BigDecimal.valueOf(clicks * 10L), clicks, clicks, null, BigDecimal.valueOf(5), BigDecimal.valueOf(100), "", "");
         return new AdsCampaignSnapshot(date, campaign,
                 List.of(new AdSet(adset, List.of(phrase), List.of(product), List.of(keyword))));
     }
