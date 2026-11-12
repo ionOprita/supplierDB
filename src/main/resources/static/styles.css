@@ -1,4 +1,4 @@
-/* Theme tokens shared by application and authentication pages. */
+/* Common styles for all pages */
 :root {
   color-scheme: light;
   --bg: #f4f6fb;
@@ -1055,6 +1055,47 @@ code {
   margin: 0 0 .75rem;
   font-size: 1.05rem;
   overflow-wrap: anywhere;
+}
+
+.task-error-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.thread-dump-filter-field {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.thread-dump-filter-field input {
+  width: min(100%, 320px);
+  min-width: 0;
+}
+
+.thread-dump-content {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 220px;
+  max-height: 70vh;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  white-space: pre;
+  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.thread-dump-content:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .task-error-content {

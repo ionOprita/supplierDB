@@ -140,6 +140,7 @@
                         <li><a class="app-nav-link" href="/admin/users">Administrate Users</a></li>
                         <li><a class="app-nav-link" href="/admin/db-explorer/products">DB Explorer</a></li>
                         <li><a class="app-nav-link" href="/admin/logs">Server Logs</a></li>
+                        <li><a class="app-nav-link" href="/admin/thread-dump">Thread Dump</a></li>
                     @endif
                 </ul>
             </details>
