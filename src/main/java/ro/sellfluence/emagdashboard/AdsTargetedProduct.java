@@ -24,6 +24,8 @@ public record AdsTargetedProduct(
         Integer salesCount,
         String imageUrl,
         BigDecimal returnOnAdvertisingSpend,
-        BigDecimal conversionRate
+        BigDecimal conversionRate,
+        String partNumber,  //TODO: Do we need to store it in the database?
+        String productUrl  //TODO: Do we need to store it in the database?
 ) {
 }
