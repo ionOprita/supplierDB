@@ -29,6 +29,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -39,6 +41,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -73,6 +78,8 @@ public class EmagApi {
     private static final int MAX_REQUEST_RETRIES = 4;
     private static final long INITIAL_RETRY_DELAY_MILLISECONDS = 10_000;
     private static final long PRODUCT_OFFER_PAGE_DELAY_MILLISECONDS = 350;
+    private static final Duration CONNECTION_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(180);
 
     public static final String emagRO = "https://marketplace-api.emag.ro";
 
@@ -88,6 +95,7 @@ public class EmagApi {
     private final HttpClient httpClient;
     private final Sleeper sleeper;
     private final URI productOfferReadUri;
+    private final Duration responseTimeout;
 
     @FunctionalInterface
     interface Sleeper {
@@ -200,13 +208,46 @@ public class EmagApi {
     }
 
     EmagApi(UserPassword emagCredentials, Sleeper sleeper, URI productOfferReadUri) {
+        this(emagCredentials, sleeper, productOfferReadUri, RESPONSE_TIMEOUT);
+    }
+
+    EmagApi(UserPassword emagCredentials, Sleeper sleeper, URI productOfferReadUri, Duration responseTimeout) {
         Objects.requireNonNull(emagCredentials, "eMAG credentials are required");
         alias = emagCredentials.getAlias();
         emagUser = emagCredentials.getUsername();
         credentials = Base64.getEncoder().encodeToString((emagCredentials.getUsername() + ":" + emagCredentials.getPassword()).getBytes());
-        httpClient = HttpClient.newHttpClient();
+        httpClient = HttpClient.newBuilder().connectTimeout(CONNECTION_TIMEOUT).build();
         this.sleeper = sleeper;
         this.productOfferReadUri = Objects.requireNonNull(productOfferReadUri);
+        this.responseTimeout = Objects.requireNonNull(responseTimeout);
+    }
+
+    private HttpResponse<String> sendRequest(HttpRequest request) throws IOException, InterruptedException {
+        var response = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+        try {
+            // On Java 25 the request timeout ends at the headers; also bound the complete body download.
+            return response.get(responseTimeout.toNanos(), TimeUnit.NANOSECONDS);
+        } catch (TimeoutException e) {
+            response.cancel(true);
+            var timeout = new HttpTimeoutException("eMAG request timed out after %s: %s".formatted(responseTimeout, request.uri()));
+            timeout.initCause(e);
+            throw timeout;
+        } catch (InterruptedException e) {
+            response.cancel(true);
+            throw e;
+        } catch (ExecutionException e) {
+            var cause = e.getCause();
+            if (cause instanceof IOException ioException) {
+                throw ioException;
+            }
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new IOException("eMAG request failed", cause);
+        }
     }
 
     /**
@@ -233,6 +274,7 @@ public class EmagApi {
         requestBody.put("itemsPerPage", itemsPerPage);
         var json = gson.toJson(requestBody);
         var request = HttpRequest.newBuilder(productOfferReadUri)
+                .timeout(responseTimeout)
                 .header("Authorization", "Basic " + credentials)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json))
@@ -242,7 +284,7 @@ public class EmagApi {
             communicationLogger.log(INFO, () -> "Sent product_offer/read " + json);
             HttpResponse<String> response;
             try {
-                response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                response = sendRequest(request);
             } catch (IOException e) {
                 if (attempt == MAX_REQUEST_RETRIES) {
                     throw new IOException("Product-offer page %d failed after %d attempts".formatted(currentPage, attempt + 1), e);
@@ -377,10 +419,11 @@ public class EmagApi {
     public String countOrderRequestRaw(String requestBody) throws IOException, InterruptedException {
         var httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(countOrders))
+                .timeout(responseTimeout)
                 .header("Authorization", "Basic " + credentials)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody)).build();
-        var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+        var httpResponse = sendRequest(httpRequest);
         checkAuthenticationError(httpResponse);
         int statusCode = httpResponse.statusCode();
         communicationLogger.log(FINE, "Status code = " + statusCode);
@@ -419,12 +462,13 @@ public class EmagApi {
             jsonLogger.log(FINE, "JSON = " + jsonAsString);
             var httpRequestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
+                    .timeout(responseTimeout)
                     .header("Authorization", "Basic " + credentials)
                     .header("Content-Type", "application/json");
             var httpRequest = post ? httpRequestBuilder.POST(HttpRequest.BodyPublishers.ofString(jsonAsString)).build() : httpRequestBuilder.GET().build();
             communicationLogger.log(INFO, () -> "Sent " + jsonAsString);
             try {
-                var httpResponse = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+                var httpResponse = sendRequest(httpRequest);
                 checkAuthenticationError(httpResponse);
                 int statusCode = httpResponse.statusCode();
                 communicationLogger.log(FINE, "Status code = " + statusCode);
