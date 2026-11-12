@@ -48,6 +48,7 @@ class JteTemplateEngineTest {
             org.junit.jupiter.api.Assertions.assertEquals(authorized, html.contains("id=\"appSidebar\""));
             org.junit.jupiter.api.Assertions.assertEquals(authorized, html.contains("id=\"appNavToggle\""));
             org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("href=\"/admin/users\""));
+            org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("href=\"/admin/thread-dump\""));
             org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("id=\"serverStopButton\""));
             org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("id=\"serverStopDialog\""));
             for (var group : List.of("advertising", "business-data", "orders-returns", "return-analysis", "system")) {

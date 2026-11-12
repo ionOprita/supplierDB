@@ -470,6 +470,7 @@ public class Server {
                 applicationLogFiles,
                 true
         ));
+        configureThreadDumpRoutes(app);
         app.get("/admin/{page}", ctx -> renderPage(ctx, mirrorDB, ctx.pathParam("page")));
         app.post("/admin/users/{userId}/role", ctx -> changeUserRole(ctx, mirrorDB));
         app.post("/admin/users/{userId}/delete", ctx -> deleteUser(ctx, mirrorDB));
@@ -489,6 +490,37 @@ public class Server {
         ctx.header("Cache-Control", "no-store")
                 .status(shutdownRequested ? 503 : 200)
                 .result(shutdownRequested ? "stopping" : "ok");
+    }
+
+    static void configureThreadDumpRoutes(JavalinDefaultRoutingApi app) {
+        app.get("/admin/thread-dump", Server::renderThreadDumpPage);
+        app.get("/admin/thread-dump/snapshot", Server::serveThreadDump);
+    }
+
+    private static void renderThreadDumpPage(Context ctx) {
+        setPrivateFileResponseHeaders(ctx);
+        var currentUser = requireAdmin(ctx);
+        if (currentUser == null) {
+            return;
+        }
+        ctx.render("thread-dump.jte", Map.of(
+                "userName", currentUser.username(),
+                "userRole", currentUser.role().name(),
+                "pageTitle", "Thread Dump"
+        ));
+    }
+
+    private static void serveThreadDump(Context ctx) {
+        setPrivateFileResponseHeaders(ctx);
+        if (requireAdmin(ctx) == null) {
+            return;
+        }
+        try {
+            ctx.json(ThreadDump.capture());
+        } catch (RuntimeException e) {
+            logger.log(WARNING, "Failed to capture a thread dump.", e);
+            ctx.status(500).result("Failed to capture the thread dump. Please try again.");
+        }
     }
 
     private static void configureAcmeChallenge(JavalinDefaultRoutingApi app) {
@@ -2563,7 +2595,8 @@ public class Server {
         String username = currentUser.username();
         PassKey.Role role = currentUser.role();
 
-        boolean adminOnlyPage = "users".equals(page) || "db-explorer".equals(page) || "logs".equals(page);
+        boolean adminOnlyPage = "users".equals(page) || "db-explorer".equals(page)
+                || "logs".equals(page) || "thread-dump".equals(page);
         boolean isAdminArea = ctx.path().startsWith("/admin/");
         if (adminOnlyPage && (role != admin || !isAdminArea)) {
             ctx.status(FORBIDDEN);
