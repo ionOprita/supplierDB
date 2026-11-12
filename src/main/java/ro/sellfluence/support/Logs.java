@@ -46,7 +46,7 @@ public class Logs {
                 output = ("%s %s %s (%s.%s)%n").formatted(
                         isoLikeLocalDateTimeWithoutFractionalSeconds.format(record.getInstant().atZone(ZoneId.systemDefault())),
                         emoji(record.getLevel()),
-                        record.getMessage(),
+                        formatMessage(record),
                         record.getSourceClassName(),
                         record.getSourceMethodName()
                 );
@@ -54,7 +54,7 @@ public class Logs {
                 output = ("%s %s %s (%s.%s)%n%s%n").formatted(
                         isoLikeLocalDateTimeWithoutFractionalSeconds.format(record.getInstant().atZone(ZoneId.systemDefault())),
                         emoji(record.getLevel()),
-                        record.getMessage(),
+                        formatMessage(record),
                         record.getSourceClassName(),
                         record.getSourceMethodName(),
                         record.getThrown()
