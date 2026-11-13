@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -40,7 +41,8 @@ class ProfitCalculatorTableIntegrationTest {
                 CREATE TABLE product (
                     product_code TEXT PRIMARY KEY, name TEXT, emag_pnk TEXT,
                     vendor UUID REFERENCES vendor(id), category TEXT,
-                    retracted BOOLEAN NOT NULL, continue_to_sell BOOLEAN NOT NULL
+                    retracted BOOLEAN NOT NULL, continue_to_sell BOOLEAN NOT NULL,
+                    emag_sale_price_ron NUMERIC, income_profit_tax TEXT, vat_payer BOOLEAN
                 );
                 """);
     }
@@ -79,6 +81,48 @@ class ProfitCalculatorTableIntegrationTest {
         assertTrue(ProfitCalculatorTable.getCategoryProducts(db, "Z", "Trimmers").isEmpty());
     }
 
+    @Test
+    void readsNullableReferenceValuesAndPreservesZeroPriceAndFalseVatStatus() throws SQLException {
+        var vendor = addVendor("S");
+        addProduct("reference", "S. 1 - Reference", "PNK1", vendor, "Trimmers", false, true);
+        addProduct("zero", "S. 2 - Zero", "PNK2", vendor, "Trimmers", false, true);
+        addProduct("missing", "S. 3 - Missing", "PNK3", vendor, "Trimmers", false, true);
+        setReferenceValues("reference", new BigDecimal("169.99"), "Profit", true);
+        setReferenceValues("zero", BigDecimal.ZERO, "Venit", false);
+
+        var products = ProfitCalculatorTable.getCategoryProducts(db, "S", "Trimmers");
+        var reference = products.stream().filter(product -> product.productCode().equals("reference"))
+                .findFirst().orElseThrow();
+        var zero = products.stream().filter(product -> product.productCode().equals("zero"))
+                .findFirst().orElseThrow();
+        var missing = products.stream().filter(product -> product.productCode().equals("missing"))
+                .findFirst().orElseThrow();
+
+        assertEquals(0, new BigDecimal("169.99").compareTo(reference.emagSalePriceRon()));
+        assertEquals("Profit", reference.incomeProfitTax());
+        assertEquals(Boolean.TRUE, reference.vatPayer());
+        assertEquals(0, BigDecimal.ZERO.compareTo(zero.emagSalePriceRon()));
+        assertEquals("Venit", zero.incomeProfitTax());
+        assertEquals(Boolean.FALSE, zero.vatPayer());
+        assertNull(missing.emagSalePriceRon());
+        assertNull(missing.incomeProfitTax());
+        assertNull(missing.vatPayer());
+    }
+
+    private void setReferenceValues(String code, BigDecimal price, String taxRegime, Boolean vatPayer)
+            throws SQLException {
+        try (var statement = db.prepareStatement("""
+                UPDATE product SET emag_sale_price_ron = ?, income_profit_tax = ?, vat_payer = ?
+                WHERE product_code = ?
+                """)) {
+            statement.setBigDecimal(1, price);
+            statement.setString(2, taxRegime);
+            statement.setObject(3, vatPayer);
+            statement.setString(4, code);
+            statement.executeUpdate();
+        }
+    }
+
     private UUID addVendor(String group) throws SQLException {
         var id = UUID.randomUUID();
         try (var statement = db.prepareStatement("INSERT INTO vendor (id, vendor_group) VALUES (?, ?)")) {
@@ -91,7 +135,10 @@ class ProfitCalculatorTableIntegrationTest {
 
     private void addProduct(String code, String name, String pnk, UUID vendor, String category,
                             boolean retracted, boolean continueToSell) throws SQLException {
-        try (var statement = db.prepareStatement("INSERT INTO product VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+        try (var statement = db.prepareStatement("""
+                INSERT INTO product (product_code, name, emag_pnk, vendor, category, retracted, continue_to_sell)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """)) {
             statement.setString(1, code);
             statement.setString(2, name);
             statement.setString(3, pnk);

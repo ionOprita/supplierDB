@@ -44,6 +44,8 @@ class Element {
 
 const product = (code, name = code, retracted = false) => ({productCode: code, name, pnk: `PNK-${code}`, retracted});
 const products = [product('first', 'S. 2 - Trimmer'), product('second', 'S. 10 - Trimmer', true)];
+const metricCell = (page, sourceRow, productIndex = 0) => page.body.children
+  .find(row => Number(row.dataset.sourceRow) === sourceRow).children[productIndex + 1];
 
 function deferred() {
   let resolve;
@@ -212,6 +214,64 @@ test('empty product results preserve labels and remove all product columns', asy
   assert.match(page.body.textContent, /Total Venit\/Unitate/);
   assert.match(page.status.textContent, /no products/i);
   assert.equal(page.wrap.attributes.get('aria-busy'), 'false');
+});
+
+test('the three confirmed fields display prices, literal tax regimes and disabled VAT states only', async t => {
+  const page = await openPage(t, {categoryRequest: async () => ({products: [
+    {...product('first'), emagSalePriceRon: 1234.5, incomeProfitTax: 'Profit', vatPayer: true},
+    {...product('second'), emagSalePriceRon: 0, incomeProfitTax: 'Venit', vatPayer: false},
+    {...product('literal'), emagSalePriceRon: 9.99, incomeProfitTax: '<b>Profit</b>', vatPayer: null}
+  ]})});
+  assert.equal(metricCell(page, 48).textContent, '1,234.50');
+  assert.equal(metricCell(page, 48, 1).textContent, '0.00');
+  assert.equal(metricCell(page, 71).textContent, 'Profit');
+  assert.equal(metricCell(page, 71, 1).textContent, 'Venit');
+  assert.equal(metricCell(page, 71, 2).textContent, '<b>Profit</b>');
+  assert.equal(metricCell(page, 71, 2).children.length, 0);
+  for (const [index, checked] of [true, false].entries()) {
+    const input = metricCell(page, 72, index).children[0];
+    assert.equal(input.type, 'checkbox');
+    assert.equal(input.checked, checked);
+    assert.equal(input.disabled, true);
+  }
+  assert.equal(metricCell(page, 72, 2).children.length, 0);
+  assert.ok(page.body.children.filter(row => ![48, 71, 72].includes(Number(row.dataset.sourceRow)))
+    .every(row => row.children.slice(1).every(cell => !cell.textContent && !cell.children.length)));
+  assert.ok(page.summary.children.every(row => !row.children[1].textContent));
+});
+
+test('missing source values and ineligible products keep all three metric cells empty', async t => {
+  const populated = {emagSalePriceRon: 169.99, incomeProfitTax: 'Profit', vatPayer: true};
+  const page = await openPage(t, {categoryRequest: async () => ({products: [
+    {...product('nulls'), emagSalePriceRon: null, incomeProfitTax: null, vatPayer: null},
+    product('missing-fields'),
+    {...product('retracted', 'Retracted product', true), ...populated},
+    {...product('missing-pnk'), ...populated, pnk: null},
+    {...product('blank-pnk'), ...populated, pnk: ' \t\n'}
+  ]})});
+  for (const sourceRow of [48, 71, 72]) {
+    for (let index = 0; index < 5; index++) {
+      const value = metricCell(page, sourceRow, index);
+      assert.equal(value.textContent, '');
+      assert.equal(value.children.length, 0);
+    }
+  }
+});
+
+test('category changes replace the three displayed fields without retaining old values', async t => {
+  const page = await openPage(t, {categoryRequest: url => ({products: [
+    url.searchParams.get('category') === 'Hair trimmers'
+      ? {...product('old'), emagSalePriceRon: 169.99, incomeProfitTax: 'Profit', vatPayer: true}
+      : {...product('new'), emagSalePriceRon: 89, incomeProfitTax: 'Venit', vatPayer: false}
+  ]})});
+  assert.equal(metricCell(page, 48).textContent, '169.99');
+  page.category.value = 'Personal care';
+  page.category.dispatch('change');
+  assert.ok(page.body.children.every(row => row.children.length === 1));
+  await setImmediate();
+  assert.equal(metricCell(page, 48).textContent, '89.00');
+  assert.equal(metricCell(page, 71).textContent, 'Venit');
+  assert.equal(metricCell(page, 72).children[0].checked, false);
 });
 
 test('a delayed category response cannot overwrite the latest selected category', async t => {

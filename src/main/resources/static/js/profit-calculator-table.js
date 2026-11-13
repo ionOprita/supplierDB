@@ -1,5 +1,7 @@
 import {summaryRows, productHeaderRows, categoryRows} from './profit-calculator-layout.js';
 
+const priceFormat = new Intl.NumberFormat('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
 function cell(tag, className, text) {
   const element = document.createElement(tag);
   element.className = className;
@@ -7,7 +9,29 @@ function cell(tag, className, text) {
   return element;
 }
 
-/** Only product identity and retracted state are populated in this first version. */
+function checkbox(checked, label) {
+  const element = document.createElement('input');
+  element.type = 'checkbox';
+  element.checked = checked;
+  element.disabled = true;
+  element.setAttribute('aria-label', label);
+  return element;
+}
+
+function populateMetric(value, definition, product) {
+  if (product.retracted === true || typeof product.pnk !== 'string' || !product.pnk.trim()) return;
+  if (definition.sourceRow === 48 && typeof product.emagSalePriceRon === 'number'
+      && Number.isFinite(product.emagSalePriceRon)) {
+    value.textContent = priceFormat.format(product.emagSalePriceRon);
+  } else if (definition.sourceRow === 71 && product.incomeProfitTax != null) {
+    value.textContent = product.incomeProfitTax;
+  } else if (definition.sourceRow === 72 && typeof product.vatPayer === 'boolean') {
+    value.appendChild(checkbox(product.vatPayer,
+      `${definition.label} ${product.name || product.pnk || product.productCode}`));
+  }
+}
+
+/** Populate identity and the confirmed database-backed fields; other metrics remain blank. */
 export function renderCategoryTable(products = []) {
   const summary = document.getElementById('profitCategorySummaryBody');
   const head = document.getElementById('profitCategoryHead');
@@ -42,12 +66,8 @@ export function renderCategoryTable(products = []) {
       } else if (definition.sourceRow === 8) {
         value.textContent = product.pnk ?? '';
       } else if (definition.sourceRow === 9) {
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = product.retracted === true;
-        checkbox.disabled = true;
-        checkbox.setAttribute('aria-label', `${definition.label} ${product.name || product.pnk || product.productCode}`);
-        value.appendChild(checkbox);
+        value.appendChild(checkbox(product.retracted === true,
+          `${definition.label} ${product.name || product.pnk || product.productCode}`));
       }
       row.appendChild(value);
     }
@@ -69,6 +89,7 @@ export function renderCategoryTable(products = []) {
     for (const product of products) {
       const value = cell('td', 'profit-category-value');
       value.dataset.productCode = product.productCode;
+      populateMetric(value, definition, product);
       row.appendChild(value);
     }
     body.appendChild(row);
