@@ -314,6 +314,9 @@ class ProductPerformanceHistoryTableIntegrationTest {
     void migrationIsIdempotentAndRefusesUnrelatedDatabaseVersions() throws Exception {
         assertFalse(ProductPerformanceHistoryTable.prepareSchema(db));
         assertEquals(1, count("SELECT COUNT(*) FROM version_info WHERE version = 49"));
+        execute("INSERT INTO version_info VALUES (50, CURRENT_TIMESTAMP)");
+        assertFalse(ProductPerformanceHistoryTable.prepareSchema(db));
+        assertEquals(50, count("SELECT MAX(version) FROM version_info"));
         execute("DELETE FROM version_info");
         execute("INSERT INTO version_info VALUES (47, CURRENT_TIMESTAMP)");
         assertThrows(SQLException.class, () -> ProductPerformanceHistoryTable.prepareSchema(db));

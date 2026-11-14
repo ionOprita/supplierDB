@@ -27,6 +27,8 @@ class ProfitCalculatorTemplateTest {
             assertEquals(page.equals("profit-by-category"), html.contains("id=\"profitCategorySelect\""));
             assertEquals(page.equals("profit-by-category"), html.contains("id=\"profitCategoryTable\""));
             assertEquals(page.equals("profit-by-category"), html.contains("id=\"profitCategorySummaryBody\""));
+            assertEquals(page.equals("profit-by-category"), html.contains("id=\"profitOverrideDialog\""));
+            assertEquals(page.equals("profit-by-category"), html.contains("id=\"profitOverrideReview\""));
             assertTrue(html.contains("src=\"/js/profit-calculator.js\""));
             assertFalse(html.contains("2. Trim."));
         }

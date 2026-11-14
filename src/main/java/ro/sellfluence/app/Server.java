@@ -27,6 +27,7 @@ import org.jspecify.annotations.Nullable;
 import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
 import ro.sellfluence.api.ProductPerformanceData.Period;
+import ro.sellfluence.api.ProfitCalculatorOverrides;
 import ro.sellfluence.api.WebAuthnServer;
 import ro.sellfluence.apphelper.ACME;
 import ro.sellfluence.apphelper.BackgroundJob;
@@ -41,6 +42,7 @@ import ro.sellfluence.db.GMVDashboardTable.UnsupportedCurrencyException;
 import ro.sellfluence.db.PassKey;
 import ro.sellfluence.db.PassKey.User;
 import ro.sellfluence.db.ProductTable.ProductInfo;
+import ro.sellfluence.db.ProfitCalculatorTable.OverrideConflictException;
 import ro.sellfluence.db.Vendor;
 import ro.sellfluence.support.Arguments;
 import ro.sellfluence.support.Logs;
@@ -989,6 +991,7 @@ public class Server {
             }
         });
         app.get("/app/profitCalculatorCategory", ctx -> {
+            ctx.header("Cache-Control", "no-store");
             final ProfitCalculatorCategoryRequest request;
             try {
                 request = parseProfitCalculatorCategoryRequest(ctx.queryParam("vendorGroup"), ctx.queryParam("category"));
@@ -1003,6 +1006,8 @@ public class Server {
                 ctx.status(500).json(Map.of("error", "Database error"));
             }
         });
+        app.post("/app/profitCalculatorPreview", ctx -> serveProfitCalculatorOverrides(ctx, api, false));
+        app.post("/app/profitCalculatorOverrides", ctx -> serveProfitCalculatorOverrides(ctx, api, true));
         app.get("/app/productPerformanceOptions", ctx -> {
             try {
                 ctx.json(api.getProductPerformanceOptions());
@@ -1371,6 +1376,34 @@ public class Server {
             ctx.header("Cache-Control", "no-store");
             ctx.json(backgroundJob.pausedTaskNames());
         });
+    }
+
+    static void serveProfitCalculatorOverrides(Context ctx, API api, boolean save) {
+        ctx.header("Cache-Control", "no-store");
+        final ProfitCalculatorOverrides.Request request;
+        try {
+            request = ProfitCalculatorOverrides.parse(mapper, ctx.body());
+        } catch (IllegalArgumentException error) {
+            ctx.status(400).json(Map.of("error", error.getMessage()));
+            return;
+        }
+        try {
+            if (save) {
+                api.saveProfitCalculatorOverrides(request);
+                // Readback is a separate request: a read failure cannot obscure a committed save.
+                ctx.json(Map.of("saved", true));
+            } else {
+                ctx.json(api.previewProfitCalculatorCategory(request));
+            }
+        } catch (OverrideConflictException error) {
+            ctx.status(409).json(Map.of("error", "Saved overrides changed. Revert to reload current values before saving again.",
+                    "productCode", error.productCode()));
+        } catch (IllegalArgumentException error) {
+            ctx.status(400).json(Map.of("error", error.getMessage()));
+        } catch (SQLException error) {
+            logger.log(SEVERE, "Failed to " + (save ? "save" : "preview") + " profit calculator overrides.", error);
+            ctx.status(500).json(Map.of("error", "Database error"));
+        }
     }
 
     static void serveProductVisits(Context ctx, API api) {

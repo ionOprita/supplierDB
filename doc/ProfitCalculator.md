@@ -12,10 +12,15 @@ values. This policy also applies to future rows such as 54. Product master data
 already stored in the database remains a valid input, including fields that
 were originally maintained manually in the product source spreadsheet.
 
+The dedicated manual-input section (rows 40–45) is different: those cells are
+intentional overrides and are implemented as editable, shared database values.
+Ignoring a value pasted over a formula does not mean ignoring these inputs.
+
 The By Category selectors use `vendor.vendor_group` and `product.category`.
 Products remain visible when retracted or when their PNK is missing, but the
-three value rows below are blank for those products. Missing source values also
-remain blank: no default price, tax regime, or VAT status is invented.
+calculated/reference output rows are blank for those products. Their overrides
+remain editable and stored. Missing source values remain blank: no default
+price, tax regime, VAT status, cost, or exchange rate is invented.
 
 ## Implemented rows
 
@@ -44,8 +49,8 @@ For an eligible product, look up the reference selling price by PNK. The server
 reads `product.emag_sale_price_ron` from that product's database record.
 
 This is the reference price, not the effective price in rows 75 and 26. The
-spreadsheet's row 75 can select a separate row-40 price override. Those rows and
-override controls are outside this implementation step.
+row-40 override changes rows 75 and 26, while row 48 continues to show the
+database reference price.
 
 ### Row 71 — tax regime
 
@@ -93,8 +98,107 @@ to the product importer fields. `ProductTable` persists/reads them as
 The calculator therefore uses the resolved database fields directly instead of
 recreating spreadsheet imports or reaching back to the company sheet.
 
-All other metric and summary cells remain empty in this step. In particular,
-rows 26, 35, 54, 75, 76, and 86 have not been implemented.
+## Shared manual inputs (rows 40–45)
+
+| Row | Input | Unit and validation | Blank meaning |
+| --- | --- | --- | --- |
+| 40 | Selling price including VAT | Nonnegative RON amount | Use reference price from row 48 |
+| 41 | Commission | Enter a percentage, e.g. `14` for 14%; range 0–100% | No override; default commission remains unresolved |
+| 42 | Purchase price per unit | Nonnegative USD amount | Purchase-cost baseline is not available yet |
+| 43 | Transport price per unit | Nonnegative USD amount | Transport-cost baseline is not available yet |
+| 44 | USD/RON exchange rate | Positive RON per USD | No exchange-rate default is available yet |
+| 45 | Fulfillment source | Blank, `eMAG`, or `Minulescu` | No manual choice |
+
+Zero monetary amounts and zero commission are valid overrides. Clearing a
+field means no override; it does not mean zero. Reference rows 48, 71, and 72
+are never changed by overrides. Row 45 is retained for future fulfillment-cost
+calculations; the necessary tariffs have not been implemented.
+
+Edits preview the results without writing to the database. Unsaved edits stay
+with their product when switching categories or vendor groups. Review changes
+before saving; Save commits the reviewed overrides, while Revert discards
+drafts and reloads saved values. Leaving the page with unsaved edits triggers
+the browser's normal unsaved-change warning.
+
+Overrides live in `profit_calculator_override`, keyed by `product_code`,
+separately from `product` master data. Its nullable fields are `sale_price_ron`,
+`commission_rate`, `purchase_price_usd`, `transport_price_usd`, `usd_ron_rate`,
+and `fulfillment_source`. Commission is stored as a fraction (`0.14` for 14%).
+Numeric requests and saved override responses use plain decimal strings to
+preserve their exact values across browser reloads. Calculations use
+`BigDecimal` without rounding intermediate results; calculated RON outputs are
+displayed to two decimal places.
+
+Saves are atomic across all reviewed products. Each override record has a
+revision; zero represents an unsaved/absent record. A stale revision causes a
+409 conflict and leaves the batch unchanged. The UI retains the unsaved edits
+so the user can review the conflict or revert to the latest saved values.
+Clearing every override retains the record and its revision to avoid resetting
+the concurrency check. Saving does not update product master fields.
+
+Migration 50 creates this storage. The history-import migration guard also
+accepts databases already upgraded beyond version 49.
+
+## Additional implemented outputs
+
+The original formulas below are simplified to their value expressions; the
+PNK/nonretracted guard still applies to every output. Missing operands produce
+blank results rather than a synthetic zero.
+
+| Row(s) | Rule used by the server |
+| --- | --- |
+| 70 — Firma de pe care vindem | `vendor.company_name`, joined through `product.vendor = vendor.id` |
+| 75 — Pret produs (cu TVA) | Row 40 when present, otherwise row 48 |
+| 26 — Total Venit/Unitate (RON) | Row 75 |
+| 76 — Comision eMAG [%] | Row 41 when present; otherwise blank until the default commission is agreed |
+| 86 — Cost comision eMAG (cu TVA) | Row 75 × row 76 when both are known |
+| 49 and 77 — Cost achizitie | Row 42 × row 44 when both are supplied |
+| 50 and 78 — Cost transport | Row 43 × row 44 when both are supplied |
+
+Row 70's source formula looks up local `Date Prod.!K` by PNK. That column
+imports `S. Date Prod.!BK`. The product importer resolves those company names
+against FBE vendors' `company_name`, so this must not be replaced with
+`vendor_name` (which may contain an FBE suffix) or an account label.
+
+The sheet's normal price expressions are `IF(D40<>"",D40,D48)` for row 75 and
+`D75` for row 26. Its commission expression is `IF(D41<>"",D41,$C$3)`, followed
+by `D75*D76` for row 86. The application implements the commission override but
+deliberately leaves the unresolved `$C$3` fallback blank. Clearing row 40
+therefore restores the reference price; clearing row 41 clears rows 76 and 86.
+
+### USD conversion provenance
+
+The **Actual** columns do not reference rows 42–44 in their cost formulas; they
+normally load purchase/transport costs from import calculations. The separate
+**Simulation** columns contain these expressions:
+
+```excel
+BC49 = IF(BC8<>"",BC$42*BC$44,)
+BC50 = IF(BC8<>"",BC$43*BC$44,)
+BC77 = IF(BC$8<>"",IF(BC$9<>TRUE,BC$49,),)
+BC78 = IF(BC$8<>"",IF(BC$9<>TRUE,BC$50,),)
+```
+
+Applying these conversions to By Category's Actual area is an agreed extension
+of the simulation behavior. Both a USD amount and a positive exchange rate
+are required. There is no current purchase/freight ledger or exchange-rate
+default to fall back to, so clearing either required operand clears the result.
+Import VAT and customs costs (rows 51/52/79/80) remain blank; their additional
+rates and baseline data are not inferred from these manual inputs.
+
+### API behavior
+
+- `GET /app/profitCalculatorCategory` returns the saved overrides, revision,
+  company name, reference fields, and calculated values for each product.
+- `POST /app/profitCalculatorPreview` applies draft changes to database values
+  and returns the same category response without writing anything.
+- `POST /app/profitCalculatorOverrides` saves changed fields atomically with
+  expected revisions and acknowledges a successful commit. Reloading the
+  category afterward is separate; a reload failure must not repeat the save.
+
+All routes require the existing application user role. Monthly quantities,
+return/refusal rates, import VAT, customs, other fulfillment/advertising costs,
+profit totals, and summary outputs remain deferred.
 
 ## Open questions
 

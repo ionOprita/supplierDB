@@ -121,7 +121,7 @@ public class EmagMirrorDB implements ProductPerformanceSource {
     public record CategoryWriteResult(int inserted, int updated) {
     }
 
-    private EmagMirrorDB(DB database) {
+    EmagMirrorDB(DB database) {
         this.database = database;
     }
 
@@ -817,6 +817,13 @@ public class EmagMirrorDB implements ProductPerformanceSource {
     public List<ProfitCalculatorTable.CategoryProduct> readProfitCalculatorProducts(String vendorGroup, String category)
             throws SQLException {
         return database.readTX(db -> ProfitCalculatorTable.getCategoryProducts(db, vendorGroup, category));
+    }
+
+    public void saveProfitCalculatorOverrides(List<ProfitCalculatorTable.OverrideChange> changes) throws SQLException {
+        database.writeTX(db -> {
+            ProfitCalculatorTable.saveOverrides(db, changes);
+            return true;
+        });
     }
 
     public record VendorGroupCategory(String vendorGroup, String category) {

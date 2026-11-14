@@ -130,8 +130,8 @@ public final class ProductPerformanceHistoryTable {
                 rows.next();
                 version = rows.getInt(1);
             }
-            if (version == 49) return false;
-            if (version != 48) throw new SQLException("History import requires database version 48 or 49; found " + version);
+            if (version >= 49) return false;
+            if (version != 48) throw new SQLException("History import requires database version 48 or newer; found " + version);
             EmagMirrorDBVersion49.version49(db);
             statement.executeUpdate("INSERT INTO version_info (version, date) VALUES (49, CURRENT_TIMESTAMP)");
             return true;

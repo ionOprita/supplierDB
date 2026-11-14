@@ -50,6 +50,11 @@ public class DB {
     private static final String dateColumn = "date";
     private final HikariDataSource dataSource;
 
+    /** Use an explicitly configured pool; the caller owns and closes the pool. */
+    public DB(HikariDataSource dataSource) {
+        this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+    }
+
     public DB(String alias) throws IOException {
         var dbSpec = findDB(alias);
         // Configure the connection pool

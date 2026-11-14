@@ -169,6 +169,16 @@ public class API {
                 mirrorDB.readProfitCalculatorProducts(vendorGroup, category));
     }
 
+    public ProfitCalculatorCategory.Response previewProfitCalculatorCategory(ProfitCalculatorOverrides.Request request)
+            throws SQLException {
+        return ProfitCalculatorCategory.preview(request.vendorGroup(), request.category(),
+                mirrorDB.readProfitCalculatorProducts(request.vendorGroup(), request.category()), request.changes());
+    }
+
+    public void saveProfitCalculatorOverrides(ProfitCalculatorOverrides.Request request) throws SQLException {
+        mirrorDB.saveProfitCalculatorOverrides(request.changes());
+    }
+
     /** Retained compatibility endpoint for the most recent rolling observation. */
     public Optional<ProductVisits> getProductVisits(UUID vendorId, String productCode)
             throws SQLException {
