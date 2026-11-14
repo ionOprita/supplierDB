@@ -506,11 +506,6 @@ public class Server {
         }
     }
 
-    private static void configureAcmeChallenge(JavalinDefaultRoutingApi app) {
-        Path webRoot = acmeChallengeWebRoot();
-        app.get(acmeChallengePrefix + "{token}", ctx -> serveAcmeChallenge(ctx, webRoot));
-    }
-
     private static void setTaskPaused(Context ctx, BackgroundJob backgroundJob, boolean paused) {
         var currentUser = resolveCurrentUser(ctx);
         if (currentUser == null || currentUser.role() != admin) {
