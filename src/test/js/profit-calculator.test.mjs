@@ -303,6 +303,41 @@ test('category changes replace the three displayed fields without retaining old 
   assert.equal(metricCell(page, 72).children[0].checked, false);
 });
 
+test('confirmed zero costs display as amounts while unknown and ineligible results stay blank', async t => {
+  const costRows = [63, 64, 88, 100, 101, 105, 106];
+  const calculated = {googleAdsCostRon: 0, socialMediaAdsCostRon: 0, storageCostRon: 0,
+    turnoverTaxCostRon: 0, vatCostRon: 0, profitTaxCostRon: 0, dividendTaxCostRon: 0};
+  const page = await openPage(t, {categoryRequest: async () => ({products: [
+    {...product('known'), calculated},
+    {...product('nulls'), calculated: Object.fromEntries(Object.keys(calculated).map(key => [key, null]))},
+    product('missing'),
+    {...product('retracted', 'Retracted', true), calculated},
+    {...product('no-pnk'), pnk: null, calculated}
+  ]})});
+  for (const row of costRows) {
+    assert.equal(metricCell(page, row).textContent, '0.00');
+    for (let index = 1; index < 5; index++) assert.equal(metricCell(page, row, index).textContent, '');
+  }
+  for (const row of [28, 29, 30, 103, 104, 107]) assert.equal(metricCell(page, row).textContent, '');
+  assert.ok(page.summary.children.every(row => !row.children[1].textContent));
+});
+
+test('category changes clear zero costs before loading unknown results for the next category', async t => {
+  const calculated = {googleAdsCostRon: 0, socialMediaAdsCostRon: 0, storageCostRon: 0,
+    turnoverTaxCostRon: 0, vatCostRon: 0, profitTaxCostRon: 0, dividendTaxCostRon: 0};
+  const page = await openPage(t, {categoryRequest: async url => ({products: [
+    url.searchParams.get('category') === 'Hair trimmers'
+      ? {...product('old'), calculated}
+      : {...product('new'), calculated: Object.fromEntries(Object.keys(calculated).map(key => [key, null]))}
+  ]})});
+  assert.equal(metricCell(page, 88).textContent, '0.00');
+  page.category.value = 'Personal care';
+  page.category.dispatch('change');
+  assert.ok(page.body.children.every(row => row.children.length === 1));
+  await setImmediate();
+  for (const row of [63, 64, 88, 100, 101, 105, 106]) assert.equal(metricCell(page, row).textContent, '');
+});
+
 test('a delayed category response cannot overwrite the latest selected category', async t => {
   const initial = deferred();
   const latest = deferred();
@@ -409,6 +444,60 @@ test('clearing a saved override sends null and restores the server reference-pri
   await advancePreview(t);
   assert.equal(metricCell(page, 75).textContent, '169.99');
   assert.equal(metricCell(page, 26).textContent, '169.99');
+});
+
+test('fulfillment edits clear the saved storage cost through pending, failed and invalid previews', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const pending = deferred();
+  const item = {...product('one'), overrideRevision: 2, overrides: {fulfillmentSource: 'Minulescu'},
+    calculated: {storageCostRon: 0, googleAdsCostRon: 0}};
+  let previews = 0;
+  const page = await openPage(t, {categoryRequest: async () => ({products: [item]}), previewRequest: body => {
+    assert.equal(body.changes[0].values.fulfillmentSource, previews++ === 0 ? 'eMAG' : null);
+    return previews === 1 ? pending.promise : {products: [{...item, calculated: {storageCostRon: null}}]};
+  }});
+  assert.equal(metricCell(page, 88).textContent, '0.00');
+  edit(page, 45, 'eMAG');
+  assert.equal(metricCell(page, 88).textContent, '', 'Saved zero is stale as soon as fulfillment changes');
+  assert.equal(metricCell(page, 63).textContent, '0.00', 'Unrelated results remain available');
+  await advancePreview(t);
+  assert.equal(metricCell(page, 88).textContent, '');
+  pending.reject(new Error('Preview unavailable'));
+  await setImmediate();
+  assert.equal(metricCell(page, 88).textContent, '');
+  assert.match(page.elements.get('profitOverrideStatus').textContent, /could not preview/i);
+  edit(page, 45, '');
+  await advancePreview(t);
+  assert.equal(metricCell(page, 88).textContent, '');
+  edit(page, 45, 'Minulescu');
+  assert.equal(metricCell(page, 88).textContent, '0.00', 'Restoring the saved selection restores its known result');
+  const invalid = edit(page, 45, 'Unknown warehouse');
+  await advancePreview(t);
+  assert.ok(invalid.validationMessage);
+  assert.equal(metricCell(page, 88).textContent, '');
+  assert.equal(page.posts.length, 2, 'Invalid fulfillment sends no preview request');
+});
+
+test('a stale Minulescu preview cannot restore storage zero after fulfillment is cleared', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const minulescu = deferred();
+  const cleared = deferred();
+  const item = {...product('one'), overrides: {fulfillmentSource: 'eMAG'}, calculated: {storageCostRon: null}};
+  let previews = 0;
+  const page = await openPage(t, {categoryRequest: async () => ({products: [item]}),
+    previewRequest: () => ++previews === 1 ? minulescu.promise : cleared.promise});
+  edit(page, 45, 'Minulescu');
+  await advancePreview(t);
+  edit(page, 45, '');
+  await advancePreview(t);
+  assert.equal(page.posts.at(-1).body.changes[0].values.fulfillmentSource, null);
+  cleared.resolve({products: [{...item, calculated: {storageCostRon: null}}]});
+  await setImmediate();
+  minulescu.resolve({products: [{...item, calculated: {storageCostRon: 0}}]});
+  await setImmediate();
+  assert.equal(overrideInput(page, 45).value, '');
+  assert.equal(metricCell(page, 88).textContent, '');
+  assert.equal(page.elements.get('profitOverrideReview').disabled, false);
 });
 
 test('invalid input blocks saving and blanks its dependent results without a preview request', async t => {

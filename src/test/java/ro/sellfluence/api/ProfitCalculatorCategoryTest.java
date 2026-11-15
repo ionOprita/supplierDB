@@ -157,6 +157,113 @@ class ProfitCalculatorCategoryTest {
     }
 
     @Test
+    void evaluatesIndependentlyKnownZerosWithoutPriceOrOtherCostInputs() {
+        var overrides = new Overrides(null, null, null, null, null, "Minulescu");
+        var originalRegime = " \tprOFit\u2003";
+        var source = new CategoryProduct("code", "Product", "PNK", false,
+                null, originalRegime, false, null, overrides, 3);
+        var product = ProfitCalculatorCategory.create("S", "Trimmers", List.of(source)).products().getFirst();
+        var calculated = product.calculated();
+
+        assertEquals(BigDecimal.ZERO, calculated.googleAdsCostRon());
+        assertEquals(BigDecimal.ZERO, calculated.socialMediaAdsCostRon());
+        assertEquals(BigDecimal.ZERO, calculated.storageCostRon());
+        assertEquals(BigDecimal.ZERO, calculated.turnoverTaxCostRon());
+        assertEquals(BigDecimal.ZERO, calculated.vatCostRon());
+        assertNull(calculated.profitTaxCostRon(), "Profit tax still needs its unimplemented profit inputs");
+        assertNull(calculated.dividendTaxCostRon());
+        assertNull(calculated.effectiveSalePriceRon());
+        assertNull(calculated.purchaseCostRon());
+        assertNull(calculated.transportCostRon());
+        assertEquals(originalRegime, product.incomeProfitTax(), "Normalization only applies to the calculation");
+    }
+
+    @Test
+    void evaluatesVenitTaxExemptionsWithoutInventingTheOtherTaxBranches() {
+        var source = new CategoryProduct("code", "Product", "PNK", false,
+                null, "\u2003vENIt\t", true, null,
+                new Overrides(null, null, null, null, null, "eMAG"), 0);
+        var calculated = ProfitCalculatorCategory.create("S", "Trimmers", List.of(source))
+                .products().getFirst().calculated();
+
+        assertEquals(BigDecimal.ZERO, calculated.googleAdsCostRon());
+        assertEquals(BigDecimal.ZERO, calculated.socialMediaAdsCostRon());
+        assertEquals(BigDecimal.ZERO, calculated.profitTaxCostRon());
+        assertEquals(BigDecimal.ZERO, calculated.dividendTaxCostRon());
+        assertNull(calculated.turnoverTaxCostRon());
+        assertNull(calculated.vatCostRon());
+        assertNull(calculated.storageCostRon(), "The eMAG storage tariff is not available");
+    }
+
+    @Test
+    void keepsMissingAndUnrecognizedPredicatesUnknown() {
+        for (var source : List.of(
+                new CategoryProduct("null", "Product", "PNK", false),
+                new CategoryProduct("blank", "Product", "PNK", false, null, " \t\u2003", null),
+                new CategoryProduct("other", "Product", "PNK", false, null, "Other", null),
+                new CategoryProduct("literal", "Product", "PNK", false, null, "<b>Profit</b>", null))) {
+            var calculated = ProfitCalculatorCategory.create("S", "Trimmers", List.of(source))
+                    .products().getFirst().calculated();
+            assertEquals(BigDecimal.ZERO, calculated.googleAdsCostRon());
+            assertEquals(BigDecimal.ZERO, calculated.socialMediaAdsCostRon());
+            assertNull(calculated.storageCostRon(), "A missing fulfillment selection is not Minulescu");
+            assertNull(calculated.turnoverTaxCostRon());
+            assertNull(calculated.vatCostRon(), "Unknown VAT status must not be treated as false");
+            assertNull(calculated.profitTaxCostRon());
+            assertNull(calculated.dividendTaxCostRon());
+        }
+    }
+
+    @Test
+    void serializesKnownZeroCostsAsNumbersAndUnknownCostsAsNull() {
+        var source = new CategoryProduct("code", "Product", "PNK", false,
+                null, "Profit", false, null,
+                new Overrides(null, null, null, null, null, "Minulescu"), 1);
+        var response = ProfitCalculatorCategory.create("S", "Trimmers", List.of(source));
+        var mapper = new ObjectMapper();
+        var calculated = mapper.readTree(mapper.writeValueAsString(response))
+                .get("products").get(0).get("calculated");
+
+        for (var field : List.of("googleAdsCostRon", "socialMediaAdsCostRon", "storageCostRon",
+                "turnoverTaxCostRon", "vatCostRon")) {
+            assertTrue(calculated.get(field).isNumber(), field);
+            assertEquals(0, calculated.get(field).asInt(), field);
+        }
+        assertTrue(calculated.get("profitTaxCostRon").isNull());
+        assertTrue(calculated.get("dividendTaxCostRon").isNull());
+    }
+
+    @Test
+    void previewsFulfillmentChangesAndClearingWithoutChangingSavedStorage() {
+        var saved = new Overrides(null, null, null, null, null, "Minulescu");
+        var source = new CategoryProduct("code", "Product", "PNK", false,
+                null, "Profit", false, null, saved, 2);
+        var changes = new LinkedHashMap<String, String>();
+        changes.put("fulfillmentSource", "eMAG");
+        var emag = ProfitCalculatorCategory.preview("S", "Trimmers", List.of(source),
+                List.of(new OverrideChange("code", 2, changes))).products().getFirst();
+        assertNull(emag.calculated().storageCostRon());
+        assertEquals("eMAG", emag.overrides().fulfillmentSource());
+
+        changes.put("fulfillmentSource", null);
+        var cleared = ProfitCalculatorCategory.preview("S", "Trimmers", List.of(source),
+                List.of(new OverrideChange("code", 2, changes))).products().getFirst();
+        assertNull(cleared.calculated().storageCostRon());
+        assertNull(cleared.overrides().fulfillmentSource());
+        assertEquals(saved, source.overrides());
+        assertEquals(BigDecimal.ZERO, ProfitCalculatorCategory.create("S", "Trimmers", List.of(source))
+                .products().getFirst().calculated().storageCostRon());
+        assertEquals(2, cleared.overrideRevision());
+
+        var withoutSource = new CategoryProduct("code", "Product", "PNK", false);
+        var minulescu = ProfitCalculatorCategory.preview("S", "Trimmers", List.of(withoutSource),
+                List.of(new OverrideChange("code", 0, Map.of("fulfillmentSource", "Minulescu"))))
+                .products().getFirst();
+        assertEquals(BigDecimal.ZERO, minulescu.calculated().storageCostRon());
+        assertNull(withoutSource.overrides().fulfillmentSource());
+    }
+
+    @Test
     void previewsOnlyCategoryProductsAndClearingOverridesRestoresTheReferencePrice() {
         var saved = new Overrides(new BigDecimal("149"), new BigDecimal("0.14"),
                 new BigDecimal("5"), null, new BigDecimal("4"), "Minulescu");
@@ -182,12 +289,16 @@ class ProfitCalculatorCategoryTest {
     @Test
     void retainsEditableOverridesButSuppressesOutputsForIneligibleProducts() {
         var saved = new Overrides(new BigDecimal("149"), new BigDecimal("0.14"),
-                new BigDecimal("5"), new BigDecimal("1"), new BigDecimal("4"), "eMAG");
+                new BigDecimal("5"), new BigDecimal("1"), new BigDecimal("4"), "Minulescu");
         for (var input : List.of(
                 new CategoryProduct("retracted", "Name", "PNK", true,
-                        new BigDecimal("169.99"), "Profit", true, "Company", saved, 7),
+                        new BigDecimal("169.99"), "Profit", false, "Company", saved, 7),
+                new CategoryProduct("retracted-venit", "Name", "PNK", true,
+                        new BigDecimal("169.99"), "Venit", false, "Company", saved, 7),
                 new CategoryProduct("missing", "Name", " \t", false,
-                        new BigDecimal("169.99"), "Profit", true, "Company", saved, 7))) {
+                        new BigDecimal("169.99"), "Profit", false, "Company", saved, 7),
+                new CategoryProduct("null-pnk", "Name", null, false,
+                        new BigDecimal("169.99"), "Venit", false, "Company", saved, 7))) {
             var result = ProfitCalculatorCategory.create("S", "Trimmers", List.of(input)).products().getFirst();
             assertEquals(saved, result.overrides());
             assertEquals(7, result.overrideRevision());
@@ -198,6 +309,13 @@ class ProfitCalculatorCategoryTest {
             assertNull(result.calculated().commissionCostRon());
             assertNull(result.calculated().purchaseCostRon());
             assertNull(result.calculated().transportCostRon());
+            assertNull(result.calculated().googleAdsCostRon());
+            assertNull(result.calculated().socialMediaAdsCostRon());
+            assertNull(result.calculated().storageCostRon());
+            assertNull(result.calculated().turnoverTaxCostRon());
+            assertNull(result.calculated().vatCostRon());
+            assertNull(result.calculated().profitTaxCostRon());
+            assertNull(result.calculated().dividendTaxCostRon());
         }
     }
 

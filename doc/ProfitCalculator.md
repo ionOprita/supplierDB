@@ -111,8 +111,9 @@ recreating spreadsheet imports or reaching back to the company sheet.
 
 Zero monetary amounts and zero commission are valid overrides. Clearing a
 field means no override; it does not mean zero. Reference rows 48, 71, and 72
-are never changed by overrides. Row 45 is retained for future fulfillment-cost
-calculations; the necessary tariffs have not been implemented.
+are never changed by overrides. An explicit `Minulescu` choice in row 45 gives
+zero storage cost in row 88. Other fulfillment charges remain deferred because
+the necessary tariffs have not been implemented.
 
 Edits preview the results without writing to the database. Unsaved edits stay
 with their product when switching categories or vendor groups. Review changes
@@ -143,7 +144,7 @@ accepts databases already upgraded beyond version 49.
 
 The original formulas below are simplified to their value expressions; the
 PNK/nonretracted guard still applies to every output. Missing operands produce
-blank results rather than a synthetic zero.
+blank results unless a known formula branch independently determines zero.
 
 | Row(s) | Rule used by the server |
 | --- | --- |
@@ -186,6 +187,59 @@ default to fall back to, so clearing either required operand clears the result.
 Import VAT and customs costs (rows 51/52/79/80) remain blank; their additional
 rates and baseline data are not inferred from these manual inputs.
 
+### Independently determined zero costs
+
+The following outputs implement literal zero formulas or the zero branch of
+a conditional formula. They do not require the unresolved monthly-sales or
+commission definitions. The same nonblank-PNK/nonretracted guard applies to
+all seven rows, including the literal-zero advertising formulas.
+
+| Row | Label | Implemented result |
+| --- | --- | --- |
+| 63 | Cost Google ads / unit. (fara TVA) [RON] | `0.00` for an eligible product |
+| 64 | Cost SM ads/ unit. (fara TVA) [RON] | `0.00` for an eligible product |
+| 88 | Cost depozitare colet (cu TVA) | `0.00` only when row 45 explicitly selects `Minulescu` |
+| 100 | Cost impozit / venit | `0.00` only when `product.income_profit_tax` is `Profit` |
+| 101 | TVA | `0.00` only when `product.vat_payer` is explicitly false |
+| 105 | Impozit pe profit | `0.00` only when `product.income_profit_tax` is `Venit` |
+| 106 | Impozit pe dividende | `0.00` only when `product.income_profit_tax` is `Venit` |
+
+Rows 63 and 64 use this complete source formula:
+
+```excel
+=IF(D$8<>"",IF(D$9<>TRUE,0,),)
+```
+
+That literal zero is a rule in the reference calculator, not measured Google
+or social-media advertising spend and not a claim that those channels have no
+expenses outside the calculator.
+
+The conditional rows use the following source value expressions, with the
+same eligibility guard surrounding each expression:
+
+```excel
+D88 = IF(D$45="eMAG",D61*(1+'Date Calcul'!$C$9),0)
+D100 = IF(D$71="Venit",((D$75/(1+'Cons. Date Secundare'!$E$3))+'Date Calcul'!$C$22)*'Date Calcul'!$C$10,0)
+D101 = IF(D$72=TRUE,(D$75+'Date Calcul'!$C$22)*'Date Calcul'!$C$9-D$79-(D83+D84+D85+D87+D88+D89+D90+D91+D92+D94+D95+D96+D98)*'Date Calcul'!$C$9,0)
+D105 = IF(D$71="Profit",IF(D$104>0,'Date Calcul'!$C$11*D$104,0),0)
+D106 = IF(D$71="Profit",IF(D$104>0,D$105*'Date Calcul'!$C$12,0),0)
+```
+
+Only the branches listed in the table are implemented. The application does
+not follow a broad spreadsheet `else 0` branch for an unknown input: blank
+fulfillment, null VAT status, and null/blank/unrecognized tax regimes remain
+unknown. Known tax labels are recognized case-insensitively after trimming;
+the displayed source text in row 71 is unchanged. `eMAG` storage, `Venit`
+turnover tax, VAT-payer VAT, and `Profit` profit/dividend tax remain blank
+until their required inputs are available, even if a later calculation could
+also determine zero.
+
+The server returns these amounts as nullable calculated RON values, with
+numeric zero displayed as `0.00`. Changing row 45 clears a previous row-88
+result while its preview is pending; a failed preview does not restore a
+stale storage amount. No missing cost is converted to zero, and cost/profit
+totals remain deferred rather than being calculated from incomplete costs.
+
 ### API behavior
 
 - `GET /app/profitCalculatorCategory` returns the saved overrides, revision,
@@ -198,7 +252,7 @@ rates and baseline data are not inferred from these manual inputs.
 
 All routes require the existing application user role. Monthly quantities,
 return/refusal rates, import VAT, customs, other fulfillment/advertising costs,
-profit totals, and summary outputs remain deferred.
+the remaining tax branches, profit totals, and summary outputs remain deferred.
 
 ## Open questions
 
@@ -228,3 +282,21 @@ already an agreed implementation policy, not an open question.
    stored as `product.subcategory`), whereas the approved UI uses external `CN`
    (`Subcategory Country`, stored as `product.category`). Category-wide
    assumptions need to account for this distinction.
+4. **Calculator settings: scope, ownership, and effective dates.** Who maintains
+   the rates and fixed costs in `Date Calcul`, such as VAT/tax rates,
+   packaging/warehouse charges, Genius assumptions, financing, and inflation?
+   Are these settings shared across groups/companies or specific to a workbook
+   or company? Where should the server obtain them, and should a historical
+   calculation use the settings valid in that month or the latest settings?
+5. **Authoritative import-cost records.** Where are per-import purchase,
+   freight, import VAT, customs costs, quantities, transport details, and
+   arrival dates maintained outside the linked spreadsheets? Which records
+   can the server ingest to supply the missing import-lot and cost inputs?
+6. **Authoritative operating-cost inputs.** Who maintains the warehouse/FBE,
+   environmental/packaging, SMS, and review-acquisition inputs, and where can
+   their underlying tariffs, component measurements, and expenses be obtained?
+   General product weight, storefront selling prices, and ordinary eMAG order
+   data do not supply all of these inputs.
+
+Questions 4–6 concern later fields and do not block the independently
+determined zero costs above. The original three questions remain unanswered.

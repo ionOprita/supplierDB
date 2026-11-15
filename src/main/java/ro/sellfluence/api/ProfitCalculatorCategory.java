@@ -15,7 +15,10 @@ public final class ProfitCalculatorCategory {
     }
 
     public record Calculated(BigDecimal effectiveSalePriceRon, BigDecimal effectiveCommissionRate,
-                             BigDecimal commissionCostRon, BigDecimal purchaseCostRon, BigDecimal transportCostRon) {
+                             BigDecimal commissionCostRon, BigDecimal purchaseCostRon, BigDecimal transportCostRon,
+                             BigDecimal googleAdsCostRon, BigDecimal socialMediaAdsCostRon,
+                             BigDecimal storageCostRon, BigDecimal turnoverTaxCostRon, BigDecimal vatCostRon,
+                             BigDecimal profitTaxCostRon, BigDecimal dividendTaxCostRon) {
     }
 
     public record Product(String productCode, String name, String pnk, boolean retracted,
@@ -61,11 +64,19 @@ public final class ProfitCalculatorCategory {
         var commission = eligible ? overrides.commissionRate() : null;
         var purchase = eligible ? multiply(overrides.purchasePriceUsd(), overrides.usdRonRate()) : null;
         var transport = eligible ? multiply(overrides.transportPriceUsd(), overrides.usdRonRate()) : null;
+        var regime = product.incomeProfitTax() == null ? null : product.incomeProfitTax().strip();
+        // Only independently known zero branches are available; their other branches remain unknown.
+        var advertising = eligible ? BigDecimal.ZERO : null;
+        var storage = eligible && "Minulescu".equals(overrides.fulfillmentSource()) ? BigDecimal.ZERO : null;
+        var turnoverTax = eligible && "Profit".equalsIgnoreCase(regime) ? BigDecimal.ZERO : null;
+        var vat = eligible && Boolean.FALSE.equals(product.vatPayer()) ? BigDecimal.ZERO : null;
+        var profitTax = eligible && "Venit".equalsIgnoreCase(regime) ? BigDecimal.ZERO : null;
         return new Product(product.productCode(), product.name(), product.pnk(), product.retracted(),
                 eligible ? product.emagSalePriceRon() : null, eligible ? product.incomeProfitTax() : null,
                 eligible ? product.vatPayer() : null, eligible ? product.companyName() : null,
                 overrides, product.overrideRevision(),
-                new Calculated(price, commission, multiply(price, commission), purchase, transport));
+                new Calculated(price, commission, multiply(price, commission), purchase, transport,
+                        advertising, advertising, storage, turnoverTax, vat, profitTax, profitTax));
     }
 
     private static Overrides overrides(CategoryProduct product) {

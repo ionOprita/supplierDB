@@ -11,7 +11,7 @@ const fieldsByKey = new Map(overrideFields.map(field => [field.key, field]));
 const dependencies = {
   salePriceRon: [26, 75, 86], commissionRate: [76, 86],
   purchasePriceUsd: [49, 77], transportPriceUsd: [50, 78],
-  usdRonRate: [49, 50, 77, 78], fulfillmentSource: []
+  usdRonRate: [49, 50, 77, 78], fulfillmentSource: [88]
 };
 
 function normalizeDecimal(value) {

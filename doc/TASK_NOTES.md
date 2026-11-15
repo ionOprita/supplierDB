@@ -1,9 +1,10 @@
 # Profit calculator — task notes and recovery handoff
 
 Last reviewed: **2026-11-15**. Repository branch: `profit-calculator`.
-Snapshot commit: `b17a61d` (`The manual override has now modifiable cells.`).
-The working tree was clean before creating this file. These notes describe the
-code at that snapshot, not a confirmed production deployment.
+Base commit for the latest batch: `12cf14f`
+(`Summarized current work to keep context after compatcion.`).
+The working tree was clean before this batch. These notes include the subsequent
+independent-cost changes described below, not a confirmed production deployment.
 
 Start here after losing the chat, then read [ProfitCalculator.md](ProfitCalculator.md)
 for detailed formulas, mappings, API behavior, and the maintained **Open questions**.
@@ -17,8 +18,9 @@ missing data is part of the objective: later work may extend the database,
 eMAG API collection, or eMAG dashboard extraction.
 
 The current work is on **By Category**. The other calculator page is a scaffold
-for later work. The user has forwarded the open questions to the sheet author;
-answers were still pending at this handoff.
+for later work. The user has forwarded the original three open questions to the
+sheet author; answers remain pending. Three further questions now cover settings
+ownership/timing and authoritative import/operating-cost inputs.
 
 ## Requirements and settled decisions
 
@@ -154,6 +156,18 @@ multiple product columns: some formula rows contain manually replaced cells.
 | 86 | Effective price × effective commission when both are known |
 | 49, 77 | USD purchase override 42 × exchange-rate override 44 |
 | 50, 78 | USD transport override 43 × exchange-rate override 44 |
+| 63, 64 | Literal zero from the Google/social-media Ads formulas; not measured spending |
+| 88 | Zero only for an explicit `Minulescu` fulfillment override |
+| 100 | Zero only for the known `Profit` tax regime |
+| 101 | Zero only when VAT-payer status is explicitly false |
+| 105, 106 | Zero only for the known `Venit` tax regime |
+
+The latest seven outputs implement only independently determined branches.
+Tax-regime comparisons trim whitespace and ignore case, retaining the original
+display text. Null/unknown regimes, null VAT status, blank fulfillment, and
+branches needing unavailable cost/tax inputs remain blank. The existing
+PNK/nonretracted guard applies even to literal-zero results. Cost and profit
+totals remain blank. These zero rules do not establish missing rates or tariffs.
 
 ### Override behavior
 
@@ -174,8 +188,10 @@ Drafts survive category/group changes, previews update result cells without
 rebuilding focused inputs, and outdated responses are ignored. Review precedes
 Save; Revert reloads saved values. Save failures/conflicts retain drafts. A save
 acknowledgement and subsequent reload are separate: never repeat a committed
-save because readback failed. Row 45 is saved, but fulfillment charges are still
-deferred. Price, purchase, and freight overrides have the formulas above.
+save because readback failed. Row 45 now also determines the zero-storage branch
+in row 88; other fulfillment charges remain deferred. Changing fulfillment
+clears the previous storage result while preview is pending or fails. Price,
+purchase, and freight overrides have the formulas above.
 
 The USD calculations require both operands. No purchase/freight baseline or
 exchange-rate default is available, so incomplete inputs leave outputs blank.
@@ -230,6 +246,7 @@ could configure isolation and initially prevented reaching the intended test.
 | --- | --- |
 | Initial override implementation | 347 JavaScript tests and 61 focused Java tests passed; PostgreSQL migration/persistence/concurrency checks used a disposable database, with no skipped tests. Desktop/mobile browser checks covered actual templates, frontend, and evaluator with substituted storage, including previews, save/reload, drafts, revert, and conflicts. This preceded discovery of the real-wrapper save bug. |
 | After the save-wrapper fix | **33 calculator Java tests passed, zero failures/errors/skips**, including the two real-wrapper regressions and existing API, validation, SQL persistence, and concurrency checks. Tests ran against a disposable PostgreSQL database. |
+| Independent zero-cost batch | **351 JavaScript tests passed**, zero failures/skips. The calculator Java selection reported **38 tests, 30 passed, 8 skipped**, zero failures/errors. The eight existing PostgreSQL integration checks skipped because `ADS_TEST_DB_URL` was not configured; no storage or migration changed. New coverage checks independent predicates, unknown/opposite branches, JSON numeric zero, eligibility, category replacement, and pending/failed/stale fulfillment previews. |
 
 These are historical verification results, not a claim that every future
 checkout was tested. The temporary PostgreSQL clusters were stopped and removed.
@@ -250,6 +267,11 @@ Otherwise integration tests skip. Tests create isolated schemas; some HTTP
 tests bind loopback ports. Do not point tests at an application/production
 database. No credentials are recorded here.
 
+The latest batch used the commands above. Its focused evaluator run also
+passed all 15 tests. Compilation, template/HTTP checks, and an independent
+code review passed. No live database, spreadsheet, deployment, or application
+restart was involved in this batch.
+
 ## Remaining work and recovery checklist
 
 1. Inspect current Git status, branch, and commit before changing anything;
@@ -263,6 +285,9 @@ database. No credentials are recorded here.
 3. Await the author answers already requested: gross versus net monthly units,
    selling-account scope, and intentional category-first versus per-product
    commission defaults. Keep the pending commission fallback blank meanwhile.
+   The additional questions in `ProfitCalculator.md` concern settings scope and
+   effective dates, import-cost source records, and operating-cost input sources;
+   they do not block the independent zero branches already implemented.
 4. Trace the next small field group to original inputs, then compare against
    database schema and actual data coverage. Extend eMAG/API/dashboard storage
    only when an identified input is missing; do not invent a replacement value.

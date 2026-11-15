@@ -5,8 +5,11 @@ const priceFormat = new Intl.NumberFormat('en-US', {minimumFractionDigits: 2, ma
 const percentFormat = new Intl.NumberFormat('en-US', {style: 'percent', maximumFractionDigits: 4});
 const fieldsByRow = new Map(overrideFields.map(field => [field.row, field]));
 const calculatedFields = new Map([[26, 'effectiveSalePriceRon'], [49, 'purchaseCostRon'],
-  [50, 'transportCostRon'], [75, 'effectiveSalePriceRon'], [76, 'effectiveCommissionRate'],
-  [77, 'purchaseCostRon'], [78, 'transportCostRon'], [86, 'commissionCostRon']]);
+  [50, 'transportCostRon'], [63, 'googleAdsCostRon'], [64, 'socialMediaAdsCostRon'],
+  [75, 'effectiveSalePriceRon'], [76, 'effectiveCommissionRate'], [77, 'purchaseCostRon'],
+  [78, 'transportCostRon'], [86, 'commissionCostRon'], [88, 'storageCostRon'],
+  [100, 'turnoverTaxCostRon'], [101, 'vatCostRon'], [105, 'profitTaxCostRon'],
+  [106, 'dividendTaxCostRon']]);
 
 function cell(tag, className, text) {
   const element = document.createElement(tag);
