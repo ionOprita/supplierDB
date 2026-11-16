@@ -143,7 +143,9 @@ tier's blank weight range and four blank surcharge fields are null, not zero.
 Dimensions and weight thresholds must be positive; fees are nonnegative.
 Category labels and base fields are required. Weight range and surcharge
 fields may remain blank. The girth and weight-range inputs are retained even
-though the observed processing classifier does not use them.
+though the observed processing classifier does not use them. The user explicitly
+authorized reproducing that classifier while question 7 is pending; see the
+calculation rules below.
 
 Users review edits before Save; Revert loads the latest saved rates. Saves
 are atomic across changed rows and require each row's expected revision.
@@ -158,12 +160,75 @@ successful commit with `{saved: true}`. The existing application-user role
 is required. Reloading after a committed save is separate and never repeats
 the write if readback fails.
 
-This step supplies editable storage only: By Category rows 57–60 remain
-blank until the classifier question below is resolved. Product dimensions
-and weight already exist in the database, but live data coverage has not been
-reconciled. Storage tariffs and storage-cost calculations remain separate;
-they also need import and stock-duration inputs. The reference workbook
-remains read-only.
+By Category rows 57–60 now use this saved grid and stored product measurements.
+Live measurement coverage has not been reconciled. Storage tariffs and
+storage-cost calculations remain separate; they also need import and
+stock-duration inputs. The reference workbook remains read-only.
+
+### FBE processing, return, withdrawal and disposal fees (rows 57–60)
+
+While the author answer to question 7 is pending, the user chose **exact sheet
+behavior**, including the known questionable tier assignments. This is a
+temporary implementation decision, not confirmation that the classifier is
+the intended business rule. The classifier is isolated so it can be replaced
+after clarification.
+
+The shared grid and selected products are read together in one database
+transaction for each category load and preview. Inputs come from
+`product.product_length_mm`, `product_width_mm`, `product_height_mm`, and
+`product_weight_g`. No transport-carton measurements or browser calculations
+substitute for these inputs.
+
+Reproduce `Calc. cost FBE (procesare)!K` as follows:
+
+1. For each of length, width and height independently, find the smallest tariff
+   dimension threshold greater than or equal to the product's corresponding
+   measurement. From all rows sharing that threshold, take the highest ID.
+2. An axis with no matching threshold contributes zero; do not reject the
+   product merely because one axis is outside the grid.
+3. Select the maximum of those three IDs. If no tariff ID results, all four
+   fees remain blank. Do not rotate/sort dimensions, check whether the chosen
+   tier fits all axes, enforce maximum girth, or use `weightRangeKg` to choose
+   a different tier.
+
+Convert grams to kilograms exactly. The source's `L` expression is equivalent
+to `extraKg = max(0, ceil(weightKg - weightBandKg))`. Then apply the four
+independent source fee expressions:
+
+| Row | Source fee | Server result |
+| --- | --- | --- |
+| 57 | Processing (`N`, using tariff `J`/`P`) | `orderProcessingFeeRon + extraKg × extraOrderFeeRon` |
+| 58 | Return processing (`O`, tariff `K`/`Q`) | `returnProcessingFeeRon + extraKg × extraReturnFeeRon` |
+| 59 | Withdrawal (`P`, tariff `L`/`R`) | `removalFeeRon + extraKg × extraRemovalFeeRon` |
+| 60 | Disposal (`Q`, tariff `M`/`S`) | `disposalFeeRon + extraKg × extraDisposalFeeRon` |
+
+Only the explicit rounding-up of extra kilograms occurs before display. Fees
+use `BigDecimal` and display to two decimal places, in RON excluding VAT.
+They are reference FBE fees regardless of the row-45 fulfillment selection.
+Their calculated API fields are `fbeProcessingCostRon`, `fbeReturnCostRon`,
+`fbeWithdrawalCostRon`, and `fbeDisposalCostRon`.
+
+The application's existing missing-value policy still applies: all four
+measurements must be known, and a missing PNK or retracted product blanks the
+outputs. Known numerical zero is not treated as missing. With zero extra
+kilograms, only the base fee is needed, even if its surcharge is null. With
+positive extra kilograms and a null surcharge, that fee remains unknown;
+other independently known fees can still be displayed. This does not coerce
+blank charges to zero.
+
+Regression examples deliberately preserve the current lookup's quirks:
+
+- `330 × 230 × 25 mm` selects ID 3 (Packable Large), even though it fits ID 2.
+- Identical extra-large dimensions select ID 12, regardless of weight.
+- `1000 × 700 × 700 mm` can select ID 12 even though its height limit is 630 mm.
+- `2000 × 150 × 10 mm` still selects ID 1 through the other two axes; when
+  all three axes exceed all thresholds, no fees are produced.
+
+Saving tariff edits affects subsequent category loads/previews. The page
+retains the latest preview's FBE reference fees during later unrelated draft
+edits, without replacing saved override/revision or other calculation baselines.
+This step does not add VAT, storage costs or incomplete profit totals; questions 4–7
+remain open.
 
 ## Shared manual inputs (rows 40–45)
 
@@ -219,6 +284,7 @@ blank results unless a known formula branch independently determines zero.
 | 75 — Pret produs (cu TVA) | Row 40 when present, otherwise row 48 |
 | 26 — Total Venit/Unitate (RON) | Row 75 |
 | 76 — Comision eMAG [%] | Row 41 when present; otherwise that product's `product.emag_commission` |
+| 57–60 — FBE processing/return/withdrawal/disposal | Current stored tariff grid and product dimensions/weight, following the temporary source classifier above |
 | 86 — Cost comision eMAG (cu TVA) | Row 75 × row 76 when both are known |
 | 49 and 77 — Cost achizitie | Row 42 × row 44 when both are supplied |
 | 50 and 78 — Cost transport | Row 43 × row 44 when both are supplied |
@@ -410,9 +476,15 @@ calculator cells remains an agreed policy, not an open question.
    intentional, or should these tiers be selected by weight? Should maximum
    girth and the separate weight-range field also constrain selection? They
    are stored in the grid but not used by the observed classifier.
+   The same issue extends beyond extra-large tiers: `330 × 230 × 25 mm`
+   selects ID 3 rather than fitting ID 2, while `1000 × 700 × 700 mm` can select
+   ID 12 despite its 630 mm height limit. These examples follow from the
+   dimension-wise threshold lookup and maximum-ID rule. Pending the answer,
+   the user authorized implementing that existing behavior without correcting it.
 
 Questions 1–3 are resolved above. The shared tariff editor supplies the FBE
 processing-rate inputs discussed in question 6, but does not
 resolve their long-term ownership or the classification rule in question 7.
-None of these questions blocks editing the stored tariff grid or the
-independently determined zero costs above.
+The user has explicitly chosen the current classifier for rows 57–60 pending
+question 7; that question is not resolved by its implementation. Editing the
+grid and the independently determined zero costs also remain available.

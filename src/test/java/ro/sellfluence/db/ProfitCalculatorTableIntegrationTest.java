@@ -57,7 +57,9 @@ class ProfitCalculatorTableIntegrationTest {
                     vendor UUID REFERENCES vendor(id), category TEXT,
                     retracted BOOLEAN NOT NULL, continue_to_sell BOOLEAN NOT NULL,
                     emag_sale_price_ron NUMERIC, income_profit_tax TEXT, vat_payer BOOLEAN,
-                    emag_commission NUMERIC
+                    emag_commission NUMERIC,
+                    product_length_mm NUMERIC, product_width_mm NUMERIC,
+                    product_height_mm NUMERIC, product_weight_g NUMERIC
                 );
                 CREATE TABLE emag_order (
                     surrogate_id SERIAL PRIMARY KEY, id TEXT NOT NULL,
@@ -178,6 +180,37 @@ class ProfitCalculatorTableIntegrationTest {
         assertEquals(100L, september.getFirst().previousMonthGrossUnits());
         var november = ProfitCalculatorTable.getCategoryProducts(db, "S", "Trimmers", YearMonth.of(2026, 11));
         assertEquals(100L, november.getFirst().previousMonthGrossUnits());
+    }
+
+    @Test
+    void readsProductMeasurementsWithoutReplacingNullOrZeroAndWithoutRounding() throws SQLException {
+        var vendor = addVendor("S");
+        addProduct("measured", "S. 1 - Measured", "MEASURED", vendor, "Trimmers", false, true);
+        addProduct("zero", "S. 2 - Zero measurements", "ZERO", vendor, "Trimmers", false, true);
+        addProduct("missing", "S. 3 - Missing measurements", "MISSING", vendor, "Trimmers", false, true);
+        execute("""
+                UPDATE product SET product_length_mm = 123.4567890123456789,
+                    product_width_mm = 45.67890123456789, product_height_mm = 9.876543210987654,
+                    product_weight_g = 2000.0000000000000001 WHERE product_code = 'measured';
+                UPDATE product SET product_length_mm = 0, product_width_mm = 0,
+                    product_height_mm = 0, product_weight_g = 0 WHERE product_code = 'zero';
+                """);
+
+        var measured = product("measured");
+        assertEquals(new BigDecimal("123.4567890123456789"), measured.productLengthMm());
+        assertEquals(new BigDecimal("45.67890123456789"), measured.productWidthMm());
+        assertEquals(new BigDecimal("9.876543210987654"), measured.productHeightMm());
+        assertEquals(new BigDecimal("2000.0000000000000001"), measured.productWeightG());
+        var zero = product("zero");
+        assertEquals(BigDecimal.ZERO, zero.productLengthMm());
+        assertEquals(BigDecimal.ZERO, zero.productWidthMm());
+        assertEquals(BigDecimal.ZERO, zero.productHeightMm());
+        assertEquals(BigDecimal.ZERO, zero.productWeightG());
+        var missing = product("missing");
+        assertNull(missing.productLengthMm());
+        assertNull(missing.productWidthMm());
+        assertNull(missing.productHeightMm());
+        assertNull(missing.productWeightG());
     }
 
     @Test

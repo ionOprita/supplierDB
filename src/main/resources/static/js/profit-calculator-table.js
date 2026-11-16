@@ -6,7 +6,8 @@ const percentFormat = new Intl.NumberFormat('en-US', {style: 'percent', maximumF
 const quantityFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits: 0});
 const fieldsByRow = new Map(overrideFields.map(field => [field.row, field]));
 const calculatedFields = new Map([[26, 'effectiveSalePriceRon'], [35, 'previousMonthGrossUnits'], [49, 'purchaseCostRon'],
-  [50, 'transportCostRon'], [63, 'googleAdsCostRon'], [64, 'socialMediaAdsCostRon'],
+  [50, 'transportCostRon'], [57, 'fbeProcessingCostRon'], [58, 'fbeReturnCostRon'],
+  [59, 'fbeWithdrawalCostRon'], [60, 'fbeDisposalCostRon'], [63, 'googleAdsCostRon'], [64, 'socialMediaAdsCostRon'],
   [75, 'effectiveSalePriceRon'], [76, 'effectiveCommissionRate'], [77, 'purchaseCostRon'],
   [78, 'transportCostRon'], [86, 'commissionCostRon'], [88, 'storageCostRon'],
   [100, 'turnoverTaxCostRon'], [101, 'vatCostRon'], [105, 'profitTaxCostRon'],

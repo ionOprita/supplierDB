@@ -1,5 +1,6 @@
 package ro.sellfluence.api;
 
+import ro.sellfluence.db.ProfitCalculatorFbeTariffTable.Tariff;
 import ro.sellfluence.db.ProfitCalculatorTable.CategoryProduct;
 import ro.sellfluence.db.ProfitCalculatorTable.OverrideChange;
 import ro.sellfluence.db.ProfitCalculatorTable.Overrides;
@@ -19,7 +20,9 @@ public final class ProfitCalculatorCategory {
                              BigDecimal googleAdsCostRon, BigDecimal socialMediaAdsCostRon,
                              BigDecimal storageCostRon, BigDecimal turnoverTaxCostRon, BigDecimal vatCostRon,
                              BigDecimal profitTaxCostRon, BigDecimal dividendTaxCostRon,
-                             Long previousMonthGrossUnits) {
+                             Long previousMonthGrossUnits, BigDecimal fbeProcessingCostRon,
+                             BigDecimal fbeReturnCostRon, BigDecimal fbeWithdrawalCostRon,
+                             BigDecimal fbeDisposalCostRon) {
     }
 
     public record Product(String productCode, String name, String pnk, boolean retracted,
@@ -31,8 +34,12 @@ public final class ProfitCalculatorCategory {
     }
 
     static Response create(String vendorGroup, String category, List<CategoryProduct> products) {
+        return create(vendorGroup, category, products, List.of());
+    }
+
+    static Response create(String vendorGroup, String category, List<CategoryProduct> products, List<Tariff> tariffs) {
         var ordered = products.stream()
-                .map(ProfitCalculatorCategory::evaluate)
+                .map(product -> evaluate(product, tariffs))
                 .sorted(Comparator.comparing(Product::retracted)
                         .thenComparing(ProfitCalculatorCategory::sortName,
                                 ProductPerformanceOptions::compareProductNames)
@@ -43,6 +50,11 @@ public final class ProfitCalculatorCategory {
 
     static Response preview(String vendorGroup, String category, List<CategoryProduct> products,
                             List<OverrideChange> changes) {
+        return preview(vendorGroup, category, products, changes, List.of());
+    }
+
+    static Response preview(String vendorGroup, String category, List<CategoryProduct> products,
+                            List<OverrideChange> changes, List<Tariff> tariffs) {
         var patches = new HashMap<String, OverrideChange>();
         changes.forEach(change -> patches.put(change.productCode(), change));
         var preview = products.stream().map(product -> {
@@ -51,15 +63,16 @@ public final class ProfitCalculatorCategory {
             return new CategoryProduct(product.productCode(), product.name(), product.pnk(), product.retracted(),
                     product.emagSalePriceRon(), product.incomeProfitTax(), product.vatPayer(), product.companyName(),
                     overrides(product).applyChanges(patch.values()), product.overrideRevision(),
-                    product.emagCommission(), product.previousMonthGrossUnits());
+                    product.emagCommission(), product.previousMonthGrossUnits(),
+                    product.productLengthMm(), product.productWidthMm(), product.productHeightMm(), product.productWeightG());
         }).toList();
         if (!patches.isEmpty()) {
             throw new IllegalArgumentException("A preview product does not belong to the selected category.");
         }
-        return create(vendorGroup, category, preview);
+        return create(vendorGroup, category, preview, tariffs);
     }
 
-    private static Product evaluate(CategoryProduct product) {
+    private static Product evaluate(CategoryProduct product, List<Tariff> tariffs) {
         var overrides = overrides(product);
         boolean eligible = !product.retracted() && product.pnk() != null && !product.pnk().isBlank();
         var price = eligible ? firstKnown(overrides.salePriceRon(), product.emagSalePriceRon()) : null;
@@ -73,13 +86,16 @@ public final class ProfitCalculatorCategory {
         var turnoverTax = eligible && "Profit".equalsIgnoreCase(regime) ? BigDecimal.ZERO : null;
         var vat = eligible && Boolean.FALSE.equals(product.vatPayer()) ? BigDecimal.ZERO : null;
         var profitTax = eligible && "Venit".equalsIgnoreCase(regime) ? BigDecimal.ZERO : null;
+        var fbe = eligible ? ProfitCalculatorFbeCosts.calculate(product.productLengthMm(), product.productWidthMm(),
+                product.productHeightMm(), product.productWeightG(), tariffs) : ProfitCalculatorFbeCosts.Costs.unknown();
         return new Product(product.productCode(), product.name(), product.pnk(), product.retracted(),
                 eligible ? product.emagSalePriceRon() : null, eligible ? product.incomeProfitTax() : null,
                 eligible ? product.vatPayer() : null, eligible ? product.companyName() : null,
                 overrides, product.overrideRevision(),
                 new Calculated(price, commission, multiply(price, commission), purchase, transport,
                         advertising, advertising, storage, turnoverTax, vat, profitTax, profitTax,
-                        eligible ? product.previousMonthGrossUnits() : null));
+                        eligible ? product.previousMonthGrossUnits() : null, fbe.processingCostRon(),
+                        fbe.returnCostRon(), fbe.withdrawalCostRon(), fbe.disposalCostRon()));
     }
 
     private static Overrides overrides(CategoryProduct product) {

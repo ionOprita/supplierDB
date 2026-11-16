@@ -171,8 +171,9 @@ public class API {
     ProfitCalculatorCategory.Response getProfitCalculatorCategory(String vendorGroup, String category, Clock clock)
             throws SQLException {
         var previousMonth = profitCalculatorPreviousMonth(clock);
+        var data = mirrorDB.readProfitCalculatorCategoryData(vendorGroup, category, previousMonth);
         return ProfitCalculatorCategory.create(vendorGroup, category,
-                mirrorDB.readProfitCalculatorProducts(vendorGroup, category, previousMonth));
+                data.products(), data.tariffs());
     }
 
     public ProfitCalculatorCategory.Response previewProfitCalculatorCategory(ProfitCalculatorOverrides.Request request)
@@ -183,9 +184,9 @@ public class API {
     ProfitCalculatorCategory.Response previewProfitCalculatorCategory(
             ProfitCalculatorOverrides.Request request, Clock clock) throws SQLException {
         var previousMonth = profitCalculatorPreviousMonth(clock);
+        var data = mirrorDB.readProfitCalculatorCategoryData(request.vendorGroup(), request.category(), previousMonth);
         return ProfitCalculatorCategory.preview(request.vendorGroup(), request.category(),
-                mirrorDB.readProfitCalculatorProducts(request.vendorGroup(), request.category(), previousMonth),
-                request.changes());
+                data.products(), request.changes(), data.tariffs());
     }
 
     static YearMonth profitCalculatorPreviousMonth(Clock clock) {

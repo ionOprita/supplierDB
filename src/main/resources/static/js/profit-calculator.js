@@ -2,6 +2,9 @@ import {fetchJSON} from './common.js';
 import {renderCategoryTable} from './profit-calculator-table.js';
 import {OverrideDrafts} from './profit-calculator-overrides.js';
 
+const fbeReferenceFields = ['fbeProcessingCostRon', 'fbeReturnCostRon',
+  'fbeWithdrawalCostRon', 'fbeDisposalCostRon'];
+
 function populateSelect(select, values, emptyLabel) {
   select.innerHTML = '';
   for (const value of values.length ? values : ['']) {
@@ -98,6 +101,14 @@ export function initProfitCalculator() {
       const data = await postJSON('/app/profitCalculatorPreview', selectionBody(changes));
       if (version !== previewVersion) return;
       if (!Array.isArray(data.products)) throw new Error('Invalid preview response');
+      const latest = new Map(data.products.map(product => [product.productCode, product]));
+      // Tariff references can change independently of drafts; retain them without replacing saved override baselines.
+      products = products.map(product => {
+        const updated = latest.get(product.productCode);
+        return updated ? {...product, calculated: {...product.calculated,
+          ...Object.fromEntries(fbeReferenceFields.map(field => [field, updated.calculated?.[field] ?? null]))}}
+          : product;
+      });
       // Updating only result cells preserves the focused input and its selection/caret.
       tableView?.updateMetrics(data.products);
       previewError = false;

@@ -1,6 +1,7 @@
 package ro.sellfluence.api;
 
 import org.junit.jupiter.api.Test;
+import ro.sellfluence.db.ProfitCalculatorFbeTariffTable.Tariff;
 import ro.sellfluence.db.ProfitCalculatorTable.CategoryProduct;
 import ro.sellfluence.db.ProfitCalculatorTable.OverrideChange;
 import ro.sellfluence.db.ProfitCalculatorTable.Overrides;
@@ -183,6 +184,83 @@ class ProfitCalculatorCategoryTest {
         assertEquals(new BigDecimal("0.1425"), products.getLast().calculated().effectiveCommissionRate());
         assertEquals(new BigDecimal("17.5924800"), products.getLast().calculated().commissionCostRon());
         assertEquals(4L, products.getLast().calculated().previousMonthGrossUnits());
+    }
+
+    @Test
+    void returnsFbeReferenceFeesAndPreservesMeasurementsDuringOverridePreviews() {
+        var saved = new Overrides(null, null, null, null, null, "Minulescu");
+        var source = measuredProduct("code", "PNK", false, saved,
+                new BigDecimal("100"), new BigDecimal("2500"));
+        var tariffs = List.of(fbeTariff(new BigDecimal("3.5")));
+        var response = ProfitCalculatorCategory.create("S", "Trimmers", List.of(source), tariffs);
+        var original = response.products().getFirst();
+        assertEquals(new BigDecimal("4.0"), original.calculated().fbeProcessingCostRon());
+        assertEquals(new BigDecimal("2.1"), original.calculated().fbeReturnCostRon());
+        assertEquals(new BigDecimal("4"), original.calculated().fbeWithdrawalCostRon());
+        assertEquals(new BigDecimal("4"), original.calculated().fbeDisposalCostRon());
+
+        var preview = ProfitCalculatorCategory.preview("S", "Trimmers", List.of(source), List.of(
+                new OverrideChange("code", 3, Map.of("salePriceRon", "123.45", "fulfillmentSource", "eMAG"))),
+                tariffs).products().getFirst();
+        assertEquals(original.calculated().fbeProcessingCostRon(), preview.calculated().fbeProcessingCostRon());
+        assertEquals(original.calculated().fbeReturnCostRon(), preview.calculated().fbeReturnCostRon());
+        assertEquals(original.calculated().fbeWithdrawalCostRon(), preview.calculated().fbeWithdrawalCostRon());
+        assertEquals(original.calculated().fbeDisposalCostRon(), preview.calculated().fbeDisposalCostRon());
+        assertEquals(new BigDecimal("123.45"), preview.calculated().effectiveSalePriceRon());
+        assertEquals(7L, preview.calculated().previousMonthGrossUnits());
+        assertEquals(saved, source.overrides(), "Preview does not change the source");
+
+        var mapper = new ObjectMapper();
+        var json = mapper.readTree(mapper.writeValueAsString(response)).get("products").get(0).get("calculated");
+        for (var field : List.of("fbeProcessingCostRon", "fbeReturnCostRon", "fbeWithdrawalCostRon", "fbeDisposalCostRon")) {
+            assertTrue(json.get(field).isNumber(), field);
+        }
+    }
+
+    @Test
+    void usesTheProvidedCurrentTariffsWithoutCachingOrChangingOverrides() {
+        var source = measuredProduct("code", "PNK", false, Overrides.empty(),
+                new BigDecimal("100"), new BigDecimal("2500"));
+        var old = ProfitCalculatorCategory.create("S", "Trimmers", List.of(source),
+                List.of(fbeTariff(new BigDecimal("3.5")))).products().getFirst();
+        var current = ProfitCalculatorCategory.create("S", "Trimmers", List.of(source),
+                List.of(fbeTariff(new BigDecimal("8.123456789")))).products().getFirst();
+        assertEquals(new BigDecimal("4.0"), old.calculated().fbeProcessingCostRon());
+        assertEquals(new BigDecimal("8.623456789"), current.calculated().fbeProcessingCostRon());
+        assertEquals(old.overrides(), current.overrides());
+        assertEquals(old.overrideRevision(), current.overrideRevision());
+    }
+
+    @Test
+    void keepsFbeReferenceFeesUnknownForMissingMeasurementsAndIneligibleProducts() {
+        var tariffs = List.of(fbeTariff(new BigDecimal("3.5")));
+        var inputs = List.of(
+                measuredProduct("retracted", "PNK", true, Overrides.empty(), new BigDecimal("100"), new BigDecimal("2500")),
+                measuredProduct("null-pnk", null, false, Overrides.empty(), new BigDecimal("100"), new BigDecimal("2500")),
+                measuredProduct("blank-pnk", " \t", false, Overrides.empty(), new BigDecimal("100"), new BigDecimal("2500")),
+                measuredProduct("missing-length", "PNK", false, Overrides.empty(), null, new BigDecimal("2500")),
+                measuredProduct("missing-weight", "PNK", false, Overrides.empty(), new BigDecimal("100"), null));
+        var response = ProfitCalculatorCategory.create("S", "Trimmers", inputs, tariffs);
+        for (var product : response.products()) {
+            assertNull(product.calculated().fbeProcessingCostRon());
+            assertNull(product.calculated().fbeReturnCostRon());
+            assertNull(product.calculated().fbeWithdrawalCostRon());
+            assertNull(product.calculated().fbeDisposalCostRon());
+        }
+    }
+
+    private static CategoryProduct measuredProduct(String code, String pnk, boolean retracted, Overrides overrides,
+                                                    BigDecimal lengthMm, BigDecimal weightG) {
+        return new CategoryProduct(code, "Product " + code, pnk, retracted, new BigDecimal("169.99"),
+                "Profit", true, "Company", overrides, 3, new BigDecimal("0.18"), 7L,
+                lengthMm, new BigDecimal("100"), new BigDecimal("10"), weightG);
+    }
+
+    private static Tariff fbeTariff(BigDecimal processingFee) {
+        return new Tariff(1, "Packable Small", new BigDecimal("200"), new BigDecimal("150"),
+                new BigDecimal("10"), new BigDecimal("520"), new BigDecimal("2"), processingFee,
+                new BigDecimal("1.8"), new BigDecimal("2"), new BigDecimal("2"), new BigDecimal("5"),
+                new BigDecimal("0.5"), new BigDecimal("0.3"), new BigDecimal("2"), new BigDecimal("2"), 1);
     }
 
     @Test

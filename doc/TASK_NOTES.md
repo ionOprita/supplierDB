@@ -1,9 +1,9 @@
 # Profit calculator — task notes and recovery handoff
 
 Last reviewed: **2026-11-16**. Repository branch: `profit-calculator`.
-Base commit for the latest batch: `3c83d58` (`Added more fields.`).
+Base commit for the latest batch: `9c2e070` (`Reorder columns to show active products first.`).
 The working tree was clean before this batch. These notes include the subsequent
-product-column ordering change described below, not a confirmed
+FBE fee calculations described below, not a confirmed
 production deployment.
 
 Start here after losing the chat, then read [ProfitCalculator.md](ProfitCalculator.md)
@@ -23,8 +23,9 @@ without storno records, selling accounts only in the selected group, and
 per-product commission defaults. These answers are now implemented. Remaining
 questions cover settings
 ownership/timing, authoritative import/operating-cost inputs, and FBE tier
-classification. The user approved a shared seeded FBE tariff editor while
-deferring the By Category fee calculations.
+classification. After initially deferring FBE calculations, the user explicitly
+chose **exact sheet behavior** for rows 57–60 pending question 7, including the
+known questionable tier assignments. That question is still open.
 
 ## Requirements and settled decisions
 
@@ -65,6 +66,12 @@ deferring the By Category fee calculations.
   rather than a one-off transfer program. This is an authorized seed snapshot;
   subsequent runtime reads/writes use only PostgreSQL. Users edit the existing
   12 tiers; adding/removing tiers and historical schedules are deferred.
+- Rows 57–60 temporarily reproduce the existing FBE dimension classifier and
+  rounded-up excess-kilogram charges from the current database grid. Do not
+  silently correct its MAX-ID selection, enforce girth/weight-range limits,
+  rotate dimensions, or require the chosen tier to fit. Replace the isolated
+  classifier only after the author clarifies question 7 or the user changes
+  the agreed behavior. Existing blank-on-missing rules still apply.
 - Row 35 counts previous-calendar-month **gross finalized quantities** for the
   selected product PNKs and selling-account group. Keep finalized snapshots
   even when a later storno exists; ignore status-5 records rather than deduct
@@ -108,8 +115,10 @@ processing, return, withdrawal, and disposal tariff grid is now stored in the
 database, alongside existing product dimensions/weight. The observed classifier
 uses maximum matching dimension-row IDs, selecting the last of four identically
 sized extra-large tiers regardless of weight; girth and weight range are unused.
-This is now author question 7, not a rule silently corrected in code. The editor
-does not yet populate By Category rows 57–60.
+This is author question 7, not a rule silently corrected in code. The user now
+authorized using that exact behavior to populate By Category rows 57–60 while
+the question remains pending. The ambiguity also affects medium dimensions
+and can choose a tier whose height does not fit; see regression examples below.
 The FBE storage and EEE/BAT/packaging pricing chains have not been fully traced.
 Workbook contents can evolve; re-read metadata and
 current formulas before implementing another batch. Use exact tab names and
@@ -192,6 +201,7 @@ multiple product columns: some formula rows contain manually replaced cells.
 | 86 | Effective price × effective commission when both are known |
 | 49, 77 | USD purchase override 42 × exchange-rate override 44 |
 | 50, 78 | USD transport override 43 × exchange-rate override 44 |
+| 57–60 | FBE processing, return, withdrawal and disposal: source-classified tier base fee plus rounded-up excess kg × surcharge |
 | 63, 64 | Literal zero from the Google/social-media Ads formulas; not measured spending |
 | 88 | Zero only for an explicit `Minulescu` fulfillment override |
 | 100 | Zero only for the known `Profit` tax regime |
@@ -301,8 +311,51 @@ separate, so a failed read never retries a committed POST.
 
 `ProfitCalculatorFbeTariffs`, `ProfitCalculatorFbeTariffTable`, and
 `profit-fbe-tariffs.js` own request validation, persistence and editing. By
-Category fee calculations remain deferred until question 7 is resolved; the
-tariff editor does not require monthly sales or commission-default answers.
+Category fee calculations now use these current saved tariffs as described
+below. Storage tariffs and fee calculations remain a separate future step.
+
+### FBE fee calculations while question 7 is pending
+
+The user selected **Exact sheet behavior**, with the explicit intention to
+improve it after answer 7. The server reads the selected products' length,
+width, height (mm), weight (g) and shared tariffs together in one read
+transaction for both category loads and previews. No migration or new endpoint
+is needed. Runtime fees use the saved grid, not migration constants or Sheets.
+
+For each axis, find the smallest tariff dimension threshold at least as large
+as the product's measurement; choose the highest ID among ties. An unmatched
+axis contributes 0. The highest of the three IDs selects the tier; if none is
+selected, fees are blank. Preserve this rule even when that tier does not fit
+all dimensions, rather than substituting a first-fitting-tier algorithm.
+
+Source-compatibility regression examples include:
+
+- 330 × 230 × 25 mm selects ID 3, although it fits ID 2.
+- Identical extra-large dimensions select ID 12 regardless of weight.
+- 1000 × 700 × 700 mm selects ID 12 despite its 630 mm height limit.
+- 2000 × 150 × 10 mm can still select ID 1 through the other axes; all axes
+  exceeding every threshold leaves fees blank.
+
+Convert grams to kg exactly; extra kg is `max(0, ceil(weightKg - weightBandKg))`.
+Each fee is its base plus extra kg times its own surcharge. With zero extra
+kg, base fees are known even if surcharges are null. Positive extra kg with a
+null surcharge leaves that fee blank, preserving independently known other
+fees. All four measurements must be known; known numeric zero stays a value.
+The existing PNK/nonretracted guard applies. All four outputs are RON excluding
+VAT, independent of fulfillment override 45, with no rounding beyond the
+explicit excess-kg ceiling and two-decimal display.
+
+The existing response gains nullable calculated fields `fbeProcessingCostRon`,
+`fbeReturnCostRon`, `fbeWithdrawalCostRon` and `fbeDisposalCostRon`. Saved tariff
+edits affect later loads/previews. The classifier is isolated for future
+replacement; questions 4–7 remain open and missing VAT/storage/other costs do
+not become zero or incomplete profit totals.
+
+After a successful preview, only its four FBE reference outputs refresh the
+GET baseline. Later unrelated draft edits retain these latest fees even while
+preview is pending or fails. Saved override values/revisions and other baseline
+calculations remain intact, so clearing price/commission drafts still restores
+the original defaults and does not accidentally save a previous preview.
 
 ## Save failure, correction, and verification limits
 
@@ -336,6 +389,7 @@ could configure isolation and initially prevented reaching the intended test.
 
 | Stage | Result and qualification |
 | --- | --- |
+| Literal FBE fee calculations | **366 JavaScript tests and 101 focused Java/JTE tests passed**, zero failures/errors/skips. Disposable PostgreSQL checks exercised actual API → pooled mirror reads, product measurements, saved tariff edits, previews, eligibility, monthly quantities and commissions. Pure tests lock in 19 classifier/surcharge cases, including intentional ties/nonfitting selections, unmatched axes, exact gram-to-kg conversion and ceiling, null/zero surcharges and precision. UI checks cover all four amounts, eligibility, categories, stale responses and preservation of refreshed FBE fees during later pending/failed previews without changing saved override baselines. |
 | Active-first column ordering | **18 calculator evaluator tests passed**, zero failures/errors/skips, using `mvn -o -Dtest=ProfitCalculatorCategoryTest test`. The ordering regression covers natural name/code order in both active/retracted groups and nonempty previews. An eligibility test now matches products by identity rather than assuming their previous positions. No database or API-shape changes were needed. |
 | Initial override implementation | 347 JavaScript tests and 61 focused Java tests passed; PostgreSQL migration/persistence/concurrency checks used a disposable database, with no skipped tests. Desktop/mobile browser checks covered actual templates, frontend, and evaluator with substituted storage, including previews, save/reload, drafts, revert, and conflicts. This preceded discovery of the real-wrapper save bug. |
 | After the save-wrapper fix | **33 calculator Java tests passed, zero failures/errors/skips**, including the two real-wrapper regressions and existing API, validation, SQL persistence, and concurrency checks. Tests ran against a disposable PostgreSQL database. |
@@ -387,6 +441,11 @@ separate disposable PostgreSQL cluster. Its cluster was stopped and removed
 after verification. No application database, spreadsheet, deployment, or
 server restart was involved; no migration is required for this batch.
 
+The literal-FBE-fee batch used the same focused Java/JTE command and the full
+JavaScript suite, with a fresh disposable PostgreSQL cluster. Its cluster was
+stopped and removed after verification. No application database, spreadsheet,
+deployment or server restart was involved; no migration was required.
+
 ## Remaining work and recovery checklist
 
 1. Inspect current Git status, branch, and commit before changing anything;
@@ -402,7 +461,8 @@ server restart was involved; no migration is required for this batch.
    4–7 in `ProfitCalculator.md` concern settings scope and
    effective dates, import-cost source records, operating-cost input sources,
    and FBE tier selection. They do not block the independent zero branches or
-   editing tariffs. Resolve question 7 before connecting rows 57–60.
+   editing tariffs. Rows 57–60 now follow the current sheet formula by explicit
+   user choice; resolve question 7 before changing that classification rule.
 4. Trace the next small field group to original inputs, then compare against
    database schema and actual data coverage. Extend eMAG/API/dashboard storage
    only when an identified input is missing; do not invent a replacement value.

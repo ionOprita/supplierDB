@@ -23,7 +23,7 @@
             <button id="profitOverrideRevert" type="button" disabled>Revert changes</button>
             <p id="profitOverrideStatus" role="status" aria-live="polite" hidden></p>
         </div>
-        <p class="muted profit-override-help">Blank overrides use available defaults. USD costs need both an amount and an exchange rate. Commission uses each product's stored rate unless overridden; fulfillment charges are not calculated yet.</p>
+        <p class="muted profit-override-help">Blank overrides use available defaults. USD costs need both an amount and an exchange rate. Commission uses each product's stored rate unless overridden. FBE fees use current tariff rules; eMAG storage and other fulfillment costs remain pending.</p>
         <table class="profit-category-summary" aria-label="Category summary">
             <tbody id="profitCategorySummaryBody"></tbody>
         </table>

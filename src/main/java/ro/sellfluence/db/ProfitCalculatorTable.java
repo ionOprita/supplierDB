@@ -116,7 +116,9 @@ public final class ProfitCalculatorTable {
     public record CategoryProduct(String productCode, String name, String pnk, boolean retracted,
                                   BigDecimal emagSalePriceRon, String incomeProfitTax, Boolean vatPayer,
                                   String companyName, Overrides overrides, long overrideRevision,
-                                  BigDecimal emagCommission, Long previousMonthGrossUnits) {
+                                  BigDecimal emagCommission, Long previousMonthGrossUnits,
+                                  BigDecimal productLengthMm, BigDecimal productWidthMm,
+                                  BigDecimal productHeightMm, BigDecimal productWeightG) {
         public CategoryProduct {
             overrides = overrides == null ? Overrides.empty() : overrides;
         }
@@ -137,6 +139,23 @@ public final class ProfitCalculatorTable {
             this(productCode, name, pnk, retracted, emagSalePriceRon, incomeProfitTax, vatPayer,
                     companyName, overrides, overrideRevision, null, null);
         }
+
+        public CategoryProduct(String productCode, String name, String pnk, boolean retracted,
+                               BigDecimal emagSalePriceRon, String incomeProfitTax, Boolean vatPayer,
+                               String companyName, Overrides overrides, long overrideRevision,
+                               BigDecimal emagCommission, Long previousMonthGrossUnits) {
+            this(productCode, name, pnk, retracted, emagSalePriceRon, incomeProfitTax, vatPayer,
+                    companyName, overrides, overrideRevision, emagCommission, previousMonthGrossUnits,
+                    null, null, null, null);
+        }
+    }
+
+    /** Both source reads belong to one database snapshot; callers do not mix tariff revisions mid-request. */
+    public record CategoryData(List<CategoryProduct> products, List<ProfitCalculatorFbeTariffTable.Tariff> tariffs) {
+        public CategoryData {
+            products = List.copyOf(products);
+            tariffs = List.copyOf(tariffs);
+        }
     }
 
     static List<CategoryProduct> getCategoryProducts(Connection db, String vendorGroup, String category,
@@ -147,6 +166,7 @@ public final class ProfitCalculatorTable {
                 WITH selected_products AS (
                     SELECT p.product_code, p.name, p.emag_pnk, p.retracted,
                            p.emag_sale_price_ron, p.income_profit_tax, p.vat_payer, p.emag_commission,
+                           p.product_length_mm, p.product_width_mm, p.product_height_mm, p.product_weight_g,
                            v.company_name
                     FROM product p
                     JOIN vendor v ON p.vendor = v.id
@@ -190,7 +210,9 @@ public final class ProfitCalculatorTable {
                             result.getObject("vat_payer", Boolean.class), result.getString("company_name"),
                             readOverrides(result), result.getLong("override_revision"),
                             result.getBigDecimal("emag_commission"),
-                            result.getObject("previous_month_gross_units", Long.class)));
+                            result.getObject("previous_month_gross_units", Long.class),
+                            result.getBigDecimal("product_length_mm"), result.getBigDecimal("product_width_mm"),
+                            result.getBigDecimal("product_height_mm"), result.getBigDecimal("product_weight_g")));
                 }
             }
         }
