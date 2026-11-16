@@ -1,10 +1,9 @@
 # Profit calculator — task notes and recovery handoff
 
 Last reviewed: **2026-11-15**. Repository branch: `profit-calculator`.
-Base commit for the latest batch: `12cf14f`
-(`Summarized current work to keep context after compatcion.`).
+Base commit for the latest batch: `231c764` (`Added more fields.`).
 The working tree was clean before this batch. These notes include the subsequent
-independent-cost changes described below, not a confirmed production deployment.
+category-summary change described below, not a confirmed production deployment.
 
 Start here after losing the chat, then read [ProfitCalculator.md](ProfitCalculator.md)
 for detailed formulas, mappings, API behavior, and the maintained **Open questions**.
@@ -83,11 +82,14 @@ These are investigation references, never runtime data sources:
 | S. Date comenzi - 2026 | [Workbook](https://docs.google.com/spreadsheets/d/1RQTp2TYFYLx21h0dtepB73hBoTSkZN5iFF_ip7GGCfk/edit); `T. Sales/M.`, raw `Date` |
 | Cent. - Ret. Sto. Ref. Inl. | [Workbook](https://docs.google.com/spreadsheets/d/1bOPbTkbvQL3g3Q0hzyNhaTAt--BNAFSZ5bV2PtAKh80/edit); `(GLB) Cent. Prod. (%)` and monthly rate helpers |
 | S. eMAG ads | [Workbook](https://docs.google.com/spreadsheets/d/1lTej6Or4ozRAZwpwA8h7PJLQSZQjhR6-lxGg8oa_8do/edit); `eMAG ads`, `Introd. Date` |
-| External FBE calculator | [Workbook](https://docs.google.com/spreadsheets/d/1VkeF6LQMGVXZRBuVee2p2Oby0JYbmSwc8gBbdLrlcXk/edit); `Calc. cost FBE (Total)` |
+| Calculator cost FBE | [Workbook](https://docs.google.com/spreadsheets/d/1VkeF6LQMGVXZRBuVee2p2Oby0JYbmSwc8gBbdLrlcXk/edit); tariff tab `Grila costuri procesare FBE` gid **1892248028**, `Calc. cost FBE (Total)` gid **1391468769** |
 | EEE/BAT/packaging source | [Workbook](https://docs.google.com/spreadsheets/d/13xZcGdWG4WKP6TwuXwjVjKeuO99-9QHzuMQgg0S9Po4/edit); `Cost EEE & BAT & Ambalaje/prod.` |
 
-The last two import sources were identified, but their internal pricing chains
-have not been fully traced. Workbook contents can evolve; re-read metadata and
+The FBE workbook title and tariff tab above were confirmed from metadata. Its
+processing, return, withdrawal, and disposal fees need a tariff grid that is
+not stored in the database, in addition to existing product dimensions/weight.
+The FBE storage and EEE/BAT/packaging pricing chains have not been fully traced.
+Workbook contents can evolve; re-read metadata and
 current formulas before implementing another batch. Use exact tab names and
 bounded ranges. Inspect array/import anchors (often A1), rather than treating
 an imported cell with no individual formula as an unexplained constant. Sample
@@ -146,6 +148,7 @@ multiple product columns: some formula rows contain manually replaced cells.
 
 | Row(s) | Current behavior |
 | --- | --- |
+| 2 | Selected database-backed `product.category` as literal summary text |
 | 7–9 | Product name, PNK, display-only retracted checkbox |
 | 48 | `product.emag_sale_price_ron`, reference price including VAT |
 | 70 | Linked `vendor.company_name` |
@@ -162,12 +165,18 @@ multiple product columns: some formula rows contain manually replaced cells.
 | 101 | Zero only when VAT-payer status is explicitly false |
 | 105, 106 | Zero only for the known `Venit` tax regime |
 
-The latest seven outputs implement only independently determined branches.
+The seven cost outputs above implement only independently determined branches.
 Tax-regime comparisons trim whitespace and ignore case, retaining the original
 display text. Null/unknown regimes, null VAT status, blank fulfillment, and
 branches needing unavailable cost/tax inputs remain blank. The existing
 PNK/nonretracted guard applies even to literal-zero results. Cost and profit
 totals remain blank. These zero rules do not establish missing rates or tariffs.
+
+The category summary updates immediately with the current valid group/category
+selection. It stays visible during product loading, empty results, failed
+product requests, and override previews. It clears during selector-option
+reloads or when no valid category is selected. This selection-level value is
+independent of product eligibility. Financial summary rows 3–6 remain blank.
 
 ### Override behavior
 
@@ -196,7 +205,7 @@ purchase, and freight overrides have the formulas above.
 The USD calculations require both operands. No purchase/freight baseline or
 exchange-rate default is available, so incomplete inputs leave outputs blank.
 Rows 51/52/79/80 (import VAT/customs) remain blank, as do unimplemented rates,
-fees, profit totals, monthly quantities, and summary outputs.
+fees, profit totals, monthly quantities, and financial summary rows 3–6.
 
 ### Code entry points
 
@@ -247,6 +256,7 @@ could configure isolation and initially prevented reaching the intended test.
 | Initial override implementation | 347 JavaScript tests and 61 focused Java tests passed; PostgreSQL migration/persistence/concurrency checks used a disposable database, with no skipped tests. Desktop/mobile browser checks covered actual templates, frontend, and evaluator with substituted storage, including previews, save/reload, drafts, revert, and conflicts. This preceded discovery of the real-wrapper save bug. |
 | After the save-wrapper fix | **33 calculator Java tests passed, zero failures/errors/skips**, including the two real-wrapper regressions and existing API, validation, SQL persistence, and concurrency checks. Tests ran against a disposable PostgreSQL database. |
 | Independent zero-cost batch | **351 JavaScript tests passed**, zero failures/skips. The calculator Java selection reported **38 tests, 30 passed, 8 skipped**, zero failures/errors. The eight existing PostgreSQL integration checks skipped because `ADS_TEST_DB_URL` was not configured; no storage or migration changed. New coverage checks independent predicates, unknown/opposite branches, JSON numeric zero, eligibility, category replacement, and pending/failed/stale fulfillment previews. |
+| Category-summary batch | **351 JavaScript tests passed**, zero failures/skips. Existing UI checks now verify row 2 across immediate category/group changes, loading, empty results, product failures/retry, stale responses, absent categories/options, and override previews; financial summary rows 3–6 remain blank. Documentation and whitespace checks passed. No Java, API, or database code changed, so Java/PostgreSQL tests were not rerun for this batch. |
 
 These are historical verification results, not a claim that every future
 checkout was tested. The temporary PostgreSQL clusters were stopped and removed.
@@ -267,10 +277,11 @@ Otherwise integration tests skip. Tests create isolated schemas; some HTTP
 tests bind loopback ports. Do not point tests at an application/production
 database. No credentials are recorded here.
 
-The latest batch used the commands above. Its focused evaluator run also
-passed all 15 tests. Compilation, template/HTTP checks, and an independent
-code review passed. No live database, spreadsheet, deployment, or application
-restart was involved in this batch.
+The independent zero-cost batch used the commands above. Its focused evaluator
+run also passed all 15 tests. Compilation, template/HTTP checks, and an independent
+code review passed. The category-summary batch ran the JavaScript command only.
+Neither batch involved a live database, spreadsheet edit, deployment, or
+application restart.
 
 ## Remaining work and recovery checklist
 

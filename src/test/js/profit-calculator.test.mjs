@@ -52,6 +52,8 @@ const product = (code, name = code, retracted = false) => ({productCode: code, n
 const products = [product('first', 'S. 2 - Trimmer'), product('second', 'S. 10 - Trimmer', true)];
 const metricCell = (page, sourceRow, productIndex = 0) => page.body.children
   .find(row => Number(row.dataset.sourceRow) === sourceRow).children[productIndex + 1];
+const assertCategorySummary = (page, category = '') => assert.deepEqual(
+  page.summary.children.map(row => row.children[1].textContent), [category, '', '', '', '']);
 const overrideInput = (page, row, index = 0) => metricCell(page, row, index).children[0];
 const edit = (page, row, value, index = 0) => {
   const input = overrideInput(page, row, index);
@@ -153,11 +155,14 @@ test('exposure page shows the database group letters and selects the server defa
 test('changing vendor group replaces category options and resets the selected category', async t => {
   const page = await openPage(t);
   assert.equal(page.category.value, 'Hair trimmers');
+  assertCategorySummary(page, 'Hair trimmers');
   assert.deepEqual(page.categoryNames(), ['Hair trimmers', 'Personal care']);
   page.category.value = 'Personal care';
   page.category.dispatch('change');
+  assertCategorySummary(page, 'Personal care');
   page.group.value = 'J';
   page.group.dispatch('change');
+  assertCategorySummary(page, 'Baby products');
   await setImmediate();
   assert.deepEqual(page.categoryNames(), ['Baby products', 'Toys']);
   assert.equal(page.category.value, 'Baby products');
@@ -167,6 +172,10 @@ test('changing vendor group replaces category options and resets the selected ca
     'Changing filters uses the already loaded selector options');
   assert.equal(page.calls.at(-1).searchParams.get('vendorGroup'), 'J');
   assert.equal(page.calls.at(-1).searchParams.get('category'), 'Baby products');
+  assertCategorySummary(page, 'Baby products');
+  page.group.value = 'Z';
+  page.group.dispatch('change');
+  assertCategorySummary(page);
 });
 
 test('saved URLs restore a category belonging to the requested vendor group', async t => {
@@ -174,6 +183,7 @@ test('saved URLs restore a category belonging to the requested vendor group', as
   assert.equal(page.group.value, 'J');
   assert.equal(page.category.value, 'Toys');
   assert.deepEqual(page.categoryNames(), ['Baby products', 'Toys']);
+  assertCategorySummary(page, 'Toys');
 });
 
 test('a category from another vendor group cannot remain selected', async t => {
@@ -190,6 +200,7 @@ test('a group without categories clears and disables the category selector', asy
   assert.equal(page.category.disabled, true);
   assert.equal(window.location.searchParams.has('category'), false);
   assert.match(page.status.textContent, /no categor/i);
+  assertCategorySummary(page);
 });
 
 test('no available vendor groups leaves both selectors disabled', async t => {
@@ -197,6 +208,7 @@ test('no available vendor groups leaves both selectors disabled', async t => {
   assert.equal(page.group.disabled, true);
   assert.equal(page.category.disabled, true);
   assert.match(page.status.textContent, /no vendor groups/i);
+  assertCategorySummary(page);
 });
 
 test('failed options loading can be retried', async t => {
@@ -204,12 +216,14 @@ test('failed options loading can be retried', async t => {
   assert.equal(page.group.disabled, true);
   assert.equal(page.category.disabled, true);
   assert.equal(page.retry.hidden, false);
+  assertCategorySummary(page);
   page.retry.dispatch('click');
   await setImmediate();
   assert.equal(page.calls.filter(call => call.pathname === '/app/profitCalculatorOptions').length, 2);
   assert.equal(page.group.value, 'S');
   assert.equal(page.category.value, 'Hair trimmers');
   assert.equal(page.retry.hidden, true);
+  assertCategorySummary(page, 'Hair trimmers');
 });
 
 test('the matrix fills only product identity and display-only retracted checkboxes', async t => {
@@ -229,7 +243,7 @@ test('the matrix fills only product identity and display-only retracted checkbox
   assert.ok(page.body.children.every(row => row.children.length === 3));
   assert.ok(page.body.children.filter(row => ![40, 41, 42, 43, 44, 45].includes(Number(row.dataset.sourceRow)))
     .every(row => row.children.slice(1).every(cell => !cell.textContent && !cell.children.length)));
-  assert.ok(page.summary.children.every(row => row.children[1].textContent === ''));
+  assertCategorySummary(page, 'Hair trimmers');
   assert.match(page.body.textContent, /Total Venit\/Unitate \(RON\)/);
   assert.match(page.body.textContent, /Profit net \(dupa costul banilor si inflatie\)/);
   assert.equal(page.body.children[0].dataset.sourceRow, 10);
@@ -242,6 +256,7 @@ test('empty product results preserve labels and remove all product columns', asy
   assert.ok(page.body.children.every(row => row.children.length === 1));
   assert.match(page.body.textContent, /Total Venit\/Unitate/);
   assert.match(page.status.textContent, /no products/i);
+  assertCategorySummary(page, 'Hair trimmers');
   assert.equal(page.wrap.attributes.get('aria-busy'), 'false');
 });
 
@@ -266,7 +281,7 @@ test('the three confirmed fields display prices, literal tax regimes and disable
   assert.equal(metricCell(page, 72, 2).children.length, 0);
   assert.ok(page.body.children.filter(row => ![40, 41, 42, 43, 44, 45, 48, 71, 72].includes(Number(row.dataset.sourceRow)))
     .every(row => row.children.slice(1).every(cell => !cell.textContent && !cell.children.length)));
-  assert.ok(page.summary.children.every(row => !row.children[1].textContent));
+  assertCategorySummary(page, 'Hair trimmers');
 });
 
 test('missing source values and ineligible products keep all three metric cells empty', async t => {
@@ -319,7 +334,7 @@ test('confirmed zero costs display as amounts while unknown and ineligible resul
     for (let index = 1; index < 5; index++) assert.equal(metricCell(page, row, index).textContent, '');
   }
   for (const row of [28, 29, 30, 103, 104, 107]) assert.equal(metricCell(page, row).textContent, '');
-  assert.ok(page.summary.children.every(row => !row.children[1].textContent));
+  assertCategorySummary(page, 'Hair trimmers');
 });
 
 test('category changes clear zero costs before loading unknown results for the next category', async t => {
@@ -343,8 +358,10 @@ test('a delayed category response cannot overwrite the latest selected category'
   const latest = deferred();
   const page = await openPage(t, {categoryRequest: url => url.searchParams.get('category') === 'Hair trimmers'
     ? initial.promise : latest.promise});
+  assertCategorySummary(page, 'Hair trimmers');
   page.category.value = 'Personal care';
   page.category.dispatch('change');
+  assertCategorySummary(page, 'Personal care');
   assert.ok(page.head.children.every(row => row.children.length === 1), 'Old product columns clear immediately');
   assert.match(page.body.textContent, /Total Venit\/Unitate/);
   latest.resolve({products: [product('latest')]});
@@ -353,6 +370,7 @@ test('a delayed category response cannot overwrite the latest selected category'
   await setImmediate();
   assert.equal(page.head.children[0].children[1].textContent, 'latest');
   assert.equal(page.status.hidden, true);
+  assertCategorySummary(page, 'Personal care');
 });
 
 test('a stale product failure cannot replace the current successful table', async t => {
@@ -377,6 +395,7 @@ test('product failure keeps labels and retries the current selection without rel
   }});
   assert.equal(page.retry.hidden, false);
   assert.ok(page.head.children.every(row => row.children.length === 1));
+  assertCategorySummary(page, 'Toys');
   assert.match(page.body.textContent, /Total Venit\/Unitate/);
   page.retry.dispatch('click');
   await setImmediate();
@@ -385,6 +404,7 @@ test('product failure keeps labels and retries the current selection without rel
   assert.equal(page.category.value, 'Toys');
   assert.equal(page.calls.filter(call => call.pathname === '/app/profitCalculatorOptions').length, 1);
   assert.equal(page.retry.hidden, true);
+  assertCategorySummary(page, 'Toys');
 });
 
 test('override parsing preserves decimal precision, percent units, zero and clearing', () => {
@@ -423,6 +443,7 @@ test('previews use canonical strings and update results without replacing the fo
   }});
   const focused = edit(page, 41, '14.25');
   assert.equal(page.elements.get('profitOverrideReview').disabled, true);
+  assertCategorySummary(page, 'Hair trimmers');
   await advancePreview(t);
   assert.equal(overrideInput(page, 41), focused);
   assert.equal(overrideInput(page, 41).value, '14.25');
@@ -430,6 +451,7 @@ test('previews use canonical strings and update results without replacing the fo
   assert.equal(metricCell(page, 86).textContent, '28.50');
   assert.equal(metricCell(page, 70).textContent, 'Sellfusion SRL');
   assert.equal(page.elements.get('profitOverrideReview').disabled, false);
+  assertCategorySummary(page, 'Hair trimmers');
 });
 
 test('clearing a saved override sends null and restores the server reference-price fallback', async t => {

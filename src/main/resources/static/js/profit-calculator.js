@@ -142,6 +142,7 @@ export function initProfitCalculator() {
 
   function renderProducts() {
     tableView = renderCategoryTable(products, {
+      category: categorySelect?.value,
       getOverrideValue: (product, field) => drafts.input(product, field), saving,
       onOverrideInput(productCode, field, raw) {
         drafts.edit(productCode, field.key, raw);
@@ -237,14 +238,14 @@ export function initProfitCalculator() {
     if (!tableWrap) return;
     invalidatePreview();
     const version = ++requestVersion;
+    const vendorGroup = groupSelect.value;
+    const category = categorySelect?.value;
     products = [];
-    tableView = renderCategoryTable();
+    tableView = renderCategoryTable([], {category: vendorGroup ? category : null});
     refreshEditingControls();
     retryAction = loadCategory;
     retry.hidden = true;
     retry.disabled = true;
-    const vendorGroup = groupSelect.value;
-    const category = categorySelect?.value;
     if (!vendorGroup || !category) {
       tableWrap.setAttribute('aria-busy', 'false');
       return;

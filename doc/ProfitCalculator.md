@@ -31,6 +31,7 @@ the same rule. `D8` is the product PNK and `D9` is its retracted flag.
 
 | Row | Original label | Database input | Display |
 | --- | --- | --- | --- |
+| 2 | Category | Selected `product.category` from the database-backed selector options | Literal category text |
 | 48 | Pret vanzare prod. cu TVA (RON) A. | `product.emag_sale_price_ron` | RON amount, two decimal places |
 | 71 | Impozit profit / venit [%] | `product.income_profit_tax` | Tax-regime text, e.g. `Profit` or `Venit` |
 | 72 | Platitor de TVA | `product.vat_payer` | Display-only checkbox |
@@ -38,6 +39,19 @@ the same rule. `D8` is the product PNK and `D9` is its retracted flag.
 A genuine zero price is displayed as `0.00`. A nonnull `false` VAT status is an
 unchecked checkbox; an unknown/null VAT status has no checkbox. Row 71's
 existing label is preserved, but its value is **not a percentage**.
+
+### Row 2 — category summary
+
+The summary displays the selected database category, using the same
+`product.category` value as the category selector. It is not the abbreviated
+spreadsheet tab name or `product.subcategory`.
+
+The text updates immediately when the group/category selection changes and
+remains visible while products load, when there are no products, and when a
+product request fails. Override previews retain it. Reloading selector options
+or having no valid group/category selection clears it. This is a selection-level
+summary, so it does not depend on any individual product's PNK or retracted
+status. Financial summary rows 3–6 remain blank.
 
 ### Row 48 — reference selling price including VAT
 
@@ -97,6 +111,17 @@ to the product importer fields. `ProductTable` persists/reads them as
 `emag_pnk`, `income_profit_tax`, `vat_payer`, and `emag_sale_price_ron`.
 The calculator therefore uses the resolved database fields directly instead of
 recreating spreadsheet imports or reaching back to the company sheet.
+
+### FBE reference and missing tariffs
+
+The external FBE workbook is titled
+[Calculator cost FBE](https://docs.google.com/spreadsheets/d/1VkeF6LQMGVXZRBuVee2p2Oby0JYbmSwc8gBbdLrlcXk/edit).
+Its tariff tab is
+[Grila costuri procesare FBE](https://docs.google.com/spreadsheets/d/1VkeF6LQMGVXZRBuVee2p2Oby0JYbmSwc8gBbdLrlcXk/edit#gid=1892248028).
+This is the reference for the processing, return, withdrawal, and disposal
+fees needed by rows 57–60. The database has product dimensions and weight, but
+the required tariff grid is not stored yet. These fees remain deferred; the
+workbook is read-only and is not a runtime data source.
 
 ## Shared manual inputs (rows 40–45)
 
@@ -252,7 +277,8 @@ totals remain deferred rather than being calculated from incomplete costs.
 
 All routes require the existing application user role. Monthly quantities,
 return/refusal rates, import VAT, customs, other fulfillment/advertising costs,
-the remaining tax branches, profit totals, and summary outputs remain deferred.
+the remaining tax branches, profit totals, and financial summary rows 3–6 remain
+deferred.
 
 ## Open questions
 

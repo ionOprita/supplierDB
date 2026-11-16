@@ -65,7 +65,7 @@ export function renderCategoryTable(products = [], options = {}) {
     const label = cell('th', 'profit-category-label', definition.label);
     label.scope = 'row';
     row.appendChild(label);
-    row.appendChild(cell('td', 'profit-category-value'));
+    row.appendChild(cell('td', 'profit-category-value', definition.sourceRow === 2 ? options.category : null));
     summary.appendChild(row);
   }
 
