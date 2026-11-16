@@ -1,9 +1,9 @@
 # Profit calculator — task notes and recovery handoff
 
 Last reviewed: **2026-11-16**. Repository branch: `profit-calculator`.
-Base commit for the latest batch: `d340fce` (`Added FBE config.`).
+Base commit for the latest batch: `3c83d58` (`Added more fields.`).
 The working tree was clean before this batch. These notes include the subsequent
-monthly gross-unit and commission changes described below, not a confirmed
+product-column ordering change described below, not a confirmed
 production deployment.
 
 Start here after losing the chat, then read [ProfitCalculator.md](ProfitCalculator.md)
@@ -41,6 +41,8 @@ deferring the By Category fee calculations.
   Romanian labels and sections, and stable source-row numbers retained in the
   local layout definitions. Unimplemented metric/summary values stay blank.
 - Keep product names, PNKs, and display-only retracted checkboxes visible.
+  Columns show active products before retracted products, retaining the existing
+  natural name/product-code ordering within each group on loads and previews.
   Missing PNK or a retracted product blanks its reference/calculated outputs,
   but does not remove its column or prevent editing/storing its overrides.
 - Distinguish unknown values from genuine zero/false values. Null remains
@@ -334,6 +336,7 @@ could configure isolation and initially prevented reaching the intended test.
 
 | Stage | Result and qualification |
 | --- | --- |
+| Active-first column ordering | **18 calculator evaluator tests passed**, zero failures/errors/skips, using `mvn -o -Dtest=ProfitCalculatorCategoryTest test`. The ordering regression covers natural name/code order in both active/retracted groups and nonempty previews. An eligibility test now matches products by identity rather than assuming their previous positions. No database or API-shape changes were needed. |
 | Initial override implementation | 347 JavaScript tests and 61 focused Java tests passed; PostgreSQL migration/persistence/concurrency checks used a disposable database, with no skipped tests. Desktop/mobile browser checks covered actual templates, frontend, and evaluator with substituted storage, including previews, save/reload, drafts, revert, and conflicts. This preceded discovery of the real-wrapper save bug. |
 | After the save-wrapper fix | **33 calculator Java tests passed, zero failures/errors/skips**, including the two real-wrapper regressions and existing API, validation, SQL persistence, and concurrency checks. Tests ran against a disposable PostgreSQL database. |
 | Independent zero-cost batch | **351 JavaScript tests passed**, zero failures/skips. The calculator Java selection reported **38 tests, 30 passed, 8 skipped**, zero failures/errors. The eight existing PostgreSQL integration checks skipped because `ADS_TEST_DB_URL` was not configured; no storage or migration changed. New coverage checks independent predicates, unknown/opposite branches, JSON numeric zero, eligibility, category replacement, and pending/failed/stale fulfillment previews. |

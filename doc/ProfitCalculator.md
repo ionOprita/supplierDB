@@ -17,6 +17,9 @@ intentional overrides and are implemented as editable, shared database values.
 Ignoring a value pasted over a formula does not mean ignoring these inputs.
 
 The By Category selectors use `vendor.vendor_group` and `product.category`.
+Product columns show active products first, followed by retracted products.
+Within each group, the existing natural product-name order and product-code
+tie-breaker apply, consistently on category loads and override previews.
 Products remain visible when retracted or when their PNK is missing, but the
 calculated/reference output rows are blank for those products. Their overrides
 remain editable and stored. Missing source values remain blank: no default

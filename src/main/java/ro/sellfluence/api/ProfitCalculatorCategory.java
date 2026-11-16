@@ -33,7 +33,8 @@ public final class ProfitCalculatorCategory {
     static Response create(String vendorGroup, String category, List<CategoryProduct> products) {
         var ordered = products.stream()
                 .map(ProfitCalculatorCategory::evaluate)
-                .sorted(Comparator.comparing(ProfitCalculatorCategory::sortName,
+                .sorted(Comparator.comparing(Product::retracted)
+                        .thenComparing(ProfitCalculatorCategory::sortName,
                                 ProductPerformanceOptions::compareProductNames)
                         .thenComparing(Product::productCode))
                 .toList();

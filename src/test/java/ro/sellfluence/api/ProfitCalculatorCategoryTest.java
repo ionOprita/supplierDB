@@ -19,22 +19,32 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ProfitCalculatorCategoryTest {
     @Test
-    void ordersNumberedProductsNaturallyAndKeepsUnexpectedNamesSelectable() {
+    void ordersActiveProductsBeforeRetractedProductsAndPreservesNaturalOrderWithinBothGroups() {
         var products = List.of(
                 new CategoryProduct("ten", "S. 10 - Trimmer", "TEN", false),
                 new CategoryProduct("two-b", "S. 2 - Trimmer", "TWO-B", true),
                 new CategoryProduct("two-a", "S. 2 - Trimmer", "TWO-A", false),
+                new CategoryProduct("two-c", "S. 2 - Trimmer", "TWO-C", false),
                 new CategoryProduct("custom", "Custom product", "CUSTOM", false),
                 new CategoryProduct("unknown-prefix", "A. 1 - Other product", null, false),
-                new CategoryProduct("overflow", "S. 9999999999999999 - Unusual product", null, false)
+                new CategoryProduct("overflow", "S. 9999999999999999 - Unusual product", null, false),
+                new CategoryProduct("retracted-ten", "S. 10 - Trimmer", "RETRACTED-TEN", true),
+                new CategoryProduct("retracted-two", "S. 2 - Trimmer", "RETRACTED-TWO", true),
+                new CategoryProduct("retracted-custom", "Custom product", "RETRACTED-CUSTOM", true)
         );
 
         var response = ProfitCalculatorCategory.create("S", "Trimmers", products);
 
-        assertEquals(List.of("two-a", "two-b", "ten", "unknown-prefix", "custom", "overflow"),
+        var expectedOrder = List.of("two-a", "two-c", "ten", "unknown-prefix", "custom", "overflow",
+                "retracted-two", "two-b", "retracted-ten", "retracted-custom");
+        assertEquals(expectedOrder,
                 response.products().stream().map(ProfitCalculatorCategory.Product::productCode).toList());
-        assertTrue(response.products().get(1).retracted());
-        assertFalse(response.products().getFirst().retracted());
+        assertTrue(response.products().subList(0, 6).stream().noneMatch(ProfitCalculatorCategory.Product::retracted));
+        assertTrue(response.products().subList(6, 10).stream().allMatch(ProfitCalculatorCategory.Product::retracted));
+        var preview = ProfitCalculatorCategory.preview("S", "Trimmers", products,
+                List.of(new OverrideChange("ten", 0, Map.of("salePriceRon", "123.45"))));
+        assertEquals(expectedOrder,
+                preview.products().stream().map(ProfitCalculatorCategory.Product::productCode).toList());
     }
 
     @Test
@@ -95,9 +105,10 @@ class ProfitCalculatorCategoryTest {
         var response = ProfitCalculatorCategory.create("S", "Trimmers", inputs);
 
         assertEquals(inputs.size(), response.products().size());
-        for (var index = 0; index < inputs.size(); index++) {
-            var original = inputs.get(index);
-            var product = response.products().get(index);
+        for (var original : inputs) {
+            var product = response.products().stream()
+                    .filter(candidate -> candidate.productCode().equals(original.productCode()))
+                    .findFirst().orElseThrow();
             assertEquals(original.productCode(), product.productCode());
             assertEquals(original.name(), product.name());
             assertEquals(original.pnk(), product.pnk());
