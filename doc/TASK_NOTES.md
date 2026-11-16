@@ -1,9 +1,10 @@
 # Profit calculator — task notes and recovery handoff
 
 Last reviewed: **2026-11-16**. Repository branch: `profit-calculator`.
-Base commit for the latest batch: `6de8100` (`Added more fields.`).
+Base commit for the latest batch: `d340fce` (`Added FBE config.`).
 The working tree was clean before this batch. These notes include the subsequent
-shared FBE tariff editor described below, not a confirmed production deployment.
+monthly gross-unit and commission changes described below, not a confirmed
+production deployment.
 
 Start here after losing the chat, then read [ProfitCalculator.md](ProfitCalculator.md)
 for detailed formulas, mappings, API behavior, and the maintained **Open questions**.
@@ -17,8 +18,10 @@ missing data is part of the objective: later work may extend the database,
 eMAG API collection, or eMAG dashboard extraction.
 
 The current work is on **By Category**. The other calculator page is a scaffold
-for later work. The user has forwarded the original three open questions to the
-sheet author; answers remain pending. Further questions cover settings
+for later work. The author answered the original three questions: gross units
+without storno records, selling accounts only in the selected group, and
+per-product commission defaults. These answers are now implemented. Remaining
+questions cover settings
 ownership/timing, authoritative import/operating-cost inputs, and FBE tier
 classification. The user approved a shared seeded FBE tariff editor while
 deferring the By Category fee calculations.
@@ -60,6 +63,12 @@ deferring the By Category fee calculations.
   rather than a one-off transfer program. This is an authorized seed snapshot;
   subsequent runtime reads/writes use only PostgreSQL. Users edit the existing
   12 tiers; adding/removing tiers and historical schedules are deferred.
+- Row 35 counts previous-calendar-month **gross finalized quantities** for the
+  selected product PNKs and selling-account group. Keep finalized snapshots
+  even when a later storno exists; ignore status-5 records rather than deduct
+  them or reconstruct their `initial_qty`. Both FBE/non-FBE accounts in the
+  selected group contribute. Commission defaults are per product, with row 41
+  taking precedence when supplied.
 
 ### Important category and identity distinctions
 
@@ -125,7 +134,8 @@ multiple product columns: some formula rows contain manually replaced cells.
   S.55 product had reference price 299.99 but an override of 259.99. Those were
   illustrative sheet observations, not application defaults to hardcode.
 - The commission fallback in category cell C3 selects the first matching
-  category product. It is not automatically each product's own commission.
+  category product. The author clarified this should instead be each product's
+  own commission, now implemented from `product.emag_commission` (a fraction).
 - Row 35 traces through the central history workbook into the four groups'
   2026 order workbooks. It selects the previous calendar month, matches PNK,
   and sums raw `Date` quantities: A = order date/time, C = status, E = PNK,
@@ -140,6 +150,13 @@ multiple product columns: some formula rows contain manually replaced cells.
   deduplication uses order ID plus product name while ignoring vendor. A live
   database calculation can differ from the sheet even with the same intended
   rule. The workbooks use the Europe/Bucharest timezone.
+- Author answers 1–3 supersede the unresolved interpretations above: row 35
+  sums status-4 `product_in_order.quantity` in the prior Bucharest calendar
+  month, filtering the **selling** account's group. Do not deduplicate by
+  order ID/PNK alone: account collisions and multiple same-PNK line IDs are
+  legitimate contributions. A 4+5 pair contributes the finalized quantity
+  once; a status-5-only record contributes nothing. Any qualifying null
+  quantity makes that product's total unknown; no matching sales is known zero.
 - Advertising cost row 62 also depends on previous-month units. Its imported
   helper divides the latest report month's PNK-matched campaign spending by
   previous-calendar-month sales. Do not substitute advertising-attributed units
@@ -162,13 +179,14 @@ multiple product columns: some formula rows contain manually replaced cells.
 | Row(s) | Current behavior |
 | --- | --- |
 | 2 | Selected database-backed `product.category` as literal summary text |
+| 35 | Previous-calendar-month gross finalized units from selling accounts in the selected group; integer display, zero blank |
 | 7–9 | Product name, PNK, display-only retracted checkbox |
 | 48 | `product.emag_sale_price_ron`, reference price including VAT |
 | 70 | Linked `vendor.company_name` |
 | 71 | `product.income_profit_tax` text |
 | 72 | Nullable `product.vat_payer` display-only checkbox |
 | 75, 26 | Override 40 when present, otherwise reference 48 |
-| 76 | Override 41 only; default commission deliberately remains blank |
+| 76 | Override 41 when supplied, otherwise the product's `emag_commission` |
 | 86 | Effective price × effective commission when both are known |
 | 49, 77 | USD purchase override 42 × exchange-rate override 44 |
 | 50, 78 | USD transport override 43 × exchange-rate override 44 |
@@ -218,7 +236,7 @@ purchase, and freight overrides have the formulas above.
 The USD calculations require both operands. No purchase/freight baseline or
 exchange-rate default is available, so incomplete inputs leave outputs blank.
 Rows 51/52/79/80 (import VAT/customs) remain blank, as do unimplemented rates,
-fees, profit totals, monthly quantities, and financial summary rows 3–6.
+fees, profit totals, monthly financial outputs 36–37, and summary rows 3–6.
 
 ### Code entry points
 
@@ -233,6 +251,27 @@ fees, profit totals, monthly quantities, and financial summary rows 3–6.
   version-48 upgrade path.
 - Frontend modules: `profit-calculator.js`, `profit-calculator-table.js`,
   `profit-calculator-overrides.js`, and `profit-calculator-layout.js`.
+
+### Monthly units and commission defaults
+
+The author answers to questions 1–3 are recorded under **Resolved author
+questions (1–3)** in `ProfitCalculator.md`; pending questions retain IDs 4–7.
+`CategoryProduct` now carries `emagCommission` and `previousMonthGrossUnits`
+internally. `Calculated.previousMonthGrossUnits` is a nullable JSON integer;
+known zero stays zero internally but displays blank. Unknown quantities and
+ineligible products remain blank. Commission uses override 41 when nonnull,
+otherwise the product's fractional database rate. Clearing an override restores
+that default; row 86 recalculates without intermediate rounding. Category
+commission summary row 3 remains blank because rates can differ by product.
+
+The API calculates the previous month once per GET/preview request, using
+`Europe/Bucharest` through an injectable clock. It passes a `YearMonth` into the
+mirror read and a single bounded category/orders query in the same transaction.
+That query uses stored local order timestamps as-is, not UTC-converted dates.
+There is no schema migration, new endpoint, or change to order ingestion.
+Previews preserve monthly units and product commission defaults when applying
+draft overrides. Financial monthly outputs 36–37 still need missing cost/profit
+inputs and remain blank.
 
 ### Shared FBE tariff editor
 
@@ -300,6 +339,7 @@ could configure isolation and initially prevented reaching the intended test.
 | Independent zero-cost batch | **351 JavaScript tests passed**, zero failures/skips. The calculator Java selection reported **38 tests, 30 passed, 8 skipped**, zero failures/errors. The eight existing PostgreSQL integration checks skipped because `ADS_TEST_DB_URL` was not configured; no storage or migration changed. New coverage checks independent predicates, unknown/opposite branches, JSON numeric zero, eligibility, category replacement, and pending/failed/stale fulfillment previews. |
 | Category-summary batch | **351 JavaScript tests passed**, zero failures/skips. Existing UI checks now verify row 2 across immediate category/group changes, loading, empty results, product failures/retry, stale responses, absent categories/options, and override previews; financial summary rows 3–6 remain blank. Documentation and whitespace checks passed. No Java, API, or database code changed, so Java/PostgreSQL tests were not rerun for this batch. |
 | Shared FBE tariff editor | **361 JavaScript tests and 64 focused Java/JTE tests passed**, zero failures/errors/skips. Java tests used a disposable PostgreSQL database, covering every seed value, exact decimal/null/zero round trips, real API → mirror → pooled transaction commit visibility, whole-batch rollback and concurrent stale writers. All 12 SQL seed rows and their 180 editable values were independently compared to the current read-only source and matched. Chromium checked the actual JTE/static files and real API/database through controlled browser routing: 12 tiers/180 inputs, precise save/reload, validation, Revert, retained conflict drafts, desktop/mobile layout and independent grid scrolling; no page-script errors. |
+| Monthly gross units and per-product commission | **364 JavaScript tests and 75 focused Java/JTE tests passed**, zero failures/errors/skips. Tests used disposable PostgreSQL and cover selling-account isolation, FBE/non-FBE accounts, colliding order IDs, multiple same-PNK lines, status-4/status-5 behavior, inclusive/exclusive month bounds, null/zero quantities, distinct fractional commissions, override precedence/clearing, eligibility, previews and six Bucharest calendar boundary cases. Row 35 displays positive counts as integers and zero as blank. Documentation and whitespace checks passed. |
 
 These are historical verification results, not a claim that every future
 checkout was tested. The temporary PostgreSQL clusters were stopped and removed.
@@ -338,6 +378,12 @@ database or spreadsheet was changed, and no deployment/restart was performed.
 The disposable FBE PostgreSQL cluster was stopped and its data directory removed
 after verification.
 
+The monthly-unit/commission batch used the JavaScript command above and
+`mvn -o '-Dtest=*ProfitCalculator*Test,JteTemplateEngineTest' test` against a
+separate disposable PostgreSQL cluster. Its cluster was stopped and removed
+after verification. No application database, spreadsheet, deployment, or
+server restart was involved; no migration is required for this batch.
+
 ## Remaining work and recovery checklist
 
 1. Inspect current Git status, branch, and commit before changing anything;
@@ -348,10 +394,9 @@ after verification.
    was performed by the agent, and user confirmation of a successful retry is
    still pending.** The application factory applies migrations during normal
    startup; migrations 50 and 51 were verified separately in disposable tests.
-3. Await the author answers already requested: gross versus net monthly units,
-   selling-account scope, and intentional category-first versus per-product
-   commission defaults. Keep the pending commission fallback blank meanwhile.
-   The additional questions in `ProfitCalculator.md` concern settings scope and
+3. Questions 1–3 are resolved and implemented: gross finalized units, selected
+   selling-account group, and per-product commission. The remaining questions
+   4–7 in `ProfitCalculator.md` concern settings scope and
    effective dates, import-cost source records, operating-cost input sources,
    and FBE tier selection. They do not block the independent zero branches or
    editing tariffs. Resolve question 7 before connecting rows 57–60.
@@ -366,8 +411,10 @@ import baselines, FBE storage and environmental/packaging/SMS tariffs, and revie
 acquisition costs. Stored carton dimensions are not freight charges;
 `product.import_tax` is a rate, not per-unit customs cost; published review
 `review_price` metadata is a selling price, not the cost of obtaining a review.
-Advertising spend is stored, but its calculator allocation still depends on
-the unresolved sales denominator. Spreadsheet tax, inflation, interest, or
+Advertising spend is stored and the gross monthly sales denominator is now
+defined. Row 62 still needs its own verified campaign allocation, period and
+adjustment-factor mapping before implementation; do not substitute ad-attributed
+units. Spreadsheet tax, inflation, interest, or
 adjustment constants must not silently become hardcoded database defaults.
 
 `Calc. Expunere & Profit` calculations remain future work after the category

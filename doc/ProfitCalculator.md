@@ -32,6 +32,7 @@ the same rule. `D8` is the product PNK and `D9` is its retracted flag.
 | Row | Original label | Database input | Display |
 | --- | --- | --- | --- |
 | 2 | Category | Selected `product.category` from the database-backed selector options | Literal category text |
+| 35 | Nr. unitati vandute luna anterioara (ant.) | Gross finalized order-line quantities, restricted to selling accounts in the selected vendor group | Integer count; zero remains blank |
 | 48 | Pret vanzare prod. cu TVA (RON) A. | `product.emag_sale_price_ron` | RON amount, two decimal places |
 | 71 | Impozit profit / venit [%] | `product.income_profit_tax` | Tax-regime text, e.g. `Profit` or `Venit` |
 | 72 | Platitor de TVA | `product.vat_payer` | Display-only checkbox |
@@ -166,7 +167,7 @@ remains read-only.
 | Row | Input | Unit and validation | Blank meaning |
 | --- | --- | --- | --- |
 | 40 | Selling price including VAT | Nonnegative RON amount | Use reference price from row 48 |
-| 41 | Commission | Enter a percentage, e.g. `14` for 14%; range 0–100% | No override; default commission remains unresolved |
+| 41 | Commission | Enter a percentage, e.g. `14` for 14%; range 0–100% | Use that product's `product.emag_commission` when known |
 | 42 | Purchase price per unit | Nonnegative USD amount | Purchase-cost baseline is not available yet |
 | 43 | Transport price per unit | Nonnegative USD amount | Transport-cost baseline is not available yet |
 | 44 | USD/RON exchange rate | Positive RON per USD | No exchange-rate default is available yet |
@@ -214,7 +215,7 @@ blank results unless a known formula branch independently determines zero.
 | 70 — Firma de pe care vindem | `vendor.company_name`, joined through `product.vendor = vendor.id` |
 | 75 — Pret produs (cu TVA) | Row 40 when present, otherwise row 48 |
 | 26 — Total Venit/Unitate (RON) | Row 75 |
-| 76 — Comision eMAG [%] | Row 41 when present; otherwise blank until the default commission is agreed |
+| 76 — Comision eMAG [%] | Row 41 when present; otherwise that product's `product.emag_commission` |
 | 86 — Cost comision eMAG (cu TVA) | Row 75 × row 76 when both are known |
 | 49 and 77 — Cost achizitie | Row 42 × row 44 when both are supplied |
 | 50 and 78 — Cost transport | Row 43 × row 44 when both are supplied |
@@ -226,9 +227,52 @@ against FBE vendors' `company_name`, so this must not be replaced with
 
 The sheet's normal price expressions are `IF(D40<>"",D40,D48)` for row 75 and
 `D75` for row 26. Its commission expression is `IF(D41<>"",D41,$C$3)`, followed
-by `D75*D76` for row 86. The application implements the commission override but
-deliberately leaves the unresolved `$C$3` fallback blank. Clearing row 40
-therefore restores the reference price; clearing row 41 clears rows 76 and 86.
+by `D75*D76` for row 86. The author clarified that the intended fallback is
+**per product**, rather than the sheet's first-match category default in C3.
+The application therefore uses `product.emag_commission` when override 41 is
+absent. Source column BO is imported unchanged as a fraction: `0.18` means
+18%, and is not divided by 100 again. A supplied zero override takes precedence;
+a zero product default is also valid. Missing defaults remain blank.
+
+Clearing row 40 restores the reference price; clearing row 41 restores the
+product's commission and recalculates row 86 when price and rate are known.
+Previews preserve both the product default and the stored monthly quantity.
+Category summary row 3 remains blank because there is no single category rate.
+
+### Row 35 — previous-calendar-month gross units
+
+The author confirmed gross finalized units, excluding `Stornata` records and
+restricting selling accounts to the selected vendor group. The period is the
+previous calendar month in **Europe/Bucharest**, with inclusive start and
+exclusive end. It is computed once per category/preview request using a clock
+that tests can fix. The database stores API order dates as local, unzoned
+timestamps; the boundaries are local midnights, without an extra UTC conversion.
+
+Match selected product PNKs against `product_in_order.part_number_key`, joining
+orders by `emag_order_surrogate_id`. Sum **`quantity` on status-4 orders only**.
+Apply the account filter through `emag_order.vendor_id → vendor.vendor_group`,
+not merely the product owner's vendor. Both FBE and non-FBE selling accounts
+in the selected group contribute. Count every legitimate product line and
+keep separate selling accounts distinct even when their order IDs match.
+
+Do not reconstruct units from `initial_qty`, subtract `storno_qty` or returns,
+filter on `is_storno`, or use a latest-status canonical view. In particular:
+
+- Finalized quantity 3 plus a later storno snapshot contributes **3 gross
+  units**, once; the status-5 record contributes nothing.
+- A storno-only record contributes no units, without reconstructing a sale.
+
+The batched database query reads selected PNKs together. No matching finalized
+sales means a known zero. If a matching line's quantity is null, the product's
+total remains unknown rather than displaying a partial sum. The API exposes
+`calculated.previousMonthGrossUnits` as a nullable integer. Positive counts
+display without monetary decimal places; zero remains blank, matching the
+reference row. The usual PNK/nonretracted guard also applies.
+
+This row deliberately does not reuse `OrderQuantityTable`: its status-5
+fallback and order/PNK snapshot selection implement a different metric.
+Rows 36–37 and financial summaries remain deferred until their cost/profit
+inputs are available.
 
 ### USD conversion provenance
 
@@ -253,8 +297,8 @@ rates and baseline data are not inferred from these manual inputs.
 ### Independently determined zero costs
 
 The following outputs implement literal zero formulas or the zero branch of
-a conditional formula. They do not require the unresolved monthly-sales or
-commission definitions. The same nonblank-PNK/nonretracted guard applies to
+a conditional formula. They do not depend on monthly-sales or commission
+definitions. The same nonblank-PNK/nonretracted guard applies to
 all seven rows, including the literal-zero advertising formulas.
 
 | Row | Label | Implemented result |
@@ -313,39 +357,31 @@ totals remain deferred rather than being calculated from incomplete costs.
   expected revisions and acknowledges a successful commit. Reloading the
   category afterward is separate; a reload failure must not repeat the save.
 
-All routes require the existing application user role. Monthly quantities,
-return/refusal rates, import VAT, customs, other fulfillment/advertising costs,
+All routes require the existing application user role. Return/refusal rates,
+import VAT, customs, other fulfillment/advertising costs,
 the remaining tax branches, profit totals, and financial summary rows 3–6 remain
 deferred.
 
+## Resolved author questions (1–3)
+
+The author answers supplied on **2026-11-16** establish these intended rules:
+
+1. **Previous-month units are gross**, without `Stornata` records. Use the
+   finalized quantities as described above, without net return/storno deductions.
+2. **Sales accounts are restricted to the selected vendor group.** This is
+   an explicit account filter, replacing the export's product-name-prefix
+   partitioning; the same PNK's sales outside the selected group are excluded.
+3. **Commission is per product.** Use that product's `emag_commission` unless
+   row 41 overrides it. The first product in the category is not a default for
+   the other products. The source's CS/subcategory versus the UI's CN/category
+   distinction therefore does not affect commission selection.
+
 ## Open questions
 
-These questions concern the intended business definitions. The observed
-spreadsheet mechanics are documented separately from the choices requiring the
-sheet author's confirmation. Ignoring manually replaced calculator cells is
-already an agreed implementation policy, not an open question.
+The following questions remain open. Their original numbers are retained so
+the author can refer to the existing question list. Ignoring manually replaced
+calculator cells remains an agreed policy, not an open question.
 
-1. **Previous-month units: gross or net?** Row 35 ultimately sums order-line
-   quantities by PNK and order date, excluding `Stornata` rows. The existing
-   database exporter supplies finalized/status-4 quantities and negative
-   status-5 storno quantities; the sheet excludes the latter. It does not
-   explicitly deduct returns or partial-storno quantities from finalized
-   lines. Should the calculator retain gross finalized units or compute net
-   units after those deductions? This must be settled before reusing an
-   existing Orders metric whose snapshot-selection rules differ.
-2. **Previous-month units: which selling accounts?** The orders-sheet export
-   groups rows by product-name prefix, and the monthly formula filters by PNK
-   without a selling-account/FBE criterion. Should a selected product include
-   sales through every account, or only accounts in the selected vendor group?
-3. **Commission: per product or first product in the category?** The normal
-   fallback in row 76 uses category cell `C3`, which takes the first matching
-   product's commission. The database instead provides a commission for each
-   product in `product.emag_commission`. Is that first-match category default
-   intentional, or should future calculations use each product's own rate?
-   Also note that the reference category uses external `CS` (`Subcategory`,
-   stored as `product.subcategory`), whereas the approved UI uses external `CN`
-   (`Subcategory Country`, stored as `product.category`). Category-wide
-   assumptions need to account for this distinction.
 4. **Calculator settings: scope, ownership, and effective dates.** Who maintains
    the rates and fixed costs in `Date Calcul`, such as VAT/tax rates,
    packaging/warehouse charges, Genius assumptions, financing, and inflation?
@@ -372,8 +408,8 @@ already an agreed implementation policy, not an open question.
    girth and the separate weight-range field also constrain selection? They
    are stored in the grid but not used by the observed classifier.
 
-The original three questions remain unanswered. The new shared tariff editor
-supplies the FBE processing-rate inputs discussed in question 6, but does not
+Questions 1–3 are resolved above. The shared tariff editor supplies the FBE
+processing-rate inputs discussed in question 6, but does not
 resolve their long-term ownership or the classification rule in question 7.
 None of these questions blocks editing the stored tariff grid or the
 independently determined zero costs above.

@@ -18,7 +18,8 @@ public final class ProfitCalculatorCategory {
                              BigDecimal commissionCostRon, BigDecimal purchaseCostRon, BigDecimal transportCostRon,
                              BigDecimal googleAdsCostRon, BigDecimal socialMediaAdsCostRon,
                              BigDecimal storageCostRon, BigDecimal turnoverTaxCostRon, BigDecimal vatCostRon,
-                             BigDecimal profitTaxCostRon, BigDecimal dividendTaxCostRon) {
+                             BigDecimal profitTaxCostRon, BigDecimal dividendTaxCostRon,
+                             Long previousMonthGrossUnits) {
     }
 
     public record Product(String productCode, String name, String pnk, boolean retracted,
@@ -48,7 +49,8 @@ public final class ProfitCalculatorCategory {
             if (patch == null) return product;
             return new CategoryProduct(product.productCode(), product.name(), product.pnk(), product.retracted(),
                     product.emagSalePriceRon(), product.incomeProfitTax(), product.vatPayer(), product.companyName(),
-                    overrides(product).applyChanges(patch.values()), product.overrideRevision());
+                    overrides(product).applyChanges(patch.values()), product.overrideRevision(),
+                    product.emagCommission(), product.previousMonthGrossUnits());
         }).toList();
         if (!patches.isEmpty()) {
             throw new IllegalArgumentException("A preview product does not belong to the selected category.");
@@ -60,8 +62,7 @@ public final class ProfitCalculatorCategory {
         var overrides = overrides(product);
         boolean eligible = !product.retracted() && product.pnk() != null && !product.pnk().isBlank();
         var price = eligible ? firstKnown(overrides.salePriceRon(), product.emagSalePriceRon()) : null;
-        // The category-wide commission default remains unresolved; no rate is invented here.
-        var commission = eligible ? overrides.commissionRate() : null;
+        var commission = eligible ? firstKnown(overrides.commissionRate(), product.emagCommission()) : null;
         var purchase = eligible ? multiply(overrides.purchasePriceUsd(), overrides.usdRonRate()) : null;
         var transport = eligible ? multiply(overrides.transportPriceUsd(), overrides.usdRonRate()) : null;
         var regime = product.incomeProfitTax() == null ? null : product.incomeProfitTax().strip();
@@ -76,7 +77,8 @@ public final class ProfitCalculatorCategory {
                 eligible ? product.vatPayer() : null, eligible ? product.companyName() : null,
                 overrides, product.overrideRevision(),
                 new Calculated(price, commission, multiply(price, commission), purchase, transport,
-                        advertising, advertising, storage, turnoverTax, vat, profitTax, profitTax));
+                        advertising, advertising, storage, turnoverTax, vat, profitTax, profitTax,
+                        eligible ? product.previousMonthGrossUnits() : null));
     }
 
     private static Overrides overrides(CategoryProduct product) {

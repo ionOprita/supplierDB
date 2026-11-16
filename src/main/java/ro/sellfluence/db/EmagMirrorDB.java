@@ -814,9 +814,10 @@ public class EmagMirrorDB implements ProductPerformanceSource {
         return database.readTX(ProductTable::getProducts);
     }
 
-    public List<ProfitCalculatorTable.CategoryProduct> readProfitCalculatorProducts(String vendorGroup, String category)
+    public List<ProfitCalculatorTable.CategoryProduct> readProfitCalculatorProducts(String vendorGroup, String category,
+                                                                                   YearMonth previousMonth)
             throws SQLException {
-        return database.readTX(db -> ProfitCalculatorTable.getCategoryProducts(db, vendorGroup, category));
+        return database.readTX(db -> ProfitCalculatorTable.getCategoryProducts(db, vendorGroup, category, previousMonth));
     }
 
     public void saveProfitCalculatorOverrides(List<ProfitCalculatorTable.OverrideChange> changes) throws SQLException {

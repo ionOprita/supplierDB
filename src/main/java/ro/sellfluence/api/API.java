@@ -165,14 +165,31 @@ public class API {
 
     public ProfitCalculatorCategory.Response getProfitCalculatorCategory(String vendorGroup, String category)
             throws SQLException {
+        return getProfitCalculatorCategory(vendorGroup, category, Clock.systemUTC());
+    }
+
+    ProfitCalculatorCategory.Response getProfitCalculatorCategory(String vendorGroup, String category, Clock clock)
+            throws SQLException {
+        var previousMonth = profitCalculatorPreviousMonth(clock);
         return ProfitCalculatorCategory.create(vendorGroup, category,
-                mirrorDB.readProfitCalculatorProducts(vendorGroup, category));
+                mirrorDB.readProfitCalculatorProducts(vendorGroup, category, previousMonth));
     }
 
     public ProfitCalculatorCategory.Response previewProfitCalculatorCategory(ProfitCalculatorOverrides.Request request)
             throws SQLException {
+        return previewProfitCalculatorCategory(request, Clock.systemUTC());
+    }
+
+    ProfitCalculatorCategory.Response previewProfitCalculatorCategory(
+            ProfitCalculatorOverrides.Request request, Clock clock) throws SQLException {
+        var previousMonth = profitCalculatorPreviousMonth(clock);
         return ProfitCalculatorCategory.preview(request.vendorGroup(), request.category(),
-                mirrorDB.readProfitCalculatorProducts(request.vendorGroup(), request.category()), request.changes());
+                mirrorDB.readProfitCalculatorProducts(request.vendorGroup(), request.category(), previousMonth),
+                request.changes());
+    }
+
+    static YearMonth profitCalculatorPreviousMonth(Clock clock) {
+        return YearMonth.from(overviewDate(clock)).minusMonths(1);
     }
 
     public void saveProfitCalculatorOverrides(ProfitCalculatorOverrides.Request request) throws SQLException {

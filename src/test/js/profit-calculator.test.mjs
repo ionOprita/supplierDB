@@ -302,13 +302,16 @@ test('missing source values and ineligible products keep all three metric cells 
   }
 });
 
-test('category changes replace the three displayed fields without retaining old values', async t => {
+test('category changes replace reference values and monthly units without retaining old values', async t => {
   const page = await openPage(t, {categoryRequest: url => ({products: [
     url.searchParams.get('category') === 'Hair trimmers'
-      ? {...product('old'), emagSalePriceRon: 169.99, incomeProfitTax: 'Profit', vatPayer: true}
-      : {...product('new'), emagSalePriceRon: 89, incomeProfitTax: 'Venit', vatPayer: false}
+      ? {...product('old'), emagSalePriceRon: 169.99, incomeProfitTax: 'Profit', vatPayer: true,
+        calculated: {previousMonthGrossUnits: 1234}}
+      : {...product('new'), emagSalePriceRon: 89, incomeProfitTax: 'Venit', vatPayer: false,
+        calculated: {previousMonthGrossUnits: 7}}
   ]})});
   assert.equal(metricCell(page, 48).textContent, '169.99');
+  assert.equal(metricCell(page, 35).textContent, '1,234');
   page.category.value = 'Personal care';
   page.category.dispatch('change');
   assert.ok(page.body.children.every(row => row.children.length === 1));
@@ -316,6 +319,36 @@ test('category changes replace the three displayed fields without retaining old 
   assert.equal(metricCell(page, 48).textContent, '89.00');
   assert.equal(metricCell(page, 71).textContent, 'Venit');
   assert.equal(metricCell(page, 72).children[0].checked, false);
+  assert.equal(metricCell(page, 35).textContent, '7');
+});
+
+test('monthly gross units display as integers while zero, unknown and ineligible products remain blank', async t => {
+  const page = await openPage(t, {categoryRequest: async () => ({products: [
+    {...product('known'), calculated: {previousMonthGrossUnits: 1234}},
+    {...product('zero'), calculated: {previousMonthGrossUnits: 0}},
+    {...product('unknown'), calculated: {previousMonthGrossUnits: null}},
+    product('missing'),
+    {...product('retracted', 'Retracted', true), calculated: {previousMonthGrossUnits: 12}},
+    {...product('no-pnk'), pnk: null, calculated: {previousMonthGrossUnits: 12}}
+  ]})});
+  assert.equal(metricCell(page, 35).textContent, '1,234');
+  for (let index = 1; index < 6; index++) assert.equal(metricCell(page, 35, index).textContent, '');
+  for (const row of [36, 37]) {
+    for (let index = 0; index < 6; index++) assert.equal(metricCell(page, row, index).textContent, '');
+  }
+  assertCategorySummary(page, 'Hair trimmers');
+});
+
+test('per-product commission results display independently without a category-wide rate', async t => {
+  const page = await openPage(t, {categoryRequest: async () => ({products: [
+    {...product('first'), calculated: {effectiveCommissionRate: 0.14, commissionCostRon: 14}},
+    {...product('second'), calculated: {effectiveCommissionRate: 0.18, commissionCostRon: 36}},
+    {...product('zero'), calculated: {effectiveCommissionRate: 0, commissionCostRon: 0}},
+    {...product('unknown'), calculated: {effectiveCommissionRate: null, commissionCostRon: null}}
+  ]})});
+  assert.deepEqual([0, 1, 2, 3].map(index => metricCell(page, 76, index).textContent), ['14%', '18%', '0%', '']);
+  assert.deepEqual([0, 1, 2, 3].map(index => metricCell(page, 86, index).textContent), ['14.00', '36.00', '0.00', '']);
+  assertCategorySummary(page, 'Hair trimmers');
 });
 
 test('confirmed zero costs display as amounts while unknown and ineligible results stay blank', async t => {
@@ -364,11 +397,12 @@ test('a delayed category response cannot overwrite the latest selected category'
   assertCategorySummary(page, 'Personal care');
   assert.ok(page.head.children.every(row => row.children.length === 1), 'Old product columns clear immediately');
   assert.match(page.body.textContent, /Total Venit\/Unitate/);
-  latest.resolve({products: [product('latest')]});
+  latest.resolve({products: [{...product('latest'), calculated: {previousMonthGrossUnits: 23}}]});
   await setImmediate();
-  initial.resolve({products: [product('old')]});
+  initial.resolve({products: [{...product('old'), calculated: {previousMonthGrossUnits: 99}}]});
   await setImmediate();
   assert.equal(page.head.children[0].children[1].textContent, 'latest');
+  assert.equal(metricCell(page, 35).textContent, '23');
   assert.equal(page.status.hidden, true);
   assertCategorySummary(page, 'Personal care');
 });
@@ -436,13 +470,15 @@ test('saved overrides remain editable for ineligible products while outputs stay
 test('previews use canonical strings and update results without replacing the focused input', async t => {
   t.mock.timers.enable({apis: ['setTimeout']});
   const item = {...product('one'), overrideRevision: 3, emagSalePriceRon: 200, companyName: 'Sellfusion SRL',
-    calculated: {effectiveSalePriceRon: 200}, overrides: {}};
+    calculated: {effectiveSalePriceRon: 200, previousMonthGrossUnits: 22}, overrides: {}};
   const page = await openPage(t, {categoryRequest: async () => ({products: [item]}), previewRequest: async body => {
     assert.deepEqual(body.changes, [{productCode: 'one', expectedRevision: 3, values: {commissionRate: '0.1425'}}]);
-    return {products: [{...item, calculated: {effectiveSalePriceRon: 200, effectiveCommissionRate: 0.1425, commissionCostRon: 28.5}}]};
+    return {products: [{...item, calculated: {effectiveSalePriceRon: 200, effectiveCommissionRate: 0.1425,
+      commissionCostRon: 28.5, previousMonthGrossUnits: 22}}]};
   }});
   const focused = edit(page, 41, '14.25');
   assert.equal(page.elements.get('profitOverrideReview').disabled, true);
+  assert.equal(metricCell(page, 35).textContent, '22', 'Commission edits do not invalidate monthly units');
   assertCategorySummary(page, 'Hair trimmers');
   await advancePreview(t);
   assert.equal(overrideInput(page, 41), focused);
@@ -450,6 +486,7 @@ test('previews use canonical strings and update results without replacing the fo
   assert.equal(metricCell(page, 76).textContent, '14.25%');
   assert.equal(metricCell(page, 86).textContent, '28.50');
   assert.equal(metricCell(page, 70).textContent, 'Sellfusion SRL');
+  assert.equal(metricCell(page, 35).textContent, '22');
   assert.equal(page.elements.get('profitOverrideReview').disabled, false);
   assertCategorySummary(page, 'Hair trimmers');
 });
@@ -466,6 +503,26 @@ test('clearing a saved override sends null and restores the server reference-pri
   await advancePreview(t);
   assert.equal(metricCell(page, 75).textContent, '169.99');
   assert.equal(metricCell(page, 26).textContent, '169.99');
+});
+
+test('clearing commission restores the server product default and retains monthly units', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const item = {...product('one'), overrideRevision: 1, overrides: {commissionRate: '0.14'},
+    calculated: {effectiveCommissionRate: 0.14, commissionCostRon: 28, previousMonthGrossUnits: 7}};
+  const page = await openPage(t, {categoryRequest: async () => ({products: [item]}), previewRequest: async body => {
+    assert.equal(body.changes[0].values.commissionRate, null);
+    return {products: [{...item, calculated: {effectiveCommissionRate: 0.18, commissionCostRon: 36,
+      previousMonthGrossUnits: 7}}]};
+  }});
+  edit(page, 41, '');
+  assert.equal(metricCell(page, 76).textContent, '');
+  assert.equal(metricCell(page, 86).textContent, '');
+  assert.equal(metricCell(page, 35).textContent, '7');
+  await advancePreview(t);
+  assert.equal(overrideInput(page, 41).value, '');
+  assert.equal(metricCell(page, 76).textContent, '18%');
+  assert.equal(metricCell(page, 86).textContent, '36.00');
+  assert.equal(metricCell(page, 35).textContent, '7');
 });
 
 test('fulfillment edits clear the saved storage cost through pending, failed and invalid previews', async t => {

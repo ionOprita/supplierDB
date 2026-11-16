@@ -3,8 +3,9 @@ import {overrideFields, overrideInputValue} from './profit-calculator-overrides.
 
 const priceFormat = new Intl.NumberFormat('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const percentFormat = new Intl.NumberFormat('en-US', {style: 'percent', maximumFractionDigits: 4});
+const quantityFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits: 0});
 const fieldsByRow = new Map(overrideFields.map(field => [field.row, field]));
-const calculatedFields = new Map([[26, 'effectiveSalePriceRon'], [49, 'purchaseCostRon'],
+const calculatedFields = new Map([[26, 'effectiveSalePriceRon'], [35, 'previousMonthGrossUnits'], [49, 'purchaseCostRon'],
   [50, 'transportCostRon'], [63, 'googleAdsCostRon'], [64, 'socialMediaAdsCostRon'],
   [75, 'effectiveSalePriceRon'], [76, 'effectiveCommissionRate'], [77, 'purchaseCostRon'],
   [78, 'transportCostRon'], [86, 'commissionCostRon'], [88, 'storageCostRon'],
@@ -41,7 +42,9 @@ function populateMetric(value, definition, product) {
     value.textContent = product.companyName;
   } else {
     const amount = product.calculated?.[calculatedFields.get(definition.sourceRow)];
-    if (typeof amount === 'number' && Number.isFinite(amount)) {
+    if (definition.sourceRow === 35) {
+      if (Number.isSafeInteger(amount) && amount > 0) value.textContent = quantityFormat.format(amount);
+    } else if (typeof amount === 'number' && Number.isFinite(amount)) {
       value.textContent = (definition.sourceRow === 76 ? percentFormat : priceFormat).format(amount);
     }
   }

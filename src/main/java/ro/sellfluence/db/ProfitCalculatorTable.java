@@ -6,12 +6,15 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /** Product metadata and reference values for the category profit calculator. */
@@ -112,7 +115,8 @@ public final class ProfitCalculatorTable {
 
     public record CategoryProduct(String productCode, String name, String pnk, boolean retracted,
                                   BigDecimal emagSalePriceRon, String incomeProfitTax, Boolean vatPayer,
-                                  String companyName, Overrides overrides, long overrideRevision) {
+                                  String companyName, Overrides overrides, long overrideRevision,
+                                  BigDecimal emagCommission, Long previousMonthGrossUnits) {
         public CategoryProduct {
             overrides = overrides == null ? Overrides.empty() : overrides;
         }
@@ -126,33 +130,67 @@ public final class ProfitCalculatorTable {
             this(productCode, name, pnk, retracted, emagSalePriceRon, incomeProfitTax, vatPayer,
                     null, Overrides.empty(), 0);
         }
+
+        public CategoryProduct(String productCode, String name, String pnk, boolean retracted,
+                               BigDecimal emagSalePriceRon, String incomeProfitTax, Boolean vatPayer,
+                               String companyName, Overrides overrides, long overrideRevision) {
+            this(productCode, name, pnk, retracted, emagSalePriceRon, incomeProfitTax, vatPayer,
+                    companyName, overrides, overrideRevision, null, null);
+        }
     }
 
-    static List<CategoryProduct> getCategoryProducts(Connection db, String vendorGroup, String category)
-            throws SQLException {
+    static List<CategoryProduct> getCategoryProducts(Connection db, String vendorGroup, String category,
+                                                     YearMonth previousMonth) throws SQLException {
+        Objects.requireNonNull(previousMonth, "previousMonth");
         var products = new ArrayList<CategoryProduct>();
         try (var statement = db.prepareStatement("""
-                SELECT p.product_code, p.name, p.emag_pnk, p.retracted,
-                       p.emag_sale_price_ron, p.income_profit_tax, p.vat_payer, v.company_name,
+                WITH selected_products AS (
+                    SELECT p.product_code, p.name, p.emag_pnk, p.retracted,
+                           p.emag_sale_price_ron, p.income_profit_tax, p.vat_payer, p.emag_commission,
+                           v.company_name
+                    FROM product p
+                    JOIN vendor v ON p.vendor = v.id
+                    WHERE btrim(v.vendor_group, ?) = ? AND btrim(p.category, ?) = ?
+                ), monthly_gross_units AS (
+                    SELECT pio.part_number_key AS pnk,
+                           CASE WHEN COUNT(pio.quantity) = COUNT(*)
+                                THEN SUM(pio.quantity)::bigint END AS gross_units
+                    FROM emag_order o
+                    JOIN vendor seller ON seller.id = o.vendor_id
+                    JOIN product_in_order pio ON pio.emag_order_surrogate_id = o.surrogate_id
+                    WHERE o.status = 4 AND o.date >= ? AND o.date < ?
+                      AND btrim(seller.vendor_group, ?) = ?
+                      AND pio.part_number_key IN (SELECT emag_pnk FROM selected_products)
+                    GROUP BY pio.part_number_key
+                )
+                SELECT p.*,
                        pc.sale_price_ron, pc.commission_rate, pc.purchase_price_usd,
                        pc.transport_price_usd, pc.usd_ron_rate, pc.fulfillment_source,
-                       COALESCE(pc.revision, 0) AS override_revision
-                FROM product p
-                JOIN vendor v ON p.vendor = v.id
+                       COALESCE(pc.revision, 0) AS override_revision,
+                       CASE WHEN units.pnk IS NULL THEN 0::bigint ELSE units.gross_units END
+                           AS previous_month_gross_units
+                FROM selected_products p
                 LEFT JOIN profit_calculator_override pc ON pc.product_code = p.product_code
-                WHERE btrim(v.vendor_group, ?) = ? AND btrim(p.category, ?) = ?
+                LEFT JOIN monthly_gross_units units ON units.pnk = p.emag_pnk
                 """)) {
             statement.setString(1, STRIP_CHARACTERS);
             statement.setString(2, vendorGroup);
             statement.setString(3, STRIP_CHARACTERS);
             statement.setString(4, category);
+            // API dates are Romanian local timestamps, stored without a time zone.
+            statement.setTimestamp(5, Timestamp.valueOf(previousMonth.atDay(1).atStartOfDay()));
+            statement.setTimestamp(6, Timestamp.valueOf(previousMonth.plusMonths(1).atDay(1).atStartOfDay()));
+            statement.setString(7, STRIP_CHARACTERS);
+            statement.setString(8, vendorGroup);
             try (var result = statement.executeQuery()) {
                 while (result.next()) {
                     products.add(new CategoryProduct(result.getString("product_code"), result.getString("name"),
                             result.getString("emag_pnk"), result.getBoolean("retracted"),
                             result.getBigDecimal("emag_sale_price_ron"), result.getString("income_profit_tax"),
                             result.getObject("vat_payer", Boolean.class), result.getString("company_name"),
-                            readOverrides(result), result.getLong("override_revision")));
+                            readOverrides(result), result.getLong("override_revision"),
+                            result.getBigDecimal("emag_commission"),
+                            result.getObject("previous_month_gross_units", Long.class)));
                 }
             }
         }

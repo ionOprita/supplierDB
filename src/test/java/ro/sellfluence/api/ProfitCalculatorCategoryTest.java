@@ -157,6 +157,78 @@ class ProfitCalculatorCategoryTest {
     }
 
     @Test
+    void usesEachProductsStoredCommissionFractionWithoutIntermediateRounding() {
+        var first = new CategoryProduct("first", "S. 1 - Product", "PNK1", false,
+                new BigDecimal("169.99"), "Profit", true, "Company", Overrides.empty(), 0,
+                new BigDecimal("0.14"), 12L);
+        var second = new CategoryProduct("second", "S. 2 - Product", "PNK2", false,
+                new BigDecimal("123.456"), "Profit", true, "Company", Overrides.empty(), 0,
+                new BigDecimal("0.1425"), 4L);
+        var products = ProfitCalculatorCategory.create("S", "Trimmers", List.of(second, first)).products();
+
+        assertEquals(new BigDecimal("0.14"), products.getFirst().calculated().effectiveCommissionRate());
+        assertEquals(new BigDecimal("23.7986"), products.getFirst().calculated().commissionCostRon());
+        assertEquals(12L, products.getFirst().calculated().previousMonthGrossUnits());
+        assertEquals(new BigDecimal("0.1425"), products.getLast().calculated().effectiveCommissionRate());
+        assertEquals(new BigDecimal("17.5924800"), products.getLast().calculated().commissionCostRon());
+        assertEquals(4L, products.getLast().calculated().previousMonthGrossUnits());
+    }
+
+    @Test
+    void distinguishesZeroCommissionAndGrossUnitsFromMissingValues() {
+        var zero = new CategoryProduct("zero", "S. 1 - Product", "PNK1", false,
+                new BigDecimal("169.99"), "Profit", true, "Company", Overrides.empty(), 0,
+                BigDecimal.ZERO, 0L);
+        var missing = new CategoryProduct("missing", "S. 2 - Product", "PNK2", false,
+                new BigDecimal("169.99"), "Profit", true, "Company", Overrides.empty(), 0,
+                null, null);
+        var noPrice = new CategoryProduct("no-price", "S. 3 - Product", "PNK3", false,
+                null, "Profit", true, "Company", Overrides.empty(), 0, new BigDecimal("0.18"), 7L);
+        var response = ProfitCalculatorCategory.create("S", "Trimmers", List.of(zero, missing, noPrice));
+
+        assertEquals(BigDecimal.ZERO, response.products().getFirst().calculated().effectiveCommissionRate());
+        assertEquals(new BigDecimal("0.00"), response.products().getFirst().calculated().commissionCostRon());
+        assertNull(response.products().get(1).calculated().effectiveCommissionRate());
+        assertNull(response.products().get(1).calculated().commissionCostRon());
+        assertEquals(new BigDecimal("0.18"), response.products().getLast().calculated().effectiveCommissionRate());
+        assertNull(response.products().getLast().calculated().commissionCostRon());
+
+        var mapper = new ObjectMapper();
+        var json = mapper.readTree(mapper.writeValueAsString(response)).get("products");
+        assertTrue(json.get(0).get("calculated").get("previousMonthGrossUnits").isIntegralNumber());
+        assertEquals(0L, json.get(0).get("calculated").get("previousMonthGrossUnits").asLong());
+        assertTrue(json.get(1).get("calculated").get("previousMonthGrossUnits").isNull());
+        assertEquals(7L, json.get(2).get("calculated").get("previousMonthGrossUnits").asLong());
+    }
+
+    @Test
+    void clearingCommissionOverrideRestoresProductDefaultAndPreservesGrossUnitsInPreviews() {
+        var saved = new Overrides(null, BigDecimal.ZERO, null, null, null, null);
+        var source = new CategoryProduct("code", "Product", "PNK", false,
+                new BigDecimal("169.99"), "Profit", true, "Company", saved, 2,
+                new BigDecimal("0.18"), 42L);
+        var original = ProfitCalculatorCategory.create("S", "Trimmers", List.of(source)).products().getFirst();
+        assertEquals(BigDecimal.ZERO, original.calculated().effectiveCommissionRate(), "Zero is a real override");
+        assertEquals(new BigDecimal("0.00"), original.calculated().commissionCostRon());
+
+        var clear = new LinkedHashMap<String, String>();
+        clear.put("commissionRate", null);
+        var fallback = ProfitCalculatorCategory.preview("S", "Trimmers", List.of(source),
+                List.of(new OverrideChange("code", 2, clear))).products().getFirst();
+        assertEquals(new BigDecimal("0.18"), fallback.calculated().effectiveCommissionRate());
+        assertEquals(new BigDecimal("30.5982"), fallback.calculated().commissionCostRon());
+        assertEquals(42L, fallback.calculated().previousMonthGrossUnits());
+
+        clear.put("salePriceRon", "200");
+        var changedPrice = ProfitCalculatorCategory.preview("S", "Trimmers", List.of(source),
+                List.of(new OverrideChange("code", 2, clear))).products().getFirst();
+        assertEquals(new BigDecimal("36.00"), changedPrice.calculated().commissionCostRon());
+        assertEquals(42L, changedPrice.calculated().previousMonthGrossUnits());
+        assertEquals(saved, source.overrides(), "Previews leave saved overrides untouched");
+        assertEquals(2, changedPrice.overrideRevision());
+    }
+
+    @Test
     void evaluatesIndependentlyKnownZerosWithoutPriceOrOtherCostInputs() {
         var overrides = new Overrides(null, null, null, null, null, "Minulescu");
         var originalRegime = " \tprOFit\u2003";
@@ -292,13 +364,17 @@ class ProfitCalculatorCategoryTest {
                 new BigDecimal("5"), new BigDecimal("1"), new BigDecimal("4"), "Minulescu");
         for (var input : List.of(
                 new CategoryProduct("retracted", "Name", "PNK", true,
-                        new BigDecimal("169.99"), "Profit", false, "Company", saved, 7),
+                        new BigDecimal("169.99"), "Profit", false, "Company", saved, 7,
+                        new BigDecimal("0.18"), 42L),
                 new CategoryProduct("retracted-venit", "Name", "PNK", true,
-                        new BigDecimal("169.99"), "Venit", false, "Company", saved, 7),
+                        new BigDecimal("169.99"), "Venit", false, "Company", saved, 7,
+                        new BigDecimal("0.18"), 42L),
                 new CategoryProduct("missing", "Name", " \t", false,
-                        new BigDecimal("169.99"), "Profit", false, "Company", saved, 7),
+                        new BigDecimal("169.99"), "Profit", false, "Company", saved, 7,
+                        new BigDecimal("0.18"), 42L),
                 new CategoryProduct("null-pnk", "Name", null, false,
-                        new BigDecimal("169.99"), "Venit", false, "Company", saved, 7))) {
+                        new BigDecimal("169.99"), "Venit", false, "Company", saved, 7,
+                        new BigDecimal("0.18"), 42L))) {
             var result = ProfitCalculatorCategory.create("S", "Trimmers", List.of(input)).products().getFirst();
             assertEquals(saved, result.overrides());
             assertEquals(7, result.overrideRevision());
@@ -316,6 +392,7 @@ class ProfitCalculatorCategoryTest {
             assertNull(result.calculated().vatCostRon());
             assertNull(result.calculated().profitTaxCostRon());
             assertNull(result.calculated().dividendTaxCostRon());
+            assertNull(result.calculated().previousMonthGrossUnits());
         }
     }
 
