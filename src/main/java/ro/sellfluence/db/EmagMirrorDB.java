@@ -826,6 +826,17 @@ public class EmagMirrorDB implements ProductPerformanceSource {
         });
     }
 
+    public List<ProfitCalculatorFbeTariffTable.Tariff> readProfitCalculatorFbeTariffs() throws SQLException {
+        return database.readTX(ProfitCalculatorFbeTariffTable::readTariffs);
+    }
+
+    public void saveProfitCalculatorFbeTariffs(List<ProfitCalculatorFbeTariffTable.Change> changes) throws SQLException {
+        database.writeTX(db -> {
+            ProfitCalculatorFbeTariffTable.saveChanges(db, changes);
+            return true;
+        });
+    }
+
     public record VendorGroupCategory(String vendorGroup, String category) {
     }
 

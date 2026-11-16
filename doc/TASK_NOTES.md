@@ -1,9 +1,9 @@
 # Profit calculator — task notes and recovery handoff
 
-Last reviewed: **2026-11-15**. Repository branch: `profit-calculator`.
-Base commit for the latest batch: `231c764` (`Added more fields.`).
+Last reviewed: **2026-11-16**. Repository branch: `profit-calculator`.
+Base commit for the latest batch: `6de8100` (`Added more fields.`).
 The working tree was clean before this batch. These notes include the subsequent
-category-summary change described below, not a confirmed production deployment.
+shared FBE tariff editor described below, not a confirmed production deployment.
 
 Start here after losing the chat, then read [ProfitCalculator.md](ProfitCalculator.md)
 for detailed formulas, mappings, API behavior, and the maintained **Open questions**.
@@ -18,8 +18,10 @@ eMAG API collection, or eMAG dashboard extraction.
 
 The current work is on **By Category**. The other calculator page is a scaffold
 for later work. The user has forwarded the original three open questions to the
-sheet author; answers remain pending. Three further questions now cover settings
-ownership/timing and authoritative import/operating-cost inputs.
+sheet author; answers remain pending. Further questions cover settings
+ownership/timing, authoritative import/operating-cost inputs, and FBE tier
+classification. The user approved a shared seeded FBE tariff editor while
+deferring the By Category fee calculations.
 
 ## Requirements and settled decisions
 
@@ -53,6 +55,11 @@ ownership/timing and authoritative import/operating-cost inputs.
 - Applying the USD conversion formulas from the sheet's separate Simulation
   area to By Category's Actual area is an **explicitly approved extension**.
   It is not how the original Actual columns used rows 42–44.
+- FBE processing tariffs are **one shared current grid across all groups**.
+  The user explicitly requested migration SQL with hardcoded source values,
+  rather than a one-off transfer program. This is an authorized seed snapshot;
+  subsequent runtime reads/writes use only PostgreSQL. Users edit the existing
+  12 tiers; adding/removing tiers and historical schedules are deferred.
 
 ### Important category and identity distinctions
 
@@ -86,8 +93,12 @@ These are investigation references, never runtime data sources:
 | EEE/BAT/packaging source | [Workbook](https://docs.google.com/spreadsheets/d/13xZcGdWG4WKP6TwuXwjVjKeuO99-9QHzuMQgg0S9Po4/edit); `Cost EEE & BAT & Ambalaje/prod.` |
 
 The FBE workbook title and tariff tab above were confirmed from metadata. Its
-processing, return, withdrawal, and disposal fees need a tariff grid that is
-not stored in the database, in addition to existing product dimensions/weight.
+processing, return, withdrawal, and disposal tariff grid is now stored in the
+database, alongside existing product dimensions/weight. The observed classifier
+uses maximum matching dimension-row IDs, selecting the last of four identically
+sized extra-large tiers regardless of weight; girth and weight range are unused.
+This is now author question 7, not a rule silently corrected in code. The editor
+does not yet populate By Category rows 57–60.
 The FBE storage and EEE/BAT/packaging pricing chains have not been fully traced.
 Workbook contents can evolve; re-read metadata and
 current formulas before implementing another batch. Use exact tab names and
@@ -145,6 +156,8 @@ multiple product columns: some formula rows contain manually replaced cells.
 - `/private/profit-exposure`: vendor-group selector only; no exposure report yet.
 - `/private/profit-by-category`: vendor group/category selectors, Actual table,
   sticky product headers/labels, and shared override editing.
+- `/private/profit-fbe-tariffs`: shared current FBE tariff editor, immediately
+  after By Category; reviewed atomic saves, conflict handling and Revert.
 
 | Row(s) | Current behavior |
 | --- | --- |
@@ -221,6 +234,35 @@ fees, profit totals, monthly quantities, and financial summary rows 3–6.
 - Frontend modules: `profit-calculator.js`, `profit-calculator-table.js`,
   `profit-calculator-overrides.js`, and `profit-calculator-layout.js`.
 
+### Shared FBE tariff editor
+
+Migration 51 creates `profit_calculator_fbe_tariff` with a literal 12-row
+`INSERT` from `Grila costuri procesare FBE!B4:S15` as inspected on 2026-11-16.
+Stable IDs 1–12 retain source order and separate repeated extra-large labels.
+The last tier's weight range and four surcharge fields remain SQL null. A normal
+later startup does not reseed or overwrite user edits. Storage tariffs are not
+part of this table.
+
+Each row stores the label, four dimension limits (mm), weight band/range (kg),
+four base fees and four extra-weight fees (RON excluding VAT), plus a revision.
+Required numeric thresholds are positive and fees nonnegative; only weight
+range and surcharges may be blank. Revisions start at 1. All editable decimals
+are plain strings in JSON and `BigDecimal`/`NUMERIC` on the server/database.
+
+The normal application-user role applies to `GET`/`POST
+`/app/profitCalculatorFbeTariffs`. Reads return `{tariffs: [...]}`; writes accept
+`{changes: [{id, expectedRevision, values: {...}}]}` and acknowledge commit with
+`{saved: true}`. Saves lock rows in stable ID order and reject stale revisions
+with HTTP 409, rolling back the entire batch. The real mirror transaction
+callback returns `true`, preserving the shared non-null DB contract. The UI
+keeps drafts after failed saves/conflicts; successful commit and readback are
+separate, so a failed read never retries a committed POST.
+
+`ProfitCalculatorFbeTariffs`, `ProfitCalculatorFbeTariffTable`, and
+`profit-fbe-tariffs.js` own request validation, persistence and editing. By
+Category fee calculations remain deferred until question 7 is resolved; the
+tariff editor does not require monthly sales or commission-default answers.
+
 ## Save failure, correction, and verification limits
 
 The user reported HTTP 500 while saving three 14% commission overrides:
@@ -257,6 +299,7 @@ could configure isolation and initially prevented reaching the intended test.
 | After the save-wrapper fix | **33 calculator Java tests passed, zero failures/errors/skips**, including the two real-wrapper regressions and existing API, validation, SQL persistence, and concurrency checks. Tests ran against a disposable PostgreSQL database. |
 | Independent zero-cost batch | **351 JavaScript tests passed**, zero failures/skips. The calculator Java selection reported **38 tests, 30 passed, 8 skipped**, zero failures/errors. The eight existing PostgreSQL integration checks skipped because `ADS_TEST_DB_URL` was not configured; no storage or migration changed. New coverage checks independent predicates, unknown/opposite branches, JSON numeric zero, eligibility, category replacement, and pending/failed/stale fulfillment previews. |
 | Category-summary batch | **351 JavaScript tests passed**, zero failures/skips. Existing UI checks now verify row 2 across immediate category/group changes, loading, empty results, product failures/retry, stale responses, absent categories/options, and override previews; financial summary rows 3–6 remain blank. Documentation and whitespace checks passed. No Java, API, or database code changed, so Java/PostgreSQL tests were not rerun for this batch. |
+| Shared FBE tariff editor | **361 JavaScript tests and 64 focused Java/JTE tests passed**, zero failures/errors/skips. Java tests used a disposable PostgreSQL database, covering every seed value, exact decimal/null/zero round trips, real API → mirror → pooled transaction commit visibility, whole-batch rollback and concurrent stale writers. All 12 SQL seed rows and their 180 editable values were independently compared to the current read-only source and matched. Chromium checked the actual JTE/static files and real API/database through controlled browser routing: 12 tiers/180 inputs, precise save/reload, validation, Revert, retained conflict drafts, desktop/mobile layout and independent grid scrolling; no page-script errors. |
 
 These are historical verification results, not a claim that every future
 checkout was tested. The temporary PostgreSQL clusters were stopped and removed.
@@ -283,6 +326,18 @@ code review passed. The category-summary batch ran the JavaScript command only.
 Neither batch involved a live database, spreadsheet edit, deployment, or
 application restart.
 
+For the FBE batch, the Java command was
+`mvn '-Dtest=*ProfitCalculator*Test,JteTemplateEngineTest' test`, with
+`ADS_TEST_DB_URL`/`ADS_TEST_DB_USER` set only for the disposable local cluster.
+The initial offline invocation could not resolve the uncached Surefire 3.6.1
+plugin; the online run downloaded the required dependencies and passed. Browser
+checks used controlled routing, not production application startup or background
+jobs; the HTTP tests separately exercised the actual Server handlers. Temporary
+browser helpers/screenshots are not required to resume this work. No application
+database or spreadsheet was changed, and no deployment/restart was performed.
+The disposable FBE PostgreSQL cluster was stopped and its data directory removed
+after verification.
+
 ## Remaining work and recovery checklist
 
 1. Inspect current Git status, branch, and commit before changing anything;
@@ -292,13 +347,14 @@ application restart.
    user's three commission overrides can now be saved. **No deployment/restart
    was performed by the agent, and user confirmation of a successful retry is
    still pending.** The application factory applies migrations during normal
-   startup; migration 50 was verified separately in disposable tests.
+   startup; migrations 50 and 51 were verified separately in disposable tests.
 3. Await the author answers already requested: gross versus net monthly units,
    selling-account scope, and intentional category-first versus per-product
    commission defaults. Keep the pending commission fallback blank meanwhile.
    The additional questions in `ProfitCalculator.md` concern settings scope and
-   effective dates, import-cost source records, and operating-cost input sources;
-   they do not block the independent zero branches already implemented.
+   effective dates, import-cost source records, operating-cost input sources,
+   and FBE tier selection. They do not block the independent zero branches or
+   editing tariffs. Resolve question 7 before connecting rows 57–60.
 4. Trace the next small field group to original inputs, then compare against
    database schema and actual data coverage. Extend eMAG/API/dashboard storage
    only when an identified input is missing; do not invent a replacement value.
@@ -306,7 +362,7 @@ application restart.
    recovery handoff when decisions or verification change.
 
 Known data gaps from the repository audit include monetary purchase/freight
-import baselines, FBE and environmental/packaging/SMS tariffs, and review
+import baselines, FBE storage and environmental/packaging/SMS tariffs, and review
 acquisition costs. Stored carton dimensions are not freight charges;
 `product.import_tax` is a rate, not per-unit customs cost; published review
 `review_price` metadata is a selling price, not the cost of obtaining a review.

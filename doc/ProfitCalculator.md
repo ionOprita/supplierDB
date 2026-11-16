@@ -112,16 +112,54 @@ to the product importer fields. `ProductTable` persists/reads them as
 The calculator therefore uses the resolved database fields directly instead of
 recreating spreadsheet imports or reaching back to the company sheet.
 
-### FBE reference and missing tariffs
+### Shared FBE tariffs
 
 The external FBE workbook is titled
 [Calculator cost FBE](https://docs.google.com/spreadsheets/d/1VkeF6LQMGVXZRBuVee2p2Oby0JYbmSwc8gBbdLrlcXk/edit).
 Its tariff tab is
 [Grila costuri procesare FBE](https://docs.google.com/spreadsheets/d/1VkeF6LQMGVXZRBuVee2p2Oby0JYbmSwc8gBbdLrlcXk/edit#gid=1892248028).
 This is the reference for the processing, return, withdrawal, and disposal
-fees needed by rows 57–60. The database has product dimensions and weight, but
-the required tariff grid is not stored yet. These fees remain deferred; the
-workbook is read-only and is not a runtime data source.
+fees needed by rows 57–60. Migration 51 creates `profit_calculator_fbe_tariff`
+and includes a literal SQL `INSERT` of the 12 processing-tariff rows from
+`B4:S15`, as inspected on **2026-11-16**. There is no transfer program or
+runtime spreadsheet import. Later startups do not reseed or overwrite edits.
+
+The **FBE Tariffs** page (`/private/profit-fbe-tariffs`), immediately after
+By Category, edits one current grid shared across all vendor groups. This
+first step edits the 12 existing tiers; it does not add/delete tiers or
+implement historical tariff schedules. Stable IDs 1–12 preserve source order.
+The four extra-large tiers remain separate despite identical category names
+and dimension limits.
+
+Each row stores the source category label, four maximum dimensions in mm,
+`weightBandKg`, four base fees in RON excluding VAT, `weightRangeKg`, and
+four extra-weight fees in RON. The weight-field names preserve the source
+labels rather than assume a corrected classification algorithm. The final
+tier's blank weight range and four blank surcharge fields are null, not zero.
+Dimensions and weight thresholds must be positive; fees are nonnegative.
+Category labels and base fields are required. Weight range and surcharge
+fields may remain blank. The girth and weight-range inputs are retained even
+though the observed processing classifier does not use them.
+
+Users review edits before Save; Revert loads the latest saved rates. Saves
+are atomic across changed rows and require each row's expected revision.
+A conflict leaves the entire batch unchanged and retains drafts for review.
+Decimal reads and writes use plain strings, and the server uses `BigDecimal`
+without intermediate rounding. Zero fees and null fields stay distinct.
+
+`GET /app/profitCalculatorFbeTariffs` returns `{tariffs: [...]}` with IDs,
+revisions and decimal-string values. `POST` to the same endpoint accepts
+`{changes: [{id, expectedRevision, values: {...}}]}` and acknowledges a
+successful commit with `{saved: true}`. The existing application-user role
+is required. Reloading after a committed save is separate and never repeats
+the write if readback fails.
+
+This step supplies editable storage only: By Category rows 57–60 remain
+blank until the classifier question below is resolved. Product dimensions
+and weight already exist in the database, but live data coverage has not been
+reconciled. Storage tariffs and storage-cost calculations remain separate;
+they also need import and stock-duration inputs. The reference workbook
+remains read-only.
 
 ## Shared manual inputs (rows 40–45)
 
@@ -324,5 +362,18 @@ already an agreed implementation policy, not an open question.
    General product weight, storefront selling prices, and ordinary eMAG order
    data do not supply all of these inputs.
 
-Questions 4–6 concern later fields and do not block the independently
-determined zero costs above. The original three questions remain unanswered.
+7. **FBE size and weight tier selection.** The processing formula selects the
+   maximum matching tariff-row ID from the dimension thresholds. The four
+   extra-large tiers (IDs 9–12) have identical dimensions and different weight
+   bands, so that formula selects ID 12 on a dimensional tie regardless of
+   weight. Its base processing fee is 177 RON with a 300 kg weight band,
+   whereas ID 9 starts at 30 RON with a 10 kg band. Is that selection
+   intentional, or should these tiers be selected by weight? Should maximum
+   girth and the separate weight-range field also constrain selection? They
+   are stored in the grid but not used by the observed classifier.
+
+The original three questions remain unanswered. The new shared tariff editor
+supplies the FBE processing-rate inputs discussed in question 6, but does not
+resolve their long-term ownership or the classification rule in question 7.
+None of these questions blocks editing the stored tariff grid or the
+independently determined zero costs above.

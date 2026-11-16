@@ -28,6 +28,7 @@ import ro.sellfluence.api.API;
 import ro.sellfluence.api.MyCredentialRepo;
 import ro.sellfluence.api.ProductPerformanceData.Period;
 import ro.sellfluence.api.ProfitCalculatorOverrides;
+import ro.sellfluence.api.ProfitCalculatorFbeTariffs;
 import ro.sellfluence.api.WebAuthnServer;
 import ro.sellfluence.apphelper.ACME;
 import ro.sellfluence.apphelper.BackgroundJob;
@@ -42,6 +43,7 @@ import ro.sellfluence.db.GMVDashboardTable.UnsupportedCurrencyException;
 import ro.sellfluence.db.PassKey;
 import ro.sellfluence.db.PassKey.User;
 import ro.sellfluence.db.ProductTable.ProductInfo;
+import ro.sellfluence.db.ProfitCalculatorFbeTariffTable.ConflictException;
 import ro.sellfluence.db.ProfitCalculatorTable.OverrideConflictException;
 import ro.sellfluence.db.Vendor;
 import ro.sellfluence.support.Arguments;
@@ -1008,6 +1010,8 @@ public class Server {
         });
         app.post("/app/profitCalculatorPreview", ctx -> serveProfitCalculatorOverrides(ctx, api, false));
         app.post("/app/profitCalculatorOverrides", ctx -> serveProfitCalculatorOverrides(ctx, api, true));
+        app.get("/app/profitCalculatorFbeTariffs", ctx -> serveProfitCalculatorFbeTariffs(ctx, api, false));
+        app.post("/app/profitCalculatorFbeTariffs", ctx -> serveProfitCalculatorFbeTariffs(ctx, api, true));
         app.get("/app/productPerformanceOptions", ctx -> {
             try {
                 ctx.json(api.getProductPerformanceOptions());
@@ -1402,6 +1406,28 @@ public class Server {
             ctx.status(400).json(Map.of("error", error.getMessage()));
         } catch (SQLException error) {
             logger.log(SEVERE, "Failed to " + (save ? "save" : "preview") + " profit calculator overrides.", error);
+            ctx.status(500).json(Map.of("error", "Database error"));
+        }
+    }
+
+    static void serveProfitCalculatorFbeTariffs(Context ctx, API api, boolean save) {
+        ctx.header("Cache-Control", "no-store");
+        try {
+            if (save) {
+                var request = ProfitCalculatorFbeTariffs.parse(mapper, ctx.body());
+                api.saveProfitCalculatorFbeTariffs(request);
+                // Reload separately: a read failure must not repeat a committed save.
+                ctx.json(Map.of("saved", true));
+            } else {
+                ctx.json(api.getProfitCalculatorFbeTariffs());
+            }
+        } catch (ConflictException error) {
+            ctx.status(409).json(Map.of("error", "Saved tariffs changed. Revert to reload current values before saving again.",
+                    "id", error.tariffId()));
+        } catch (IllegalArgumentException error) {
+            ctx.status(400).json(Map.of("error", error.getMessage()));
+        } catch (SQLException error) {
+            logger.log(SEVERE, "Failed to " + (save ? "save" : "load") + " FBE tariffs.", error);
             ctx.status(500).json(Map.of("error", "Database error"));
         }
     }
@@ -2993,6 +3019,7 @@ public class Server {
         if ("gmv-dashboard".equals(page)) return "GMV Dashboard";
         if ("profit-exposure".equals(page)) return "Calc. Expunere & Profit";
         if ("profit-by-category".equals(page)) return "By Category";
+        if ("profit-fbe-tariffs".equals(page)) return "FBE Tariffs";
         if ("db-explorer".equals(page)) {
             return "DB Explorer";
         }

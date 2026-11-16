@@ -179,6 +179,14 @@ public class API {
         mirrorDB.saveProfitCalculatorOverrides(request.changes());
     }
 
+    public ProfitCalculatorFbeTariffs.Response getProfitCalculatorFbeTariffs() throws SQLException {
+        return new ProfitCalculatorFbeTariffs.Response(mirrorDB.readProfitCalculatorFbeTariffs());
+    }
+
+    public void saveProfitCalculatorFbeTariffs(ProfitCalculatorFbeTariffs.Request request) throws SQLException {
+        mirrorDB.saveProfitCalculatorFbeTariffs(request.changes());
+    }
+
     /** Retained compatibility endpoint for the most recent rolling observation. */
     public Optional<ProductVisits> getProductVisits(UUID vendorId, String productCode)
             throws SQLException {
