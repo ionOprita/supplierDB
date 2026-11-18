@@ -55,7 +55,8 @@ public record OrderResult(
         LocalDateTime created,
         LocalDateTime modified,
         List<String> enforced_vendor_courier_accounts,
-        String currency
+        String currency,
+        String payment_processor //TODO: Do we need to store this?
 ) {
     public OrderResult {
         // Normalize Lists and BigDecimals
