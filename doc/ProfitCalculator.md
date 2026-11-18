@@ -37,6 +37,8 @@ the same rule. `D8` is the product PNK and `D9` is its retracted flag.
 | 2 | Category | Selected `product.category` from the database-backed selector options | Literal category text |
 | 35 | Nr. unitati vandute luna anterioara (ant.) | Gross finalized order-line quantities, restricted to selling accounts in the selected vendor group | Integer count; zero remains blank |
 | 48 | Pret vanzare prod. cu TVA (RON) A. | `product.emag_sale_price_ron` | RON amount, two decimal places |
+| 53 | Unit. returnate & defecte [%] | Accepted returned units divided by ordered units for the product PNK | Percentage |
+| 54 | Unit. refuzate de client [%] | Storno units minus returned units, divided by ordered units for the product PNK | Percentage |
 | 71 | Impozit profit / venit [%] | `product.income_profit_tax` | Tax-regime text, e.g. `Profit` or `Venit` |
 | 72 | Platitor de TVA | `product.vat_payer` | Display-only checkbox |
 
@@ -343,6 +345,59 @@ fallback and order/PNK snapshot selection implement a different metric.
 Rows 36–37 and financial summaries remain deferred until their cost/profit
 inputs are available.
 
+### Rows 53–54 — returns and refusals
+
+The normal formulas in `2. Trim.` match the product PNK in column D of the
+local `(GLB) Cent. Prod. (%)` tab, then read H for row 53 and I for row 54.
+The local tab's A8 import selects central overview rows by product name prefix.
+The source values are snapshots of per-product rates from the central workbook.
+[Central overview](https://docs.google.com/spreadsheets/d/1bOPbTkbvQL3g3Q0hzyNhaTAt--BNAFSZ5bV2PtAKh80/edit#gid=1118932541)
+
+The server calculates the rates live from PostgreSQL using the counting rules
+from `PopulateStornoAndReturns.updateOverviewSheet`. The counts span selling
+accounts for each exact PNK. The vendor group and category select the product
+columns, while row 35 uses its own selected-selling-group count.
+
+- **Ordered units** use `OrderQuantityTable`'s monthly snapshot rule. For each
+  month, order ID, and PNK, a status-4 snapshot contributes its `quantity`.
+  When only a status-5 snapshot exists, use its `initial_qty`. The month comes
+  from the order date.
+- **Returned units** sum stored RMA item quantities for `request_status = 7`,
+  regardless of return reason.
+  The existing order and product-line joins supply the PNK. The month comes
+  from the RMA date.
+- **Storno units** sum stored `storno.quantity` for lines joined to status-5
+  orders. The month comes from the storno date.
+
+Calculate row 53 as `returned units ÷ ordered units` and row 54 as
+`(storno units − returned units) ÷ ordered units`. Start with the last six
+completed **Europe/Bucharest** calendar months. Use the last twelve completed
+months for both rows if any valid six-month return, storno, or refusal rate
+exceeds 25%. Exactly 25% keeps the six-month window. The first month is
+inclusive and the current month is excluded.
+
+A rate is valid when ordered units are positive and its numerator falls
+between zero and ordered units, inclusive. With positive ordered units, zero
+qualifying numerator units give `0%`. The existing monthly sums skip null
+line quantities and read an all-null monthly sum as zero. Invalid rates remain
+blank, as do rates for retracted products and products without a PNK. Category
+loads and override previews read the data within the same transaction as the
+other category inputs. Both responses expose the nullable fractions as
+`calculated.returnRate` and `calculated.refusalRate`.
+
+The underlying legacy joins use order IDs across accounts. The `storno` and
+RMA tables lack selling-account IDs, and shared order IDs can make attribution
+ambiguous. The live result reflects the available database records and may
+differ from saved workbook snapshots or values entered directly in calculator
+cells.
+
+Row 55 still needs separate replacement shipment records. The overview
+exporter carries forward the existing column J. For group S, the historical
+source sums quantities for shipments classified as `Inlocuire` in
+`Expedieri (Inlocuiri+Service)` by order date and original PNK. Costs derived
+from the rates still need VAT and other cost inputs.
+[S. Raport Inlocuiri, Service, Retur](https://docs.google.com/spreadsheets/d/1JPooUiqh6tuCQvTC4wvKBsBq_OMKoxHIpu6_ndjYfbg/edit)
+
 ### USD conversion provenance
 
 The **Actual** columns do not reference rows 42–44 in their cost formulas; they
@@ -426,7 +481,7 @@ totals remain deferred rather than being calculated from incomplete costs.
   expected revisions and acknowledges a successful commit. Reloading the
   category afterward is separate; a reload failure must not repeat the save.
 
-All routes require the existing application user role. Return/refusal rates,
+All routes require the existing application user role. Replacement rates,
 import VAT, customs, other fulfillment/advertising costs,
 the remaining tax branches, profit totals, and financial summary rows 3–6 remain
 deferred.

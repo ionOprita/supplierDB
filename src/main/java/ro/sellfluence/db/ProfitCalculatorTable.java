@@ -1,6 +1,7 @@
 package ro.sellfluence.db;
 
 import com.fasterxml.jackson.annotation.JsonValue;
+import ro.sellfluence.support.Statistics;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /** Product metadata and reference values for the category profit calculator. */
 public final class ProfitCalculatorTable {
@@ -150,11 +152,70 @@ public final class ProfitCalculatorTable {
         }
     }
 
-    /** Both source reads belong to one database snapshot; callers do not mix tariff revisions mid-request. */
-    public record CategoryData(List<CategoryProduct> products, List<ProfitCalculatorFbeTariffTable.Tariff> tariffs) {
+    public record ReturnRates(Double returnRate, Double refusalRate) {
+    }
+
+    /** Category products and calculation inputs from one database snapshot. */
+    public record CategoryData(List<CategoryProduct> products, List<ProfitCalculatorFbeTariffTable.Tariff> tariffs,
+                               Map<String, ReturnRates> returnRatesByPnk) {
         public CategoryData {
             products = List.copyOf(products);
             tariffs = List.copyOf(tariffs);
+            returnRatesByPnk = Map.copyOf(returnRatesByPnk);
+        }
+
+        public CategoryData(List<CategoryProduct> products, List<ProfitCalculatorFbeTariffTable.Tariff> tariffs) {
+            this(products, tariffs, Map.of());
+        }
+    }
+
+    static Map<String, ReturnRates> readReturnRates(Connection db, List<CategoryProduct> products,
+                                                   YearMonth currentMonth) throws SQLException {
+        var pnks = products.stream()
+                .filter(product -> !product.retracted() && product.pnk() != null && !product.pnk().isBlank())
+                .map(CategoryProduct::pnk)
+                .collect(Collectors.toSet());
+        if (pnks.isEmpty()) return Map.of();
+
+        // Follow the central overview's rate populations, including its account and snapshot rules.
+        var longStart = currentMonth.minusMonths(12);
+        var shortStart = currentMonth.minusMonths(6);
+        var orders = MonthlyUnitCounts.read(db, longStart, currentMonth, OrderQuantityTable.MONTHS_SQL, pnks);
+        var returns = MonthlyUnitCounts.read(db, longStart, currentMonth, MonthlyUnitCounts.RETURN_SQL, pnks);
+        var stornos = MonthlyUnitCounts.read(db, longStart, currentMonth, MonthlyUnitCounts.STORNO_SQL, pnks);
+
+        var ratesByPnk = new LinkedHashMap<String, ReturnRates>();
+        for (var pnk : pnks) {
+            var rates = windowRates(shortStart, currentMonth, orders.get(pnk), returns.get(pnk), stornos.get(pnk));
+            if (rates.exceedsThreshold()) {
+                rates = windowRates(longStart, currentMonth, orders.get(pnk), returns.get(pnk), stornos.get(pnk));
+            }
+            ratesByPnk.put(pnk, new ReturnRates(rates.returnRate(), rates.refusalRate()));
+        }
+        return ratesByPnk;
+    }
+
+    private static WindowRates windowRates(YearMonth start, YearMonth end, Map<YearMonth, Integer> orders,
+                                           Map<YearMonth, Integer> returns, Map<YearMonth, Integer> stornos) {
+        var ordered = Statistics.sumOver(start, end, orders);
+        var returned = Statistics.sumOver(start, end, returns);
+        var storned = Statistics.sumOver(start, end, stornos);
+        return new WindowRates(observedRate(storned, ordered), observedRate(returned, ordered),
+                observedRate((long) storned - returned, ordered));
+    }
+
+    private static Double observedRate(long count, long ordered) {
+        var estimate = Statistics.estimateRateOrNull(count, ordered, 0.95);
+        return estimate == null ? null : estimate.rate();
+    }
+
+    private record WindowRates(Double stornoRate, Double returnRate, Double refusalRate) {
+        boolean exceedsThreshold() {
+            return aboveThreshold(stornoRate) || aboveThreshold(returnRate) || aboveThreshold(refusalRate);
+        }
+
+        private static boolean aboveThreshold(Double rate) {
+            return rate != null && rate > 0.25;
         }
     }
 

@@ -2,9 +2,11 @@ package ro.sellfluence.api;
 
 import org.junit.jupiter.api.Test;
 import ro.sellfluence.db.ProfitCalculatorFbeTariffTable.Tariff;
+import ro.sellfluence.db.ProfitCalculatorTable.CategoryData;
 import ro.sellfluence.db.ProfitCalculatorTable.CategoryProduct;
 import ro.sellfluence.db.ProfitCalculatorTable.OverrideChange;
 import ro.sellfluence.db.ProfitCalculatorTable.Overrides;
+import ro.sellfluence.db.ProfitCalculatorTable.ReturnRates;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
@@ -184,6 +186,33 @@ class ProfitCalculatorCategoryTest {
         assertEquals(new BigDecimal("0.1425"), products.getLast().calculated().effectiveCommissionRate());
         assertEquals(new BigDecimal("17.5924800"), products.getLast().calculated().commissionCostRon());
         assertEquals(4L, products.getLast().calculated().previousMonthGrossUnits());
+    }
+
+    @Test
+    void exposesReturnAndRefusalRatesAsNullableFractionsDuringLoadsAndPreviews() {
+        var data = new CategoryData(List.of(
+                new CategoryProduct("rated", "S. 1 - Rated", "RATED", false),
+                new CategoryProduct("missing", "S. 2 - Missing", null, false),
+                new CategoryProduct("retracted", "S. 3 - Retracted", "RETRACTED", true)),
+                List.of(), Map.of("RATED", new ReturnRates(0.0, null),
+                        "RETRACTED", new ReturnRates(0.3, 0.1)));
+
+        var response = ProfitCalculatorCategory.create("S", "Trimmers", data);
+        var preview = ProfitCalculatorCategory.preview("S", "Trimmers", data,
+                List.of(new OverrideChange("rated", 0, Map.of("salePriceRon", "120"))));
+
+        assertEquals(0.0, preview.products().getFirst().calculated().returnRate());
+        assertNull(preview.products().getFirst().calculated().refusalRate());
+        assertEquals(new BigDecimal("120"), preview.products().getFirst().calculated().effectiveSalePriceRon());
+        for (var product : response.products().subList(1, 3)) {
+            assertNull(product.calculated().returnRate());
+            assertNull(product.calculated().refusalRate());
+        }
+        var mapper = new ObjectMapper();
+        var rates = mapper.valueToTree(response.products().getFirst().calculated());
+        assertTrue(rates.get("returnRate").isNumber());
+        assertEquals(0.0, rates.get("returnRate").asDouble());
+        assertTrue(rates.get("refusalRate").isNull());
     }
 
     @Test

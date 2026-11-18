@@ -1,10 +1,8 @@
 # Profit calculator — task notes and recovery handoff
 
-Last reviewed: **2026-11-16**. Repository branch: `profit-calculator`.
-Base commit for the latest batch: `9c2e070` (`Reorder columns to show active products first.`).
-The working tree was clean before this batch. These notes include the subsequent
-FBE fee calculations described below, not a confirmed
-production deployment.
+Last reviewed: **2026-11-18**. Repository branch: `profit-calculator`.
+Base commit for the return and refusal rate batch: `0ca30e9` (`Added field.`).
+The working tree was clean before this batch.
 
 Start here after losing the chat, then read [ProfitCalculator.md](ProfitCalculator.md)
 for detailed formulas, mappings, API behavior, and the maintained **Open questions**.
@@ -50,8 +48,7 @@ known questionable tier assignments. That question is still open.
   blank; zero price is `0.00`; false VAT-payer status is an unchecked checkbox;
   unknown VAT status has no checkbox.
 - Ignore **individual calculator cells manually replacing a normal formula**:
-  apply the normal formula consistently to all products instead. This also
-  applies to later rows such as 54.
+  apply the normal formula consistently to all products, including row 54.
 - **Dedicated manual inputs in rows 40–45 are intentional overrides.** The user
   explicitly requested implementing them. The preceding rule does not remove
   these inputs or prohibit product master data originally entered manually.
@@ -78,6 +75,10 @@ known questionable tier assignments. That question is still open.
   them or reconstruct their `initial_qty`. Both FBE/non-FBE accounts in the
   selected group contribute. Commission defaults are per product, with row 41
   taking precedence when supplied.
+- Rows 53–54 use live return and refusal rates across selling accounts for
+  each exact PNK, matching the central overview's scope. The rates use six
+  completed Bucharest months, with a twelve-month window for both if any valid
+  return, storno, or refusal rate exceeds 25%.
 
 ### Important category and identity distinctions
 
@@ -105,7 +106,7 @@ These are investigation references, never runtime data sources:
 | Date produse | [Workbook](https://docs.google.com/spreadsheets/d/1q8lltfW6bMc3nEzoes7lrAn2Kp_W5UdH5VECtLaIejw/edit); `S. Date Prod.` gid **159482373**, `Date Firme` gid **1807172958**, `Comisioane` gid **813157553** |
 | Cent. - Date comenzi general | [Workbook](https://docs.google.com/spreadsheets/d/1bX_k1aaMEKwMCxxF0mrMjTA4I7RnA2WJb8DBGWwisUE/edit); `T. Sales/M. (H.)`, `(GLB.) T. Sales/M.` |
 | S. Date comenzi - 2026 | [Workbook](https://docs.google.com/spreadsheets/d/1RQTp2TYFYLx21h0dtepB73hBoTSkZN5iFF_ip7GGCfk/edit); `T. Sales/M.`, raw `Date` |
-| Cent. - Ret. Sto. Ref. Inl. | [Workbook](https://docs.google.com/spreadsheets/d/1bOPbTkbvQL3g3Q0hzyNhaTAt--BNAFSZ5bV2PtAKh80/edit); `(GLB) Cent. Prod. (%)` and monthly rate helpers |
+| Cent. - Ret. Sto. Ref. Inl. | [Workbook](https://docs.google.com/spreadsheets/d/1bOPbTkbvQL3g3Q0hzyNhaTAt--BNAFSZ5bV2PtAKh80/edit); `(GLB) Cent. Prod. (%)` gid **1118932541** and monthly rate helpers |
 | S. eMAG ads | [Workbook](https://docs.google.com/spreadsheets/d/1lTej6Or4ozRAZwpwA8h7PJLQSZQjhR6-lxGg8oa_8do/edit); `eMAG ads`, `Introd. Date` |
 | Calculator cost FBE | [Workbook](https://docs.google.com/spreadsheets/d/1VkeF6LQMGVXZRBuVee2p2Oby0JYbmSwc8gBbdLrlcXk/edit); tariff tab `Grila costuri procesare FBE` gid **1892248028**, `Calc. cost FBE (Total)` gid **1391468769** |
 | EEE/BAT/packaging source | [Workbook](https://docs.google.com/spreadsheets/d/13xZcGdWG4WKP6TwuXwjVjKeuO99-9QHzuMQgg0S9Po4/edit); `Cost EEE & BAT & Ambalaje/prod.` |
@@ -172,9 +173,13 @@ multiple product columns: some formula rows contain manually replaced cells.
   helper divides the latest report month's PNK-matched campaign spending by
   previous-calendar-month sales. Do not substitute advertising-attributed units
   or assume its numerator and denominator necessarily cover the same month.
-- Some return/refusal/replacement helper values are fixed snapshots; formulas
-  elsewhere use monthly averages and adjustment factors. These rates have not
-  been approved or implemented as simple raw returns divided by sales.
+- Rows 53–55 look up local `(GLB) Cent. Prod. (%)` columns H, I, and J by PNK.
+  Its A8 import reads the central overview, filtered by the product name prefix.
+  `PopulateStornoAndReturns.updateOverviewSheet` derives H and I from the
+  database and preserves J. The background job refreshes the monthly tabs
+  separately. The calculator now follows the overview exporter calculation
+  for H and I. Unused rows in the central sheet can still contain legacy
+  three-month formulas with adjustment factors.
 
 ## Completed implementation
 
@@ -201,6 +206,8 @@ multiple product columns: some formula rows contain manually replaced cells.
 | 86 | Effective price × effective commission when both are known |
 | 49, 77 | USD purchase override 42 × exchange-rate override 44 |
 | 50, 78 | USD transport override 43 × exchange-rate override 44 |
+| 53 | Accepted returned units divided by ordered units, per PNK |
+| 54 | Storno units minus returned units, divided by ordered units, per PNK |
 | 57–60 | FBE processing, return, withdrawal and disposal: source-classified tier base fee plus rounded-up excess kg × surcharge |
 | 63, 64 | Literal zero from the Google/social-media Ads formulas; not measured spending |
 | 88 | Zero only for an explicit `Minulescu` fulfillment override |
@@ -285,6 +292,34 @@ Previews preserve monthly units and product commission defaults when applying
 draft overrides. Financial monthly outputs 36–37 still need missing cost/profit
 inputs and remain blank.
 
+### Return and refusal rates
+
+Row 53 is returned units divided by ordered units. Row 54 divides
+`storno units − returned units` by ordered units. Follow the central overview
+exporter's PNK-level rules across selling accounts. Orders use the existing
+monthly snapshot rule, which prefers a finalized quantity and can fall back
+to a storno snapshot's initial quantity. Returns come from status-7 RMAs by
+RMA date, and stornos come from storno events linked to status-5 orders by
+storno date. Legacy joins can have ambiguous account attribution when order
+IDs collide. The monthly sums skip null quantities and read all-null monthly
+sums as zero. Row 35 uses its separately approved gross finalized units from
+selling accounts in the selected group, with unknown totals for missing line
+quantities.
+
+Use the six completed calendar months in `Europe/Bucharest`. If any valid
+return, storno, or refusal rate is strictly above 25%, use the twelve completed
+months for both rates. A nonpositive denominator or a numerator outside
+`[0, ordered units]` makes that rate unknown. Known zero displays as `0%`.
+Rates are blank for a retracted product or missing PNK. The existing GET and
+preview return `calculated.returnRate` and `calculated.refusalRate` as nullable
+fractions, calculated from the same database snapshot as the other category
+inputs.
+
+The live rates can differ from saved workbook snapshots. The user's policy on
+ignoring cells entered over normal calculator formulas applies. Row 55 uses
+a different source, including a separate replacement shipment log, and its
+cost rows still depend on additional settings and expenses.
+
 ### Shared FBE tariff editor
 
 Migration 51 creates `profit_calculator_fbe_tariff` with a literal 12-row
@@ -351,11 +386,10 @@ edits affect later loads/previews. The classifier is isolated for future
 replacement; questions 4–7 remain open and missing VAT/storage/other costs do
 not become zero or incomplete profit totals.
 
-After a successful preview, only its four FBE reference outputs refresh the
-GET baseline. Later unrelated draft edits retain these latest fees even while
-preview is pending or fails. Saved override values/revisions and other baseline
-calculations remain intact, so clearing price/commission drafts still restores
-the original defaults and does not accidentally save a previous preview.
+After a successful preview, the latest four FBE fees and the return and refusal
+rates refresh those reference values in the GET baseline. Later unrelated draft
+edits retain those values while a preview is pending or fails. The saved
+overrides and revision continue to come from the category load or save.
 
 ## Save failure, correction, and verification limits
 
@@ -389,6 +423,7 @@ could configure isolation and initially prevented reaching the intended test.
 
 | Stage | Result and qualification |
 | --- | --- |
+| Return and refusal rates | **367 JavaScript tests and 112 focused Java/JTE tests passed**, zero failures/errors/skips. Disposable PostgreSQL covered category loads and previews, six- and twelve-month boundaries, exactly 25%, status filters, invalid and zero rates, and the distinct scope of row 35. JavaScript checks covered percentage formatting, blank results and refreshed preview values. |
 | Literal FBE fee calculations | **366 JavaScript tests and 101 focused Java/JTE tests passed**, zero failures/errors/skips. Disposable PostgreSQL checks exercised actual API → pooled mirror reads, product measurements, saved tariff edits, previews, eligibility, monthly quantities and commissions. Pure tests lock in 19 classifier/surcharge cases, including intentional ties/nonfitting selections, unmatched axes, exact gram-to-kg conversion and ceiling, null/zero surcharges and precision. UI checks cover all four amounts, eligibility, categories, stale responses and preservation of refreshed FBE fees during later pending/failed previews without changing saved override baselines. |
 | Active-first column ordering | **18 calculator evaluator tests passed**, zero failures/errors/skips, using `mvn -o -Dtest=ProfitCalculatorCategoryTest test`. The ordering regression covers natural name/code order in both active/retracted groups and nonempty previews. An eligibility test now matches products by identity rather than assuming their previous positions. No database or API-shape changes were needed. |
 | Initial override implementation | 347 JavaScript tests and 61 focused Java tests passed; PostgreSQL migration/persistence/concurrency checks used a disposable database, with no skipped tests. Desktop/mobile browser checks covered actual templates, frontend, and evaluator with substituted storage, including previews, save/reload, drafts, revert, and conflicts. This preceded discovery of the real-wrapper save bug. |
@@ -446,6 +481,10 @@ JavaScript suite, with a fresh disposable PostgreSQL cluster. Its cluster was
 stopped and removed after verification. No application database, spreadsheet,
 deployment or server restart was involved; no migration was required.
 
+The return and refusal rate batch ran the full JavaScript suite and
+`mvn -o '-Dtest=*ProfitCalculator*Test,JteTemplateEngineTest,OrderQuantityTableIntegrationTest' test`
+against a disposable PostgreSQL cluster.
+
 ## Remaining work and recovery checklist
 
 1. Inspect current Git status, branch, and commit before changing anything;
@@ -469,9 +508,10 @@ deployment or server restart was involved; no migration was required.
 5. Continue updating `ProfitCalculator.md` formulas/**Open questions** and this
    recovery handoff when decisions or verification change.
 
-Known data gaps from the repository audit include monetary purchase/freight
-import baselines, FBE storage and environmental/packaging/SMS tariffs, and review
-acquisition costs. Stored carton dimensions are not freight charges;
+Known data gaps from the repository audit include replacement shipment records
+for row 55, monetary purchase/freight import baselines, FBE storage and
+environmental/packaging/SMS tariffs, and review acquisition costs.
+Stored carton dimensions are not freight charges;
 `product.import_tax` is a rate, not per-unit customs cost; published review
 `review_price` metadata is a selling price, not the cost of obtaining a review.
 Advertising spend is stored and the gross monthly sales denominator is now

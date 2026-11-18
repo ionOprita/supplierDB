@@ -5,8 +5,9 @@ const priceFormat = new Intl.NumberFormat('en-US', {minimumFractionDigits: 2, ma
 const percentFormat = new Intl.NumberFormat('en-US', {style: 'percent', maximumFractionDigits: 4});
 const quantityFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits: 0});
 const fieldsByRow = new Map(overrideFields.map(field => [field.row, field]));
+const percentageRows = new Set([53, 54, 76]);
 const calculatedFields = new Map([[26, 'effectiveSalePriceRon'], [35, 'previousMonthGrossUnits'], [49, 'purchaseCostRon'],
-  [50, 'transportCostRon'], [57, 'fbeProcessingCostRon'], [58, 'fbeReturnCostRon'],
+  [50, 'transportCostRon'], [53, 'returnRate'], [54, 'refusalRate'], [57, 'fbeProcessingCostRon'], [58, 'fbeReturnCostRon'],
   [59, 'fbeWithdrawalCostRon'], [60, 'fbeDisposalCostRon'], [63, 'googleAdsCostRon'], [64, 'socialMediaAdsCostRon'],
   [75, 'effectiveSalePriceRon'], [76, 'effectiveCommissionRate'], [77, 'purchaseCostRon'],
   [78, 'transportCostRon'], [86, 'commissionCostRon'], [88, 'storageCostRon'],
@@ -46,7 +47,7 @@ function populateMetric(value, definition, product) {
     if (definition.sourceRow === 35) {
       if (Number.isSafeInteger(amount) && amount > 0) value.textContent = quantityFormat.format(amount);
     } else if (typeof amount === 'number' && Number.isFinite(amount)) {
-      value.textContent = (definition.sourceRow === 76 ? percentFormat : priceFormat).format(amount);
+      value.textContent = (percentageRows.has(definition.sourceRow) ? percentFormat : priceFormat).format(amount);
     }
   }
 }

@@ -52,6 +52,8 @@ const product = (code, name = code, retracted = false) => ({productCode: code, n
 const products = [product('first', 'S. 2 - Trimmer'), product('second', 'S. 10 - Trimmer', true)];
 const metricCell = (page, sourceRow, productIndex = 0) => page.body.children
   .find(row => Number(row.dataset.sourceRow) === sourceRow).children[productIndex + 1];
+const returnRateCells = (page, productIndex = 0) => [53, 54]
+  .map(row => metricCell(page, row, productIndex).textContent);
 const fbeFeeCells = (page, productIndex = 0) => [57, 58, 59, 60]
   .map(row => metricCell(page, row, productIndex).textContent);
 const assertCategorySummary = (page, category = '') => assert.deepEqual(
@@ -304,18 +306,21 @@ test('missing source values and ineligible products keep all three metric cells 
   }
 });
 
-test('category changes replace reference values, monthly units and FBE fees without retaining old values', async t => {
+test('category changes replace reference values, monthly units, return rates and FBE fees', async t => {
   const page = await openPage(t, {categoryRequest: url => ({products: [
     url.searchParams.get('category') === 'Hair trimmers'
       ? {...product('old'), emagSalePriceRon: 169.99, incomeProfitTax: 'Profit', vatPayer: true,
-        calculated: {previousMonthGrossUnits: 1234, fbeProcessingCostRon: 3.5, fbeReturnCostRon: 1.8,
+        calculated: {previousMonthGrossUnits: 1234, returnRate: 0.1, refusalRate: 0.025,
+          fbeProcessingCostRon: 3.5, fbeReturnCostRon: 1.8,
           fbeWithdrawalCostRon: 2, fbeDisposalCostRon: 2}}
       : {...product('new'), emagSalePriceRon: 89, incomeProfitTax: 'Venit', vatPayer: false,
-        calculated: {previousMonthGrossUnits: 7, fbeProcessingCostRon: 5.5, fbeReturnCostRon: null,
+        calculated: {previousMonthGrossUnits: 7, returnRate: null, refusalRate: 0,
+          fbeProcessingCostRon: 5.5, fbeReturnCostRon: null,
           fbeWithdrawalCostRon: 3.2, fbeDisposalCostRon: 2.1}}
   ]})});
   assert.equal(metricCell(page, 48).textContent, '169.99');
   assert.equal(metricCell(page, 35).textContent, '1,234');
+  assert.deepEqual(returnRateCells(page), ['10%', '2.5%']);
   assert.deepEqual(fbeFeeCells(page), ['3.50', '1.80', '2.00', '2.00']);
   page.category.value = 'Personal care';
   page.category.dispatch('change');
@@ -325,7 +330,28 @@ test('category changes replace reference values, monthly units and FBE fees with
   assert.equal(metricCell(page, 71).textContent, 'Venit');
   assert.equal(metricCell(page, 72).children[0].checked, false);
   assert.equal(metricCell(page, 35).textContent, '7');
+  assert.deepEqual(returnRateCells(page), ['', '0%']);
   assert.deepEqual(fbeFeeCells(page), ['5.50', '', '3.20', '2.10']);
+});
+
+test('return and refusal rates display percentages with zero, missing values and product eligibility', async t => {
+  const calculated = {returnRate: 0.12345678, refusalRate: 0.005};
+  const page = await openPage(t, {categoryRequest: async () => ({products: [
+    {...product('known'), calculated},
+    {...product('zero'), calculated: {returnRate: 0, refusalRate: 0}},
+    {...product('only-return'), calculated: {returnRate: 0.04, refusalRate: null}},
+    {...product('only-refusal'), calculated: {returnRate: null, refusalRate: 0.07}},
+    product('missing'),
+    {...product('retracted', 'Retracted', true), calculated},
+    {...product('no-pnk'), pnk: null, calculated},
+    {...product('blank-pnk'), pnk: ' \t', calculated}
+  ]})});
+  assert.deepEqual(returnRateCells(page), ['12.3457%', '0.5%']);
+  assert.deepEqual(returnRateCells(page, 1), ['0%', '0%']);
+  assert.deepEqual(returnRateCells(page, 2), ['4%', '']);
+  assert.deepEqual(returnRateCells(page, 3), ['', '7%']);
+  for (let index = 4; index < 8; index++) assert.deepEqual(returnRateCells(page, index), ['', '']);
+  for (const row of [55, 83, 84, 85]) assert.equal(metricCell(page, row).textContent, '');
 });
 
 test('FBE reference fees display RON amounts and preserve zero, partial unknowns and eligibility', async t => {
@@ -520,7 +546,7 @@ test('previews use canonical strings and update results without replacing the fo
   assertCategorySummary(page, 'Hair trimmers');
 });
 
-test('FBE references survive override edits and accept only the latest server preview fees', async t => {
+test('return rates and FBE fees survive override edits and accept only the latest preview references', async t => {
   t.mock.timers.enable({apis: ['setTimeout']});
   const first = deferred();
   const second = deferred();
@@ -528,29 +554,34 @@ test('FBE references survive override edits and accept only the latest server pr
   const fees = {fbeProcessingCostRon: 3.5, fbeReturnCostRon: 1.8,
     fbeWithdrawalCostRon: 2, fbeDisposalCostRon: 2};
   const item = {...product('one'), overrideRevision: 1, overrides: {fulfillmentSource: 'eMAG'},
-    calculated: {...fees, effectiveSalePriceRon: 200}};
+    calculated: {...fees, effectiveSalePriceRon: 200, returnRate: 0.06, refusalRate: 0.035}};
   let attempts = 0;
   const page = await openPage(t, {categoryRequest: async () => ({products: [item]}),
     previewRequest: () => [first, second, third][attempts++].promise});
   edit(page, 45, 'Minulescu');
+  assert.deepEqual(returnRateCells(page), ['6%', '3.5%']);
   assert.deepEqual(fbeFeeCells(page), ['3.50', '1.80', '2.00', '2.00'],
     'Reference FBE fees do not depend on the selected fulfillment source');
   await advancePreview(t);
   edit(page, 40, '99');
+  assert.deepEqual(returnRateCells(page), ['6%', '3.5%']);
   assert.deepEqual(fbeFeeCells(page), ['3.50', '1.80', '2.00', '2.00'],
     'Selling-price edits leave reference fees available while preview is pending');
   await advancePreview(t);
   second.resolve({products: [{...item, overrides: {salePriceRon: '99', fulfillmentSource: 'Minulescu'},
-    calculated: {effectiveSalePriceRon: 99,
-    fbeProcessingCostRon: 4.25, fbeReturnCostRon: 2.11, fbeWithdrawalCostRon: 0, fbeDisposalCostRon: null}}]});
+    calculated: {effectiveSalePriceRon: 99, returnRate: null, refusalRate: 0,
+      fbeProcessingCostRon: 4.25, fbeReturnCostRon: 2.11, fbeWithdrawalCostRon: 0, fbeDisposalCostRon: null}}]});
   await setImmediate();
+  assert.deepEqual(returnRateCells(page), ['', '0%']);
   assert.deepEqual(fbeFeeCells(page), ['4.25', '2.11', '0.00', '']);
   first.resolve({products: [item]});
   await setImmediate();
+  assert.deepEqual(returnRateCells(page), ['', '0%']);
   assert.deepEqual(fbeFeeCells(page), ['4.25', '2.11', '0.00', ''],
     'An older response cannot restore outdated fees');
   assert.equal(metricCell(page, 75).textContent, '99.00');
   edit(page, 40, '');
+  assert.deepEqual(returnRateCells(page), ['', '0%']);
   assert.deepEqual(fbeFeeCells(page), ['4.25', '2.11', '0.00', ''],
     'Later edits retain the latest known tariffs while a new preview is pending');
   assert.equal(metricCell(page, 75).textContent, '200.00',
@@ -560,6 +591,7 @@ test('FBE references survive override edits and accept only the latest server pr
     values: {fulfillmentSource: 'Minulescu'}}], 'Preview references do not replace saved override/revision baselines');
   third.reject(new Error('Preview unavailable'));
   await setImmediate();
+  assert.deepEqual(returnRateCells(page), ['', '0%']);
   assert.deepEqual(fbeFeeCells(page), ['4.25', '2.11', '0.00', ''],
     'A failed subsequent preview does not restore older GET tariff values');
 });

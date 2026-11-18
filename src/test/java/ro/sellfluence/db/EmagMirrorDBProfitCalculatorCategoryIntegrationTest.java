@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-/** Reads actual calculator inputs and tariffs through the API, mirror, and pooled read transaction. */
+/** Reads actual calculator inputs through the API, mirror, and pooled read transaction. */
 class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-16T12:00:00Z"), ZoneOffset.UTC);
     private String url;
@@ -69,8 +69,14 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
                         );
                         CREATE TABLE product_in_order (
                             id INTEGER NOT NULL, emag_order_surrogate_id INTEGER REFERENCES emag_order(surrogate_id),
-                            part_number_key TEXT, quantity INTEGER,
+                            part_number_key TEXT, quantity INTEGER, initial_qty INTEGER, product_id INTEGER, mkt_id INTEGER,
                             PRIMARY KEY (id, emag_order_surrogate_id)
+                        );
+                        CREATE TABLE storno (storno_date TIMESTAMP, order_id TEXT, product_id INTEGER, quantity INTEGER);
+                        CREATE TABLE rma_result (emag_id INTEGER PRIMARY KEY, order_id TEXT, request_status INTEGER, date TIMESTAMP);
+                        CREATE TABLE emag_returned_products (
+                            emag_id INTEGER REFERENCES rma_result(emag_id), product_id INTEGER,
+                            product_emag_id INTEGER, quantity INTEGER
                         );
                         INSERT INTO vendor VALUES
                             ('00000000-0000-0000-0000-000000000001', 'S', 'Company S'),
@@ -87,7 +93,7 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
                             (3, 'sale', '00000000-0000-0000-0000-000000000002', 4, '2026-10-15 12:00:00'),
                             (4, 'sale', '00000000-0000-0000-0000-000000000003', 4, '2026-10-15 12:00:00'),
                             (5, 'next-month', '00000000-0000-0000-0000-000000000001', 4, '2026-11-01 00:00:00');
-                        INSERT INTO product_in_order VALUES
+                        INSERT INTO product_in_order (id, emag_order_surrogate_id, part_number_key, quantity) VALUES
                             (1, 1, 'ACTIVE', 3), (1, 2, 'ACTIVE', 0), (1, 3, 'ACTIVE', 4),
                             (1, 4, 'ACTIVE', 100), (1, 5, 'ACTIVE', 100);
                         """);
@@ -124,6 +130,8 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
                 .map(ProfitCalculatorCategory.Product::productCode).toList());
         var active = response.products().getFirst();
         assertEquals(7L, active.calculated().previousMonthGrossUnits());
+        assertEquals(0.0, active.calculated().returnRate());
+        assertEquals(0.0, active.calculated().refusalRate());
         amount("0.18", active.calculated().effectiveCommissionRate());
         amount("18", active.calculated().commissionCostRon());
         amount("4", active.calculated().fbeProcessingCostRon());
@@ -131,6 +139,8 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
         amount("4", active.calculated().fbeWithdrawalCostRon());
         amount("4", active.calculated().fbeDisposalCostRon());
         var retracted = response.products().getLast().calculated();
+        assertNull(retracted.returnRate());
+        assertNull(retracted.refusalRate());
         assertNull(retracted.fbeProcessingCostRon());
         assertNull(retracted.fbeReturnCostRon());
         assertNull(retracted.fbeWithdrawalCostRon());
@@ -146,10 +156,7 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
 
         var request = new ProfitCalculatorOverrides.Request("S", "Trimmers", List.of(
                 new OverrideChange("active", 0, Map.of("salePriceRon", "120", "fulfillmentSource", "Minulescu"))));
-        var method = API.class.getDeclaredMethod("previewProfitCalculatorCategory",
-                ProfitCalculatorOverrides.Request.class, Clock.class);
-        method.setAccessible(true);
-        var response = (ProfitCalculatorCategory.Response) method.invoke(api, request, CLOCK);
+        var response = preview(request);
         var preview = response.products().getFirst();
         amount("10.125", preview.calculated().fbeProcessingCostRon());
         amount("2.1", preview.calculated().fbeReturnCostRon());
@@ -177,11 +184,111 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
         amount("18", calculated.commissionCostRon());
     }
 
+    @Test
+    void ratesUseAllAccountsAndKeepSixCompletedMonthsAtTheExactThreshold() throws Exception {
+        executeFixture("""
+                INSERT INTO emag_order VALUES
+                    (6, 'before-six', '00000000-0000-0000-0000-000000000001', 4, '2026-04-30 23:59:59'),
+                    (7, 'paired', '00000000-0000-0000-0000-000000000003', 4, '2026-05-01 00:00:00'),
+                    (8, 'paired', '00000000-0000-0000-0000-000000000003', 5, '2026-05-12 12:00:00');
+                INSERT INTO product_in_order VALUES
+                    (1, 6, 'ACTIVE', 200, 200, 11, 111),
+                    (1, 7, 'ACTIVE', 100, 110, 11, 111),
+                    (1, 8, 'ACTIVE', 50, 110, 11, 111);
+                INSERT INTO storno VALUES
+                    ('2026-06-01 00:00:00', 'paired', 1, 50),
+                    ('2026-11-01 00:00:00', 'paired', 1, 50);
+                INSERT INTO rma_result VALUES
+                    (1, 'paired', 7, '2026-06-01 00:00:00'),
+                    (2, 'paired', 7, '2026-11-01 00:00:00'),
+                    (3, 'paired', 6, '2026-06-01 00:00:00'),
+                    (4, 'paired', 7, '2026-06-01 00:00:00');
+                INSERT INTO emag_returned_products VALUES
+                    (1, 11, 111, 25), (2, 11, 111, 25), (3, 11, 111, 12), (4, 11, 999, 8);
+                """);
+
+        // The legacy PNK count picks 100 units from the colliding 'sale' order and 100 from 'paired'.
+        var active = read().products().getFirst().calculated();
+        assertEquals(0.125, active.returnRate());
+        assertEquals(0.125, active.refusalRate());
+        assertEquals(7L, active.previousMonthGrossUnits());
+
+        var request = new ProfitCalculatorOverrides.Request("S", "Trimmers", List.of(
+                new OverrideChange("active", 0, Map.of("salePriceRon", "120"))));
+        var preview = preview(request).products().getFirst().calculated();
+        assertEquals(active.returnRate(), preview.returnRate());
+        assertEquals(active.refusalRate(), preview.refusalRate());
+        assertEquals(active.previousMonthGrossUnits(), preview.previousMonthGrossUnits());
+    }
+
+    @Test
+    void stornoRateAboveThresholdUsesTwelveMonthsForBothRates() throws Exception {
+        executeFixture("""
+                INSERT INTO emag_order VALUES
+                    (6, 'before-twelve', '00000000-0000-0000-0000-000000000001', 4, '2025-10-31 23:59:59'),
+                    (7, 'storno-only', '00000000-0000-0000-0000-000000000003', 5, '2025-11-01 00:00:00');
+                INSERT INTO product_in_order VALUES
+                    (1, 6, 'ACTIVE', 400, 400, 11, 111),
+                    (1, 7, 'ACTIVE', 0, 100, 11, 111);
+                INSERT INTO storno VALUES
+                    ('2025-10-31 23:59:59', 'storno-only', 1, 30),
+                    ('2025-11-01 00:00:00', 'storno-only', 1, 10),
+                    ('2026-05-01 00:00:00', 'storno-only', 1, 30);
+                INSERT INTO rma_result VALUES
+                    (1, 'storno-only', 7, '2025-11-01 00:00:00'),
+                    (2, 'storno-only', 7, '2026-05-01 00:00:00');
+                INSERT INTO emag_returned_products VALUES (1, 11, 111, 10), (2, 11, 111, 10);
+                """);
+
+        // The short window has 100 units ordered and 30 storned. The long window has 200 and 40.
+        var active = read().products().getFirst().calculated();
+        assertEquals(0.1, active.returnRate());
+        assertEquals(0.1, active.refusalRate());
+        assertEquals(7L, active.previousMonthGrossUnits());
+    }
+
+    @Test
+    void unknownRatesStayBlankAndInvalidCountsDoNotTriggerAnExtendedWindow() throws Exception {
+        executeFixture("""
+                INSERT INTO product (product_code, name, emag_pnk, vendor, category, retracted) VALUES
+                    ('no-sales', 'S. 3 - No sales', 'NO-SALES', '00000000-0000-0000-0000-000000000001', 'Trimmers', false),
+                    ('no-pnk', 'S. 4 - No PNK', NULL, '00000000-0000-0000-0000-000000000001', 'Trimmers', false);
+                INSERT INTO emag_order VALUES
+                    (6, 'before-six', '00000000-0000-0000-0000-000000000001', 4, '2026-04-30 23:59:59'),
+                    (7, 'invalid-count', '00000000-0000-0000-0000-000000000001', 5, '2026-05-01 00:00:00');
+                INSERT INTO product_in_order VALUES
+                    (1, 6, 'ACTIVE', 400, 400, 11, 111),
+                    (1, 7, 'ACTIVE', 0, 0, 11, 111);
+                INSERT INTO rma_result VALUES (1, 'invalid-count', 7, '2026-05-01 00:00:00');
+                INSERT INTO emag_returned_products VALUES (1, 11, 111, 101);
+                """);
+
+        // 101 returns and -101 refusals for 100 units are invalid. Zero stornos do not extend the window.
+        for (var product : read().products()) {
+            assertNull(product.calculated().returnRate(), product.productCode());
+            assertNull(product.calculated().refusalRate(), product.productCode());
+        }
+    }
+
+    private void executeFixture(String sql) throws SQLException {
+        try (var db = DriverManager.getConnection(url, properties); var statement = db.createStatement()) {
+            statement.execute("SET search_path TO " + schema);
+            statement.execute(sql);
+        }
+    }
+
     private ProfitCalculatorCategory.Response read() throws Exception {
         // Fix the business calendar without widening the production overload's visibility.
         var method = API.class.getDeclaredMethod("getProfitCalculatorCategory", String.class, String.class, Clock.class);
         method.setAccessible(true);
         return (ProfitCalculatorCategory.Response) method.invoke(api, "S", "Trimmers", CLOCK);
+    }
+
+    private ProfitCalculatorCategory.Response preview(ProfitCalculatorOverrides.Request request) throws Exception {
+        var method = API.class.getDeclaredMethod("previewProfitCalculatorCategory",
+                ProfitCalculatorOverrides.Request.class, Clock.class);
+        method.setAccessible(true);
+        return (ProfitCalculatorCategory.Response) method.invoke(api, request, CLOCK);
     }
 
     private static void amount(String expected, BigDecimal actual) {
