@@ -1178,7 +1178,8 @@ public class EmagMirrorDB implements ProductPerformanceSource {
                                 toLocalDateTime(rs.getTimestamp("created")),
                                 toLocalDateTime(rs.getTimestamp("modified")),
                                 null,
-                                "" //TODO Currency
+                                "", //TODO Currency
+                                "" //TODO Payment processor
                         );
                         results.add(order);
                     }

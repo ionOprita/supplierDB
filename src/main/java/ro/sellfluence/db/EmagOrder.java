@@ -611,7 +611,8 @@ public class EmagOrder {
                             toLocalDateTime(rs.getTimestamp("created")),
                             toLocalDateTime(rs.getTimestamp("modified")),
                             enforcedVendorCourierAccounts,
-                            "" // TODO: currency
+                            "", // TODO: currency
+                            "" //TODO Payment_processor
                     );
                     orders
                             .computeIfAbsent(
@@ -681,7 +682,8 @@ public class EmagOrder {
                             toLocalDateTime(rs.getTimestamp("created")),
                             toLocalDateTime(rs.getTimestamp("modified")),
                             enforcedVendorCourierAccounts,
-                            "" //TODO Currency
+                            "", //TODO Currency
+                            "" //TODO Payment_processor
                     );
                 }
             }
