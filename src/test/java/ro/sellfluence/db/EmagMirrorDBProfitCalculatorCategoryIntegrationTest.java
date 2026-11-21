@@ -292,8 +292,9 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
     @Test
     void dateCalculCountsAllAccountsForTheOwnedCatalogAndDoesNotIncludeOtherGroupsProducts() throws Exception {
         executeFixture("""
-                INSERT INTO product (product_code, name, emag_pnk, vendor, retracted) VALUES
-                    ('j-product', 'J. 1 - Product', 'J-PRODUCT', '00000000-0000-0000-0000-000000000003', false);
+                INSERT INTO product (product_code, name, emag_pnk, vendor, category, retracted) VALUES
+                    ('j-product', 'J. 1 - Product', 'J-PRODUCT', '00000000-0000-0000-0000-000000000003', NULL, false),
+                    ('k-product', 'K. 1 - Product', 'K-PRODUCT', '00000000-0000-0000-0000-000000000004', 'Trimmers', false);
                 INSERT INTO emag_order VALUES
                     (6, 'boundary', '00000000-0000-0000-0000-000000000003', 4, '2026-10-01 00:00:00'),
                     (7, 'outside', '00000000-0000-0000-0000-000000000001', 4, '2026-09-30 23:59:59');
@@ -317,13 +318,31 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
         assertEquals(new BigDecimal("1600").divide(BigDecimal.valueOf(115), MathContext.DECIMAL128),
                 new BigDecimal(totals.accountingCostPerUnitRon()));
         assertNull(totals.interestCostPerUnitRon());
-        assertEquals(7L, read().products().getFirst().calculated().previousMonthGrossUnits());
+        var active = read().products().getFirst().calculated();
+        assertEquals(7L, active.previousMonthGrossUnits());
+        assertEquals(new BigDecimal(totals.accountingCostPerUnitRon()), active.accountingCostPerUnitRon());
+        assertEquals(new BigDecimal(totals.employeeCostPerUnitRon()), active.employeeCostPerUnitRon());
+        assertEquals(new BigDecimal(totals.miscellaneousCostPerUnitRon()).multiply(new BigDecimal("1.21")),
+                active.miscellaneousCostPerUnitRon());
+        amount("3.388", active.geniusCostRon());
+
+        var withoutSales = read("K").products().getFirst().calculated();
+        assertNull(withoutSales.accountingCostPerUnitRon());
+        assertNull(withoutSales.employeeCostPerUnitRon());
+        assertNull(withoutSales.miscellaneousCostPerUnitRon());
+        amount("3.388", withoutSales.geniusCostRon());
 
         executeFixture("UPDATE product_in_order SET quantity = NULL WHERE id = 2 AND emag_order_surrogate_id = 4");
         totals = api.getProfitCalculatorSettings("S", after).calculated();
         assertNull(totals.previousMonthUnits());
         assertNull(totals.employeeCostPerUnitRon());
         assertNull(totals.miscellaneousCostPerUnitRon());
+        var unknownSales = read().products().getFirst().calculated();
+        assertEquals(7L, unknownSales.previousMonthGrossUnits());
+        assertNull(unknownSales.accountingCostPerUnitRon());
+        assertNull(unknownSales.employeeCostPerUnitRon());
+        assertNull(unknownSales.miscellaneousCostPerUnitRon());
+        amount("3.388", unknownSales.geniusCostRon());
     }
 
     @Test
@@ -331,7 +350,7 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
         var mapper = new ObjectMapper();
         var edit = ProfitCalculatorSettings.parse(mapper, """
                 {"vendorGroup":"S","section":"generalCosts","expectedRevision":1,"values":{
-                 "packingCostRon":"1","courierCostRon":null,"geniusCostRon":"8",
+                 "packingCostRon":"1","courierCostRon":null,"geniusCostRon":"12",
                  "monthlyAccountingCostRon":"0","warehousePreparationCostRon":"1.250000000000000001"}}
                 """);
         api.saveProfitCalculatorSettings(edit);
@@ -353,13 +372,22 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
         assertEquals("0", settings.employees().items().getLast().amountRon());
         assertEquals("2", api.getProfitCalculatorSettings("K", CLOCK).generalCosts().values()
                 .get("warehousePreparationCostRon"));
-        amount("1.250000000000000001", read().products().getFirst().calculated().warehousePreparationCostRon());
+        var loaded = read().products().getFirst().calculated();
+        amount("1.250000000000000001", loaded.warehousePreparationCostRon());
+        amount("5.082", loaded.geniusCostRon());
+        amount("0", loaded.accountingCostPerUnitRon());
+        amount("0", loaded.employeeCostPerUnitRon());
         var ownWarehousePreview = preview(new ProfitCalculatorOverrides.Request("S", "Trimmers", List.of(
                 new OverrideChange("active", 0, Map.of("fulfillmentSource", "Minulescu")))));
         amount("1.250000000000000001", ownWarehousePreview.products().getFirst().calculated().parcelPreparationCostRon());
         var fbePreview = preview(new ProfitCalculatorOverrides.Request("S", "Trimmers", List.of(
                 new OverrideChange("active", 0, Map.of("fulfillmentSource", "eMAG")))));
-        amount("4.84", fbePreview.products().getFirst().calculated().parcelPreparationCostRon());
+        var preview = fbePreview.products().getFirst().calculated();
+        amount("4.84", preview.parcelPreparationCostRon());
+        assertEquals(loaded.geniusCostRon(), preview.geniusCostRon());
+        assertEquals(loaded.accountingCostPerUnitRon(), preview.accountingCostPerUnitRon());
+        assertEquals(loaded.employeeCostPerUnitRon(), preview.employeeCostPerUnitRon());
+        assertEquals(loaded.miscellaneousCostPerUnitRon(), preview.miscellaneousCostPerUnitRon());
     }
 
     private void executeFixture(String sql) throws SQLException {
@@ -370,10 +398,14 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
     }
 
     private ProfitCalculatorCategory.Response read() throws Exception {
+        return read("S");
+    }
+
+    private ProfitCalculatorCategory.Response read(String vendorGroup) throws Exception {
         // Fix the business calendar without widening the production overload's visibility.
         var method = API.class.getDeclaredMethod("getProfitCalculatorCategory", String.class, String.class, Clock.class);
         method.setAccessible(true);
-        return (ProfitCalculatorCategory.Response) method.invoke(api, "S", "Trimmers", CLOCK);
+        return (ProfitCalculatorCategory.Response) method.invoke(api, vendorGroup, "Trimmers", CLOCK);
     }
 
     private ProfitCalculatorCategory.Response preview(ProfitCalculatorOverrides.Request request) throws Exception {

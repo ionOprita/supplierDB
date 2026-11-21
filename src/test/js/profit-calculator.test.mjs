@@ -56,6 +56,8 @@ const returnRateCells = (page, productIndex = 0) => [53, 54]
   .map(row => metricCell(page, row, productIndex).textContent);
 const preparationCostCells = (page, productIndex = 0) => [56, 83, 84, 87]
   .map(row => metricCell(page, row, productIndex).textContent);
+const groupCostCells = (page, productIndex = 0) => [89, 91, 97, 98]
+  .map(row => metricCell(page, row, productIndex).textContent);
 const fbeFeeCells = (page, productIndex = 0) => [57, 58, 59, 60]
   .map(row => metricCell(page, row, productIndex).textContent);
 const assertCategorySummary = (page, category = '') => assert.deepEqual(
@@ -376,13 +378,15 @@ test('FBE reference fees display RON amounts and preserve zero, partial unknowns
   for (const row of [61, 83, 84, 85, 87]) assert.equal(metricCell(page, row).textContent, '');
 });
 
-test('warehouse, parcel preparation, refusal and defective costs use the existing amount format', async t => {
+test('Date Calcul costs use the existing amount format', async t => {
   const calculated = {warehousePreparationCostRon: 2.005, refusalCostRon: 0.1234,
-    defectiveProductCostRon: 0, parcelPreparationCostRon: 4.84};
+    defectiveProductCostRon: 0, parcelPreparationCostRon: 4.84, geniusCostRon: 3.388,
+    accountingCostPerUnitRon: 1.125, employeeCostPerUnitRon: 1250.4, miscellaneousCostPerUnitRon: 0.095};
   const page = await openPage(t, {categoryRequest: async () => ({products: [
     {...product('known'), calculated},
     {...product('unknown'), calculated: {warehousePreparationCostRon: 0, refusalCostRon: null,
-      defectiveProductCostRon: null, parcelPreparationCostRon: null}},
+      defectiveProductCostRon: null, parcelPreparationCostRon: null, geniusCostRon: 0,
+      accountingCostPerUnitRon: null, employeeCostPerUnitRon: 0}},
     {...product('retracted', 'Retracted', true), calculated},
     {...product('no-pnk'), pnk: null, calculated}
   ]})});
@@ -390,6 +394,10 @@ test('warehouse, parcel preparation, refusal and defective costs use the existin
   assert.deepEqual(preparationCostCells(page, 1), ['0.00', '', '', '']);
   assert.deepEqual(preparationCostCells(page, 2), ['', '', '', '']);
   assert.deepEqual(preparationCostCells(page, 3), ['', '', '', '']);
+  assert.deepEqual(groupCostCells(page), ['3.39', '1.13', '1,250.40', '0.10']);
+  assert.deepEqual(groupCostCells(page, 1), ['0.00', '', '0.00', '']);
+  assert.deepEqual(groupCostCells(page, 2), ['', '', '', '']);
+  assert.deepEqual(groupCostCells(page, 3), ['', '', '', '']);
 });
 
 test('monthly gross units display as integers while zero, unknown and ineligible products remain blank', async t => {
@@ -573,13 +581,15 @@ test('override-independent costs and rates retain the latest successful preview 
     fbeWithdrawalCostRon: 2, fbeDisposalCostRon: 2};
   const item = {...product('one'), overrideRevision: 1, overrides: {fulfillmentSource: 'eMAG'},
     calculated: {...fees, effectiveSalePriceRon: 200, returnRate: 0.06, refusalRate: 0.035,
-      warehousePreparationCostRon: 2, refusalCostRon: 0.15, parcelPreparationCostRon: 4.24}};
+      warehousePreparationCostRon: 2, refusalCostRon: 0.15, parcelPreparationCostRon: 4.24,
+      geniusCostRon: 3.39, accountingCostPerUnitRon: 1.5, employeeCostPerUnitRon: 1.75, miscellaneousCostPerUnitRon: 1}};
   let attempts = 0;
   const page = await openPage(t, {categoryRequest: async () => ({products: [item]}),
     previewRequest: () => [first, second, third][attempts++].promise});
   edit(page, 45, 'Minulescu');
   assert.deepEqual(returnRateCells(page), ['6%', '3.5%']);
   assert.deepEqual(preparationCostCells(page), ['2.00', '0.15', '', '']);
+  assert.deepEqual(groupCostCells(page), ['3.39', '1.50', '1.75', '1.00']);
   assert.deepEqual(fbeFeeCells(page), ['3.50', '1.80', '2.00', '2.00'],
     'Reference FBE fees do not depend on the selected fulfillment source');
   await advancePreview(t);
@@ -591,10 +601,12 @@ test('override-independent costs and rates retain the latest successful preview 
   second.resolve({products: [{...item, overrides: {salePriceRon: '99', fulfillmentSource: 'Minulescu'},
     calculated: {effectiveSalePriceRon: 99, returnRate: null, refusalRate: 0,
       fbeProcessingCostRon: 4.25, fbeReturnCostRon: 2.11, fbeWithdrawalCostRon: 0, fbeDisposalCostRon: null,
-      warehousePreparationCostRon: 2.5, refusalCostRon: 0, parcelPreparationCostRon: 2.5}}]});
+      warehousePreparationCostRon: 2.5, refusalCostRon: 0, parcelPreparationCostRon: 2.5,
+      geniusCostRon: 3.5, accountingCostPerUnitRon: null, employeeCostPerUnitRon: 0, miscellaneousCostPerUnitRon: 1.1}}]});
   await setImmediate();
   assert.deepEqual(returnRateCells(page), ['', '0%']);
   assert.deepEqual(preparationCostCells(page), ['2.50', '0.00', '', '2.50']);
+  assert.deepEqual(groupCostCells(page), ['3.50', '', '0.00', '1.10']);
   assert.deepEqual(fbeFeeCells(page), ['4.25', '2.11', '0.00', '']);
   first.resolve({products: [item]});
   await setImmediate();
@@ -617,6 +629,7 @@ test('override-independent costs and rates retain the latest successful preview 
   await setImmediate();
   assert.deepEqual(returnRateCells(page), ['', '0%']);
   assert.deepEqual(preparationCostCells(page), ['2.50', '0.00', '', '']);
+  assert.deepEqual(groupCostCells(page), ['3.50', '', '0.00', '1.10']);
   assert.deepEqual(fbeFeeCells(page), ['4.25', '2.11', '0.00', ''],
     'A failed subsequent preview does not restore older GET tariff values');
 });

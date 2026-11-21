@@ -3,7 +3,8 @@ import {renderCategoryTable} from './profit-calculator-table.js';
 import {OverrideDrafts} from './profit-calculator-overrides.js';
 
 const calculatedReferenceFields = ['returnRate', 'refusalRate', 'warehousePreparationCostRon', 'refusalCostRon',
-  'defectiveProductCostRon', 'fbeProcessingCostRon', 'fbeReturnCostRon', 'fbeWithdrawalCostRon', 'fbeDisposalCostRon'];
+  'defectiveProductCostRon', 'fbeProcessingCostRon', 'fbeReturnCostRon', 'fbeWithdrawalCostRon', 'fbeDisposalCostRon',
+  'geniusCostRon', 'accountingCostPerUnitRon', 'employeeCostPerUnitRon', 'miscellaneousCostPerUnitRon'];
 
 function populateSelect(select, values, emptyLabel) {
   select.innerHTML = '';
@@ -102,7 +103,7 @@ export function initProfitCalculator() {
       if (version !== previewVersion) return;
       if (!Array.isArray(data.products)) throw new Error('Invalid preview response');
       const latest = new Map(data.products.map(product => [product.productCode, product]));
-      // Retain fresh rates and tariffs across previews while preserving saved override baselines.
+      // Retain fresh reference calculations across previews while preserving saved override baselines.
       products = products.map(product => {
         const updated = latest.get(product.productCode);
         return updated ? {...product, calculated: {...product.calculated,

@@ -217,6 +217,10 @@ multiple product columns: some formula rows contain manually replaced cells.
 | 84 | Zero for a known 0% return rate |
 | 87 | FBE processing fee with calculator VAT for `eMAG`, or row 56 for `Minulescu` |
 | 88 | Zero only for an explicit `Minulescu` fulfillment override |
+| 89 | Genius Easybox order share × Genius cost × (1 + calculator VAT) |
+| 91 | Date Calcul accounting cost per unit |
+| 97 | Date Calcul employee cost per unit |
+| 98 | Date Calcul miscellaneous cost per unit × (1 + calculator VAT) |
 | 100 | Zero only for the known `Profit` tax regime |
 | 101 | Zero only when VAT-payer status is explicitly false |
 | 105, 106 | Zero only for the known `Venit` tax regime |
@@ -295,9 +299,10 @@ C29 needs lending records, including entered loan terms and dated repayments.
 The J Creditari summary currently references elapsed months in place of
 monthly interest and needs confirmation.
 
-Category GET and preview read VAT and own-warehouse preparation settings with
-the other category data. Calculated rows 56, 83, 84 and 87 use the existing
-eligibility and blank-input rules plus the known-zero incident-rate branches.
+Category GET and preview read the selected group's saved Date Calcul inputs with
+the other category data. Rows 91, 97 and 98 share the same C8 denominator and
+C25–C27 calculations as Date Calcul. The existing eligibility, blank-input and
+known-zero rules apply to these costs and the Genius cost in row 89.
 
 ### Monthly units and commission defaults
 

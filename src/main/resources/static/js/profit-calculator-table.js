@@ -13,6 +13,8 @@ const calculatedFields = new Map([[26, 'effectiveSalePriceRon'], [35, 'previousM
   [75, 'effectiveSalePriceRon'], [76, 'effectiveCommissionRate'], [77, 'purchaseCostRon'],
   [78, 'transportCostRon'], [83, 'refusalCostRon'], [84, 'defectiveProductCostRon'],
   [86, 'commissionCostRon'], [87, 'parcelPreparationCostRon'], [88, 'storageCostRon'],
+  [89, 'geniusCostRon'], [91, 'accountingCostPerUnitRon'], [97, 'employeeCostPerUnitRon'],
+  [98, 'miscellaneousCostPerUnitRon'],
   [100, 'turnoverTaxCostRon'], [101, 'vatCostRon'], [105, 'profitTaxCostRon'],
   [106, 'dividendTaxCostRon']]);
 

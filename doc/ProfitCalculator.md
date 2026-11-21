@@ -86,9 +86,9 @@ calculations. [Creditari overview](https://docs.google.com/spreadsheets/d/1v-ibV
 
 ### Date Calcul inputs in By Category
 
-Category loads and override previews use the saved VAT and warehouse preparation
-values from the selected group in the same snapshot as the other inputs. The
-usual PNK and retracted guards apply. Money is shown in RON to two decimal places.
+Category loads and override previews use the selected group's current saved Date
+Calcul values in the same snapshot as the other inputs. The usual PNK and
+retracted guards apply. Money is shown in RON to two decimal places.
 
 | Row | Calculation |
 | --- | --- |
@@ -96,10 +96,16 @@ usual PNK and retracted guards apply. Money is shown in RON to two decimal place
 | 83 | FBE processing fee (57) × refusal rate (54) × (1 + VAT from C9). A known 0% refusal rate gives zero. |
 | 84 | A known 0% return rate (53) gives zero. The positive-rate formula still needs the full import and operating cost inputs. |
 | 87 | `eMAG` uses FBE processing fee × (1 + VAT). `Minulescu` uses row 56 directly. |
+| 89 | Genius Easybox order share (C4) × Genius cost (C23) × (1 + VAT from C9) |
+| 91 | Accounting cost per unit from C25 |
+| 97 | Employee cost per unit from C26 |
+| 98 | Miscellaneous cost per unit (C27) × (1 + VAT from C9) |
 
-Missing required inputs leave the result blank. The group VAT setting supplies
-these expense formulas regardless of the product's VAT-payer flag. Editing
-fulfillment clears the prior row-87 result while the preview is pending.
+Rows 91, 97 and 98 use the same group-wide previous-month units (C8) as Date
+Calcul. Missing required inputs leave the result blank. A known zero remains
+`0.00`. The group VAT setting supplies these expense formulas regardless of the
+product's VAT-payer flag. Editing fulfillment clears the prior row-87 result
+while the preview is pending.
 
 ## Implemented rows
 

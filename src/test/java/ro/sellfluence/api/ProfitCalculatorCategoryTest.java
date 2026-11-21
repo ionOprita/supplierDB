@@ -252,7 +252,8 @@ class ProfitCalculatorCategoryTest {
         var source = measuredProduct("code", "PNK", false,
                 new Overrides(null, null, null, null, null, "Minulescu"),
                 new BigDecimal("100"), new BigDecimal("2500"));
-        var settings = new CategorySettings(new BigDecimal("0.21"), new BigDecimal("2.001"));
+        var settings = new CategorySettings(new BigDecimal("0.21"), new BigDecimal("2.001"),
+                null, null, null, null, null);
         var data = new CategoryData(List.of(source), List.of(fbeTariff(new BigDecimal("3.5"))),
                 Map.of("PNK", new ReturnRates(0.1, 0.12345678)), settings);
 
@@ -278,13 +279,65 @@ class ProfitCalculatorCategoryTest {
     }
 
     @Test
+    void appliesDateCalculGeniusAndOverheadPerUnitToEligibleProductsDuringLoadsAndPreviews() {
+        var inputs = List.of(
+                new CategoryProduct("eligible", "S. 1 - Eligible", "PNK", false, null, "Profit", false),
+                new CategoryProduct("no-pnk", "S. 2 - No PNK", " \t", false),
+                new CategoryProduct("retracted", "S. 3 - Retracted", "RETRACTED", true));
+        var settings = new CategorySettings(new BigDecimal("0.21"), null, new BigDecimal("0.35"),
+                new BigDecimal("8"), new BigDecimal("1.234567"), new BigDecimal("24.56789"),
+                new BigDecimal("2.345678"));
+        var data = new CategoryData(inputs, List.of(), Map.of(), settings);
+
+        var response = ProfitCalculatorCategory.create("S", "Trimmers", data);
+        var preview = ProfitCalculatorCategory.preview("S", "Trimmers", data, List.of(
+                new OverrideChange("eligible", 0, Map.of("salePriceRon", "120", "fulfillmentSource", "eMAG"))));
+
+        for (var result : List.of(response, preview)) {
+            var eligible = result.products().getFirst().calculated();
+            assertEquals(new BigDecimal("3.3880"), eligible.geniusCostRon());
+            assertEquals(new BigDecimal("1.234567"), eligible.accountingCostPerUnitRon());
+            assertEquals(new BigDecimal("24.56789"), eligible.employeeCostPerUnitRon());
+            assertEquals(new BigDecimal("2.83827038"), eligible.miscellaneousCostPerUnitRon());
+            for (var ineligible : result.products().subList(1, 3)) {
+                assertNull(ineligible.calculated().geniusCostRon());
+                assertNull(ineligible.calculated().accountingCostPerUnitRon());
+                assertNull(ineligible.calculated().employeeCostPerUnitRon());
+                assertNull(ineligible.calculated().miscellaneousCostPerUnitRon());
+            }
+        }
+    }
+
+    @Test
+    void requiresVatForGeniusAndMiscellaneousCostsAndPreservesKnownZeroOverhead() {
+        var product = new CategoryProduct("eligible", "S. 1 - Eligible", "PNK", false);
+        var missingVat = new CategorySettings(null, null, BigDecimal.ZERO, BigDecimal.ONE, BigDecimal.ZERO,
+                BigDecimal.ONE, BigDecimal.ZERO);
+        var zeroVat = new CategorySettings(BigDecimal.ZERO, null, BigDecimal.ZERO, BigDecimal.ONE, null,
+                BigDecimal.ZERO, BigDecimal.ZERO);
+        var unknown = ProfitCalculatorCategory.create("S", "Trimmers", new CategoryData(List.of(product),
+                List.of(), Map.of(), missingVat)).products().getFirst().calculated();
+        var zero = ProfitCalculatorCategory.create("S", "Trimmers", new CategoryData(List.of(product),
+                List.of(), Map.of(), zeroVat)).products().getFirst().calculated();
+
+        assertNull(unknown.geniusCostRon());
+        assertEquals(BigDecimal.ZERO, unknown.accountingCostPerUnitRon());
+        assertEquals(BigDecimal.ONE, unknown.employeeCostPerUnitRon());
+        assertNull(unknown.miscellaneousCostPerUnitRon());
+        assertEquals(BigDecimal.ZERO, zero.geniusCostRon());
+        assertNull(zero.accountingCostPerUnitRon());
+        assertEquals(BigDecimal.ZERO, zero.employeeCostPerUnitRon());
+        assertEquals(BigDecimal.ZERO, zero.miscellaneousCostPerUnitRon());
+    }
+
+    @Test
     void distinguishesZeroRatesAndFeesFromUnavailableInputsAndIneligibleProducts() {
         var emag = new Overrides(null, null, null, null, null, "eMAG");
         var source = measuredProduct("code", "PNK", false, emag,
                 new BigDecimal("100"), new BigDecimal("1000"));
         var tariffs = List.of(fbeTariff(new BigDecimal("3.5")));
         var missingVat = new CategoryData(List.of(source), tariffs, Map.of("PNK", new ReturnRates(null, 0.1)),
-                new CategorySettings(null, BigDecimal.ZERO));
+                new CategorySettings(null, BigDecimal.ZERO, null, null, null, null, null));
         var unknown = ProfitCalculatorCategory.create("S", "Trimmers", missingVat).products().getFirst().calculated();
         assertEquals(BigDecimal.ZERO, unknown.warehousePreparationCostRon());
         assertNull(unknown.refusalCostRon());
@@ -292,7 +345,7 @@ class ProfitCalculatorCategoryTest {
         assertNull(unknown.parcelPreparationCostRon());
 
         var zeroVat = new CategoryData(List.of(source), tariffs, Map.of("PNK", new ReturnRates(0.0, null)),
-                new CategorySettings(BigDecimal.ZERO, null));
+                new CategorySettings(BigDecimal.ZERO, null, null, null, null, null, null));
         var zero = ProfitCalculatorCategory.create("S", "Trimmers", zeroVat).products().getFirst().calculated();
         assertNull(zero.warehousePreparationCostRon());
         assertNull(zero.refusalCostRon());
@@ -314,7 +367,8 @@ class ProfitCalculatorCategoryTest {
             assertNull(result.parcelPreparationCostRon());
         }
 
-        var configured = new CategoryData(inputs, tariffs, rates, new CategorySettings(null, BigDecimal.ONE));
+        var configured = new CategoryData(inputs, tariffs, rates,
+                new CategorySettings(null, BigDecimal.ONE, null, null, null, null, null));
         for (var product : ProfitCalculatorCategory.create("S", "Trimmers", configured).products()) {
             var expectedWarehouseCost = product.productCode().equals("eligible") ? BigDecimal.ONE : null;
             assertEquals(expectedWarehouseCost, product.calculated().warehousePreparationCostRon());

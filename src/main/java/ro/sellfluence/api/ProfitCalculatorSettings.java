@@ -11,7 +11,6 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
-import java.math.MathContext;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -41,13 +40,10 @@ public final class ProfitCalculatorSettings {
     }
 
     static Response create(String vendorGroup, YearMonth previousMonth, Data data) {
-        var employeeTotal = sum(data.employees().items());
-        var miscellaneousTotal = sum(data.miscellaneous().items());
-        var accounting = data.generalCosts().values().get("monthlyAccountingCostRon");
-        var units = data.previousMonthUnits();
-        var calculated = new Calculated(previousMonth.toString(), units, employeeTotal.toPlainString(),
-                miscellaneousTotal.toPlainString(), perUnit(accounting == null ? null : new BigDecimal(accounting), units),
-                perUnit(employeeTotal, units), perUnit(miscellaneousTotal, units), null);
+        var costs = data.operatingCosts();
+        var calculated = new Calculated(previousMonth.toString(), data.previousMonthUnits(), costs.employeeTotalRon().toPlainString(),
+                costs.miscellaneousTotalRon().toPlainString(), decimalString(costs.accountingCostPerUnitRon()),
+                decimalString(costs.employeeCostPerUnitRon()), decimalString(costs.miscellaneousCostPerUnitRon()), null);
         return new Response(vendorGroup, data.general(), data.generalCosts(), data.employees(), data.miscellaneous(), calculated);
     }
 
@@ -56,18 +52,8 @@ public final class ProfitCalculatorSettings {
         return group.strip();
     }
 
-    private static BigDecimal sum(List<NamedCost> items) {
-        var sum = BigDecimal.ZERO;
-        for (var item : items) {
-            // Sheet SUM ignores named lines with a blank amount; an empty section totals zero.
-            if (item.amountRon() != null) sum = sum.add(new BigDecimal(item.amountRon()));
-        }
-        return sum;
-    }
-
-    private static String perUnit(BigDecimal amount, Long units) {
-        return amount == null || units == null || units <= 0 ? null
-                : amount.divide(BigDecimal.valueOf(units), MathContext.DECIMAL128).toPlainString();
+    private static String decimalString(BigDecimal value) {
+        return value == null ? null : value.toPlainString();
     }
 
     public static Request parse(ObjectMapper mapper, String body) {

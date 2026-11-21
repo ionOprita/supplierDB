@@ -827,7 +827,7 @@ public class EmagMirrorDB implements ProductPerformanceSource {
             var products = ProfitCalculatorTable.getCategoryProducts(db, vendorGroup, category, previousMonth);
             return new ProfitCalculatorTable.CategoryData(products, ProfitCalculatorFbeTariffTable.readTariffs(db),
                     ProfitCalculatorTable.readReturnRates(db, products, previousMonth.plusMonths(1)),
-                    ProfitCalculatorSettingsTable.readCategorySettings(db, vendorGroup));
+                    ProfitCalculatorSettingsTable.readCategorySettings(db, vendorGroup, previousMonth));
         });
     }
 

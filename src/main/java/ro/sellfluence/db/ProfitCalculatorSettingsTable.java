@@ -3,6 +3,7 @@ package ro.sellfluence.db;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -70,6 +71,10 @@ public final class ProfitCalculatorSettingsTable {
     }
 
     public record DecimalSection(long revision, Map<String, String> values) {
+        private BigDecimal decimal(String name) {
+            var value = values.get(name);
+            return value == null ? null : new BigDecimal(value);
+        }
     }
 
     public record NamedCost(String label, String amountRon) {
@@ -80,11 +85,26 @@ public final class ProfitCalculatorSettingsTable {
 
     public record Data(DecimalSection general, DecimalSection generalCosts, ItemSection employees,
                        ItemSection miscellaneous, Long previousMonthUnits) {
+        public OperatingCosts operatingCosts() {
+            var employeeTotal = sum(employees.items());
+            var miscellaneousTotal = sum(miscellaneous.items());
+            return new OperatingCosts(employeeTotal, miscellaneousTotal,
+                    perUnit(generalCosts.decimal("monthlyAccountingCostRon"), previousMonthUnits),
+                    perUnit(employeeTotal, previousMonthUnits), perUnit(miscellaneousTotal, previousMonthUnits));
+        }
     }
 
-    public record CategorySettings(BigDecimal vatRate, BigDecimal warehousePreparationCostRon) {
+    public record OperatingCosts(BigDecimal employeeTotalRon, BigDecimal miscellaneousTotalRon,
+                                 BigDecimal accountingCostPerUnitRon, BigDecimal employeeCostPerUnitRon,
+                                 BigDecimal miscellaneousCostPerUnitRon) {
+    }
+
+    public record CategorySettings(BigDecimal vatRate, BigDecimal warehousePreparationCostRon,
+                                   BigDecimal geniusEasyboxRate, BigDecimal geniusCostRon,
+                                   BigDecimal accountingCostPerUnitRon, BigDecimal employeeCostPerUnitRon,
+                                   BigDecimal miscellaneousCostPerUnitRon) {
         public static CategorySettings empty() {
-            return new CategorySettings(null, null);
+            return new CategorySettings(null, null, null, null, null, null, null);
         }
     }
 
@@ -100,24 +120,36 @@ public final class ProfitCalculatorSettingsTable {
 
     static Data read(Connection db, String vendorGroup, YearMonth previousMonth) throws SQLException {
         requireVendorGroup(db, vendorGroup);
+        return readData(db, vendorGroup, previousMonth);
+    }
+
+    private static Data readData(Connection db, String vendorGroup, YearMonth previousMonth) throws SQLException {
         return new Data(readDecimals(db, vendorGroup, Section.GENERAL),
                 readDecimals(db, vendorGroup, Section.GENERAL_COSTS), readItems(db, vendorGroup, Section.EMPLOYEES),
                 readItems(db, vendorGroup, Section.MISCELLANEOUS), readPreviousMonthUnits(db, vendorGroup, previousMonth));
     }
 
-    static CategorySettings readCategorySettings(Connection db, String vendorGroup) throws SQLException {
-        try (var statement = db.prepareStatement("""
-                SELECT (SELECT vat_rate FROM profit_calculator_general_settings WHERE vendor_group = ?) AS vat_rate,
-                       (SELECT warehouse_preparation_cost_ron FROM profit_calculator_general_costs
-                        WHERE vendor_group = ?) AS warehouse_preparation_cost_ron
-                """)) {
-            statement.setString(1, vendorGroup);
-            statement.setString(2, vendorGroup);
-            try (var row = statement.executeQuery()) {
-                row.next();
-                return new CategorySettings(row.getBigDecimal("vat_rate"), row.getBigDecimal("warehouse_preparation_cost_ron"));
-            }
+    static CategorySettings readCategorySettings(Connection db, String vendorGroup, YearMonth previousMonth)
+            throws SQLException {
+        var data = readData(db, vendorGroup, previousMonth);
+        var costs = data.operatingCosts();
+        return new CategorySettings(data.general().decimal("vatRate"), data.generalCosts().decimal("warehousePreparationCostRon"),
+                data.general().decimal("geniusEasyboxRate"), data.generalCosts().decimal("geniusCostRon"),
+                costs.accountingCostPerUnitRon(), costs.employeeCostPerUnitRon(), costs.miscellaneousCostPerUnitRon());
+    }
+
+    private static BigDecimal sum(List<NamedCost> items) {
+        var sum = BigDecimal.ZERO;
+        for (var item : items) {
+            // Sheet SUM ignores blank amounts, and an empty section totals zero.
+            if (item.amountRon() != null) sum = sum.add(new BigDecimal(item.amountRon()));
         }
+        return sum;
+    }
+
+    private static BigDecimal perUnit(BigDecimal amount, Long units) {
+        return amount == null || units == null || units <= 0 ? null
+                : amount.divide(BigDecimal.valueOf(units), MathContext.DECIMAL128);
     }
 
     private static DecimalSection readDecimals(Connection db, String vendorGroup, Section section) throws SQLException {

@@ -29,7 +29,9 @@ public final class ProfitCalculatorCategory {
                              BigDecimal fbeReturnCostRon, BigDecimal fbeWithdrawalCostRon,
                              BigDecimal fbeDisposalCostRon, Double returnRate, Double refusalRate,
                              BigDecimal warehousePreparationCostRon, BigDecimal refusalCostRon,
-                             BigDecimal defectiveProductCostRon, BigDecimal parcelPreparationCostRon) {
+                             BigDecimal defectiveProductCostRon, BigDecimal parcelPreparationCostRon,
+                             BigDecimal geniusCostRon, BigDecimal accountingCostPerUnitRon,
+                             BigDecimal employeeCostPerUnitRon, BigDecimal miscellaneousCostPerUnitRon) {
     }
 
     public record Product(String productCode, String name, String pnk, boolean retracted,
@@ -105,9 +107,11 @@ public final class ProfitCalculatorCategory {
         var fbe = eligible ? ProfitCalculatorFbeCosts.calculate(product.productLengthMm(), product.productWidthMm(),
                 product.productHeightMm(), product.productWeightG(), data.tariffs()) : ProfitCalculatorFbeCosts.Costs.unknown();
         var rates = eligible ? data.returnRatesByPnk().getOrDefault(product.pnk(), UNKNOWN_RATES) : UNKNOWN_RATES;
-        var vatRate = data.settings().vatRate();
-        var warehousePreparation = eligible ? data.settings().warehousePreparationCostRon() : null;
-        var fbePreparation = vatRate == null ? null : multiply(fbe.processingCostRon(), BigDecimal.ONE.add(vatRate));
+        var settings = data.settings();
+        var vatRate = settings.vatRate();
+        var vatMultiplier = vatRate == null ? null : BigDecimal.ONE.add(vatRate);
+        var warehousePreparation = eligible ? settings.warehousePreparationCostRon() : null;
+        var fbePreparation = multiply(fbe.processingCostRon(), vatMultiplier);
         var refusalRate = rates.refusalRate();
         var refusalCost = refusalRate == null ? null
                 : refusalRate == 0 ? BigDecimal.ZERO : multiply(fbePreparation, BigDecimal.valueOf(refusalRate));
@@ -117,6 +121,8 @@ public final class ProfitCalculatorCategory {
             case "Minulescu" -> warehousePreparation;
             case null, default -> null;
         };
+        var geniusCost = eligible ? multiply(multiply(settings.geniusEasyboxRate(), settings.geniusCostRon()), vatMultiplier) : null;
+        var miscellaneousCost = eligible ? multiply(settings.miscellaneousCostPerUnitRon(), vatMultiplier) : null;
         return new Product(product.productCode(), product.name(), product.pnk(), product.retracted(),
                 eligible ? product.emagSalePriceRon() : null, eligible ? product.incomeProfitTax() : null,
                 eligible ? product.vatPayer() : null, eligible ? product.companyName() : null,
@@ -126,7 +132,9 @@ public final class ProfitCalculatorCategory {
                         eligible ? product.previousMonthGrossUnits() : null, fbe.processingCostRon(),
                         fbe.returnCostRon(), fbe.withdrawalCostRon(), fbe.disposalCostRon(),
                         rates.returnRate(), refusalRate, warehousePreparation, refusalCost,
-                        defectiveProductCost, parcelPreparation));
+                        defectiveProductCost, parcelPreparation, geniusCost,
+                        eligible ? settings.accountingCostPerUnitRon() : null,
+                        eligible ? settings.employeeCostPerUnitRon() : null, miscellaneousCost));
     }
 
     private static Overrides overrides(CategoryProduct product) {
