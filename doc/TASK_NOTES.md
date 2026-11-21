@@ -1,7 +1,7 @@
 # Profit calculator — task notes and recovery handoff
 
-Last reviewed: **2026-11-18**. Repository branch: `profit-calculator`.
-Base commit for the return and refusal rate batch: `0ca30e9` (`Added field.`).
+Last reviewed: **2026-11-21**. Repository branch: `profit-calculator`.
+Base commit for the Date Calcul batch: `5aa8018`.
 The working tree was clean before this batch.
 
 Start here after losing the chat, then read [ProfitCalculator.md](ProfitCalculator.md)
@@ -15,7 +15,7 @@ so the original sheet author can verify the business interpretation. Discovering
 missing data is part of the objective: later work may extend the database,
 eMAG API collection, or eMAG dashboard extraction.
 
-The current work is on **By Category**. The other calculator page is a scaffold
+The current work is on **By Category** and its **Date Calcul** settings. The exposure page is a scaffold
 for later work. The author answered the original three questions: gross units
 without storno records, selling accounts only in the selected group, and
 per-product commission defaults. These answers are now implemented. Remaining
@@ -32,8 +32,8 @@ known questionable tier assignments. That question is still open.
   must not fetch spreadsheet values.
 - There is one calculator workbook per `vendor.vendor_group`. Known groups are
   J, K, S, and Z; selector options come from the database, with S the default
-  when available. We study the S workbook because the other workbooks have the
-  same intended structure.
+  when available. The S workbook is the formula reference. Date Calcul seeds
+  use the separate inputs from each of the four workbooks.
 - The approved category selector uses **`product.category`**. Do not replace
   category names with abbreviated spreadsheet tab names such as `2. Trim.`.
 - Reproduce the **Actual** area of `2. Trim.` only, with one product per column,
@@ -191,6 +191,8 @@ multiple product columns: some formula rows contain manually replaced cells.
   sticky product headers/labels, and shared override editing.
 - `/private/profit-fbe-tariffs`: shared current FBE tariff editor, immediately
   after By Category; reviewed atomic saves, conflict handling and Revert.
+- `/private/profit-date-calcul`: four editors for current general settings,
+  general costs, employee costs, and miscellaneous costs by vendor group.
 
 | Row(s) | Current behavior |
 | --- | --- |
@@ -208,14 +210,18 @@ multiple product columns: some formula rows contain manually replaced cells.
 | 50, 78 | USD transport override 43 × exchange-rate override 44 |
 | 53 | Accepted returned units divided by ordered units, per PNK |
 | 54 | Storno units minus returned units, divided by ordered units, per PNK |
+| 56 | Current own-warehouse preparation cost from the selected group's Date Calcul |
 | 57–60 | FBE processing, return, withdrawal and disposal: source-classified tier base fee plus rounded-up excess kg × surcharge |
 | 63, 64 | Literal zero from the Google/social-media Ads formulas; not measured spending |
+| 83 | FBE processing fee × refusal rate × (1 + calculator VAT), with zero for a known 0% refusal rate |
+| 84 | Zero for a known 0% return rate |
+| 87 | FBE processing fee with calculator VAT for `eMAG`, or row 56 for `Minulescu` |
 | 88 | Zero only for an explicit `Minulescu` fulfillment override |
 | 100 | Zero only for the known `Profit` tax regime |
 | 101 | Zero only when VAT-payer status is explicitly false |
 | 105, 106 | Zero only for the known `Venit` tax regime |
 
-The seven cost outputs above implement only independently determined branches.
+Unimplemented cost branches stay blank.
 Tax-regime comparisons trim whitespace and ignore case, retaining the original
 display text. Null/unknown regimes, null VAT status, blank fulfillment, and
 branches needing unavailable cost/tax inputs remain blank. The existing
@@ -247,9 +253,9 @@ Drafts survive category/group changes, previews update result cells without
 rebuilding focused inputs, and outdated responses are ignored. Review precedes
 Save; Revert reloads saved values. Save failures/conflicts retain drafts. A save
 acknowledgement and subsequent reload are separate: never repeat a committed
-save because readback failed. Row 45 now also determines the zero-storage branch
-in row 88; other fulfillment charges remain deferred. Changing fulfillment
-clears the previous storage result while preview is pending or fails. Price,
+save because readback failed. Row 45 determines the preparation-cost branch in
+row 87 and the storage-cost branch in row 88. Changing fulfillment clears both
+previous results while preview is pending or fails. Price,
 purchase, and freight overrides have the formulas above.
 
 The USD calculations require both operands. No purchase/freight baseline or
@@ -270,6 +276,28 @@ fees, profit totals, monthly financial outputs 36–37, and summary rows 3–6.
   version-48 upgrade path.
 - Frontend modules: `profit-calculator.js`, `profit-calculator-table.js`,
   `profit-calculator-overrides.js`, and `profit-calculator-layout.js`.
+
+### Date Calcul settings and migration 52
+
+Each editor has one current set of inputs and a revision per vendor group.
+Migration 52 seeds 56 decimal settings and 42 named cost entries from the four
+read-only workbooks, including two named entries with unknown amounts. Arithmetic
+entered directly in a reference cell becomes its evaluated seed amount. Further
+edits are shared in PostgreSQL. Migration version tracking preserves saved edits
+on a later startup. See [the settings documentation](ProfitCalculator.md#date-calcul-settings)
+for the table names, workbook ranges, API and formulas.
+
+C8 counts finalized units for PNKs owned by the selected group across selling
+accounts, including historical sales of withdrawn products. Row 35 uses the
+approved selling-account scope. Both use the previous Bucharest calendar month.
+The settings page calculates the monthly totals and per-unit costs on read.
+C29 needs lending records, including entered loan terms and dated repayments.
+The J Creditari summary currently references elapsed months in place of
+monthly interest and needs confirmation.
+
+Category GET and preview read VAT and own-warehouse preparation settings with
+the other category data. Calculated rows 56, 83, 84 and 87 use the existing
+eligibility and blank-input rules plus the known-zero incident-rate branches.
 
 ### Monthly units and commission defaults
 
@@ -423,6 +451,7 @@ could configure isolation and initially prevented reaching the intended test.
 
 | Stage | Result and qualification |
 | --- | --- |
+| Date Calcul settings and category cost rows | **376 JavaScript tests and 119 focused Java/JTE tests passed**, zero failures/errors/skips. Disposable PostgreSQL verified migration 52 and its repeat-start behavior, independent revisions, exact decimal/zero/null values, group totals across selling accounts, the Bucharest month boundary and category previews. All 56 scalar inputs and 42 named entries matched the four workbook snapshots. Desktop and mobile Chromium rendered the actual templates and bundled assets against mock HTTP responses and exercised group switching, draft retention, and saving a cost row. |
 | Return and refusal rates | **367 JavaScript tests and 112 focused Java/JTE tests passed**, zero failures/errors/skips. Disposable PostgreSQL covered category loads and previews, six- and twelve-month boundaries, exactly 25%, status filters, invalid and zero rates, and the distinct scope of row 35. JavaScript checks covered percentage formatting, blank results and refreshed preview values. |
 | Literal FBE fee calculations | **366 JavaScript tests and 101 focused Java/JTE tests passed**, zero failures/errors/skips. Disposable PostgreSQL checks exercised actual API → pooled mirror reads, product measurements, saved tariff edits, previews, eligibility, monthly quantities and commissions. Pure tests lock in 19 classifier/surcharge cases, including intentional ties/nonfitting selections, unmatched axes, exact gram-to-kg conversion and ceiling, null/zero surcharges and precision. UI checks cover all four amounts, eligibility, categories, stale responses and preservation of refreshed FBE fees during later pending/failed previews without changing saved override baselines. |
 | Active-first column ordering | **18 calculator evaluator tests passed**, zero failures/errors/skips, using `mvn -o -Dtest=ProfitCalculatorCategoryTest test`. The ordering regression covers natural name/code order in both active/retracted groups and nonempty previews. An eligibility test now matches products by identity rather than assuming their previous positions. No database or API-shape changes were needed. |
@@ -481,7 +510,7 @@ JavaScript suite, with a fresh disposable PostgreSQL cluster. Its cluster was
 stopped and removed after verification. No application database, spreadsheet,
 deployment or server restart was involved; no migration was required.
 
-The return and refusal rate batch ran the full JavaScript suite and
+The return and refusal rate batch and the Date Calcul batch ran the full JavaScript suite and
 `mvn -o '-Dtest=*ProfitCalculator*Test,JteTemplateEngineTest,OrderQuantityTableIntegrationTest' test`
 against a disposable PostgreSQL cluster.
 
@@ -494,13 +523,13 @@ against a disposable PostgreSQL cluster.
    user's three commission overrides can now be saved. **No deployment/restart
    was performed by the agent, and user confirmation of a successful retry is
    still pending.** The application factory applies migrations during normal
-   startup; migrations 50 and 51 were verified separately in disposable tests.
+   startup. Migrations 50–52 were verified in disposable tests.
 3. Questions 1–3 are resolved and implemented: gross finalized units, selected
    selling-account group, and per-product commission. The remaining questions
-   4–7 in `ProfitCalculator.md` concern settings scope and
+   4–7 in `ProfitCalculator.md` concern settings ownership and historical
    effective dates, import-cost source records, operating-cost input sources,
-   and FBE tier selection. They do not block the independent zero branches or
-   editing tariffs. Rows 57–60 now follow the current sheet formula by explicit
+   and FBE tier selection. Date Calcul uses current settings per vendor group.
+   Rows 57–60 now follow the current sheet formula by explicit
    user choice; resolve question 7 before changing that classification rule.
 4. Trace the next small field group to original inputs, then compare against
    database schema and actual data coverage. Extend eMAG/API/dashboard storage
@@ -508,8 +537,8 @@ against a disposable PostgreSQL cluster.
 5. Continue updating `ProfitCalculator.md` formulas/**Open questions** and this
    recovery handoff when decisions or verification change.
 
-Known data gaps from the repository audit include replacement shipment records
-for row 55, monetary purchase/freight import baselines, FBE storage and
+Known data gaps from the repository audit include lending and repayment records,
+replacement shipment records for row 55, monetary purchase/freight import baselines, FBE storage and
 environmental/packaging/SMS tariffs, and review acquisition costs.
 Stored carton dimensions are not freight charges;
 `product.import_tax` is a rate, not per-unit customs cost; published review

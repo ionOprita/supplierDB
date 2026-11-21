@@ -27,7 +27,9 @@ public final class ProfitCalculatorCategory {
                              BigDecimal profitTaxCostRon, BigDecimal dividendTaxCostRon,
                              Long previousMonthGrossUnits, BigDecimal fbeProcessingCostRon,
                              BigDecimal fbeReturnCostRon, BigDecimal fbeWithdrawalCostRon,
-                             BigDecimal fbeDisposalCostRon, Double returnRate, Double refusalRate) {
+                             BigDecimal fbeDisposalCostRon, Double returnRate, Double refusalRate,
+                             BigDecimal warehousePreparationCostRon, BigDecimal refusalCostRon,
+                             BigDecimal defectiveProductCostRon, BigDecimal parcelPreparationCostRon) {
     }
 
     public record Product(String productCode, String name, String pnk, boolean retracted,
@@ -48,7 +50,7 @@ public final class ProfitCalculatorCategory {
 
     static Response create(String vendorGroup, String category, CategoryData data) {
         var ordered = data.products().stream()
-                .map(product -> evaluate(product, data.tariffs(), data.returnRatesByPnk()))
+                .map(product -> evaluate(product, data))
                 .sorted(Comparator.comparing(Product::retracted)
                         .thenComparing(ProfitCalculatorCategory::sortName,
                                 ProductPerformanceOptions::compareProductNames)
@@ -82,11 +84,11 @@ public final class ProfitCalculatorCategory {
         if (!patches.isEmpty()) {
             throw new IllegalArgumentException("A preview product does not belong to the selected category.");
         }
-        return create(vendorGroup, category, new CategoryData(preview, data.tariffs(), data.returnRatesByPnk()));
+        return create(vendorGroup, category,
+                new CategoryData(preview, data.tariffs(), data.returnRatesByPnk(), data.settings()));
     }
 
-    private static Product evaluate(CategoryProduct product, List<Tariff> tariffs,
-                                    Map<String, ReturnRates> returnRatesByPnk) {
+    private static Product evaluate(CategoryProduct product, CategoryData data) {
         var overrides = overrides(product);
         boolean eligible = !product.retracted() && product.pnk() != null && !product.pnk().isBlank();
         var price = eligible ? firstKnown(overrides.salePriceRon(), product.emagSalePriceRon()) : null;
@@ -101,8 +103,20 @@ public final class ProfitCalculatorCategory {
         var vat = eligible && Boolean.FALSE.equals(product.vatPayer()) ? BigDecimal.ZERO : null;
         var profitTax = eligible && "Venit".equalsIgnoreCase(regime) ? BigDecimal.ZERO : null;
         var fbe = eligible ? ProfitCalculatorFbeCosts.calculate(product.productLengthMm(), product.productWidthMm(),
-                product.productHeightMm(), product.productWeightG(), tariffs) : ProfitCalculatorFbeCosts.Costs.unknown();
-        var rates = eligible ? returnRatesByPnk.getOrDefault(product.pnk(), UNKNOWN_RATES) : UNKNOWN_RATES;
+                product.productHeightMm(), product.productWeightG(), data.tariffs()) : ProfitCalculatorFbeCosts.Costs.unknown();
+        var rates = eligible ? data.returnRatesByPnk().getOrDefault(product.pnk(), UNKNOWN_RATES) : UNKNOWN_RATES;
+        var vatRate = data.settings().vatRate();
+        var warehousePreparation = eligible ? data.settings().warehousePreparationCostRon() : null;
+        var fbePreparation = vatRate == null ? null : multiply(fbe.processingCostRon(), BigDecimal.ONE.add(vatRate));
+        var refusalRate = rates.refusalRate();
+        var refusalCost = refusalRate == null ? null
+                : refusalRate == 0 ? BigDecimal.ZERO : multiply(fbePreparation, BigDecimal.valueOf(refusalRate));
+        var defectiveProductCost = rates.returnRate() != null && rates.returnRate() == 0 ? BigDecimal.ZERO : null;
+        var parcelPreparation = switch (overrides.fulfillmentSource()) {
+            case "eMAG" -> fbePreparation;
+            case "Minulescu" -> warehousePreparation;
+            case null, default -> null;
+        };
         return new Product(product.productCode(), product.name(), product.pnk(), product.retracted(),
                 eligible ? product.emagSalePriceRon() : null, eligible ? product.incomeProfitTax() : null,
                 eligible ? product.vatPayer() : null, eligible ? product.companyName() : null,
@@ -111,7 +125,8 @@ public final class ProfitCalculatorCategory {
                         advertising, advertising, storage, turnoverTax, vat, profitTax, profitTax,
                         eligible ? product.previousMonthGrossUnits() : null, fbe.processingCostRon(),
                         fbe.returnCostRon(), fbe.withdrawalCostRon(), fbe.disposalCostRon(),
-                        rates.returnRate(), rates.refusalRate()));
+                        rates.returnRate(), refusalRate, warehousePreparation, refusalCost,
+                        defectiveProductCost, parcelPreparation));
     }
 
     private static Overrides overrides(CategoryProduct product) {

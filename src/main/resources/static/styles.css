@@ -2168,6 +2168,96 @@ body.app-shell .fbe-tariff-error[hidden] {
   display: none;
 }
 
+body.app-shell .date-calcul-editors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 27rem), 1fr));
+  align-items: start;
+  gap: 18px;
+}
+
+body.app-shell .date-calcul-card {
+  min-width: 0;
+}
+
+body.app-shell .date-calcul-card h2 {
+  margin: 0 0 14px;
+}
+
+body.app-shell .date-calcul-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(6.5rem, 42%);
+  align-items: center;
+  gap: 8px 12px;
+}
+
+body.app-shell .date-calcul-fields > :is(span, label) {
+  overflow-wrap: anywhere;
+}
+
+body.app-shell .date-calcul-card output {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--surface-alt);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+body.app-shell .date-calcul-fields output {
+  display: block;
+}
+
+body.app-shell .date-calcul-card input {
+  width: 100%;
+}
+
+body.app-shell .date-calcul-card input[inputmode="decimal"] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+body.app-shell .date-calcul-card input[aria-invalid="true"] {
+  border-color: var(--danger, #b42318);
+  outline: 1px solid var(--danger, #b42318);
+}
+
+body.app-shell .date-calcul-list {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+body.app-shell .date-calcul-list :is(th, td) {
+  padding: 6px;
+  vertical-align: top;
+}
+
+body.app-shell .date-calcul-list :is(th, td):last-child {
+  width: 5.5rem;
+}
+
+body.app-shell .date-calcul-list tbody button {
+  width: 100%;
+}
+
+body.app-shell .date-calcul-list tfoot th {
+  text-align: left;
+}
+
+body.app-shell .date-calcul-list tfoot td {
+  text-align: right;
+}
+
+body.app-shell .date-calcul-actions {
+  margin-top: 14px;
+  margin-bottom: 0;
+}
+
+body.app-shell .date-calcul-error {
+  display: block;
+  color: var(--danger, #b42318);
+  font-size: 12px;
+}
+
 body.app-shell .current-rates-actions,
 body.app-shell .task-page-actions,
 body.app-shell .ads-campaigns-actions {

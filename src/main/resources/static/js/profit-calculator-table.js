@@ -7,10 +7,12 @@ const quantityFormat = new Intl.NumberFormat('en-US', {maximumFractionDigits: 0}
 const fieldsByRow = new Map(overrideFields.map(field => [field.row, field]));
 const percentageRows = new Set([53, 54, 76]);
 const calculatedFields = new Map([[26, 'effectiveSalePriceRon'], [35, 'previousMonthGrossUnits'], [49, 'purchaseCostRon'],
-  [50, 'transportCostRon'], [53, 'returnRate'], [54, 'refusalRate'], [57, 'fbeProcessingCostRon'], [58, 'fbeReturnCostRon'],
-  [59, 'fbeWithdrawalCostRon'], [60, 'fbeDisposalCostRon'], [63, 'googleAdsCostRon'], [64, 'socialMediaAdsCostRon'],
+  [50, 'transportCostRon'], [53, 'returnRate'], [54, 'refusalRate'], [56, 'warehousePreparationCostRon'],
+  [57, 'fbeProcessingCostRon'], [58, 'fbeReturnCostRon'], [59, 'fbeWithdrawalCostRon'], [60, 'fbeDisposalCostRon'],
+  [63, 'googleAdsCostRon'], [64, 'socialMediaAdsCostRon'],
   [75, 'effectiveSalePriceRon'], [76, 'effectiveCommissionRate'], [77, 'purchaseCostRon'],
-  [78, 'transportCostRon'], [86, 'commissionCostRon'], [88, 'storageCostRon'],
+  [78, 'transportCostRon'], [83, 'refusalCostRon'], [84, 'defectiveProductCostRon'],
+  [86, 'commissionCostRon'], [87, 'parcelPreparationCostRon'], [88, 'storageCostRon'],
   [100, 'turnoverTaxCostRon'], [101, 'vatCostRon'], [105, 'profitTaxCostRon'],
   [106, 'dividendTaxCostRon']]);
 

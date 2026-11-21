@@ -1,6 +1,7 @@
 package ro.sellfluence.db;
 
 import com.fasterxml.jackson.annotation.JsonValue;
+import ro.sellfluence.db.ProfitCalculatorSettingsTable.CategorySettings;
 import ro.sellfluence.support.Statistics;
 
 import java.math.BigDecimal;
@@ -21,7 +22,7 @@ import java.util.stream.Collectors;
 
 /** Product metadata and reference values for the category profit calculator. */
 public final class ProfitCalculatorTable {
-    private static final String STRIP_CHARACTERS = stripCharacters();
+    static final String STRIP_CHARACTERS = stripCharacters();
 
     private ProfitCalculatorTable() {
     }
@@ -157,7 +158,7 @@ public final class ProfitCalculatorTable {
 
     /** Category products and calculation inputs from one database snapshot. */
     public record CategoryData(List<CategoryProduct> products, List<ProfitCalculatorFbeTariffTable.Tariff> tariffs,
-                               Map<String, ReturnRates> returnRatesByPnk) {
+                               Map<String, ReturnRates> returnRatesByPnk, CategorySettings settings) {
         public CategoryData {
             products = List.copyOf(products);
             tariffs = List.copyOf(tariffs);
@@ -166,6 +167,11 @@ public final class ProfitCalculatorTable {
 
         public CategoryData(List<CategoryProduct> products, List<ProfitCalculatorFbeTariffTable.Tariff> tariffs) {
             this(products, tariffs, Map.of());
+        }
+
+        public CategoryData(List<CategoryProduct> products, List<ProfitCalculatorFbeTariffTable.Tariff> tariffs,
+                            Map<String, ReturnRates> returnRatesByPnk) {
+            this(products, tariffs, returnRatesByPnk, CategorySettings.empty());
         }
     }
 

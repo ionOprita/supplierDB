@@ -10,12 +10,17 @@ import ro.sellfluence.api.API;
 import ro.sellfluence.api.ProfitCalculatorCategory;
 import ro.sellfluence.api.ProfitCalculatorFbeTariffs;
 import ro.sellfluence.api.ProfitCalculatorOverrides;
+import ro.sellfluence.api.ProfitCalculatorSettings;
 import ro.sellfluence.db.ProfitCalculatorFbeTariffTable.Change;
+import ro.sellfluence.db.ProfitCalculatorSettingsTable.ConflictException;
 import ro.sellfluence.db.ProfitCalculatorTable.OverrideChange;
 import ro.sellfluence.db.versions.EmagMirrorDBVersion50;
 import ro.sellfluence.db.versions.EmagMirrorDBVersion51;
+import ro.sellfluence.db.versions.SetupDB;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Clock;
@@ -28,6 +33,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** Reads actual calculator inputs through the API, mirror, and pooled read transaction. */
@@ -37,6 +43,7 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
     private String schema;
     private final Properties properties = new Properties();
     private HikariDataSource pool;
+    private DB database;
     private API api;
 
     @BeforeEach
@@ -54,6 +61,8 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
                 statement.execute("CREATE SCHEMA " + schema);
                 statement.execute("SET search_path TO " + schema);
                 statement.execute("""
+                        CREATE TABLE version_info (version INTEGER PRIMARY KEY, date TIMESTAMP WITH TIME ZONE);
+                        INSERT INTO version_info VALUES (51, current_timestamp);
                         CREATE TABLE vendor (id UUID PRIMARY KEY, vendor_group TEXT, company_name TEXT);
                         CREATE TABLE product (
                             product_code TEXT PRIMARY KEY, name TEXT, emag_pnk TEXT,
@@ -81,7 +90,9 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
                         INSERT INTO vendor VALUES
                             ('00000000-0000-0000-0000-000000000001', 'S', 'Company S'),
                             ('00000000-0000-0000-0000-000000000002', 'S', 'Company S FBE'),
-                            ('00000000-0000-0000-0000-000000000003', 'J', 'Company J');
+                            ('00000000-0000-0000-0000-000000000003', 'J', 'Company J'),
+                            ('00000000-0000-0000-0000-000000000004', 'K', 'Company K'),
+                            ('00000000-0000-0000-0000-000000000005', 'Z', 'Company Z');
                         INSERT INTO product VALUES
                             ('active', 'S. 2 - Active', 'ACTIVE', '00000000-0000-0000-0000-000000000001',
                              'Trimmers', false, 100, 'Profit', true, 0.18, 100, 100, 10, 2000.1),
@@ -110,7 +121,9 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
         config.setMinimumIdle(0);
         config.setMaximumPoolSize(2);
         pool = new HikariDataSource(config);
-        api = new API(new EmagMirrorDB(new DB(pool)));
+        database = new DB(pool);
+        SetupDB.setupAndUpdateDB(database);
+        api = new API(new EmagMirrorDB(database));
     }
 
     @AfterEach
@@ -132,6 +145,10 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
         assertEquals(7L, active.calculated().previousMonthGrossUnits());
         assertEquals(0.0, active.calculated().returnRate());
         assertEquals(0.0, active.calculated().refusalRate());
+        amount("2", active.calculated().warehousePreparationCostRon());
+        amount("0", active.calculated().refusalCostRon());
+        amount("0", active.calculated().defectiveProductCostRon());
+        assertNull(active.calculated().parcelPreparationCostRon());
         amount("0.18", active.calculated().effectiveCommissionRate());
         amount("18", active.calculated().commissionCostRon());
         amount("4", active.calculated().fbeProcessingCostRon());
@@ -145,6 +162,7 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
         assertNull(retracted.fbeReturnCostRon());
         assertNull(retracted.fbeWithdrawalCostRon());
         assertNull(retracted.fbeDisposalCostRon());
+        assertNull(retracted.warehousePreparationCostRon());
     }
 
     @Test
@@ -165,6 +183,7 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
         assertEquals(7L, preview.calculated().previousMonthGrossUnits());
         amount("21.6", preview.calculated().commissionCostRon());
         assertEquals("Minulescu", preview.overrides().fulfillmentSource());
+        amount("2", preview.calculated().parcelPreparationCostRon());
         amount("100", read().products().getFirst().calculated().effectiveSalePriceRon());
         assertEquals(0, read().products().getFirst().overrideRevision());
     }
@@ -268,6 +287,79 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
             assertNull(product.calculated().returnRate(), product.productCode());
             assertNull(product.calculated().refusalRate(), product.productCode());
         }
+    }
+
+    @Test
+    void dateCalculCountsAllAccountsForTheOwnedCatalogAndDoesNotIncludeOtherGroupsProducts() throws Exception {
+        executeFixture("""
+                INSERT INTO product (product_code, name, emag_pnk, vendor, retracted) VALUES
+                    ('j-product', 'J. 1 - Product', 'J-PRODUCT', '00000000-0000-0000-0000-000000000003', false);
+                INSERT INTO emag_order VALUES
+                    (6, 'boundary', '00000000-0000-0000-0000-000000000003', 4, '2026-10-01 00:00:00'),
+                    (7, 'outside', '00000000-0000-0000-0000-000000000001', 4, '2026-09-30 23:59:59');
+                INSERT INTO product_in_order (id, emag_order_surrogate_id, part_number_key, quantity) VALUES
+                    (2, 4, 'ACTIVE', 2), (1, 6, 'RETRACTED', 6), (1, 7, 'ACTIVE', 99),
+                    (3, 3, 'J-PRODUCT', 15), (4, 3, NULL, 300);
+                """);
+        var before = Clock.fixed(Instant.parse("2026-10-31T21:59:59Z"), ZoneOffset.UTC);
+        var after = Clock.fixed(Instant.parse("2026-10-31T22:00:00Z"), ZoneOffset.UTC);
+        assertEquals(99L, api.getProfitCalculatorSettings("S", before).calculated().previousMonthUnits());
+        var settings = api.getProfitCalculatorSettings("S", after);
+        var totals = settings.calculated();
+        assertEquals("2026-10", totals.previousMonth());
+        assertEquals(115L, totals.previousMonthUnits());
+        assertEquals(15L, api.getProfitCalculatorSettings("J", after).calculated().previousMonthUnits());
+        assertEquals(0L, api.getProfitCalculatorSettings("K", after).calculated().previousMonthUnits());
+        assertNull(api.getProfitCalculatorSettings("K", after).calculated().accountingCostPerUnitRon());
+        assertEquals("0.21", settings.general().values().get("vatRate"));
+        amount("33300", new BigDecimal(totals.employeeTotalRon()));
+        amount("11015", new BigDecimal(totals.miscellaneousTotalRon()));
+        assertEquals(new BigDecimal("1600").divide(BigDecimal.valueOf(115), MathContext.DECIMAL128),
+                new BigDecimal(totals.accountingCostPerUnitRon()));
+        assertNull(totals.interestCostPerUnitRon());
+        assertEquals(7L, read().products().getFirst().calculated().previousMonthGrossUnits());
+
+        executeFixture("UPDATE product_in_order SET quantity = NULL WHERE id = 2 AND emag_order_surrogate_id = 4");
+        totals = api.getProfitCalculatorSettings("S", after).calculated();
+        assertNull(totals.previousMonthUnits());
+        assertNull(totals.employeeCostPerUnitRon());
+        assertNull(totals.miscellaneousCostPerUnitRon());
+    }
+
+    @Test
+    void settingsSavesAreIndependentAndCategoryPreviewsUseTheCommittedValues() throws Exception {
+        var mapper = new ObjectMapper();
+        var edit = ProfitCalculatorSettings.parse(mapper, """
+                {"vendorGroup":"S","section":"generalCosts","expectedRevision":1,"values":{
+                 "packingCostRon":"1","courierCostRon":null,"geniusCostRon":"8",
+                 "monthlyAccountingCostRon":"0","warehousePreparationCostRon":"1.250000000000000001"}}
+                """);
+        api.saveProfitCalculatorSettings(edit);
+        assertThrows(ConflictException.class, () -> api.saveProfitCalculatorSettings(edit));
+        var employeeEdit = ProfitCalculatorSettings.parse(mapper, """
+                {"vendorGroup":"S","section":"employees","expectedRevision":1,"items":[
+                 {"label":"Example allocation","amountRon":null},{"label":"Other allocation","amountRon":"0"}]}
+                """);
+        api.saveProfitCalculatorSettings(employeeEdit);
+        SetupDB.setupAndUpdateDB(database);
+        var settings = api.getProfitCalculatorSettings("S", CLOCK);
+        assertEquals(2, settings.generalCosts().revision());
+        assertEquals(2, settings.employees().revision());
+        assertEquals(1, settings.general().revision());
+        assertEquals(1, settings.miscellaneous().revision());
+        assertNull(settings.generalCosts().values().get("courierCostRon"));
+        assertEquals("0", settings.calculated().accountingCostPerUnitRon());
+        assertNull(settings.employees().items().getFirst().amountRon());
+        assertEquals("0", settings.employees().items().getLast().amountRon());
+        assertEquals("2", api.getProfitCalculatorSettings("K", CLOCK).generalCosts().values()
+                .get("warehousePreparationCostRon"));
+        amount("1.250000000000000001", read().products().getFirst().calculated().warehousePreparationCostRon());
+        var ownWarehousePreview = preview(new ProfitCalculatorOverrides.Request("S", "Trimmers", List.of(
+                new OverrideChange("active", 0, Map.of("fulfillmentSource", "Minulescu")))));
+        amount("1.250000000000000001", ownWarehousePreview.products().getFirst().calculated().parcelPreparationCostRon());
+        var fbePreview = preview(new ProfitCalculatorOverrides.Request("S", "Trimmers", List.of(
+                new OverrideChange("active", 0, Map.of("fulfillmentSource", "eMAG")))));
+        amount("4.84", fbePreview.products().getFirst().calculated().parcelPreparationCostRon());
     }
 
     private void executeFixture(String sql) throws SQLException {

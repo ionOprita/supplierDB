@@ -82,6 +82,7 @@
                     <li><a class="app-nav-link" href="/private/profit-exposure">Calc. Expunere &amp; Profit</a></li>
                     <li><a class="app-nav-link" href="/private/profit-by-category">By Category</a></li>
                     <li><a class="app-nav-link" href="/private/profit-fbe-tariffs">FBE Tariffs</a></li>
+                    <li><a class="app-nav-link" href="/private/profit-date-calcul">Date Calcul</a></li>
                 </ul>
             </section>
             <details class="app-nav-group" data-nav-group="advertising">

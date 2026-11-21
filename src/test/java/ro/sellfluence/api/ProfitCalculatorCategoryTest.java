@@ -2,6 +2,7 @@ package ro.sellfluence.api;
 
 import org.junit.jupiter.api.Test;
 import ro.sellfluence.db.ProfitCalculatorFbeTariffTable.Tariff;
+import ro.sellfluence.db.ProfitCalculatorSettingsTable.CategorySettings;
 import ro.sellfluence.db.ProfitCalculatorTable.CategoryData;
 import ro.sellfluence.db.ProfitCalculatorTable.CategoryProduct;
 import ro.sellfluence.db.ProfitCalculatorTable.OverrideChange;
@@ -243,6 +244,80 @@ class ProfitCalculatorCategoryTest {
         var json = mapper.readTree(mapper.writeValueAsString(response)).get("products").get(0).get("calculated");
         for (var field : List.of("fbeProcessingCostRon", "fbeReturnCostRon", "fbeWithdrawalCostRon", "fbeDisposalCostRon")) {
             assertTrue(json.get(field).isNumber(), field);
+        }
+    }
+
+    @Test
+    void usesGroupWarehouseAndVatSettingsForRefusalAndFulfillmentCosts() {
+        var source = measuredProduct("code", "PNK", false,
+                new Overrides(null, null, null, null, null, "Minulescu"),
+                new BigDecimal("100"), new BigDecimal("2500"));
+        var settings = new CategorySettings(new BigDecimal("0.21"), new BigDecimal("2.001"));
+        var data = new CategoryData(List.of(source), List.of(fbeTariff(new BigDecimal("3.5"))),
+                Map.of("PNK", new ReturnRates(0.1, 0.12345678)), settings);
+
+        var original = ProfitCalculatorCategory.create("S", "Trimmers", data).products().getFirst().calculated();
+        assertEquals(new BigDecimal("2.001"), original.warehousePreparationCostRon());
+        assertEquals(new BigDecimal("2.001"), original.parcelPreparationCostRon());
+        assertEquals(new BigDecimal("0.59753081520"), original.refusalCostRon());
+        assertNull(original.defectiveProductCostRon());
+
+        var preview = ProfitCalculatorCategory.preview("S", "Trimmers", data, List.of(
+                new OverrideChange("code", 3, Map.of("fulfillmentSource", "eMAG"))))
+                .products().getFirst().calculated();
+        assertEquals(new BigDecimal("4.840"), preview.parcelPreparationCostRon());
+        assertEquals(original.warehousePreparationCostRon(), preview.warehousePreparationCostRon());
+        assertEquals(original.refusalCostRon(), preview.refusalCostRon());
+
+        var cleared = new LinkedHashMap<String, String>();
+        cleared.put("fulfillmentSource", null);
+        var clearedPreview = ProfitCalculatorCategory.preview("S", "Trimmers", data, List.of(
+                new OverrideChange("code", 3, cleared))).products().getFirst().calculated();
+        assertNull(clearedPreview.parcelPreparationCostRon());
+        assertEquals(original.refusalCostRon(), clearedPreview.refusalCostRon());
+    }
+
+    @Test
+    void distinguishesZeroRatesAndFeesFromUnavailableInputsAndIneligibleProducts() {
+        var emag = new Overrides(null, null, null, null, null, "eMAG");
+        var source = measuredProduct("code", "PNK", false, emag,
+                new BigDecimal("100"), new BigDecimal("1000"));
+        var tariffs = List.of(fbeTariff(new BigDecimal("3.5")));
+        var missingVat = new CategoryData(List.of(source), tariffs, Map.of("PNK", new ReturnRates(null, 0.1)),
+                new CategorySettings(null, BigDecimal.ZERO));
+        var unknown = ProfitCalculatorCategory.create("S", "Trimmers", missingVat).products().getFirst().calculated();
+        assertEquals(BigDecimal.ZERO, unknown.warehousePreparationCostRon());
+        assertNull(unknown.refusalCostRon());
+        assertNull(unknown.defectiveProductCostRon());
+        assertNull(unknown.parcelPreparationCostRon());
+
+        var zeroVat = new CategoryData(List.of(source), tariffs, Map.of("PNK", new ReturnRates(0.0, null)),
+                new CategorySettings(BigDecimal.ZERO, null));
+        var zero = ProfitCalculatorCategory.create("S", "Trimmers", zeroVat).products().getFirst().calculated();
+        assertNull(zero.warehousePreparationCostRon());
+        assertNull(zero.refusalCostRon());
+        assertEquals(BigDecimal.ZERO, zero.defectiveProductCostRon());
+        assertEquals(new BigDecimal("3.5"), zero.parcelPreparationCostRon());
+
+        var inputs = List.of(
+                measuredProduct("eligible", "ZERO", false, emag, null, null),
+                measuredProduct("retracted", "RETRACTED", true, emag, null, null),
+                measuredProduct("no-pnk", null, false, emag, null, null));
+        var zeroRates = new ReturnRates(0.0, 0.0);
+        var rates = Map.of("ZERO", zeroRates, "RETRACTED", zeroRates);
+        var unavailable = new CategoryData(inputs, tariffs, rates);
+        for (var product : ProfitCalculatorCategory.create("S", "Trimmers", unavailable).products()) {
+            var result = product.calculated();
+            var expectedRateCost = product.productCode().equals("eligible") ? BigDecimal.ZERO : null;
+            assertEquals(expectedRateCost, result.refusalCostRon());
+            assertEquals(expectedRateCost, result.defectiveProductCostRon());
+            assertNull(result.parcelPreparationCostRon());
+        }
+
+        var configured = new CategoryData(inputs, tariffs, rates, new CategorySettings(null, BigDecimal.ONE));
+        for (var product : ProfitCalculatorCategory.create("S", "Trimmers", configured).products()) {
+            var expectedWarehouseCost = product.productCode().equals("eligible") ? BigDecimal.ONE : null;
+            assertEquals(expectedWarehouseCost, product.calculated().warehousePreparationCostRon());
         }
     }
 

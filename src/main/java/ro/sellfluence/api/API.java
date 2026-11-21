@@ -203,6 +203,20 @@ public class API {
         mirrorDB.saveProfitCalculatorFbeTariffs(request.changes());
     }
 
+    public ProfitCalculatorSettings.Response getProfitCalculatorSettings(String vendorGroup) throws SQLException {
+        return getProfitCalculatorSettings(vendorGroup, Clock.systemUTC());
+    }
+
+    public ProfitCalculatorSettings.Response getProfitCalculatorSettings(String vendorGroup, Clock clock) throws SQLException {
+        var group = ProfitCalculatorSettings.requireGroup(vendorGroup);
+        var previousMonth = profitCalculatorPreviousMonth(clock);
+        return ProfitCalculatorSettings.create(group, previousMonth, mirrorDB.readProfitCalculatorSettings(group, previousMonth));
+    }
+
+    public void saveProfitCalculatorSettings(ProfitCalculatorSettings.Request request) throws SQLException {
+        mirrorDB.saveProfitCalculatorSettings(request.change());
+    }
+
     /** Retained compatibility endpoint for the most recent rolling observation. */
     public Optional<ProductVisits> getProductVisits(UUID vendorId, String productCode)
             throws SQLException {

@@ -826,7 +826,8 @@ public class EmagMirrorDB implements ProductPerformanceSource {
         return database.readTX(db -> {
             var products = ProfitCalculatorTable.getCategoryProducts(db, vendorGroup, category, previousMonth);
             return new ProfitCalculatorTable.CategoryData(products, ProfitCalculatorFbeTariffTable.readTariffs(db),
-                    ProfitCalculatorTable.readReturnRates(db, products, previousMonth.plusMonths(1)));
+                    ProfitCalculatorTable.readReturnRates(db, products, previousMonth.plusMonths(1)),
+                    ProfitCalculatorSettingsTable.readCategorySettings(db, vendorGroup));
         });
     }
 
@@ -844,6 +845,18 @@ public class EmagMirrorDB implements ProductPerformanceSource {
     public void saveProfitCalculatorFbeTariffs(List<ProfitCalculatorFbeTariffTable.Change> changes) throws SQLException {
         database.writeTX(db -> {
             ProfitCalculatorFbeTariffTable.saveChanges(db, changes);
+            return true;
+        });
+    }
+
+    public ProfitCalculatorSettingsTable.Data readProfitCalculatorSettings(String vendorGroup, YearMonth previousMonth)
+            throws SQLException {
+        return database.readTX(db -> ProfitCalculatorSettingsTable.read(db, vendorGroup, previousMonth));
+    }
+
+    public void saveProfitCalculatorSettings(ProfitCalculatorSettingsTable.Change change) throws SQLException {
+        database.writeTX(db -> {
+            ProfitCalculatorSettingsTable.save(db, change);
             return true;
         });
     }

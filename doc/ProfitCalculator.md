@@ -8,22 +8,98 @@ requests never fetch spreadsheet values.
 
 Use the normal formula for a row consistently across all products. Ignore
 individual calculator cells that have been replaced with manually entered
-values. This policy also applies to future rows such as 54. Product master data
-already stored in the database remains a valid input, including fields that
-were originally maintained manually in the product source spreadsheet.
+values, including row 54. Product master data already stored in the database
+remains a valid input, including fields originally maintained manually in the
+product source spreadsheet.
 
-The dedicated manual-input section (rows 40–45) is different: those cells are
-intentional overrides and are implemented as editable, shared database values.
-Ignoring a value pasted over a formula does not mean ignoring these inputs.
+The dedicated inputs in rows 40–45 are editable, shared database overrides.
 
 The By Category selectors use `vendor.vendor_group` and `product.category`.
 Product columns show active products first, followed by retracted products.
 Within each group, the existing natural product-name order and product-code
 tie-breaker apply, consistently on category loads and override previews.
-Products remain visible when retracted or when their PNK is missing, but the
-calculated/reference output rows are blank for those products. Their overrides
-remain editable and stored. Missing source values remain blank: no default
-price, tax regime, VAT status, cost, or exchange rate is invented.
+Products remain visible when retracted or when their PNK is missing. Their
+computed and reference rows stay blank, and their overrides remain editable.
+Missing input values stay blank.
+
+## Date Calcul settings
+
+**Profit Calculator → Date Calcul** (`/private/profit-date-calcul`) has four
+editors. Each vendor group has current shared values and its own revision for
+each section. Saving one section commits its inputs and reloads the computed
+values. A stale revision returns HTTP 409 and preserves the draft for review.
+Revert reloads the saved section. A failed reload after a confirmed save can be
+retried independently.
+
+| Section | Stored inputs | Read-only calculations |
+| --- | --- | --- |
+| Date generale | `Date Calcul!C4:C7` and `C9:C13` | C8, previous-month units |
+| Costuri generale (fără TVA) | `C21:C24` and `C28` | C25 accounting, C26 employee and C27 miscellaneous cost per unit |
+| Angajați general | Named monthly amounts from `F4:G38` | G39, sum of known monthly amounts |
+| Diverse costuri fără TVA | Named monthly amounts from `L4:M38` | M39, sum of known monthly amounts |
+
+Migration 52 creates `profit_calculator_general_settings`,
+`profit_calculator_general_costs`, `profit_calculator_employee_costs`, and
+`profit_calculator_misc_costs`. Literal inserts seed each group from its own
+workbook, read on 2026-11-21. The seeds use the evaluated amount for arithmetic
+entered directly into a cell, including C7's `365/12` and allocated employee,
+accounting or miscellaneous costs. Named entries with blank amounts retain
+null amounts. An empty list totals zero. The four sources are
+[J](https://docs.google.com/spreadsheets/d/1gJ3kSwji42pK3fOJq4y0GCnqU_YBpEYN8kusOQ_Ae6w/edit#gid=1890550797),
+[K](https://docs.google.com/spreadsheets/d/18qtL7f778Z-A3W-i7JBDC2GxF33Jzvzd4OhpgpwvYtQ/edit#gid=1890550797),
+[S](https://docs.google.com/spreadsheets/d/16VK84fOII89oJBZur5tfH-HhOvLGzTrb-7UMVlzm5L0/edit#gid=1890550797) and
+[Z](https://docs.google.com/spreadsheets/d/101n77SJjDEJqW4ko6IJh2reC8XMho8ou4yausmcuUXY/edit#gid=1890550797).
+
+`GET /app/profitCalculatorSettings?vendorGroup=…` returns the inputs, revisions
+and calculations from one database snapshot. `POST /app/profitCalculatorSettings`
+saves one section with its `expectedRevision`, returning `{"saved":true}`
+after commit. The app accepts decimal strings or null and stores percentage
+inputs as fractions. Both routes use the existing application-user role.
+
+### Date Calcul previous-month units and costs
+
+C8 selects the previous month's product-unit total from `T. Sales/M. (H.)`.
+The local sales tab selects product PNKs through the workbook's company name
+and uses monthly quantities from the central order history. The underlying
+monthly summaries sum raw order-line quantities by PNK and exclude
+`Stornata`. [Central order history](https://docs.google.com/spreadsheets/d/1bX_k1aaMEKwMCxxF0mrMjTA4I7RnA2WJb8DBGWwisUE/edit#gid=1248624193)
+
+The server uses the product owner's `vendor_group` and sums finalized status-4
+quantities for exact, nonblank PNKs in that catalog across all selling
+accounts. All categories and withdrawn products are eligible for historical
+sales. The group-wide query covers the previous calendar month in
+Europe/Bucharest and includes every qualifying line. It uses the full catalog
+in place of the workbook's fixed row-98 cutoff. Category row 35 applies the
+selling-account-group rule documented below.
+
+No qualifying sales gives a known zero. A null quantity on any qualifying line
+makes the total unknown. C25 is monthly accounting cost divided by units. C26
+and C27 divide the employee and miscellaneous monthly totals by units. These
+per-unit amounts require a positive denominator and use `DECIMAL128` division.
+
+C29 remains unavailable pending a lending data source. `Cent. Creditari`
+imports group totals. The S ledger's monthly interest sum uses outstanding
+principal after repayments multiplied by the annual rate divided by 12. Loans
+and repayments are entered in the lending workbooks. The J aggregate currently
+references elapsed months, which needs confirmation before implementing loan
+calculations. [Creditari overview](https://docs.google.com/spreadsheets/d/1v-ibVBiFMDPGz_NZmNxyu8GIWMHfxCnaN3yyPyDzltM/edit#gid=70362246)
+
+### Date Calcul inputs in By Category
+
+Category loads and override previews use the saved VAT and warehouse preparation
+values from the selected group in the same snapshot as the other inputs. The
+usual PNK and retracted guards apply. Money is shown in RON to two decimal places.
+
+| Row | Calculation |
+| --- | --- |
+| 56 | Saved warehouse preparation cost from C28 |
+| 83 | FBE processing fee (57) × refusal rate (54) × (1 + VAT from C9). A known 0% refusal rate gives zero. |
+| 84 | A known 0% return rate (53) gives zero. The positive-rate formula still needs the full import and operating cost inputs. |
+| 87 | `eMAG` uses FBE processing fee × (1 + VAT). `Minulescu` uses row 56 directly. |
+
+Missing required inputs leave the result blank. The group VAT setting supplies
+these expense formulas regardless of the product's VAT-payer flag. Editing
+fulfillment clears the prior row-87 result while the preview is pending.
 
 ## Implemented rows
 
@@ -246,8 +322,8 @@ remain open.
 Zero monetary amounts and zero commission are valid overrides. Clearing a
 field means no override; it does not mean zero. Reference rows 48, 71, and 72
 are never changed by overrides. An explicit `Minulescu` choice in row 45 gives
-zero storage cost in row 88. Other fulfillment charges remain deferred because
-the necessary tariffs have not been implemented.
+zero storage cost in row 88. Row 87 uses the selected fulfillment source to
+choose between the saved warehouse cost and the FBE processing fee with VAT.
 
 Edits preview the results without writing to the database. Unsaved edits stay
 with their product when switching categories or vendor groups. Review changes
@@ -492,7 +568,7 @@ The author answers supplied on **2026-11-16** establish these intended rules:
 
 1. **Previous-month units are gross**, without `Stornata` records. Use the
    finalized quantities as described above, without net return/storno deductions.
-2. **Sales accounts are restricted to the selected vendor group.** This is
+2. **Row 35 sales accounts are restricted to the selected vendor group.** This is
    an explicit account filter, replacing the export's product-name-prefix
    partitioning; the same PNK's sales outside the selected group are excluded.
 3. **Commission is per product.** Use that product's `emag_commission` unless
@@ -512,6 +588,8 @@ calculator cells remains an agreed policy, not an open question.
    Are these settings shared across groups/companies or specific to a workbook
    or company? Where should the server obtain them, and should a historical
    calculation use the settings valid in that month or the latest settings?
+   Date Calcul now uses one editable set of current values per vendor group.
+   Its historical application and long-term ownership are open.
 5. **Authoritative import-cost records.** Where are per-import purchase,
    freight, import VAT, customs costs, quantities, transport details, and
    arrival dates maintained outside the linked spreadsheets? Which records

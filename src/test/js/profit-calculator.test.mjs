@@ -54,6 +54,8 @@ const metricCell = (page, sourceRow, productIndex = 0) => page.body.children
   .find(row => Number(row.dataset.sourceRow) === sourceRow).children[productIndex + 1];
 const returnRateCells = (page, productIndex = 0) => [53, 54]
   .map(row => metricCell(page, row, productIndex).textContent);
+const preparationCostCells = (page, productIndex = 0) => [56, 83, 84, 87]
+  .map(row => metricCell(page, row, productIndex).textContent);
 const fbeFeeCells = (page, productIndex = 0) => [57, 58, 59, 60]
   .map(row => metricCell(page, row, productIndex).textContent);
 const assertCategorySummary = (page, category = '') => assert.deepEqual(
@@ -374,6 +376,22 @@ test('FBE reference fees display RON amounts and preserve zero, partial unknowns
   for (const row of [61, 83, 84, 85, 87]) assert.equal(metricCell(page, row).textContent, '');
 });
 
+test('warehouse, parcel preparation, refusal and defective costs use the existing amount format', async t => {
+  const calculated = {warehousePreparationCostRon: 2.005, refusalCostRon: 0.1234,
+    defectiveProductCostRon: 0, parcelPreparationCostRon: 4.84};
+  const page = await openPage(t, {categoryRequest: async () => ({products: [
+    {...product('known'), calculated},
+    {...product('unknown'), calculated: {warehousePreparationCostRon: 0, refusalCostRon: null,
+      defectiveProductCostRon: null, parcelPreparationCostRon: null}},
+    {...product('retracted', 'Retracted', true), calculated},
+    {...product('no-pnk'), pnk: null, calculated}
+  ]})});
+  assert.deepEqual(preparationCostCells(page), ['2.01', '0.12', '0.00', '4.84']);
+  assert.deepEqual(preparationCostCells(page, 1), ['0.00', '', '', '']);
+  assert.deepEqual(preparationCostCells(page, 2), ['', '', '', '']);
+  assert.deepEqual(preparationCostCells(page, 3), ['', '', '', '']);
+});
+
 test('monthly gross units display as integers while zero, unknown and ineligible products remain blank', async t => {
   const page = await openPage(t, {categoryRequest: async () => ({products: [
     {...product('known'), calculated: {previousMonthGrossUnits: 1234}},
@@ -546,7 +564,7 @@ test('previews use canonical strings and update results without replacing the fo
   assertCategorySummary(page, 'Hair trimmers');
 });
 
-test('return rates and FBE fees survive override edits and accept only the latest preview references', async t => {
+test('override-independent costs and rates retain the latest successful preview values', async t => {
   t.mock.timers.enable({apis: ['setTimeout']});
   const first = deferred();
   const second = deferred();
@@ -554,12 +572,14 @@ test('return rates and FBE fees survive override edits and accept only the lates
   const fees = {fbeProcessingCostRon: 3.5, fbeReturnCostRon: 1.8,
     fbeWithdrawalCostRon: 2, fbeDisposalCostRon: 2};
   const item = {...product('one'), overrideRevision: 1, overrides: {fulfillmentSource: 'eMAG'},
-    calculated: {...fees, effectiveSalePriceRon: 200, returnRate: 0.06, refusalRate: 0.035}};
+    calculated: {...fees, effectiveSalePriceRon: 200, returnRate: 0.06, refusalRate: 0.035,
+      warehousePreparationCostRon: 2, refusalCostRon: 0.15, parcelPreparationCostRon: 4.24}};
   let attempts = 0;
   const page = await openPage(t, {categoryRequest: async () => ({products: [item]}),
     previewRequest: () => [first, second, third][attempts++].promise});
   edit(page, 45, 'Minulescu');
   assert.deepEqual(returnRateCells(page), ['6%', '3.5%']);
+  assert.deepEqual(preparationCostCells(page), ['2.00', '0.15', '', '']);
   assert.deepEqual(fbeFeeCells(page), ['3.50', '1.80', '2.00', '2.00'],
     'Reference FBE fees do not depend on the selected fulfillment source');
   await advancePreview(t);
@@ -570,18 +590,22 @@ test('return rates and FBE fees survive override edits and accept only the lates
   await advancePreview(t);
   second.resolve({products: [{...item, overrides: {salePriceRon: '99', fulfillmentSource: 'Minulescu'},
     calculated: {effectiveSalePriceRon: 99, returnRate: null, refusalRate: 0,
-      fbeProcessingCostRon: 4.25, fbeReturnCostRon: 2.11, fbeWithdrawalCostRon: 0, fbeDisposalCostRon: null}}]});
+      fbeProcessingCostRon: 4.25, fbeReturnCostRon: 2.11, fbeWithdrawalCostRon: 0, fbeDisposalCostRon: null,
+      warehousePreparationCostRon: 2.5, refusalCostRon: 0, parcelPreparationCostRon: 2.5}}]});
   await setImmediate();
   assert.deepEqual(returnRateCells(page), ['', '0%']);
+  assert.deepEqual(preparationCostCells(page), ['2.50', '0.00', '', '2.50']);
   assert.deepEqual(fbeFeeCells(page), ['4.25', '2.11', '0.00', '']);
   first.resolve({products: [item]});
   await setImmediate();
   assert.deepEqual(returnRateCells(page), ['', '0%']);
+  assert.deepEqual(preparationCostCells(page), ['2.50', '0.00', '', '2.50']);
   assert.deepEqual(fbeFeeCells(page), ['4.25', '2.11', '0.00', ''],
     'An older response cannot restore outdated fees');
   assert.equal(metricCell(page, 75).textContent, '99.00');
   edit(page, 40, '');
   assert.deepEqual(returnRateCells(page), ['', '0%']);
+  assert.deepEqual(preparationCostCells(page), ['2.50', '0.00', '', '']);
   assert.deepEqual(fbeFeeCells(page), ['4.25', '2.11', '0.00', ''],
     'Later edits retain the latest known tariffs while a new preview is pending');
   assert.equal(metricCell(page, 75).textContent, '200.00',
@@ -592,6 +616,7 @@ test('return rates and FBE fees survive override edits and accept only the lates
   third.reject(new Error('Preview unavailable'));
   await setImmediate();
   assert.deepEqual(returnRateCells(page), ['', '0%']);
+  assert.deepEqual(preparationCostCells(page), ['2.50', '0.00', '', '']);
   assert.deepEqual(fbeFeeCells(page), ['4.25', '2.11', '0.00', ''],
     'A failed subsequent preview does not restore older GET tariff values');
 });
@@ -630,35 +655,42 @@ test('clearing commission restores the server product default and retains monthl
   assert.equal(metricCell(page, 35).textContent, '7');
 });
 
-test('fulfillment edits clear the saved storage cost through pending, failed and invalid previews', async t => {
+test('fulfillment edits clear saved preparation and storage costs through pending, failed and invalid previews', async t => {
   t.mock.timers.enable({apis: ['setTimeout']});
   const pending = deferred();
   const item = {...product('one'), overrideRevision: 2, overrides: {fulfillmentSource: 'Minulescu'},
-    calculated: {storageCostRon: 0, googleAdsCostRon: 0}};
+    calculated: {parcelPreparationCostRon: 2, storageCostRon: 0, googleAdsCostRon: 0}};
   let previews = 0;
   const page = await openPage(t, {categoryRequest: async () => ({products: [item]}), previewRequest: body => {
     assert.equal(body.changes[0].values.fulfillmentSource, previews++ === 0 ? 'eMAG' : null);
-    return previews === 1 ? pending.promise : {products: [{...item, calculated: {storageCostRon: null}}]};
+    return previews === 1 ? pending.promise
+      : {products: [{...item, calculated: {parcelPreparationCostRon: null, storageCostRon: null}}]};
   }});
   assert.equal(metricCell(page, 88).textContent, '0.00');
+  assert.equal(metricCell(page, 87).textContent, '2.00');
   edit(page, 45, 'eMAG');
   assert.equal(metricCell(page, 88).textContent, '', 'Saved zero is stale as soon as fulfillment changes');
+  assert.equal(metricCell(page, 87).textContent, '');
   assert.equal(metricCell(page, 63).textContent, '0.00', 'Unrelated results remain available');
   await advancePreview(t);
   assert.equal(metricCell(page, 88).textContent, '');
   pending.reject(new Error('Preview unavailable'));
   await setImmediate();
   assert.equal(metricCell(page, 88).textContent, '');
+  assert.equal(metricCell(page, 87).textContent, '');
   assert.match(page.elements.get('profitOverrideStatus').textContent, /could not preview/i);
   edit(page, 45, '');
   await advancePreview(t);
   assert.equal(metricCell(page, 88).textContent, '');
+  assert.equal(metricCell(page, 87).textContent, '');
   edit(page, 45, 'Minulescu');
   assert.equal(metricCell(page, 88).textContent, '0.00', 'Restoring the saved selection restores its known result');
+  assert.equal(metricCell(page, 87).textContent, '2.00');
   const invalid = edit(page, 45, 'Unknown warehouse');
   await advancePreview(t);
   assert.ok(invalid.validationMessage);
   assert.equal(metricCell(page, 88).textContent, '');
+  assert.equal(metricCell(page, 87).textContent, '');
   assert.equal(page.posts.length, 2, 'Invalid fulfillment sends no preview request');
 });
 

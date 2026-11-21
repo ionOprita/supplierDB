@@ -2,8 +2,8 @@ import {fetchJSON} from './common.js';
 import {renderCategoryTable} from './profit-calculator-table.js';
 import {OverrideDrafts} from './profit-calculator-overrides.js';
 
-const calculatedReferenceFields = ['returnRate', 'refusalRate', 'fbeProcessingCostRon', 'fbeReturnCostRon',
-  'fbeWithdrawalCostRon', 'fbeDisposalCostRon'];
+const calculatedReferenceFields = ['returnRate', 'refusalRate', 'warehousePreparationCostRon', 'refusalCostRon',
+  'defectiveProductCostRon', 'fbeProcessingCostRon', 'fbeReturnCostRon', 'fbeWithdrawalCostRon', 'fbeDisposalCostRon'];
 
 function populateSelect(select, values, emptyLabel) {
   select.innerHTML = '';
