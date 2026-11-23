@@ -549,10 +549,16 @@ Stored carton dimensions are not freight charges;
 `product.import_tax` is a rate, not per-unit customs cost; published review
 `review_price` metadata is a selling price, not the cost of obtaining a review.
 Advertising spend is stored and the gross monthly sales denominator is now
-defined. Row 62 still needs its own verified campaign allocation, period and
-adjustment-factor mapping before implementation; do not substitute ad-attributed
-units. Spreadsheet tax, inflation, interest, or
+defined. Row 62 still needs verified report-to-database mapping and coverage
+before implementation; do not substitute ad-attributed units. Spreadsheet tax, inflation, interest, or
 adjustment constants must not silently become hardcoded database defaults.
+
+On 2026-11-23, read-only tracing established the row-62 source formula and
+the C13 cancellation adjustment; see `ProfitCalculator.md` under **Row 62 —
+eMAG advertising cost investigation**. Mapping the manually imported report
+to stored daily snapshots, its account scope, and completeness remains
+unverified. No live database coverage check was performed and row 62 remains
+blank.
 
 `Calc. Expunere & Profit` calculations remain future work after the category
 building blocks are understood. No profit totals or missing cost rows should

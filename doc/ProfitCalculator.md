@@ -314,6 +314,31 @@ edits, without replacing saved override/revision or other calculation baselines.
 This step does not add VAT, storage costs or incomplete profit totals; questions 4–7
 remain open.
 
+## Row 62 — eMAG advertising cost investigation
+
+Read-only inspection on 2026-11-23 traced the normal Actual formula to the
+`eMAG ads` helper in [S. eMAG ads](https://docs.google.com/spreadsheets/d/1lTej6Or4ozRAZwpwA8h7PJLQSZQjhR6-lxGg8oa_8do/edit).
+For a PNK, the helper sums `Introd. Date` column O (`Spent`) for rows whose
+campaign name in column F matches the PNK as a regular expression and whose
+start-date month in column B is the maximum month in the imported report.
+It divides by the previous-calendar-month sales lookup, then the calculator
+multiplies by `1 + Date Calcul!C13` (`Stornari neluate in calcul`). The latest
+report month and previous sales month need not be the same. The helper returns
+zero when its spend or sales lookup is blank; a zero denominator produces an
+error that the calculator's outer `IFERROR` leaves blank.
+
+The database stores daily campaign and adset summaries, but no verified
+equivalence has been established between their monthly sum and the manually
+imported report's detail rows, including its account scope and completeness.
+Stored campaign dates are only a coverage proxy, as described in
+`ProductPerformance.md`; a missing date does not establish zero spend. The
+existing product-performance attribution also differs from this formula: it
+prioritizes adset names and uses token matching and active-status filters.
+Actual database coverage was not verified in this investigation. Row 62
+therefore remains blank until the report-to-database mapping and completeness
+can be established; neither the helper's missing-input zero nor ad-attributed
+units are substituted for missing evidence.
+
 ## Shared manual inputs (rows 40–45)
 
 | Row | Input | Unit and validation | Blank meaning |
