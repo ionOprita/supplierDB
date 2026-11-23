@@ -861,6 +861,18 @@ public class EmagMirrorDB implements ProductPerformanceSource {
         });
     }
 
+    public ProfitCalculatorSettingsTable.SharedSettings readProfitCalculatorSharedSettings() throws SQLException {
+        return database.readTX(ProfitCalculatorSettingsTable::readSharedSettings);
+    }
+
+    public void saveProfitCalculatorSharedSettings(long expectedRevision, BigDecimal turnoverTaxVatRate)
+            throws SQLException {
+        database.writeTX(db -> {
+            ProfitCalculatorSettingsTable.saveSharedSettings(db, expectedRevision, turnoverTaxVatRate);
+            return true;
+        });
+    }
+
     public record VendorGroupCategory(String vendorGroup, String category) {
     }
 

@@ -102,10 +102,22 @@ public final class ProfitCalculatorSettingsTable {
     public record CategorySettings(BigDecimal vatRate, BigDecimal warehousePreparationCostRon,
                                    BigDecimal geniusEasyboxRate, BigDecimal geniusCostRon,
                                    BigDecimal accountingCostPerUnitRon, BigDecimal employeeCostPerUnitRon,
-                                   BigDecimal miscellaneousCostPerUnitRon) {
+                                   BigDecimal miscellaneousCostPerUnitRon, BigDecimal monthlyCapitalRate,
+                                   BigDecimal turnoverTaxVatRate, BigDecimal courierCostRon, BigDecimal incomeTaxRate) {
+        public CategorySettings(BigDecimal vatRate, BigDecimal warehousePreparationCostRon,
+                                BigDecimal geniusEasyboxRate, BigDecimal geniusCostRon,
+                                BigDecimal accountingCostPerUnitRon, BigDecimal employeeCostPerUnitRon,
+                                BigDecimal miscellaneousCostPerUnitRon) {
+            this(vatRate, warehousePreparationCostRon, geniusEasyboxRate, geniusCostRon, accountingCostPerUnitRon,
+                    employeeCostPerUnitRon, miscellaneousCostPerUnitRon, null, null, null, null);
+        }
+
         public static CategorySettings empty() {
             return new CategorySettings(null, null, null, null, null, null, null);
         }
+    }
+
+    public record SharedSettings(long revision, BigDecimal turnoverTaxVatRate) {
     }
 
     public record Change(String vendorGroup, Section section, long expectedRevision,
@@ -135,7 +147,31 @@ public final class ProfitCalculatorSettingsTable {
         var costs = data.operatingCosts();
         return new CategorySettings(data.general().decimal("vatRate"), data.generalCosts().decimal("warehousePreparationCostRon"),
                 data.general().decimal("geniusEasyboxRate"), data.generalCosts().decimal("geniusCostRon"),
-                costs.accountingCostPerUnitRon(), costs.employeeCostPerUnitRon(), costs.miscellaneousCostPerUnitRon());
+                costs.accountingCostPerUnitRon(), costs.employeeCostPerUnitRon(), costs.miscellaneousCostPerUnitRon(),
+                data.general().decimal("monthlyCapitalRate"), readSharedSettings(db).turnoverTaxVatRate(),
+                data.generalCosts().decimal("courierCostRon"), data.general().decimal("incomeTaxRate"));
+    }
+
+    static SharedSettings readSharedSettings(Connection db) throws SQLException {
+        try (var statement = db.prepareStatement("""
+                SELECT revision, turnover_tax_vat_rate FROM profit_calculator_shared_settings WHERE id = 1
+                """); var row = statement.executeQuery()) {
+            if (!row.next()) throw new SQLException("Shared Date Calcul settings are missing.");
+            return new SharedSettings(row.getLong("revision"), row.getBigDecimal("turnover_tax_vat_rate"));
+        }
+    }
+
+    static void saveSharedSettings(Connection db, long expectedRevision, BigDecimal turnoverTaxVatRate)
+            throws SQLException {
+        try (var statement = db.prepareStatement("""
+                UPDATE profit_calculator_shared_settings
+                SET turnover_tax_vat_rate = ?, revision = revision + 1
+                WHERE id = 1 AND revision = ?
+                """)) {
+            statement.setBigDecimal(1, turnoverTaxVatRate);
+            statement.setLong(2, expectedRevision);
+            if (statement.executeUpdate() != 1) throw new ConflictException();
+        }
     }
 
     private static BigDecimal sum(List<NamedCost> items) {

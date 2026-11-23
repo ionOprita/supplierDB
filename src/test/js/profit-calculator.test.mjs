@@ -582,7 +582,8 @@ test('override-independent costs and rates retain the latest successful preview 
   const item = {...product('one'), overrideRevision: 1, overrides: {fulfillmentSource: 'eMAG'},
     calculated: {...fees, effectiveSalePriceRon: 200, returnRate: 0.06, refusalRate: 0.035,
       warehousePreparationCostRon: 2, refusalCostRon: 0.15, parcelPreparationCostRon: 4.24,
-      geniusCostRon: 3.39, accountingCostPerUnitRon: 1.5, employeeCostPerUnitRon: 1.75, miscellaneousCostPerUnitRon: 1}};
+      geniusCostRon: 3.39, accountingCostPerUnitRon: 1.5, employeeCostPerUnitRon: 1.75, miscellaneousCostPerUnitRon: 1,
+      transitFinancingCostRon: null, postDeliveryFinancingCostRon: null}};
   let attempts = 0;
   const page = await openPage(t, {categoryRequest: async () => ({products: [item]}),
     previewRequest: () => [first, second, third][attempts++].promise});
@@ -590,6 +591,8 @@ test('override-independent costs and rates retain the latest successful preview 
   assert.deepEqual(returnRateCells(page), ['6%', '3.5%']);
   assert.deepEqual(preparationCostCells(page), ['2.00', '0.15', '', '']);
   assert.deepEqual(groupCostCells(page), ['3.39', '1.50', '1.75', '1.00']);
+  assert.equal(metricCell(page, 81).textContent, '');
+  assert.equal(metricCell(page, 82).textContent, '');
   assert.deepEqual(fbeFeeCells(page), ['3.50', '1.80', '2.00', '2.00'],
     'Reference FBE fees do not depend on the selected fulfillment source');
   await advancePreview(t);
@@ -602,11 +605,14 @@ test('override-independent costs and rates retain the latest successful preview 
     calculated: {effectiveSalePriceRon: 99, returnRate: null, refusalRate: 0,
       fbeProcessingCostRon: 4.25, fbeReturnCostRon: 2.11, fbeWithdrawalCostRon: 0, fbeDisposalCostRon: null,
       warehousePreparationCostRon: 2.5, refusalCostRon: 0, parcelPreparationCostRon: 2.5,
-      geniusCostRon: 3.5, accountingCostPerUnitRon: null, employeeCostPerUnitRon: 0, miscellaneousCostPerUnitRon: 1.1}}]});
+      geniusCostRon: 3.5, accountingCostPerUnitRon: null, employeeCostPerUnitRon: 0, miscellaneousCostPerUnitRon: 1.1,
+      transitFinancingCostRon: 0, postDeliveryFinancingCostRon: 0}}]});
   await setImmediate();
   assert.deepEqual(returnRateCells(page), ['', '0%']);
   assert.deepEqual(preparationCostCells(page), ['2.50', '0.00', '', '2.50']);
   assert.deepEqual(groupCostCells(page), ['3.50', '', '0.00', '1.10']);
+  assert.equal(metricCell(page, 81).textContent, '0.00');
+  assert.equal(metricCell(page, 82).textContent, '0.00');
   assert.deepEqual(fbeFeeCells(page), ['4.25', '2.11', '0.00', '']);
   first.resolve({products: [item]});
   await setImmediate();
@@ -630,8 +636,40 @@ test('override-independent costs and rates retain the latest successful preview 
   assert.deepEqual(returnRateCells(page), ['', '0%']);
   assert.deepEqual(preparationCostCells(page), ['2.50', '0.00', '', '']);
   assert.deepEqual(groupCostCells(page), ['3.50', '', '0.00', '1.10']);
+  assert.equal(metricCell(page, 81).textContent, '0.00');
+  assert.equal(metricCell(page, 82).textContent, '0.00');
   assert.deepEqual(fbeFeeCells(page), ['4.25', '2.11', '0.00', ''],
     'A failed subsequent preview does not restore older GET tariff values');
+});
+
+test('draft sale prices mask only Venit turnover tax and never replace its saved baseline', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const venit = {...product('venit'), incomeProfitTax: ' Venit ', calculated: {turnoverTaxCostRon: 3.39}};
+  const profit = {...product('profit'), incomeProfitTax: 'Profit', calculated: {turnoverTaxCostRon: 0}};
+  const delayed = deferred();
+  const failed = deferred();
+  const updated = {...venit, calculated: {turnoverTaxCostRon: 6.39}};
+  let attempts = 0;
+  const page = await openPage(t, {categoryRequest: async () => ({products: [venit, profit]}),
+    previewRequest: () => [delayed.promise, failed.promise, Promise.resolve({products: [updated, profit]})][attempts++]});
+  assert.equal(metricCell(page, 100).textContent, '3.39');
+  edit(page, 40, '200');
+  assert.equal(metricCell(page, 100).textContent, '');
+  await advancePreview(t);
+  edit(page, 40, '123', 1);
+  assert.equal(metricCell(page, 100, 1).textContent, '0.00');
+  await advancePreview(t);
+  failed.reject(new Error('Preview unavailable'));
+  await setImmediate();
+  delayed.resolve({products: [updated, profit]});
+  await setImmediate();
+  assert.equal(metricCell(page, 100).textContent, '');
+  assert.equal(metricCell(page, 100, 1).textContent, '0.00');
+  edit(page, 40, '242');
+  await advancePreview(t);
+  assert.equal(metricCell(page, 100).textContent, '6.39');
+  edit(page, 40, '');
+  assert.equal(metricCell(page, 100).textContent, '3.39');
 });
 
 test('clearing a saved override sends null and restores the server reference-price fallback', async t => {

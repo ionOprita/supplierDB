@@ -331,6 +331,56 @@ class ProfitCalculatorCategoryTest {
     }
 
     @Test
+    void distinguishesZeroFinancingAndTurnoverTaxFromUnknownInputs() {
+        var price = new BigDecimal("121");
+        var inputs = List.of(
+                new CategoryProduct("venit", "S. 1", "VENIT", false, price, " venit ", false),
+                new CategoryProduct("missing-price", "S. 2", "NOPRICE", false, null, "Venit", true),
+                new CategoryProduct("profit", "S. 3", "PROFIT", false, null, "Profit", true),
+                new CategoryProduct("unknown-regime", "S. 4", "UNKNOWN", false, price, "other", false),
+                new CategoryProduct("no-pnk", "S. 5", " ", false, price, "Venit", true),
+                new CategoryProduct("retracted", "S. 6", "RETRACTED", true, price, "Venit", false));
+        var data = new CategoryData(inputs, List.of(), Map.of(),
+                taxAndFinancingSettings(new BigDecimal("0.00"), new BigDecimal("0.21"), new BigDecimal("13"),
+                        new BigDecimal("0.03")));
+        var products = ProfitCalculatorCategory.create("S", "Trimmers", data).products();
+        var expectedTax = Map.of("venit", new BigDecimal("3.39"), "profit", BigDecimal.ZERO);
+        for (var product : products) {
+            var values = product.calculated();
+            assertEquals(expectedTax.get(product.productCode()), values.turnoverTaxCostRon(), product.productCode());
+            var expectedFinancing = product.retracted() || product.pnk().isBlank() ? null : BigDecimal.ZERO;
+            assertEquals(expectedFinancing, values.transitFinancingCostRon(), product.productCode());
+            assertEquals(expectedFinancing, values.postDeliveryFinancingCostRon(), product.productCode());
+        }
+
+        var preview = ProfitCalculatorCategory.preview("S", "Trimmers", data, List.of(
+                new OverrideChange("venit", 0, Map.of("salePriceRon", "0"))));
+        assertEquals(new BigDecimal("0.39"), preview.products().getFirst().calculated().turnoverTaxCostRon());
+    }
+
+    @Test
+    void keepsFinancingAndVenitTaxBlankUntilTheirRequiredValuesAreAvailable() {
+        var product = new CategoryProduct("venit", "S. 1", "VENIT", false, BigDecimal.TEN, "Venit", true);
+        var positiveRate = new BigDecimal("0.04");
+        for (var settings : List.of(
+                taxAndFinancingSettings(null, null, BigDecimal.ZERO, BigDecimal.ZERO),
+                taxAndFinancingSettings(positiveRate, BigDecimal.ZERO, null, BigDecimal.ZERO),
+                taxAndFinancingSettings(positiveRate.negate(), BigDecimal.ZERO, BigDecimal.ZERO, null))) {
+            var data = new CategoryData(List.of(product), List.of(), Map.of(), settings);
+            var values = ProfitCalculatorCategory.create("S", "Trimmers", data).products().getFirst().calculated();
+            assertNull(values.transitFinancingCostRon());
+            assertNull(values.postDeliveryFinancingCostRon());
+            assertNull(values.turnoverTaxCostRon());
+        }
+    }
+
+    private static CategorySettings taxAndFinancingSettings(BigDecimal capital, BigDecimal sharedVat,
+                                                             BigDecimal courier, BigDecimal incomeTax) {
+        return new CategorySettings(new BigDecimal("0.09"), null, null, null, null, null, null,
+                capital, sharedVat, courier, incomeTax);
+    }
+
+    @Test
     void distinguishesZeroRatesAndFeesFromUnavailableInputsAndIneligibleProducts() {
         var emag = new Overrides(null, null, null, null, null, "eMAG");
         var source = measuredProduct("code", "PNK", false, emag,

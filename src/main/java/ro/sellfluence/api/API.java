@@ -217,6 +217,16 @@ public class API {
         mirrorDB.saveProfitCalculatorSettings(request.change());
     }
 
+    public ProfitCalculatorSharedSettings.Response getProfitCalculatorSharedSettings() throws SQLException {
+        var settings = mirrorDB.readProfitCalculatorSharedSettings();
+        var rate = settings.turnoverTaxVatRate();
+        return new ProfitCalculatorSharedSettings.Response(settings.revision(), rate == null ? null : rate.toPlainString());
+    }
+
+    public void saveProfitCalculatorSharedSettings(ProfitCalculatorSharedSettings.Request request) throws SQLException {
+        mirrorDB.saveProfitCalculatorSharedSettings(request.expectedRevision(), request.turnoverTaxVatRate());
+    }
+
     /** Retained compatibility endpoint for the most recent rolling observation. */
     public Optional<ProductVisits> getProductVisits(UUID vendorId, String productCode)
             throws SQLException {

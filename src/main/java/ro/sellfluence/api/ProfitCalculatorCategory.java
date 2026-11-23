@@ -1,6 +1,7 @@
 package ro.sellfluence.api;
 
 import ro.sellfluence.db.ProfitCalculatorFbeTariffTable.Tariff;
+import ro.sellfluence.db.ProfitCalculatorSettingsTable.CategorySettings;
 import ro.sellfluence.db.ProfitCalculatorTable.CategoryData;
 import ro.sellfluence.db.ProfitCalculatorTable.CategoryProduct;
 import ro.sellfluence.db.ProfitCalculatorTable.OverrideChange;
@@ -8,6 +9,7 @@ import ro.sellfluence.db.ProfitCalculatorTable.Overrides;
 import ro.sellfluence.db.ProfitCalculatorTable.ReturnRates;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -31,7 +33,8 @@ public final class ProfitCalculatorCategory {
                              BigDecimal warehousePreparationCostRon, BigDecimal refusalCostRon,
                              BigDecimal defectiveProductCostRon, BigDecimal parcelPreparationCostRon,
                              BigDecimal geniusCostRon, BigDecimal accountingCostPerUnitRon,
-                             BigDecimal employeeCostPerUnitRon, BigDecimal miscellaneousCostPerUnitRon) {
+                             BigDecimal employeeCostPerUnitRon, BigDecimal miscellaneousCostPerUnitRon,
+                             BigDecimal transitFinancingCostRon, BigDecimal postDeliveryFinancingCostRon) {
     }
 
     public record Product(String productCode, String name, String pnk, boolean retracted,
@@ -98,16 +101,18 @@ public final class ProfitCalculatorCategory {
         var purchase = eligible ? multiply(overrides.purchasePriceUsd(), overrides.usdRonRate()) : null;
         var transport = eligible ? multiply(overrides.transportPriceUsd(), overrides.usdRonRate()) : null;
         var regime = product.incomeProfitTax() == null ? null : product.incomeProfitTax().strip();
-        // Only independently known zero branches are available; their other branches remain unknown.
+        // Emit independently known zero costs even if unrelated inputs are missing.
         var advertising = eligible ? BigDecimal.ZERO : null;
         var storage = eligible && "Minulescu".equals(overrides.fulfillmentSource()) ? BigDecimal.ZERO : null;
-        var turnoverTax = eligible && "Profit".equalsIgnoreCase(regime) ? BigDecimal.ZERO : null;
         var vat = eligible && Boolean.FALSE.equals(product.vatPayer()) ? BigDecimal.ZERO : null;
         var profitTax = eligible && "Venit".equalsIgnoreCase(regime) ? BigDecimal.ZERO : null;
         var fbe = eligible ? ProfitCalculatorFbeCosts.calculate(product.productLengthMm(), product.productWidthMm(),
                 product.productHeightMm(), product.productWeightG(), data.tariffs()) : ProfitCalculatorFbeCosts.Costs.unknown();
         var rates = eligible ? data.returnRatesByPnk().getOrDefault(product.pnk(), UNKNOWN_RATES) : UNKNOWN_RATES;
         var settings = data.settings();
+        var turnoverTax = eligible ? turnoverTax(regime, price, settings) : null;
+        var capitalRate = settings.monthlyCapitalRate();
+        var financingCost = eligible && capitalRate != null && capitalRate.signum() == 0 ? BigDecimal.ZERO : null;
         var vatRate = settings.vatRate();
         var vatMultiplier = vatRate == null ? null : BigDecimal.ONE.add(vatRate);
         var warehousePreparation = eligible ? settings.warehousePreparationCostRon() : null;
@@ -134,7 +139,16 @@ public final class ProfitCalculatorCategory {
                         rates.returnRate(), refusalRate, warehousePreparation, refusalCost,
                         defectiveProductCost, parcelPreparation, geniusCost,
                         eligible ? settings.accountingCostPerUnitRon() : null,
-                        eligible ? settings.employeeCostPerUnitRon() : null, miscellaneousCost));
+                        eligible ? settings.employeeCostPerUnitRon() : null, miscellaneousCost,
+                        financingCost, financingCost));
+    }
+
+    private static BigDecimal turnoverTax(String regime, BigDecimal price, CategorySettings settings) {
+        if ("Profit".equalsIgnoreCase(regime)) return BigDecimal.ZERO;
+        if (!"Venit".equalsIgnoreCase(regime) || price == null || settings.turnoverTaxVatRate() == null
+                || settings.courierCostRon() == null || settings.incomeTaxRate() == null) return null;
+        var netPrice = price.divide(BigDecimal.ONE.add(settings.turnoverTaxVatRate()), MathContext.DECIMAL128);
+        return netPrice.add(settings.courierCostRon()).multiply(settings.incomeTaxRate());
     }
 
     private static Overrides overrides(CategoryProduct product) {

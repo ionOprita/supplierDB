@@ -11,6 +11,7 @@ import ro.sellfluence.api.ProfitCalculatorCategory;
 import ro.sellfluence.api.ProfitCalculatorFbeTariffs;
 import ro.sellfluence.api.ProfitCalculatorOverrides;
 import ro.sellfluence.api.ProfitCalculatorSettings;
+import ro.sellfluence.api.ProfitCalculatorSharedSettings;
 import ro.sellfluence.db.ProfitCalculatorFbeTariffTable.Change;
 import ro.sellfluence.db.ProfitCalculatorSettingsTable.ConflictException;
 import ro.sellfluence.db.ProfitCalculatorTable.OverrideChange;
@@ -26,6 +27,7 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -388,6 +390,53 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
         assertEquals(loaded.accountingCostPerUnitRon(), preview.accountingCostPerUnitRon());
         assertEquals(loaded.employeeCostPerUnitRon(), preview.employeeCostPerUnitRon());
         assertEquals(loaded.miscellaneousCostPerUnitRon(), preview.miscellaneousCostPerUnitRon());
+    }
+
+    @Test
+    void sharedVatAppliesAcrossGroupsAndPricePreviewsWithIndependentGroupSettings() throws Exception {
+        executeFixture("""
+                UPDATE product SET emag_sale_price_ron = 121, income_profit_tax = 'Venit' WHERE product_code = 'active';
+                INSERT INTO product (product_code, name, emag_pnk, vendor, category, retracted,
+                                     emag_sale_price_ron, income_profit_tax)
+                VALUES ('k-product', 'K. 1 - Product', 'K-PRODUCT', '00000000-0000-0000-0000-000000000004',
+                        'Trimmers', false, 121, 'Venit');
+                UPDATE profit_calculator_general_settings SET vat_rate = 0.09, income_tax_rate = 0.05,
+                    monthly_capital_rate = 0.01 WHERE vendor_group = 'K';
+                """);
+        assertEquals(new ProfitCalculatorSharedSettings.Response(1, "0.21"), api.getProfitCalculatorSharedSettings());
+        var s = read().products().getFirst().calculated();
+        var k = read("K").products().getFirst().calculated();
+        amount("3.39", s.turnoverTaxCostRon());
+        amount("5.55", k.turnoverTaxCostRon());
+        amount("0", s.transitFinancingCostRon());
+        amount("0", s.postDeliveryFinancingCostRon());
+        assertNull(k.transitFinancingCostRon());
+        assertNull(k.postDeliveryFinancingCostRon());
+        amount("3.052", k.geniusCostRon());
+
+        var update = new ProfitCalculatorSharedSettings.Request(1, BigDecimal.ZERO);
+        api.saveProfitCalculatorSharedSettings(update);
+        assertThrows(ConflictException.class, () -> api.saveProfitCalculatorSharedSettings(update));
+        SetupDB.setupAndUpdateDB(database);
+        assertEquals(new ProfitCalculatorSharedSettings.Response(2, "0"), api.getProfitCalculatorSharedSettings());
+        amount("4.02", read().products().getFirst().calculated().turnoverTaxCostRon());
+        amount("6.60", read("K").products().getFirst().calculated().turnoverTaxCostRon());
+        amount("3.052", read("K").products().getFirst().calculated().geniusCostRon());
+
+        var change = new ProfitCalculatorOverrides.Request("S", "Trimmers", List.of(
+                new OverrideChange("active", 0, Map.of("salePriceRon", "242"))));
+        amount("7.65", preview(change).products().getFirst().calculated().turnoverTaxCostRon());
+        amount("4.02", read().products().getFirst().calculated().turnoverTaxCostRon());
+        api.saveProfitCalculatorOverrides(change);
+        var clearPrice = new ProfitCalculatorOverrides.Request("S", "Trimmers", List.of(
+                new OverrideChange("active", 1, Collections.singletonMap("salePriceRon", null))));
+        amount("4.02", preview(clearPrice).products().getFirst().calculated().turnoverTaxCostRon());
+        amount("7.65", read().products().getFirst().calculated().turnoverTaxCostRon());
+
+        api.saveProfitCalculatorSharedSettings(new ProfitCalculatorSharedSettings.Request(2, null));
+        assertEquals(new ProfitCalculatorSharedSettings.Response(3, null), api.getProfitCalculatorSharedSettings());
+        assertNull(preview(clearPrice).products().getFirst().calculated().turnoverTaxCostRon());
+        assertNull(read("K").products().getFirst().calculated().turnoverTaxCostRon());
     }
 
     private void executeFixture(String sql) throws SQLException {

@@ -4,7 +4,8 @@ import {OverrideDrafts} from './profit-calculator-overrides.js';
 
 const calculatedReferenceFields = ['returnRate', 'refusalRate', 'warehousePreparationCostRon', 'refusalCostRon',
   'defectiveProductCostRon', 'fbeProcessingCostRon', 'fbeReturnCostRon', 'fbeWithdrawalCostRon', 'fbeDisposalCostRon',
-  'geniusCostRon', 'accountingCostPerUnitRon', 'employeeCostPerUnitRon', 'miscellaneousCostPerUnitRon'];
+  'geniusCostRon', 'accountingCostPerUnitRon', 'employeeCostPerUnitRon', 'miscellaneousCostPerUnitRon',
+  'transitFinancingCostRon', 'postDeliveryFinancingCostRon'];
 
 function populateSelect(select, values, emptyLabel) {
   select.innerHTML = '';

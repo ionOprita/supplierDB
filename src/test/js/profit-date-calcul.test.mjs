@@ -4,6 +4,7 @@ import {setImmediate} from 'node:timers/promises';
 import test from 'node:test';
 
 const endpoint = '/app/profitCalculatorSettings';
+const sharedEndpoint = '/app/profitCalculatorSharedSettings';
 const moduleSource = await readFile(new URL('../../main/resources/static/js/profit-date-calcul.js', import.meta.url), 'utf8');
 const template = await readFile(new URL('../../main/jte/profit-date-calcul.jte', import.meta.url), 'utf8');
 const dataUrl = text => `data:text/javascript;base64,${Buffer.from(text).toString('base64')}`;
@@ -52,7 +53,9 @@ function settings(group = 'S') {
 }
 
 async function openPage(t, {options = {vendorGroups: ['J', 'K', 'S'].map(vendorGroup => ({vendorGroup})), defaultVendorGroup: 'S'},
-  get = async group => settings(group), post = async () => ({saved: true})} = {}) {
+  get = async group => settings(group), post = async () => ({saved: true}),
+  getShared = async () => ({revision: 1, turnoverTaxVatRate: '0.21'}),
+  postShared = async () => ({saved: true})} = {}) {
   const previousDocument = globalThis.document;
   const previousWindow = globalThis.window;
   t.after(() => {
@@ -75,10 +78,21 @@ async function openPage(t, {options = {vendorGroups: ['J', 'K', 'S'].map(vendorG
   globalThis.window = {addEventListener: (name, callback) => events.set(name, callback)};
   const posts = [];
   const loads = [];
+  const sharedPosts = [];
+  let sharedLoads = 0;
   t.mock.method(globalThis, 'fetch', async (url, init) => {
     let result;
     if (url === '/app/profitCalculatorOptions') {
       result = options;
+    } else if (url === sharedEndpoint) {
+      if (init?.method === 'POST') {
+        const body = JSON.parse(init.body);
+        sharedPosts.push(body);
+        result = await postShared(body);
+      } else {
+        sharedLoads++;
+        result = await getShared();
+      }
     } else if (init?.method === 'POST') {
       assert.equal(url, endpoint);
       const body = JSON.parse(init.body);
@@ -99,6 +113,8 @@ async function openPage(t, {options = {vendorGroups: ['J', 'K', 'S'].map(vendorG
   return {
     selector, status: roots.get('dateCalculStatus'), retry: roots.get('dateCalculRetry'),
     editors: roots.get('dateCalculEditors'), loads, posts, events,
+    sharedStatus: roots.get('dateCalculSharedStatus'), sharedRetry: roots.get('dateCalculSharedRetry'), sharedPosts,
+    get sharedLoads() { return sharedLoads; },
     switchGroup(group) {
       selector.value = group;
       selector.dispatch('change');
@@ -253,6 +269,7 @@ test('keeps editors hidden when there are no vendor groups', async t => {
   assert.equal(empty.selector.disabled, true);
   assert.equal(empty.editors.hidden, true);
   assert.deepEqual(empty.loads, []);
+  assert.equal(empty.input('shared', 'turnoverTaxVatRate').value, '21');
 });
 
 test('retries settings that could not be loaded initially', async t => {
@@ -267,4 +284,74 @@ test('retries settings that could not be loaded initially', async t => {
   await setImmediate();
   assert.equal(page.editors.hidden, false);
   assert.equal(page.retry.hidden, true);
+});
+
+test('shared tax VAT keeps its own draft, validates percentages and saves without group scope', async t => {
+  let shared = {revision: 3, turnoverTaxVatRate: '0.21'};
+  const page = await openPage(t, {getShared: async () => shared, postShared: async body => {
+    shared = {revision: body.expectedRevision + 1, turnoverTaxVatRate: body.turnoverTaxVatRate};
+    return {saved: true};
+  }});
+  const invalid = edit(page, 'shared', 'turnoverTaxVatRate', '100.000000001');
+  assert.equal(invalid.attributes.get('aria-invalid'), 'true');
+  assert.equal(page.action('shared', 'save').disabled, true);
+  edit(page, 'shared', 'turnoverTaxVatRate', '19.123456789123456789');
+  page.switchGroup('K');
+  await setImmediate();
+  assert.equal(page.input('shared', 'turnoverTaxVatRate').value, '19.123456789123456789');
+  assert.equal(page.input('general', 'vatRate').value, '21');
+  assert.equal(page.sharedLoads, 1);
+  edit(page, 'general', 'vatRate', '20');
+  page.action('shared', 'save').dispatch('click');
+  await setImmediate();
+  assert.deepEqual(page.sharedPosts, [{expectedRevision: 3, turnoverTaxVatRate: '0.19123456789123456789'}]);
+  assert.equal(page.input('general', 'vatRate').value, '20');
+  assert.equal(page.action('general', 'save').disabled, false);
+  assert.equal(page.action('shared', 'save').disabled, true);
+  assert.deepEqual(page.loads, ['S', 'K']);
+  assert.equal(page.posts.length, 0);
+});
+
+test('shared tax VAT retains a conflicted draft and Revert reloads the saved zero', async t => {
+  let shared = {revision: 3, turnoverTaxVatRate: '0.21'};
+  const page = await openPage(t, {getShared: async () => shared, postShared: async () => {
+    shared = {revision: 4, turnoverTaxVatRate: '0'};
+    return {httpStatus: 409};
+  }});
+  edit(page, 'shared', 'turnoverTaxVatRate', '');
+  page.action('shared', 'save').dispatch('click');
+  await setImmediate();
+  assert.match(page.sharedStatus.textContent, /Your edits are still here/);
+  assert.equal(page.input('shared', 'turnoverTaxVatRate').value, '');
+  assert.deepEqual(page.sharedPosts, [{expectedRevision: 3, turnoverTaxVatRate: null}]);
+  page.action('shared', 'revert').dispatch('click');
+  await setImmediate();
+  assert.equal(page.input('shared', 'turnoverTaxVatRate').value, '0');
+  assert.equal(page.action('shared', 'save').disabled, true);
+  assert.equal(page.sharedPosts.length, 1);
+});
+
+test('shared tax VAT retries only its readback after a successful save', async t => {
+  let shared = {revision: 3, turnoverTaxVatRate: '0.21'};
+  let attempts = 0;
+  const page = await openPage(t, {getShared: async () => {
+    if (++attempts === 2) throw new Error('Read unavailable');
+    return shared;
+  }, postShared: async body => {
+    shared = {revision: body.expectedRevision + 1, turnoverTaxVatRate: body.turnoverTaxVatRate};
+    return {saved: true};
+  }});
+  edit(page, 'shared', 'turnoverTaxVatRate', '');
+  page.action('shared', 'save').dispatch('click');
+  await setImmediate();
+  assert.match(page.sharedStatus.textContent, /were saved/);
+  assert.equal(page.input('shared', 'turnoverTaxVatRate').disabled, true);
+  assert.equal(page.sharedRetry.hidden, false);
+  page.sharedRetry.dispatch('click');
+  await setImmediate();
+  assert.equal(page.sharedLoads, 3);
+  assert.equal(page.sharedPosts.length, 1);
+  assert.equal(page.sharedRetry.hidden, true);
+  assert.equal(page.input('shared', 'turnoverTaxVatRate').value, '');
+  assert.equal(page.input('shared', 'turnoverTaxVatRate').disabled, false);
 });

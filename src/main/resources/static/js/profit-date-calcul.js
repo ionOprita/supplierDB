@@ -29,10 +29,15 @@ const sections = [
 ];
 
 const endpoint = '/app/profitCalculatorSettings';
+const sharedEndpoint = '/app/profitCalculatorSharedSettings';
+const sharedSection = {id: 'shared', target: 'dateCalculSharedFields', fields: [
+  {key: 'turnoverTaxVatRate', label: 'TVA de referință pentru impozitul pe venit (%)', percent: true, bounded: true}
+]};
 const amountFormat = new Intl.NumberFormat('en-GB', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const unitsFormat = new Intl.NumberFormat('en-GB');
 const decimal = /^-?(?:\d+(?:\.\d*)?|\.\d+)$/;
 const editableFields = section => section.fields.filter(field => !field.computed);
+const isDecimal = value => value === null || typeof value === 'string' && decimal.test(value);
 
 function shiftDecimal(value, places) {
   const negative = value.startsWith('-');
@@ -91,7 +96,6 @@ function payloadFor(section, inputs) {
 }
 
 function validateSettings(group, data) {
-  const isDecimal = value => value === null || typeof value === 'string' && decimal.test(value);
   if (data?.vendorGroup !== group || !data.calculated) throw new Error('Invalid settings response.');
   for (const section of sections) {
     const saved = data[section.id];
@@ -126,7 +130,14 @@ export function initDateCalcul() {
   const status = document.getElementById('dateCalculStatus');
   const retry = document.getElementById('dateCalculRetry');
   const editors = document.getElementById('dateCalculEditors');
+  const sharedEditor = document.getElementById('dateCalculSharedEditor');
+  const sharedStatus = document.getElementById('dateCalculSharedStatus');
+  const sharedRetry = document.getElementById('dateCalculSharedRetry');
+  const sharedTarget = document.getElementById(sharedSection.target);
   const models = new Map();
+  let sharedModel;
+  let sharedLoading = false;
+  let sharedSaving = false;
   let loading = false;
   let saving = false;
   let requestVersion = 0;
@@ -146,24 +157,30 @@ export function initDateCalcul() {
     for (const section of sections) {
       const target = document.getElementById(section.target);
       target.replaceChildren();
-      if (model) renderSection(target, section, model);
+      if (model) renderSection(target, section, model, {
+        busy: loading || saving || model.needsReadback,
+        onSave: draft => saveSection(section, model, draft),
+        onRevert: () => {
+          model.drafts.delete(section.id);
+          loadSettings(model.data.vendorGroup);
+        }
+      });
     }
   }
 
-  function renderSection(target, section, model) {
+  function renderSection(target, section, model, {busy, onSave, onRevert}) {
     const draft = model.drafts.get(section.id) ?? {
       saved: model.data[section.id], inputs: inputValues(section, model.data[section.id])
     };
     const baseline = JSON.stringify(payloadFor(section, inputValues(section, draft.saved)).payload);
     const controls = [];
-    const busy = loading || saving || model.needsReadback;
     const computed = model.needsReadback ? {} : model.data.calculated;
     let add;
-    const save = button('Save', 'save', section.id, () => saveSection(section, model, draft));
+    const save = button('Save', 'save', section.id, () => {
+      if (!save.disabled) onSave(draft);
+    });
     const revert = button('Revert', 'revert', section.id, () => {
-      if (revert.disabled) return;
-      model.drafts.delete(section.id);
-      loadSettings(model.data.vendorGroup);
+      if (!revert.disabled) onRevert();
     });
 
     function refresh() {
@@ -295,6 +312,77 @@ export function initDateCalcul() {
     refresh();
   }
 
+  function reportShared(message, retryable = false) {
+    sharedStatus.textContent = message;
+    sharedStatus.hidden = !message;
+    sharedRetry.hidden = !retryable;
+  }
+
+  function renderShared() {
+    sharedEditor.setAttribute('aria-busy', String(sharedLoading || sharedSaving));
+    sharedTarget.replaceChildren();
+    if (!sharedModel) return;
+    renderSection(sharedTarget, sharedSection, sharedModel, {
+      busy: sharedLoading || sharedSaving || Boolean(sharedModel.needsReadback),
+      onSave: saveShared,
+      onRevert: () => {
+        sharedModel.drafts.delete(sharedSection.id);
+        loadShared();
+      }
+    });
+  }
+
+  async function loadShared() {
+    if (sharedLoading) return;
+    const needsReadback = sharedModel?.needsReadback;
+    sharedLoading = true;
+    reportShared(needsReadback ? 'Shared settings saved. Reloading…' : 'Loading shared settings…');
+    renderShared();
+    try {
+      const data = await fetchJSON(sharedEndpoint);
+      if (!Number.isSafeInteger(data?.revision) || data.revision < 1 || !isDecimal(data.turnoverTaxVatRate)) {
+        throw new Error('Invalid shared settings response.');
+      }
+      sharedModel = {data: {shared: {revision: data.revision, values: {turnoverTaxVatRate: data.turnoverTaxVatRate}}},
+        drafts: new Map()};
+      reportShared(needsReadback ? 'Shared settings saved.' : '');
+    } catch {
+      reportShared(needsReadback ? 'Shared settings were saved. Retry to reload the saved value.'
+        : 'Could not load shared settings. Retry to load the saved value.', true);
+    } finally {
+      sharedLoading = false;
+      renderShared();
+    }
+  }
+
+  async function saveShared(draft) {
+    if (sharedLoading || sharedSaving || sharedModel.needsReadback) return;
+    const {payload, errors} = payloadFor(sharedSection, draft.inputs);
+    if (errors.size || !sharedModel.drafts.has(sharedSection.id)) return;
+    sharedSaving = true;
+    reportShared('Saving shared settings…');
+    renderShared();
+    try {
+      const response = await fetch(sharedEndpoint, {method: 'POST', headers: {'Content-Type': 'application/json',
+        Accept: 'application/json'}, body: JSON.stringify({expectedRevision: draft.saved.revision, ...payload.values})});
+      const result = await response.json().catch(() => ({}));
+      if (response.status === 409) {
+        reportShared('Shared settings changed. Your edits are still here. Revert to load the current version.');
+        return;
+      }
+      if (!response.ok || result.saved !== true) throw new Error(result.error || 'Save was not confirmed.');
+      sharedModel.data.shared = {...draft.saved, ...payload};
+      sharedModel.drafts.delete(sharedSection.id);
+      sharedModel.needsReadback = true;
+      await loadShared();
+    } catch (error) {
+      reportShared(`Could not save shared settings. Your edits are still here. ${error.message}`);
+    } finally {
+      sharedSaving = false;
+      renderShared();
+    }
+  }
+
   async function loadSettings(group) {
     const version = ++requestVersion;
     loading = true;
@@ -375,12 +463,16 @@ export function initDateCalcul() {
 
   selector.addEventListener('change', () => { if (selector.value && !saving) loadSettings(selector.value); });
   retry.addEventListener('click', () => { if (!retry.hidden && !loading && !saving) retryAction(); });
+  sharedRetry.addEventListener('click', () => {
+    if (!sharedRetry.hidden && !sharedLoading && !sharedSaving) loadShared();
+  });
   window.addEventListener('beforeunload', event => {
-    if (![...models.values()].some(model => model.drafts.size)) return;
+    if (!sharedModel?.drafts.size && ![...models.values()].some(model => model.drafts.size)) return;
     event.preventDefault();
     event.returnValue = '';
   });
   loadGroups();
+  loadShared();
 }
 
 if (typeof document !== 'undefined') initDateCalcul();

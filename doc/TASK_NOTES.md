@@ -192,7 +192,8 @@ multiple product columns: some formula rows contain manually replaced cells.
 - `/private/profit-fbe-tariffs`: shared current FBE tariff editor, immediately
   after By Category; reviewed atomic saves, conflict handling and Revert.
 - `/private/profit-date-calcul`: four editors for current general settings,
-  general costs, employee costs, and miscellaneous costs by vendor group.
+  general costs, employee costs, and miscellaneous costs by vendor group,
+  plus a shared turnover-tax VAT editor seeded by migration 53.
 
 | Row(s) | Current behavior |
 | --- | --- |
@@ -213,6 +214,7 @@ multiple product columns: some formula rows contain manually replaced cells.
 | 56 | Current own-warehouse preparation cost from the selected group's Date Calcul |
 | 57–60 | FBE processing, return, withdrawal and disposal: source-classified tier base fee plus rounded-up excess kg × surcharge |
 | 63, 64 | Literal zero from the Google/social-media Ads formulas; not measured spending |
+| 81, 82 | Zero when the saved monthly capital rate is explicitly zero |
 | 83 | FBE processing fee × refusal rate × (1 + calculator VAT), with zero for a known 0% refusal rate |
 | 84 | Zero for a known 0% return rate |
 | 87 | FBE processing fee with calculator VAT for `eMAG`, or row 56 for `Minulescu` |
@@ -221,7 +223,7 @@ multiple product columns: some formula rows contain manually replaced cells.
 | 91 | Date Calcul accounting cost per unit |
 | 97 | Date Calcul employee cost per unit |
 | 98 | Date Calcul miscellaneous cost per unit × (1 + calculator VAT) |
-| 100 | Zero only for the known `Profit` tax regime |
+| 100 | `Venit` turnover tax uses effective price, shared reference VAT, and group courier cost and tax rate. `Profit` gives zero. |
 | 101 | Zero only when VAT-payer status is explicitly false |
 | 105, 106 | Zero only for the known `Venit` tax regime |
 

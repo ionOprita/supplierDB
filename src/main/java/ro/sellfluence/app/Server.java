@@ -30,6 +30,7 @@ import ro.sellfluence.api.ProductPerformanceData.Period;
 import ro.sellfluence.api.ProfitCalculatorOverrides;
 import ro.sellfluence.api.ProfitCalculatorFbeTariffs;
 import ro.sellfluence.api.ProfitCalculatorSettings;
+import ro.sellfluence.api.ProfitCalculatorSharedSettings;
 import ro.sellfluence.api.WebAuthnServer;
 import ro.sellfluence.apphelper.ACME;
 import ro.sellfluence.apphelper.BackgroundJob;
@@ -1016,6 +1017,8 @@ public class Server {
         app.post("/app/profitCalculatorFbeTariffs", ctx -> serveProfitCalculatorFbeTariffs(ctx, api, true));
         app.get("/app/profitCalculatorSettings", ctx -> serveProfitCalculatorSettings(ctx, api, false));
         app.post("/app/profitCalculatorSettings", ctx -> serveProfitCalculatorSettings(ctx, api, true));
+        app.get("/app/profitCalculatorSharedSettings", ctx -> serveProfitCalculatorSharedSettings(ctx, api, false));
+        app.post("/app/profitCalculatorSharedSettings", ctx -> serveProfitCalculatorSharedSettings(ctx, api, true));
         app.get("/app/productPerformanceOptions", ctx -> {
             try {
                 ctx.json(api.getProductPerformanceOptions());
@@ -1451,6 +1454,25 @@ public class Server {
             ctx.status(400).json(Map.of("error", error.getMessage()));
         } catch (SQLException error) {
             logger.log(SEVERE, "Failed to " + (save ? "save" : "load") + " Date Calcul settings.", error);
+            ctx.status(500).json(Map.of("error", "Database error"));
+        }
+    }
+
+    static void serveProfitCalculatorSharedSettings(Context ctx, API api, boolean save) {
+        ctx.header("Cache-Control", "no-store");
+        try {
+            if (save) {
+                api.saveProfitCalculatorSharedSettings(ProfitCalculatorSharedSettings.parse(mapper, ctx.body()));
+                ctx.json(Map.of("saved", true));
+            } else {
+                ctx.json(api.getProfitCalculatorSharedSettings());
+            }
+        } catch (ProfitCalculatorSettingsTable.ConflictException error) {
+            ctx.status(409).json(Map.of("error", error.getMessage()));
+        } catch (IllegalArgumentException error) {
+            ctx.status(400).json(Map.of("error", error.getMessage()));
+        } catch (SQLException error) {
+            logger.log(SEVERE, "Failed to " + (save ? "save" : "load") + " shared Date Calcul settings.", error);
             ctx.status(500).json(Map.of("error", "Database error"));
         }
     }

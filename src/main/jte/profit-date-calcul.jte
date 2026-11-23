@@ -31,6 +31,12 @@
                 <div id="dateCalculMiscellaneousFields"></div>
             </section>
         </div>
+        <section id="dateCalculSharedEditor" class="card date-calcul-card" aria-labelledby="dateCalculSharedTitle">
+            <h2 id="dateCalculSharedTitle">Setări comune tuturor grupurilor</h2>
+            <p id="dateCalculSharedStatus" role="status" aria-live="polite">Loading shared settings…</p>
+            <button id="dateCalculSharedRetry" type="button" hidden>Retry</button>
+            <div id="dateCalculSharedFields"></div>
+        </section>
         <noscript><p>Enable JavaScript to view and edit Date Calcul.</p></noscript>
     </section>
     <script type="module" src="/js/profit-date-calcul.js"></script>

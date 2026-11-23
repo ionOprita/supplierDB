@@ -25,7 +25,8 @@ Missing input values stay blank.
 ## Date Calcul settings
 
 **Profit Calculator → Date Calcul** (`/private/profit-date-calcul`) has four
-editors. Each vendor group has current shared values and its own revision for
+editors per vendor group and a separate editor shared by all groups. Each
+vendor group has current values and its own revision for
 each section. Saving one section commits its inputs and reloads the computed
 values. A stale revision returns HTTP 409 and preserves the draft for review.
 Revert reloads the saved section. A failed reload after a confirmed save can be
@@ -55,6 +56,15 @@ and calculations from one database snapshot. `POST /app/profitCalculatorSettings
 saves one section with its `expectedRevision`, returning `{"saved":true}`
 after commit. The app accepts decimal strings or null and stores percentage
 inputs as fractions. Both routes use the existing application-user role.
+
+**Setări comune tuturor grupurilor** stores the turnover-tax reference VAT.
+Migration 53 seeds it at 21% from [Date produse, Cons. Date Secundare!E3](https://docs.google.com/spreadsheets/d/1q8lltfW6bMc3nEzoes7lrAn2Kp_W5UdH5VECtLaIejw/edit#gid=39814256&range=E3).
+The editor applies the saved rate to every group and keeps a separate revision.
+Enter a percentage from 0 to 100 or clear the field to make the rate unknown.
+`GET /app/profitCalculatorSharedSettings` returns `revision` and
+`turnoverTaxVatRate` as a decimal fraction string or null. POST takes the same
+rate field and `expectedRevision`, with the same save, conflict and readback
+behavior as the group editors.
 
 ### Date Calcul previous-month units and costs
 
@@ -93,6 +103,7 @@ retracted guards apply. Money is shown in RON to two decimal places.
 | Row | Calculation |
 | --- | --- |
 | 56 | Saved warehouse preparation cost from C28 |
+| 81, 82 | An explicit 0% monthly capital rate (C5) gives zero. A nonzero rate needs import timing and cost inputs. |
 | 83 | FBE processing fee (57) × refusal rate (54) × (1 + VAT from C9). A known 0% refusal rate gives zero. |
 | 84 | A known 0% return rate (53) gives zero. The positive-rate formula still needs the full import and operating cost inputs. |
 | 87 | `eMAG` uses FBE processing fee × (1 + VAT). `Minulescu` uses row 56 directly. |
@@ -100,12 +111,14 @@ retracted guards apply. Money is shown in RON to two decimal places.
 | 91 | Accounting cost per unit from C25 |
 | 97 | Employee cost per unit from C26 |
 | 98 | Miscellaneous cost per unit (C27) × (1 + VAT from C9) |
+| 100 | For `Venit`, (effective selling price ÷ (1 + shared reference VAT) + group courier cost C22) × group income-tax rate C10. `Profit` gives zero. |
 
 Rows 91, 97 and 98 use the same group-wide previous-month units (C8) as Date
 Calcul. Missing required inputs leave the result blank. A known zero remains
 `0.00`. The group VAT setting supplies these expense formulas regardless of the
-product's VAT-payer flag. Editing fulfillment clears the prior row-87 result
-while the preview is pending.
+product's VAT-payer flag. Row 100 uses the separate shared reference VAT.
+Editing fulfillment clears the prior row-87 result while the preview is pending.
+Editing price similarly clears the prior `Venit` amount in row 100.
 
 ## Implemented rows
 
@@ -530,14 +543,13 @@ rates and baseline data are not inferred from these manual inputs.
 The following outputs implement literal zero formulas or the zero branch of
 a conditional formula. They do not depend on monthly-sales or commission
 definitions. The same nonblank-PNK/nonretracted guard applies to
-all seven rows, including the literal-zero advertising formulas.
+these rows, including the literal-zero advertising formulas.
 
 | Row | Label | Implemented result |
 | --- | --- | --- |
 | 63 | Cost Google ads / unit. (fara TVA) [RON] | `0.00` for an eligible product |
 | 64 | Cost SM ads/ unit. (fara TVA) [RON] | `0.00` for an eligible product |
 | 88 | Cost depozitare colet (cu TVA) | `0.00` only when row 45 explicitly selects `Minulescu` |
-| 100 | Cost impozit / venit | `0.00` only when `product.income_profit_tax` is `Profit` |
 | 101 | TVA | `0.00` only when `product.vat_payer` is explicitly false |
 | 105 | Impozit pe profit | `0.00` only when `product.income_profit_tax` is `Venit` |
 | 106 | Impozit pe dividende | `0.00` only when `product.income_profit_tax` is `Venit` |
@@ -557,7 +569,6 @@ same eligibility guard surrounding each expression:
 
 ```excel
 D88 = IF(D$45="eMAG",D61*(1+'Date Calcul'!$C$9),0)
-D100 = IF(D$71="Venit",((D$75/(1+'Cons. Date Secundare'!$E$3))+'Date Calcul'!$C$22)*'Date Calcul'!$C$10,0)
 D101 = IF(D$72=TRUE,(D$75+'Date Calcul'!$C$22)*'Date Calcul'!$C$9-D$79-(D83+D84+D85+D87+D88+D89+D90+D91+D92+D94+D95+D96+D98)*'Date Calcul'!$C$9,0)
 D105 = IF(D$71="Profit",IF(D$104>0,'Date Calcul'!$C$11*D$104,0),0)
 D106 = IF(D$71="Profit",IF(D$104>0,D$105*'Date Calcul'!$C$12,0),0)
@@ -567,8 +578,8 @@ Only the branches listed in the table are implemented. The application does
 not follow a broad spreadsheet `else 0` branch for an unknown input: blank
 fulfillment, null VAT status, and null/blank/unrecognized tax regimes remain
 unknown. Known tax labels are recognized case-insensitively after trimming;
-the displayed source text in row 71 is unchanged. `eMAG` storage, `Venit`
-turnover tax, VAT-payer VAT, and `Profit` profit/dividend tax remain blank
+the displayed source text in row 71 is unchanged. `eMAG` storage,
+VAT-payer VAT, and `Profit` profit/dividend tax remain blank
 until their required inputs are available, even if a later calculation could
 also determine zero.
 
@@ -619,8 +630,9 @@ calculator cells remains an agreed policy, not an open question.
    Are these settings shared across groups/companies or specific to a workbook
    or company? Where should the server obtain them, and should a historical
    calculation use the settings valid in that month or the latest settings?
-   Date Calcul now uses one editable set of current values per vendor group.
-   Its historical application and long-term ownership are open.
+   Date Calcul uses editable current values per group. The turnover-tax VAT
+   from Date produse is shared across all groups. Historical application and
+   long-term ownership are open.
 5. **Authoritative import-cost records.** Where are per-import purchase,
    freight, import VAT, customs costs, quantities, transport details, and
    arrival dates maintained outside the linked spreadsheets? Which records

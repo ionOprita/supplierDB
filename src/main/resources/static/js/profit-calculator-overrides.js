@@ -120,7 +120,10 @@ export class OverrideDrafts {
     return new Map(products.map(product => {
       const entry = this.entries.get(product.productCode);
       const fields = entry ? this.changedFields(entry) : [];
-      return [product.productCode, new Set(fields.flatMap(field => dependencies[field.key]))];
+      const rows = new Set(fields.flatMap(field => dependencies[field.key]));
+      if (product.incomeProfitTax?.trim().toLowerCase() === 'venit'
+          && fields.some(field => field.key === 'salePriceRon')) rows.add(100);
+      return [product.productCode, rows];
     }));
   }
 
