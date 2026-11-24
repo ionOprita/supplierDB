@@ -34,7 +34,8 @@ public final class ProfitCalculatorCategory {
                              BigDecimal defectiveProductCostRon, BigDecimal parcelPreparationCostRon,
                              BigDecimal geniusCostRon, BigDecimal accountingCostPerUnitRon,
                              BigDecimal employeeCostPerUnitRon, BigDecimal miscellaneousCostPerUnitRon,
-                             BigDecimal transitFinancingCostRon, BigDecimal postDeliveryFinancingCostRon) {
+                             BigDecimal transitFinancingCostRon, BigDecimal postDeliveryFinancingCostRon,
+                             BigDecimal replacementRate, BigDecimal replacementCostRon, BigDecimal inflationCostRon) {
     }
 
     public record Product(String productCode, String name, String pnk, boolean retracted,
@@ -90,7 +91,8 @@ public final class ProfitCalculatorCategory {
             throw new IllegalArgumentException("A preview product does not belong to the selected category.");
         }
         return create(vendorGroup, category,
-                new CategoryData(preview, data.tariffs(), data.returnRatesByPnk(), data.settings()));
+                new CategoryData(preview, data.tariffs(), data.returnRatesByPnk(), data.settings(),
+                        data.replacementRatesByPnk()));
     }
 
     private static Product evaluate(CategoryProduct product, CategoryData data) {
@@ -113,8 +115,13 @@ public final class ProfitCalculatorCategory {
         var turnoverTax = eligible ? turnoverTax(regime, price, settings) : null;
         var capitalRate = settings.monthlyCapitalRate();
         var financingCost = eligible && capitalRate != null && capitalRate.signum() == 0 ? BigDecimal.ZERO : null;
+        var inflationRate = settings.monthlyInflationRate();
+        var inflationCost = eligible && inflationRate != null && inflationRate.signum() == 0 ? BigDecimal.ZERO : null;
         var vatRate = settings.vatRate();
         var vatMultiplier = vatRate == null ? null : BigDecimal.ONE.add(vatRate);
+        var replacementRate = eligible ? data.replacementRatesByPnk().get(product.pnk()) : null;
+        var replacementCost = replacementCost(replacementRate, overrides.fulfillmentSource(),
+                fbe.withdrawalCostRon(), settings, vatMultiplier);
         var warehousePreparation = eligible ? settings.warehousePreparationCostRon() : null;
         var fbePreparation = multiply(fbe.processingCostRon(), vatMultiplier);
         var refusalRate = rates.refusalRate();
@@ -140,7 +147,23 @@ public final class ProfitCalculatorCategory {
                         defectiveProductCost, parcelPreparation, geniusCost,
                         eligible ? settings.accountingCostPerUnitRon() : null,
                         eligible ? settings.employeeCostPerUnitRon() : null, miscellaneousCost,
-                        financingCost, financingCost));
+                        financingCost, financingCost, replacementRate, replacementCost, inflationCost));
+    }
+
+    private static BigDecimal replacementCost(BigDecimal rate, String fulfillmentSource,
+                                              BigDecimal fbeWithdrawalCost, CategorySettings settings,
+                                              BigDecimal vatMultiplier) {
+        if (rate == null || rate.signum() < 0) return null;
+        if (rate.signum() == 0) return BigDecimal.ZERO;
+        var withdrawalCost = switch (fulfillmentSource) {
+            case "eMAG" -> fbeWithdrawalCost;
+            case "Minulescu" -> BigDecimal.ZERO;
+            case null, default -> null;
+        };
+        if (withdrawalCost == null || settings.packingCostRon() == null || settings.courierCostRon() == null
+                || vatMultiplier == null) return null;
+        return withdrawalCost.add(settings.packingCostRon()).add(settings.courierCostRon().multiply(BigDecimal.TWO))
+                .multiply(rate).multiply(vatMultiplier);
     }
 
     private static BigDecimal turnoverTax(String regime, BigDecimal price, CategorySettings settings) {

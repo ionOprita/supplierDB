@@ -827,8 +827,15 @@ public class EmagMirrorDB implements ProductPerformanceSource {
             var products = ProfitCalculatorTable.getCategoryProducts(db, vendorGroup, category, previousMonth);
             return new ProfitCalculatorTable.CategoryData(products, ProfitCalculatorFbeTariffTable.readTariffs(db),
                     ProfitCalculatorTable.readReturnRates(db, products, previousMonth.plusMonths(1)),
-                    ProfitCalculatorSettingsTable.readCategorySettings(db, vendorGroup, previousMonth));
+                    ProfitCalculatorSettingsTable.readCategorySettings(db, vendorGroup, previousMonth),
+                    ProfitCalculatorReplacementRateTable.read(db, products));
         });
+    }
+
+    public int replaceProfitCalculatorReplacementRates(Map<String, BigDecimal> rates, Instant capturedAt)
+            throws SQLException {
+        var snapshot = Map.copyOf(rates);
+        return database.writeTX(db -> ProfitCalculatorReplacementRateTable.replace(db, snapshot, capturedAt));
     }
 
     public void saveProfitCalculatorOverrides(List<ProfitCalculatorTable.OverrideChange> changes) throws SQLException {

@@ -672,6 +672,51 @@ test('draft sale prices mask only Venit turnover tax and never replace its saved
   assert.equal(metricCell(page, 100).textContent, '3.39');
 });
 
+test('replacement and inflation cells display verified rates, known zeros and blanks', async t => {
+  const known = {replacementRate: 0.025, replacementCostRon: 0.625, inflationCostRon: 0};
+  const page = await openPage(t, {categoryRequest: async () => ({products: [
+    {...product('known'), calculated: known},
+    {...product('zero'), calculated: {replacementRate: 0, replacementCostRon: 0, inflationCostRon: null}},
+    product('unknown'),
+    {...product('retracted', 'Retracted', true), calculated: known},
+    {...product('no-pnk'), pnk: null, calculated: known}
+  ]})});
+  assert.deepEqual([0, 1, 2, 3, 4].map(index => metricCell(page, 55, index).textContent), ['2.5%', '0%', '', '', '']);
+  assert.deepEqual([0, 1, 2, 3, 4].map(index => metricCell(page, 85, index).textContent), ['0.63', '0.00', '', '', '']);
+  assert.deepEqual([0, 1, 2, 3, 4].map(index => metricCell(page, 102, index).textContent), ['0.00', '', '', '', '']);
+});
+
+test('fulfillment previews mask dependent replacement costs and preserve the saved baseline', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const failed = deferred();
+  const positive = {...product('positive'), overrides: {fulfillmentSource: 'Minulescu'},
+    calculated: {replacementRate: 0.025, replacementCostRon: 0.75, inflationCostRon: null}};
+  const zero = {...product('zero'), overrides: {fulfillmentSource: 'Minulescu'},
+    calculated: {replacementRate: 0, replacementCostRon: 0}};
+  let attempts = 0;
+  const page = await openPage(t, {categoryRequest: async () => ({products: [positive, zero]}),
+    previewRequest: () => ++attempts === 1 ? failed.promise : {products: [
+      {...positive, calculated: {...positive.calculated, replacementCostRon: 0.85, inflationCostRon: 0}}, zero
+    ]}});
+  edit(page, 45, 'eMAG');
+  edit(page, 45, 'eMAG', 1);
+  assert.equal(metricCell(page, 55).textContent, '2.5%');
+  assert.equal(metricCell(page, 85).textContent, '');
+  assert.equal(metricCell(page, 85, 1).textContent, '0.00');
+  await advancePreview(t);
+  failed.reject(new Error('Preview unavailable'));
+  await setImmediate();
+  assert.equal(metricCell(page, 85).textContent, '');
+  assert.equal(metricCell(page, 85, 1).textContent, '0.00');
+  edit(page, 40, '123');
+  await advancePreview(t);
+  assert.equal(metricCell(page, 85).textContent, '0.85');
+  assert.equal(metricCell(page, 102).textContent, '0.00');
+  edit(page, 45, 'Minulescu');
+  assert.equal(metricCell(page, 85).textContent, '0.75');
+  assert.equal(metricCell(page, 102).textContent, '0.00');
+});
+
 test('clearing a saved override sends null and restores the server reference-price fallback', async t => {
   t.mock.timers.enable({apis: ['setTimeout']});
   const item = {...product('one'), emagSalePriceRon: 169.99, overrideRevision: 1, overrides: {salePriceRon: '199.99'},

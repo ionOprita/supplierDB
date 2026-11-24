@@ -158,11 +158,18 @@ public final class ProfitCalculatorTable {
 
     /** Category products and calculation inputs from one database snapshot. */
     public record CategoryData(List<CategoryProduct> products, List<ProfitCalculatorFbeTariffTable.Tariff> tariffs,
-                               Map<String, ReturnRates> returnRatesByPnk, CategorySettings settings) {
+                               Map<String, ReturnRates> returnRatesByPnk, CategorySettings settings,
+                               Map<String, BigDecimal> replacementRatesByPnk) {
         public CategoryData {
             products = List.copyOf(products);
             tariffs = List.copyOf(tariffs);
             returnRatesByPnk = Map.copyOf(returnRatesByPnk);
+            replacementRatesByPnk = Map.copyOf(replacementRatesByPnk);
+        }
+
+        public CategoryData(List<CategoryProduct> products, List<ProfitCalculatorFbeTariffTable.Tariff> tariffs,
+                            Map<String, ReturnRates> returnRatesByPnk, CategorySettings settings) {
+            this(products, tariffs, returnRatesByPnk, settings, Map.of());
         }
 
         public CategoryData(List<CategoryProduct> products, List<ProfitCalculatorFbeTariffTable.Tariff> tariffs) {

@@ -103,7 +103,18 @@ public final class ProfitCalculatorSettingsTable {
                                    BigDecimal geniusEasyboxRate, BigDecimal geniusCostRon,
                                    BigDecimal accountingCostPerUnitRon, BigDecimal employeeCostPerUnitRon,
                                    BigDecimal miscellaneousCostPerUnitRon, BigDecimal monthlyCapitalRate,
-                                   BigDecimal turnoverTaxVatRate, BigDecimal courierCostRon, BigDecimal incomeTaxRate) {
+                                   BigDecimal turnoverTaxVatRate, BigDecimal courierCostRon, BigDecimal incomeTaxRate,
+                                   BigDecimal packingCostRon, BigDecimal monthlyInflationRate) {
+        public CategorySettings(BigDecimal vatRate, BigDecimal warehousePreparationCostRon,
+                                BigDecimal geniusEasyboxRate, BigDecimal geniusCostRon,
+                                BigDecimal accountingCostPerUnitRon, BigDecimal employeeCostPerUnitRon,
+                                BigDecimal miscellaneousCostPerUnitRon, BigDecimal monthlyCapitalRate,
+                                BigDecimal turnoverTaxVatRate, BigDecimal courierCostRon, BigDecimal incomeTaxRate) {
+            this(vatRate, warehousePreparationCostRon, geniusEasyboxRate, geniusCostRon, accountingCostPerUnitRon,
+                    employeeCostPerUnitRon, miscellaneousCostPerUnitRon, monthlyCapitalRate, turnoverTaxVatRate,
+                    courierCostRon, incomeTaxRate, null, null);
+        }
+
         public CategorySettings(BigDecimal vatRate, BigDecimal warehousePreparationCostRon,
                                 BigDecimal geniusEasyboxRate, BigDecimal geniusCostRon,
                                 BigDecimal accountingCostPerUnitRon, BigDecimal employeeCostPerUnitRon,
@@ -149,7 +160,8 @@ public final class ProfitCalculatorSettingsTable {
                 data.general().decimal("geniusEasyboxRate"), data.generalCosts().decimal("geniusCostRon"),
                 costs.accountingCostPerUnitRon(), costs.employeeCostPerUnitRon(), costs.miscellaneousCostPerUnitRon(),
                 data.general().decimal("monthlyCapitalRate"), readSharedSettings(db).turnoverTaxVatRate(),
-                data.generalCosts().decimal("courierCostRon"), data.general().decimal("incomeTaxRate"));
+                data.generalCosts().decimal("courierCostRon"), data.general().decimal("incomeTaxRate"),
+                data.generalCosts().decimal("packingCostRon"), data.general().decimal("monthlyInflationRate"));
     }
 
     static SharedSettings readSharedSettings(Connection db) throws SQLException {

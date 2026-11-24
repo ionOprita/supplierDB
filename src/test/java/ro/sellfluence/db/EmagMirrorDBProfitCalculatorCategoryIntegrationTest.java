@@ -439,6 +439,48 @@ class EmagMirrorDBProfitCalculatorCategoryIntegrationTest {
         assertNull(read("K").products().getFirst().calculated().turnoverTaxCostRon());
     }
 
+    @Test
+    void replacementRatesRefreshAtomicallyAndDriveCostsInEligibleCategoryPreviews() throws Exception {
+        var mirror = new EmagMirrorDB(database);
+        var captured = CLOCK.instant();
+        var positive = new BigDecimal("0.10");
+        var minulescu = new ProfitCalculatorOverrides.Request("S", "Trimmers", List.of(
+                new OverrideChange("active", 0, Map.of("fulfillmentSource", "Minulescu"))));
+        var fbe = new ProfitCalculatorOverrides.Request("S", "Trimmers", List.of(
+                new OverrideChange("active", 0, Map.of("fulfillmentSource", "eMAG"))));
+        assertNull(read().products().getFirst().calculated().replacementRate());
+        assertNull(read().products().getFirst().calculated().inflationCostRon());
+
+        assertEquals(2, mirror.replaceProfitCalculatorReplacementRates(
+                Map.of("ACTIVE", positive, "RETRACTED", BigDecimal.ZERO), captured));
+        var loaded = read();
+        amount("0.10", loaded.products().getFirst().calculated().replacementRate());
+        assertNull(loaded.products().getFirst().calculated().replacementCostRon());
+        assertNull(loaded.products().getLast().calculated().replacementRate());
+        amount("3.267", preview(minulescu).products().getFirst().calculated().replacementCostRon());
+        amount("3.751", preview(fbe).products().getFirst().calculated().replacementCostRon());
+
+        assertThrows(SQLException.class, () -> mirror.replaceProfitCalculatorReplacementRates(
+                Map.of("ACTIVE", new BigDecimal("1.01")), captured.plusSeconds(1)));
+        amount("0.10", read().products().getFirst().calculated().replacementRate());
+        assertEquals(0, mirror.replaceProfitCalculatorReplacementRates(
+                Map.of("ACTIVE", BigDecimal.ZERO), captured.minusSeconds(1)));
+        amount("0.10", read().products().getFirst().calculated().replacementRate());
+
+        executeFixture("UPDATE profit_calculator_general_settings SET monthly_inflation_rate = 0 WHERE vendor_group = 'S'");
+        assertEquals(1, mirror.replaceProfitCalculatorReplacementRates(Map.of("ACTIVE", BigDecimal.ZERO), captured.plusSeconds(2)));
+        var zero = read().products().getFirst().calculated();
+        amount("0", zero.replacementRate());
+        amount("0", zero.replacementCostRon());
+        amount("0", zero.inflationCostRon());
+
+        assertEquals(1, mirror.replaceProfitCalculatorReplacementRates(Map.of("active", positive), captured.plusSeconds(3)));
+        var unknown = preview(fbe).products().getFirst().calculated();
+        assertNull(unknown.replacementRate());
+        assertNull(unknown.replacementCostRon());
+        amount("0", unknown.inflationCostRon());
+    }
+
     private void executeFixture(String sql) throws SQLException {
         try (var db = DriverManager.getConnection(url, properties); var statement = db.createStatement()) {
             statement.execute("SET search_path TO " + schema);

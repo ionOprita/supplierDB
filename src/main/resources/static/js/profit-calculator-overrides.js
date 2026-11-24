@@ -123,6 +123,8 @@ export class OverrideDrafts {
       const rows = new Set(fields.flatMap(field => dependencies[field.key]));
       if (product.incomeProfitTax?.trim().toLowerCase() === 'venit'
           && fields.some(field => field.key === 'salePriceRon')) rows.add(100);
+      if (product.calculated?.replacementRate !== 0
+          && fields.some(field => field.key === 'fulfillmentSource')) rows.add(85);
       return [product.productCode, rows];
     }));
   }

@@ -1,6 +1,7 @@
 package ro.sellfluence.apphelper;
 
 import org.jspecify.annotations.Nullable;
+import ro.sellfluence.app.ImportProfitCalculatorReplacementRates;
 import ro.sellfluence.app.PopulateDateComenziFromDB;
 import ro.sellfluence.app.PopulateStornoAndReturns;
 import ro.sellfluence.app.TransferReviews;
@@ -318,6 +319,10 @@ public class BackgroundJob {
                     db.updateStornoTable();
                     PopulateStornoAndReturns.updateSpreadsheets(db);
                 }
+        ));
+        definitions.add(new TaskDefinition(
+                "Import profit calculator replacement rates", googleApiLane, executeDaily, executeHourly, runAlways, null,
+                () -> ImportProfitCalculatorReplacementRates.refresh(db, clock)
         ));
         definitions.add(new TaskDefinition(
                 "Transfer to order and GMV sheets for 2026", googleApiLane, executeHourly, runAlways,

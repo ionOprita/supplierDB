@@ -211,12 +211,14 @@ multiple product columns: some formula rows contain manually replaced cells.
 | 50, 78 | USD transport override 43 × exchange-rate override 44 |
 | 53 | Accepted returned units divided by ordered units, per PNK |
 | 54 | Storno units minus returned units, divided by ordered units, per PNK |
+| 55 | Replacement rate by exact PNK from the imported central overview |
 | 56 | Current own-warehouse preparation cost from the selected group's Date Calcul |
 | 57–60 | FBE processing, return, withdrawal and disposal: source-classified tier base fee plus rounded-up excess kg × surcharge |
 | 63, 64 | Literal zero from the Google/social-media Ads formulas; not measured spending |
 | 81, 82 | Zero when the saved monthly capital rate is explicitly zero |
 | 83 | FBE processing fee × refusal rate × (1 + calculator VAT), with zero for a known 0% refusal rate |
 | 84 | Zero for a known 0% return rate |
+| 85 | Replacement rate × (packing + two courier charges + applicable FBE withdrawal) × (1 + group VAT) |
 | 87 | FBE processing fee with calculator VAT for `eMAG`, or row 56 for `Minulescu` |
 | 88 | Zero only for an explicit `Minulescu` fulfillment override |
 | 89 | Genius Easybox order share × Genius cost × (1 + calculator VAT) |
@@ -225,6 +227,7 @@ multiple product columns: some formula rows contain manually replaced cells.
 | 98 | Date Calcul miscellaneous cost per unit × (1 + calculator VAT) |
 | 100 | `Venit` turnover tax uses effective price, shared reference VAT, and group courier cost and tax rate. `Profit` gives zero. |
 | 101 | Zero only when VAT-payer status is explicitly false |
+| 102 | Zero when the saved monthly inflation rate is explicitly zero |
 | 105, 106 | Zero only for the known `Venit` tax regime |
 
 Unimplemented cost branches stay blank.
@@ -351,9 +354,9 @@ fractions, calculated from the same database snapshot as the other category
 inputs.
 
 The live rates can differ from saved workbook snapshots. The user's policy on
-ignoring cells entered over normal calculator formulas applies. Row 55 uses
-a different source, including a separate replacement shipment log, and its
-cost rows still depend on additional settings and expenses.
+ignoring cells entered over normal calculator formulas applies. Rows 55 and
+85 now use the upstream replacement rates from the central overview. The
+daily read-only import and manual refresh are documented in [ProfitCalculator.md](ProfitCalculator.md#rows-55-and-85--replacements).
 
 ### Shared FBE tariff editor
 
@@ -545,7 +548,7 @@ against a disposable PostgreSQL cluster.
    recovery handoff when decisions or verification change.
 
 Known data gaps from the repository audit include lending and repayment records,
-replacement shipment records for row 55, monetary purchase/freight import baselines, FBE storage and
+monetary purchase/freight import baselines, FBE storage and
 environmental/packaging/SMS tariffs, and review acquisition costs.
 Stored carton dimensions are not freight charges;
 `product.import_tax` is a rate, not per-unit customs cost; published review
@@ -555,12 +558,15 @@ defined. Row 62 still needs verified report-to-database mapping and coverage
 before implementation; do not substitute ad-attributed units. Spreadsheet tax, inflation, interest, or
 adjustment constants must not silently become hardcoded database defaults.
 
-On 2026-11-23, read-only tracing established the row-62 source formula and
-the C13 cancellation adjustment; see `ProfitCalculator.md` under **Row 62 —
-eMAG advertising cost investigation**. Mapping the manually imported report
-to stored daily snapshots, its account scope, and completeness remains
-unverified. No live database coverage check was performed and row 62 remains
-blank.
+The local October 2026 Ads parity check matched seven of nine Sellfusion
+product totals to the cent. Two totals differ even with all 31 daily
+observations. See [the row 62 investigation](ProfitCalculator.md#row-62--emag-advertising-cost-investigation).
+
+The local replacement-rate import on 2026-11-24 stored 73 rates, including 49
+zeros, and matched 61 active products by exact PNK. The local Google service
+account received HTTP 403 on the source. The initial import used a read-only
+connector capture through the same parser and database transaction. The
+scheduled refresher needs service-account read access to the overview.
 
 `Calc. Expunere & Profit` calculations remain future work after the category
 building blocks are understood. No profit totals or missing cost rows should

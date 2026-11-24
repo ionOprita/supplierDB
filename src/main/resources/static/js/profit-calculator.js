@@ -2,10 +2,10 @@ import {fetchJSON} from './common.js';
 import {renderCategoryTable} from './profit-calculator-table.js';
 import {OverrideDrafts} from './profit-calculator-overrides.js';
 
-const calculatedReferenceFields = ['returnRate', 'refusalRate', 'warehousePreparationCostRon', 'refusalCostRon',
+const calculatedReferenceFields = ['returnRate', 'refusalRate', 'replacementRate', 'warehousePreparationCostRon', 'refusalCostRon',
   'defectiveProductCostRon', 'fbeProcessingCostRon', 'fbeReturnCostRon', 'fbeWithdrawalCostRon', 'fbeDisposalCostRon',
   'geniusCostRon', 'accountingCostPerUnitRon', 'employeeCostPerUnitRon', 'miscellaneousCostPerUnitRon',
-  'transitFinancingCostRon', 'postDeliveryFinancingCostRon'];
+  'transitFinancingCostRon', 'postDeliveryFinancingCostRon', 'inflationCostRon'];
 
 function populateSelect(select, values, emptyLabel) {
   select.innerHTML = '';
@@ -104,12 +104,21 @@ export function initProfitCalculator() {
       if (version !== previewVersion) return;
       if (!Array.isArray(data.products)) throw new Error('Invalid preview response');
       const latest = new Map(data.products.map(product => [product.productCode, product]));
+      const fulfillmentDrafts = new Set(changes.filter(change => Object.hasOwn(change.values, 'fulfillmentSource'))
+        .map(change => change.productCode));
       // Retain fresh reference calculations across previews while preserving saved override baselines.
       products = products.map(product => {
         const updated = latest.get(product.productCode);
-        return updated ? {...product, calculated: {...product.calculated,
-          ...Object.fromEntries(calculatedReferenceFields.map(field => [field, updated.calculated?.[field] ?? null]))}}
-          : product;
+        if (!updated) return product;
+        const calculated = {...product.calculated,
+          ...Object.fromEntries(calculatedReferenceFields.map(field => [field, updated.calculated?.[field] ?? null]))};
+        // Zero replacement rate makes the cost independent of draft fulfillment.
+        if (!fulfillmentDrafts.has(product.productCode) || calculated.replacementRate === 0) {
+          calculated.replacementCostRon = updated.calculated?.replacementCostRon ?? null;
+        } else if (calculated.replacementRate !== product.calculated?.replacementRate) {
+          calculated.replacementCostRon = null;
+        }
+        return {...product, calculated};
       });
       // Updating only result cells preserves the focused input and its selection/caret.
       tableView?.updateMetrics(data.products);

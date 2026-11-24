@@ -279,6 +279,76 @@ class ProfitCalculatorCategoryTest {
     }
 
     @Test
+    void usesTheVerifiedReplacementRateAndWarehouseSpecificCostsInLoadsAndPreviews() {
+        var source = measuredProduct("code", "PNK", false,
+                new Overrides(null, null, null, null, null, "Minulescu"),
+                new BigDecimal("100"), new BigDecimal("2500"));
+        var rate = new BigDecimal("0.1");
+        var settings = replacementSettings(new BigDecimal("0.21"), new BigDecimal("1.25"),
+                new BigDecimal("13.37"), BigDecimal.ZERO);
+        var data = new CategoryData(List.of(source), List.of(fbeTariff(new BigDecimal("3.5"))),
+                Map.of(), settings, Map.of("PNK", rate));
+        var original = ProfitCalculatorCategory.create("S", "Trimmers", data).products().getFirst().calculated();
+        assertEquals(rate, original.replacementRate());
+        assertEquals(new BigDecimal("3.38679"), original.replacementCostRon());
+        assertEquals(BigDecimal.ZERO, original.inflationCostRon());
+
+        var preview = ProfitCalculatorCategory.preview("S", "Trimmers", data, List.of(
+                new OverrideChange("code", 3, Map.of("fulfillmentSource", "eMAG"))))
+                .products().getFirst().calculated();
+        assertEquals(rate, preview.replacementRate());
+        assertEquals(new BigDecimal("3.87079"), preview.replacementCostRon());
+        assertEquals(BigDecimal.ZERO, preview.inflationCostRon());
+
+        var cleared = new LinkedHashMap<String, String>();
+        cleared.put("fulfillmentSource", null);
+        var clearedPreview = ProfitCalculatorCategory.preview("S", "Trimmers", data, List.of(
+                new OverrideChange("code", 3, cleared))).products().getFirst().calculated();
+        assertEquals(rate, clearedPreview.replacementRate());
+        assertNull(clearedPreview.replacementCostRon());
+    }
+
+    @Test
+    void distinguishesExplicitZerosForReplacementsAndInflationFromUnknownOrIneligibleValues() {
+        var inputs = List.of(
+                new CategoryProduct("zero", "Product 1", "ZERO", false),
+                new CategoryProduct("unknown", "Product 2", "UNKNOWN", false),
+                new CategoryProduct("retracted", "Product 3", "RETRACTED", true),
+                new CategoryProduct("no-pnk", "Product 4", " ", false));
+        var replacementRates = Map.of("ZERO", BigDecimal.ZERO, "RETRACTED", BigDecimal.ZERO, " ", BigDecimal.ZERO);
+        var settings = replacementSettings(null, null, null, BigDecimal.ZERO);
+        var data = new CategoryData(inputs, List.of(), Map.of(), settings, replacementRates);
+        for (var item : ProfitCalculatorCategory.create("S", "Trimmers", data).products()) {
+            var values = item.calculated();
+            var expectedReplacement = item.productCode().equals("zero") ? BigDecimal.ZERO : null;
+            assertEquals(expectedReplacement, values.replacementRate(), item.productCode());
+            assertEquals(expectedReplacement, values.replacementCostRon(), item.productCode());
+            var expectedInflation = item.retracted() || item.pnk().isBlank() ? null : BigDecimal.ZERO;
+            assertEquals(expectedInflation, values.inflationCostRon(), item.productCode());
+        }
+
+        var eMag = measuredProduct("emag", "EMAG", false, new Overrides(null, null, null, null, null, "eMAG"),
+                null, null);
+        var warehouse = measuredProduct("warehouse", "WAREHOUSE", false,
+                new Overrides(null, null, null, null, null, "Minulescu"), null, null);
+        var rate = new BigDecimal("0.01");
+        var withMissingInputs = new CategoryData(List.of(eMag, warehouse), List.of(), Map.of(),
+                replacementSettings(BigDecimal.ZERO, null, BigDecimal.ONE, new BigDecimal("0.015")),
+                Map.of("EMAG", rate, "WAREHOUSE", rate));
+        for (var item : ProfitCalculatorCategory.create("S", "Trimmers", withMissingInputs).products()) {
+            assertEquals(rate, item.calculated().replacementRate(), item.productCode());
+            assertNull(item.calculated().replacementCostRon(), item.productCode());
+            assertNull(item.calculated().inflationCostRon(), item.productCode());
+        }
+    }
+
+    private static CategorySettings replacementSettings(BigDecimal vat, BigDecimal packing,
+                                                         BigDecimal courier, BigDecimal inflation) {
+        return new CategorySettings(vat, null, null, null, null, null, null,
+                null, null, courier, null, packing, inflation);
+    }
+
+    @Test
     void appliesDateCalculGeniusAndOverheadPerUnitToEligibleProductsDuringLoadsAndPreviews() {
         var inputs = List.of(
                 new CategoryProduct("eligible", "S. 1 - Eligible", "PNK", false, null, "Profit", false),

@@ -106,12 +106,14 @@ retracted guards apply. Money is shown in RON to two decimal places.
 | 81, 82 | An explicit 0% monthly capital rate (C5) gives zero. A nonzero rate needs import timing and cost inputs. |
 | 83 | FBE processing fee (57) × refusal rate (54) × (1 + VAT from C9). A known 0% refusal rate gives zero. |
 | 84 | A known 0% return rate (53) gives zero. The positive-rate formula still needs the full import and operating cost inputs. |
+| 85 | Replacement rate (55) × (packing C21 + 2 × courier C22 + applicable FBE withdrawal fee 59) × (1 + VAT from C9). |
 | 87 | `eMAG` uses FBE processing fee × (1 + VAT). `Minulescu` uses row 56 directly. |
 | 89 | Genius Easybox order share (C4) × Genius cost (C23) × (1 + VAT from C9) |
 | 91 | Accounting cost per unit from C25 |
 | 97 | Employee cost per unit from C26 |
 | 98 | Miscellaneous cost per unit (C27) × (1 + VAT from C9) |
 | 100 | For `Venit`, (effective selling price ÷ (1 + shared reference VAT) + group courier cost C22) × group income-tax rate C10. `Profit` gives zero. |
+| 102 | An explicit 0% monthly inflation rate (C6) gives zero. A nonzero rate needs import timing and cost inputs. |
 
 Rows 91, 97 and 98 use the same group-wide previous-month units (C8) as Date
 Calcul. Missing required inputs leave the result blank. A known zero remains
@@ -347,10 +349,13 @@ Stored campaign dates are only a coverage proxy, as described in
 `ProductPerformance.md`; a missing date does not establish zero spend. The
 existing product-performance attribution also differs from this formula: it
 prioritizes adset names and uses token matching and active-status filters.
-Actual database coverage was not verified in this investigation. Row 62
-therefore remains blank until the report-to-database mapping and completeness
-can be established; neither the helper's missing-input zero nor ad-attributed
-units are substituted for missing evidence.
+The local October 2026 mirror has campaign observations on all 31 days for
+Sellfusion. Seven of nine active PNKs with spend match the source report to the
+cent. Two native totals exceed the export by RON 4.62 and RON 2.02, with the
+same differences in the corresponding adset totals. The local mirror has
+incomplete October coverage for the other groups. Rows 62 and 92 remain
+blank. Importing the dated monthly report would preserve the source's spend
+figures. Row 92 uses total advertising cost including the saved group VAT.
 
 ## Shared manual inputs (rows 40–45)
 
@@ -511,12 +516,30 @@ ambiguous. The live result reflects the available database records and may
 differ from saved workbook snapshots or values entered directly in calculator
 cells.
 
-Row 55 still needs separate replacement shipment records. The overview
-exporter carries forward the existing column J. For group S, the historical
-source sums quantities for shipments classified as `Inlocuire` in
-`Expedieri (Inlocuiri+Service)` by order date and original PNK. Costs derived
-from the rates still need VAT and other cost inputs.
-[S. Raport Inlocuiri, Service, Retur](https://docs.google.com/spreadsheets/d/1JPooUiqh6tuCQvTC4wvKBsBq_OMKoxHIpu6_ndjYfbg/edit)
+### Rows 55 and 85 — replacements
+
+Row 55 uses the replacement rate in column J of the
+[central returns overview](https://docs.google.com/spreadsheets/d/1bOPbTkbvQL3g3Q0hzyNhaTAt--BNAFSZ5bV2PtAKh80/edit#gid=1118932541),
+matched by exact PNK in column D. The overview exporter carries those rates
+forward. An independent, read-only background task copies numeric rates to
+PostgreSQL daily and retries after an hour on failure. Migration 54 creates
+the snapshot table. The first successful refresh populates it and each later
+refresh replaces it atomically. Blank rates stay unknown, explicit zeros are
+preserved, and invalid or older snapshots leave the saved rates intact.
+Category loads and previews only read PostgreSQL.
+The Google service account used by the app needs read access to the central
+overview for automatic refreshes.
+
+Row 85 is zero when row 55 is explicitly zero. For a positive rate, `eMAG`
+uses row 59 and `Minulescu` uses zero withdrawal cost. A missing fulfillment
+choice or cost input leaves the amount blank. Fulfillment edits refresh the
+cost through the existing override preview.
+
+For an on-demand refresh, run:
+
+```sh
+mvn compile exec:java -Dexec.mainClass=ro.sellfluence.app.ImportProfitCalculatorReplacementRates -Dexec.args=--db=emagLocal
+```
 
 ### USD conversion provenance
 
@@ -599,8 +622,8 @@ totals remain deferred rather than being calculated from incomplete costs.
   expected revisions and acknowledges a successful commit. Reloading the
   category afterward is separate; a reload failure must not repeat the save.
 
-All routes require the existing application user role. Replacement rates,
-import VAT, customs, other fulfillment/advertising costs,
+All routes require the existing application user role. Import VAT, customs,
+other fulfillment and advertising costs,
 the remaining tax branches, profit totals, and financial summary rows 3–6 remain
 deferred.
 
