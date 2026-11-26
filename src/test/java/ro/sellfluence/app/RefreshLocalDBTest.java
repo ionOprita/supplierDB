@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -233,22 +234,45 @@ class RefreshLocalDBTest {
         }
 
         @Test
-        void incompatibleSchemasAreRejectedWithoutReplacingTheLocalDatabase() throws Exception {
-            execute(sourceConnection, "ALTER TABLE business_records ADD COLUMN unexpected_remote_column TEXT");
-            var before = snapshot(targetConnection);
+        void restoresAnOlderRemoteSchemaAndRetainsLocalOnlyDataInTheBackup() throws Exception {
+            execute(sourceConnection, """
+                    UPDATE version_info SET version=49;
+                    ALTER TABLE business_records ADD COLUMN remote_note TEXT NOT NULL DEFAULT 'remote layout';
+                    """);
+            execute(targetConnection, """
+                    UPDATE version_info SET version=54;
+                    CREATE TABLE local_only_settings(id INTEGER PRIMARY KEY, setting TEXT NOT NULL);
+                    INSERT INTO local_only_settings VALUES (1, 'local setting');
+                    """);
+            var localAuth = authRows(targetConnection);
+            var localSequences = authSequences(targetConnection);
 
-            assertThrows(Exception.class, () -> refresh(pgBin));
+            var backup = refresh(pgBin);
 
-            assertEquals(before, snapshot(targetConnection));
+            assertEquals("49", scalar(targetConnection, "SELECT max(version) FROM version_info"));
+            assertEquals(List.of("7:remote business:remote layout"), rows(targetConnection,
+                    "SELECT id::text || ':' || payload || ':' || remote_note FROM business_records"));
+            assertNull(scalar(targetConnection, "SELECT to_regclass('public.local_only_settings')::text"));
+            assertEquals(localAuth, authRows(targetConnection));
+            assertEquals(localSequences, authSequences(targetConnection));
+
+            var restore = new ProcessBuilder(pgBin.resolve("pg_restore").toString(), "--data-only",
+                    "--table=local_only_settings", "--file=-", backup.resolve("local-before.dump").toString())
+                    .redirectErrorStream(true).start();
+            String backupSql = new String(restore.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertEquals(0, restore.waitFor(), backupSql);
+            assertTrue(backupSql.lines().anyMatch("1\tlocal setting"::equals), backupSql);
         }
 
         @Test
-        void incompatibleVersionsAreRejectedWithoutReplacingTheLocalDatabase() throws Exception {
-            execute(sourceConnection, "UPDATE version_info SET version=47");
+        void anIncompatiblePasskeyLayoutIsRejectedBeforeCreatingBackups() throws Exception {
+            execute(targetConnection, "ALTER TABLE webauthn_credential ADD COLUMN local_note TEXT");
             var before = snapshot(targetConnection);
 
-            assertThrows(Exception.class, () -> refresh(pgBin));
+            var failure = assertThrows(IllegalArgumentException.class, () -> refresh(pgBin));
 
+            assertTrue(failure.getMessage().contains("webauthn_credential"), failure.getMessage());
+            assertFalse(Files.exists(backups));
             assertEquals(before, snapshot(targetConnection));
         }
 

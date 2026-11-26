@@ -30,13 +30,12 @@ import java.util.regex.Pattern;
 
 import static ro.sellfluence.support.UsefulMethods.homeDirectory;
 
-/** Replaces local business data with a remote snapshot while preserving local users and passkeys. */
+/** Restores the remote schema and business data while preserving local users and passkeys. */
 public class RefreshLocalDB {
     private static final String SOURCE_ALIAS = "emagRemote";
     private static final String TARGET_ALIAS = "emagLocal";
     private static final List<String> AUTH_TABLES = List.of("app_user", "webauthn_credential", "webauthn_challenge");
-    private static final List<String> SAVED_AUTH = List.of("app_user", "webauthn_credential",
-            "app_user_id_seq", "webauthn_credential_id_seq");
+    private static final List<String> SAVED_AUTH_TABLES = List.of("app_user", "webauthn_credential");
     private static final List<String> TOOLS = List.of("pg_dump", "pg_restore", "psql");
     private static final Pattern TOOL_VERSION = Pattern.compile("\\(PostgreSQL\\) (\\d+)");
     private static final Pattern TOC_ENTRY = Pattern.compile("^\\d+;\\s+\\d+\\s+\\d+\\s+.+$");
@@ -74,7 +73,7 @@ public class RefreshLocalDB {
             }
         }
         if (arguments.hasFlag("help")) {
-            System.out.println("Refresh emagLocal from emagRemote, preserving local users and passkeys.");
+            System.out.println("Restore the emagRemote schema and business data to emagLocal, preserving local users and passkeys.");
             System.out.println("Stop the local application first. Options: --pg-bin=PATH --backup-dir=PATH");
             return;
         }
@@ -136,9 +135,19 @@ public class RefreshLocalDB {
         System.out.println("Checking remote and local database layouts (read-only).");
         Snapshot source = inspect(remote, false);
         Snapshot target = inspect(local, true);
-        if (source.version() != target.version() || !source.tables().equals(target.tables())
-                || !source.layout().equals(target.layout())) {
-            throw new IllegalArgumentException("Source and target must have matching schema versions and table layouts");
+        System.out.printf("Remote schema version %d. Local schema version %d.%n", source.version(), target.version());
+        for (String table : SAVED_AUTH_TABLES) {
+            if (!source.authLayouts().get(table).equals(target.authLayouts().get(table))) {
+                throw new IllegalArgumentException("Remote and local column layouts differ for public." + table
+                        + ". Refresh requires matching layouts to preserve local users and passkeys.");
+            }
+        }
+        var localOnlyTables = new ArrayList<>(target.tables());
+        localOnlyTables.removeAll(source.tables());
+        if (!localOnlyTables.isEmpty()) {
+            System.out.printf("The refresh will remove the following local-only tables from the active database.%n%s%n",
+                    String.join(", ", localOnlyTables));
+            System.out.println("The full local backup local-before.dump will retain these tables and their data.");
         }
         Files.createDirectories(backupDir);
         String timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now());
@@ -168,7 +177,10 @@ public class RefreshLocalDB {
         Path authDump = privateFile(run.resolve("local-auth.dump"));
         var auth = command(binaries, "pg_dump", local, "--format=custom", "--data-only", "--strict-names",
                 "--file", authDump.toString());
-        for (String table : SAVED_AUTH) auth.add("--table=public." + table);
+        for (String table : SAVED_AUTH_TABLES) {
+            auth.add("--table=public." + table);
+            auth.add("--table=public." + table + "_id_seq");
+        }
         runStage(run, "backup-local-auth", auth, local, false);
         validateArchive(run, binaries, authDump, "validate-local-auth");
         for (Path archive : List.of(remoteDump, localDump, authDump)) {
@@ -238,6 +250,7 @@ public class RefreshLocalDB {
     }
 
     private record Snapshot(int version, int serverVersion, List<String> tables, String layout,
+                            Map<String, String> authLayouts,
                             String usersHash, String credentialsHash, SequenceState usersSequence,
                             SequenceState credentialsSequence) {
     }
@@ -311,6 +324,7 @@ public class RefreshLocalDB {
         properties.setProperty("connectTimeout", "15");
         try (Connection db = DriverManager.getConnection(endpoint.credentials().connect(), properties)) {
             db.setReadOnly(true);
+            db.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
             db.setAutoCommit(false);
             try (var statement = db.createStatement()) {
                 statement.execute("SET LOCAL TIME ZONE 'UTC'");
@@ -367,8 +381,13 @@ public class RefreshLocalDB {
                     """) != 0) {
                 throw new IllegalArgumentException("Unsupported foreign keys to authentication tables");
             }
+            Map<String, String> authLayouts = new HashMap<>();
+            for (String table : SAVED_AUTH_TABLES) {
+                authLayouts.put(table, string(db, LAYOUT_QUERY + " AND c.relname = " + literal(table)));
+            }
             return new Snapshot(version, db.getMetaData().getDatabaseMajorVersion(), List.copyOf(tables),
-                    string(db, LAYOUT_QUERY), target ? string(db, authHashQuery("app_user")) : null,
+                    target ? null : string(db, LAYOUT_QUERY), Map.copyOf(authLayouts),
+                    target ? string(db, authHashQuery("app_user")) : null,
                     target ? string(db, authHashQuery("webauthn_credential")) : null,
                     target ? sequence(db, "app_user_id_seq") : null,
                     target ? sequence(db, "webauthn_credential_id_seq") : null);
