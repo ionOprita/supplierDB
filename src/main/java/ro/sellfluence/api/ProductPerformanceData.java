@@ -23,8 +23,10 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 
 import static java.math.RoundingMode.HALF_EVEN;
@@ -41,6 +43,7 @@ import static java.math.RoundingMode.HALF_EVEN;
 public final class ProductPerformanceData {
     static final String OFFERS_SNAPSHOT_SOURCE = "eMAG offers snapshot";
     private static final Primitives ZERO = new Primitives(0L, 0L, BigDecimal.ZERO, BigDecimal.ZERO, 0L, 0L);
+    private static final ReviewDay NO_REVIEWS = new ReviewDay(0, 0, 0);
 
     private static final List<ColumnGroup> GROUPS = List.of(
             new ColumnGroup("overview", "Product metrics", List.of(
@@ -68,7 +71,11 @@ public final class ProductPerformanceData {
                                     + "These reviews are shared by sellers of the same variant."),
                     column("rating", "Average rating", "decimal",
                             "Average of the individual 1–5 star ratings on reviews published for this variant "
-                                    + "during the displayed dates. A dash means no rated reviews or unavailable data.")
+                                    + "during the displayed dates. A dash means no rated reviews or unavailable data."),
+                    column("lifetimeReviews", "Lifetime reviews", "reviewSummary",
+                            "Published review count and average rating for this variant through the end of the row. "
+                                    + "The report uses the latest stored rating for each review. Later edits can change "
+                                    + "the average for a past date. A dash means no rated reviews or unavailable data.")
             )),
             new ColumnGroup("total", "Total", adsColumns("total", null)),
             new ColumnGroup("auto", "Auto", adsColumns("auto", "Auto")),
@@ -127,6 +134,9 @@ public final class ProductPerformanceData {
     }
 
     public record ColumnGroup(String key, String label, List<Column> columns) {
+    }
+
+    public record LifetimeReviews(long count, BigDecimal averageRating) {
     }
 
     /** Inclusive calculation dates; the raw eMAG visits counter has an unverified source cutoff. */
@@ -224,6 +234,7 @@ public final class ProductPerformanceData {
                                            Set<LocalDate> missedCloseFallbackDates, ReviewHistory reviews) {
         var errors = new ArrayList<DataError>();
         var rows = new ArrayList<Row>();
+        var cumulativeReviews = accumulateReviews(reviews.days());
         for (var period : periods) {
             var totals = new PeriodTotals();
             boolean hasAds = false;
@@ -239,7 +250,8 @@ public final class ProductPerformanceData {
             }
             var closing = closingMetrics(period, visitsByDate, hotnessByDate, missedCloseFallbackDates);
             var row = totals.row(period, offerTotals, hasAds, gmvByPeriod.get(period.startDate()),
-                    ordersByPeriod.get(period.startDate()), totalSalesByPeriod.get(period.startDate()), closing, reviews);
+                    ordersByPeriod.get(period.startDate()), totalSalesByPeriod.get(period.startDate()), closing,
+                    reviews, cumulativeReviews);
             rows.add(row);
         }
         return new Response(false, product, GROUPS, List.copyOf(rows), List.copyOf(new LinkedHashSet<>(errors)));
@@ -259,6 +271,7 @@ public final class ProductPerformanceData {
     }
 
     private static boolean hasObservedMetrics(Row row) {
+        // LifetimeReviews is a summary of history. Only numeric activity within the current period keeps this row.
         return GROUPS.stream().flatMap(group -> group.columns().stream())
                 .anyMatch(column -> row.values().get(column.key()) instanceof Number number
                         && (!"reviews".equals(column.key()) || number.longValue() > 0));
@@ -399,7 +412,8 @@ public final class ProductPerformanceData {
         }
 
         private Row row(ReportPeriod period, OfferTotals offers, boolean hasAds, BigDecimal gmv, Long orders,
-                        BigDecimal totalSales, ClosingMetrics closing, ReviewHistory reviews) {
+                        BigDecimal totalSales, ClosingMetrics closing, ReviewHistory reviews,
+                        NavigableMap<LocalDate, ReviewDay> cumulativeReviews) {
             var values = new LinkedHashMap<String, Object>();
             // Unsupported overview columns and metrics with unavailable inputs remain null.
             for (var group : GROUPS) {
@@ -451,7 +465,7 @@ public final class ProductPerformanceData {
                     }
                 }
             }
-            var reviewFetchedAt = writeReviews(values, period, reviews);
+            var reviewFetchedAt = writeReviews(values, period, reviews, cumulativeReviews);
             // Map.copyOf rejects nulls, which intentionally represent unavailable cells here.
             return new Row(period, Collections.unmodifiableMap(values), visitValue.snapshotDate(),
                     visitValue.capturedAt(), visitValue.status(), visitValue.reason(),
@@ -460,23 +474,38 @@ public final class ProductPerformanceData {
         }
     }
 
+    private static NavigableMap<LocalDate, ReviewDay> accumulateReviews(Map<LocalDate, ReviewDay> days) {
+        var cumulative = new TreeMap<>(days);
+        var total = NO_REVIEWS;
+        for (var entry : cumulative.entrySet()) {
+            total = total.plus(entry.getValue());
+            entry.setValue(total);
+        }
+        return cumulative;
+    }
+
     /** A closed date needs a later collection. Today's values cover only the time up to today's fetch. */
-    private static Instant writeReviews(Map<String, Object> values, ReportPeriod period, ReviewHistory reviews) {
+    private static Instant writeReviews(Map<String, Object> values, ReportPeriod period, ReviewHistory reviews,
+                                        NavigableMap<LocalDate, ReviewDay> cumulativeReviews) {
         var fetchedOn = reviews.lastSuccessfulFetchDate();
         if (fetchedOn == null || (period.provisional()
                 ? !fetchedOn.equals(period.endDate()) : !fetchedOn.isAfter(period.endDate()))) return null;
 
-        var total = new ReviewDay(0, 0, 0);
-        for (var date = period.startDate(); !date.isAfter(period.endDate()); date = date.plusDays(1)) {
-            var day = reviews.days().get(date);
-            if (day != null) total = total.plus(day);
-        }
-        values.put("reviews", total.count());
-        if (total.ratedCount() > 0) {
-            values.put("rating", BigDecimal.valueOf(total.starSum())
-                    .divide(BigDecimal.valueOf(total.ratedCount()), MathContext.DECIMAL128));
-        }
+        var endEntry = cumulativeReviews.floorEntry(period.endDate());
+        var priorEntry = cumulativeReviews.lowerEntry(period.startDate());
+        var lifetime = endEntry == null ? NO_REVIEWS : endEntry.getValue();
+        var previous = priorEntry == null ? NO_REVIEWS : priorEntry.getValue();
+        values.put("reviews", lifetime.count() - previous.count());
+        values.put("rating", averageRating(lifetime.starSum() - previous.starSum(),
+                lifetime.ratedCount() - previous.ratedCount()));
+        values.put("lifetimeReviews", new LifetimeReviews(lifetime.count(),
+                averageRating(lifetime.starSum(), lifetime.ratedCount())));
         return period.provisional() ? reviews.lastSuccessfulFetchAt() : null;
+    }
+
+    private static BigDecimal averageRating(long starSum, long ratedCount) {
+        return ratedCount == 0 ? null : BigDecimal.valueOf(starSum)
+                .divide(BigDecimal.valueOf(ratedCount), MathContext.DECIMAL128);
     }
 
     private record HotnessValue(String label, LocalDate snapshotDate, String status, String reason, String type) {

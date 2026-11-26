@@ -40,12 +40,13 @@ class ProductPerformanceDataTest {
         assertFalse(response.mock());
         assertEquals(List.of("overview", "total", "auto", "broad", "exact", "product"),
                 response.groups().stream().map(ProductPerformanceData.ColumnGroup::key).toList());
-        assertEquals(List.of(10, 13, 15, 15, 15, 15),
+        assertEquals(List.of(11, 13, 15, 15, 15, 15),
                 response.groups().stream().map(group -> group.columns().size()).toList());
         assertEquals(List.of("Period", "Stock", "Orders", "Total Sales (excl. VAT)", "Clicks", "Sales Price (incl. VAT)", "Conv.",
-                        "Perform.", "Reviews received", "Average rating"),
+                        "Perform.", "Reviews received", "Average rating", "Lifetime reviews"),
                 response.groups().getFirst().columns().stream().map(ProductPerformanceData.Column::label).toList());
-        assertEquals(List.of("date", "integer", "integer", "integer", "integer", "decimal", "percent", "text", "integer", "decimal"),
+        assertEquals(List.of("date", "integer", "integer", "integer", "integer", "decimal", "percent", "text",
+                        "integer", "decimal", "reviewSummary"),
                 response.groups().getFirst().columns().stream().map(ProductPerformanceData.Column::type).toList());
         var commonAdsLabels = List.of("Imp.", "Clicks", "Spend (excl. VAT)", "Sales (excl. VAT)", "Total Units Sold",
                 "CTR", "Conv.", "CPC (excl. VAT)", "ROAS", "ACOS", "TACOS");
@@ -69,8 +70,8 @@ class ProductPerformanceDataTest {
         }
         var keys = response.groups().stream().flatMap(group -> group.columns().stream())
                 .map(ProductPerformanceData.Column::key).toList();
-        assertEquals(83, keys.size());
-        assertEquals(83, new HashSet<>(keys).size());
+        assertEquals(84, keys.size());
+        assertEquals(84, new HashSet<>(keys).size());
         assertFalse(keys.contains("averagePrice"));
         var values = response.rows().getFirst().values();
         var apiKeys = new HashSet<>(keys);
@@ -122,6 +123,7 @@ class ProductPerformanceDataTest {
         assertTrue(jsonValues.get("auto_ctr").isNumber());
         assertEquals("2026-09-07", jsonValues.get("period").asString());
         assertTrue(jsonValues.get("rating").isNull());
+        assertTrue(jsonValues.get("lifetimeReviews").isNull());
     }
 
     @Test

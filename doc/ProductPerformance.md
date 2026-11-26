@@ -103,8 +103,9 @@ Switching modes requests new aggregates rather than relabelling rows.
 
 The current row appears only when the selected product and account have an observed numeric
 value within its dates. A measured zero qualifies, including zero stock, a zero order quantity
-or a sale whose adjustments bring the amount to zero. A positive review count can create the
-row. A zero review count, vendor-wide snapshot or empty sum alone cannot create it.
+or a sale whose adjustments bring the amount to zero. A positive count of reviews published
+in the current interval can create the row. A zero review count, lifetime total, vendor-wide
+snapshot or empty sum alone leaves it hidden.
 Each metric without its own supporting data stays blank.
 
 | Metric | What the provisional row shows |
@@ -113,6 +114,7 @@ Each metric without its own supporting data stays blank.
 | Orders, Total Sales and legacy GMV | Each total uses its own contributing records inside the displayed dates. A recorded zero or negative amount is retained. |
 | Product Clicks, Perform. and Conv. | Blank. The rolling counters and classification cannot describe this interval. |
 | Reviews received and Average rating | Published reviews in the displayed dates through today's latest successful review fetch. Both cells stay blank until the collector fetches this PNK today. |
+| Lifetime reviews | The running count and average rating through today's latest successful review fetch. |
 | Ads primitives and ratios within Ads | Recorded product adset figures through today, with ratios calculated from the available inputs. Categories without recorded inputs stay blank. The collector normally reports through yesterday. Partial figures identify the saved report dates in the cell details and CSV. |
 | TACOS and Ads share of Total Sales | Available with valid inputs, positive Total Sales and a saved campaign report for every elapsed date. Incomplete coverage leaves these ratios blank. |
 | Ads share of product Clicks | Blank because product Clicks are unavailable for this interval. |
@@ -368,18 +370,28 @@ actual observation date. The response and CSV preserve the separate performance 
 reason and raw type. Unknown labels remain text rather than being rejected by a fixed enum.
 Page loads use stored observations; no schema migration or new conversion collection is required.
 
-## Reviews received and average rating
+## Product reviews
 
 For 14-day and 30-day rows, **Reviews received** counts individual public reviews of the
 selected PNK whose publication timestamp falls within the row's inclusive Romanian calendar dates.
 **Average rating** is the sum of valid individual ratings (1–5 stars) divided by the number of
 those ratings. A published review with a missing or invalid rating still counts as a review.
 
+**Lifetime reviews** shows the running count and average rating together through the row's
+end date, including reviews published before the displayed period. Each review contributes
+once, including when 30-day windows overlap. The table and CSV both show the values as one
+cell, for example **120 reviews · 4.75 ★**. The API returns that cell's numeric count and
+average as `values.lifetimeReviews.count` and `values.lifetimeReviews.averageRating`.
+Historical totals use the latest stored rating of each review. An edit can change the
+reconstructed average for earlier dates.
+
 A completed period requires a successful review fetch for that PNK on a later Romanian date.
 For a period ending today, the report uses today's successful fetch and supplies its timestamp
 in `reviewFetchedAt`, the cell details and the CSV field **Reviews fetched at**.
-A covered period with no reviews shows **0** reviews. Average rating is
-blank whenever there are no valid ratings. Both cells are blank without a qualifying fetch.
+A covered period with no new reviews shows **0** for **Reviews received**. With no reviews
+published through a covered date, **Lifetime reviews** shows **0 reviews · —**. Each average
+is blank whenever it has no valid ratings. All three review cells are blank without a
+qualifying fetch.
 
 The old yellow review cells copied family figures from weekly spreadsheet snapshots. Each count
 covered the 30 days ending on the sheet's observation date, which could precede the row's end by
@@ -434,7 +446,8 @@ their dedicated observation metadata to `estimated` without inventing a timestam
 
 The current sources support all 73 advertising columns, plus Orders, Total Sales, Stock, Sales Price
 and raw rolling Clicks, calculated product conversion and observed performance classification
-where the required inputs exist. Dated public reviews supply the period count and average rating.
+where the required inputs exist. Dated public reviews supply period and lifetime counts and
+average ratings.
 Other missing measurements retain their positions without fabricated values.
 
 Keyword classification errors make Broad, Exact, and Total unavailable for the affected

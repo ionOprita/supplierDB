@@ -38,6 +38,13 @@ export function formatPerformanceValue(value, type) {
     return date ? dateFormat.formatToParts(date)
         .map(part => part.type === 'month' ? part.value.slice(0, 3) : part.value).join('') : '—';
   }
+  if (type === 'reviewSummary') {
+    const {count, averageRating} = value;
+    if (!Number.isSafeInteger(count) || count < 0) return '—';
+    const reviews = count === 1 ? 'review' : 'reviews';
+    const rating = Number.isFinite(averageRating) ? `${numberFormats.decimal.format(averageRating)} ★` : '—';
+    return `${numberFormats.integer.format(count)} ${reviews} · ${rating}`;
+  }
   const formatter = numberFormats[type];
   if (formatter) return typeof value === 'number' && Number.isFinite(value) ? formatter.format(value) : '—';
   return String(value);
@@ -176,7 +183,7 @@ export function initProductPerformance() {
   const help = createInfoTooltip({document, prefix: 'productPerformance',
     label: 'About report periods and data quality', sections: [
       {title: 'Product reviews',
-        text: 'Reviews received counts reviews published for the selected product variant during the dates shown, using Romanian time. Each star rating from those reviews has equal weight in Average rating. A count of 0 means the review collection covered the period and found no reviews. The average stays blank when there are no star ratings. Both values stay blank when review coverage is missing. For an in-progress row, the cell details and CSV show when reviews were last collected.'},
+        text: 'Reviews received counts reviews published for the selected product variant during the dates shown, using Romanian time. Each star rating from those reviews has equal weight in Average rating. Lifetime reviews includes all reviews published through the end of the row, using the latest stored rating for each review. A count of 0 means no reviews were found for the covered dates. The average stays blank when there are no star ratings. Review fields stay blank when collection has yet to cover the period. For an in-progress row, the cell details and CSV show when reviews were last collected.'},
       {title: 'Estimated history — yellow cells',
         text: 'If the closing-day snapshot is missing, Clicks and Perform. can use the following day’s capture. The cell shows its capture date. The rolling window shifts by one day, and ratios using those Clicks are estimates too. For Google Sheets history, rolling 30-day totals are scaled by 14/30 for 14-day rows, assuming uniform activity, and used unchanged for 30-day rows. Stock, price and classification observations keep their source values. Cell details and CSV retain the source date and calculation.'},
       {title: 'Partial data — ◐',
@@ -399,7 +406,7 @@ export function initProductPerformance() {
         }
         cell.dataset.type = column.type;
         describeColumn(cell, column, true);
-        if (reviewsAsOf && (column.key === 'reviews' || column.key === 'rating')) {
+        if (reviewsAsOf && ['reviews', 'rating', 'lifetimeReviews'].includes(column.key)) {
           cell.title = [cell.title, `Review data as of ${reviewsAsOf}.`].filter(Boolean).join(' ');
           cell.setAttribute('aria-label', `${cell.textContent}. ${column.label}. ${cell.title}`);
         }

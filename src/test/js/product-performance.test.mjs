@@ -16,6 +16,10 @@ const {formatPerformanceValue: format, formatPerformancePeriod: formatPeriod,
     .replace("'./common.js'", JSON.stringify(common))
     .replace("'./table-common.js'", JSON.stringify(tableCommon))
     .replace("'./info-tooltip.js'", JSON.stringify(infoTooltip))));
+const lifetimeReviewColumn = {
+  key: 'lifetimeReviews', label: 'Lifetime reviews', type: 'reviewSummary',
+  description: 'Reviews published through the end of this row, using the latest stored rating for each review.'
+};
 
 test('formats numeric values like the spreadsheet, including fractional percentages', () => {
   assert.equal(format(43488, 'integer'), '43,488');
@@ -26,13 +30,20 @@ test('formats numeric values like the spreadsheet, including fractional percenta
 });
 
 test('distinguishes unavailable metrics from real zero values', () => {
-  for (const type of ['integer', 'decimal', 'percent', 'date', 'text']) {
+  for (const type of ['integer', 'decimal', 'percent', 'date', 'text', 'reviewSummary']) {
     for (const value of [null, undefined, '']) assert.equal(format(value, type), '—');
   }
   for (const value of [NaN, Infinity, '123']) assert.equal(format(value, 'integer'), '—');
   assert.equal(format(0, 'integer'), '0');
   assert.equal(format(0, 'decimal'), '0.00');
   assert.equal(format(0, 'percent'), '0.00%');
+});
+
+test('formats lifetime review counts and ratings together', () => {
+  assert.equal(format({count: 0, averageRating: null}, 'reviewSummary'), '0 reviews · —');
+  assert.equal(format({count: 1, averageRating: 5}, 'reviewSummary'), '1 review · 5.00 ★');
+  assert.equal(format({count: 120, averageRating: 4.75}, 'reviewSummary'), '120 reviews · 4.75 ★');
+  assert.equal(format({count: 1_200, averageRating: null}, 'reviewSummary'), '1,200 reviews · —');
 });
 
 test('shows ambiguous offer cells without treating them as numbers', async t => {
@@ -87,32 +98,37 @@ test('VAT-inclusive Sales Price and its period mean render and export without Av
       {key: 'conversion', label: 'Conv.', type: 'percent'},
       {key: 'performance', label: 'Perform.', type: 'text'},
       {key: 'reviews', label: 'Reviews received', type: 'integer'},
-      {key: 'rating', label: 'Average rating', type: 'decimal'});
+      {key: 'rating', label: 'Average rating', type: 'decimal'},
+      lifetimeReviewColumn);
     data.rows[0].visitsStatus = 'available';
     Object.assign(data.rows[0].values, {stock: 7, orders: 3, totalSales: 600, gmv: 726, clicks: 20,
       salesPrice, conversion: 0.25, performance: 'HOT', reviews: 4, rating: 4.5,
+      lifetimeReviews: {count: 120, averageRating: 4.75},
       averagePrice: 7777.77});
     return data;
   };
   await page.respond(0, pricedReport('2026-09-07', 199.99));
   const headers = page.byId('Head').children[1].children;
-  assert.deepEqual(headers.slice(0, 9).map(cell => cell.textContent),
-    ['Stock', 'Orders', 'Total Sales (excl. VAT)', 'Clicks', 'Sales Price (incl. VAT)', 'Conv.', 'Perform.', 'Reviews received', 'Average rating']);
-  assert.equal(page.byId('Head').children[0].children[1].colSpan, 9);
-  assert.equal(page.byId('Table').querySelectorAll('colgroup')[0].span, 10);
+  assert.deepEqual(headers.slice(0, 10).map(cell => cell.textContent),
+    ['Stock', 'Orders', 'Total Sales (excl. VAT)', 'Clicks', 'Sales Price (incl. VAT)', 'Conv.', 'Perform.', 'Reviews received',
+      'Average rating', 'Lifetime reviews']);
+  assert.equal(page.byId('Head').children[0].children[1].colSpan, 10);
+  assert.equal(page.byId('Table').querySelectorAll('colgroup')[0].span, 11);
   assert.equal(headers[7].dataset.frozenIndex, 8);
   assert.equal(headers[8].dataset.frozenIndex, 9);
   const row = page.byId('Body').children[0];
   assert.equal(row.cells[5].textContent, '199.99');
   assert.equal(row.cells[8].dataset.frozenIndex, 8);
   assert.equal(row.cells[9].dataset.frozenIndex, 9);
-  assert.equal(row.cells.length, 12);
+  assert.equal(row.cells[10].textContent, '120 reviews · 4.75 ★');
+  assert.equal(row.cells[10].dataset.frozenIndex, 10);
+  assert.equal(row.cells.length, 13);
   assert.doesNotMatch(page.byId('Head').textContent, /Average price/);
   assert.doesNotMatch(row.textContent, /7,777/);
   assert.doesNotMatch(row.textContent, /726/, 'Legacy gross GMV must not replace the net total');
   page.byId('DownloadCsv').click();
-  const header = 'Stock,Orders,Total Sales (excl. VAT),Clicks,Sales Price (incl. VAT),Conv.,Perform.,Reviews received,Average rating,Auto - Clicks,Total - Clicks';
-  assert.equal(withoutMetadata(await page.csv()), `\uFEFFPeriod,${header}\r\n07 Sept 2026 - 20 Sept 2026,7,3,600,20,199.99,25.00%,HOT,4,4.50,5,5`);
+  const header = 'Stock,Orders,Total Sales (excl. VAT),Clicks,Sales Price (incl. VAT),Conv.,Perform.,Reviews received,Average rating,Lifetime reviews,Auto - Clicks,Total - Clicks';
+  assert.equal(withoutMetadata(await page.csv()), `\uFEFFPeriod,${header}\r\n07 Sept 2026 - 20 Sept 2026,7,3,600,20,199.99,25.00%,HOT,4,4.50,120 reviews · 4.75 ★,5,5`);
 
   page.periodSelect().value = '30days';
   page.periodSelect().dispatch('change');
@@ -120,7 +136,7 @@ test('VAT-inclusive Sales Price and its period mean render and export without Av
   await page.respond(1, pricedReport('2026-09-01', 193.32, 30));
   assert.equal(page.byId('Body').children[0].cells[5].textContent, '193.32');
   page.byId('DownloadCsv').click();
-  assert.equal(withoutMetadata(await page.csv()), `\uFEFFPeriod,${header}\r\n01 Sept 2026 - 30 Sept 2026,7,3,600,20,193.32,25.00%,HOT,4,4.50,5,5`);
+  assert.equal(withoutMetadata(await page.csv()), `\uFEFFPeriod,${header}\r\n01 Sept 2026 - 30 Sept 2026,7,3,600,20,193.32,25.00%,HOT,4,4.50,120 reviews · 4.75 ★,5,5`);
 });
 
 test('financial columns expose tax explanations accessibly and export unchanged source amounts with VAT labels', async t => {
@@ -656,14 +672,17 @@ test('in-progress dates, measured zeroes, unavailable metrics and partial Ads co
   const coverage = {quality: 'partial', source: 'Native eMAG daily reports', sourceDate: '2026-11-25',
     sourceWindowDays: 11, method: 'Saved daily Ads report dates: 10/11.'};
   const reviewFetchedAt = '2026-11-26T18:30:00Z';
-  const row = performanceRow('2026-11-16', {orders: 7, reviews: 2, rating: 4.5, auto_clicks: 0}, {
+  const row = performanceRow('2026-11-16', {
+    orders: 7, reviews: 2, rating: 4.5, auto_clicks: 0, lifetimeReviews: {count: 120, averageRating: 4.75}
+  }, {
     period: {startDate: '2026-11-16', endDate: '2026-11-26', windowDays: 11, provisional: true},
     visitsReason, performanceStatus: 'missing', performanceReason, reviewFetchedAt, cellProvenance: {auto_clicks: coverage}
   });
   const data = visitReport([row]);
   data.groups[0].columns.push(
     {key: 'conversion', label: 'Conv.', type: 'percent'}, {key: 'performance', label: 'Perform.', type: 'text'},
-    {key: 'reviews', label: 'Reviews received', type: 'integer'}, {key: 'rating', label: 'Average rating', type: 'decimal'});
+    {key: 'reviews', label: 'Reviews received', type: 'integer'}, {key: 'rating', label: 'Average rating', type: 'decimal'},
+    lifetimeReviewColumn);
   data.groups.push({key: 'total', label: 'Total', columns: [
     {key: 'total_clicks_share', label: 'Ads click share', type: 'percent'},
     {key: 'total_sales_share', label: 'Ads sales share', type: 'percent'},
@@ -672,19 +691,20 @@ test('in-progress dates, measured zeroes, unavailable metrics and partial Ads co
   await page.respond(0, data);
   const cells = page.byId('Body').children[0].cells;
   const periodLabel = '16 Nov 2026 - 26 Nov 2026 (in progress)';
-  assert.deepEqual(cells.map(cell => cell.textContent), [periodLabel, '7', '—', '—', '—', '2', '4.50', '—', '—', '—', '0']);
-  for (const index of [5, 6]) {
+  assert.deepEqual(cells.map(cell => cell.textContent),
+    [periodLabel, '7', '—', '—', '—', '2', '4.50', '120 reviews · 4.75 ★', '—', '—', '—', '0']);
+  for (const index of [5, 6, 7]) {
     assert.match(cells[index].title, /Review data as of 26 Nov 2026,? 20:30 \(Romania\)/);
     assert.ok(cells[index].getAttribute('aria-label').includes(cells[index].title));
   }
-  for (const index of [2, 3, 7]) {
+  for (const index of [2, 3, 8]) {
     assert.ok(cells[index].title.includes(periodLabel));
     assert.ok(cells[index].getAttribute('aria-label').includes(visitsReason));
     assert.doesNotMatch(cells[index].title, /rolling 11-day|Captured:/i);
   }
   assert.ok(cells[4].getAttribute('aria-label').includes(performanceReason));
-  for (const index of [8, 9]) assert.match(cells[index].title, /reports for every date/);
-  assert.match(cells[10].getAttribute('aria-label'), /Saved daily Ads report dates: 10\/11/);
+  for (const index of [9, 10]) assert.match(cells[index].title, /reports for every date/);
+  assert.match(cells[11].getAttribute('aria-label'), /Saved daily Ads report dates: 10\/11/);
   assert.match(page.byId('Status').textContent, /latest saved Ads report .*25 Nov 2026/i);
   page.byId('DownloadCsv').click();
   const [headers, fields] = parseCsv(await page.csv());
@@ -932,7 +952,7 @@ test('permanent English report help explains estimates and provisional timing in
   assert.equal(page.byId('Table').descendants().includes(wrap), false, 'Help stays outside scrolling cells and CSV');
   assert.equal(button.disabled, false);
   assert.equal(tooltip.hidden, true);
-  for (const explanation of ['Product reviews', 'published for the selected product variant',
+  for (const explanation of ['Product reviews', 'published for the selected product variant', 'Lifetime reviews', 'latest stored rating',
     'Each star rating', 'Estimated history — yellow cells', '14/30', 'keep their source values', 'Partial data — ◐',
     'Missing values (—)', 'In-progress period', 'day after the last close through today in Romania',
     'recorded data', 'rolling counters', 'the closed row covers the 30 days ending at month-end']) {

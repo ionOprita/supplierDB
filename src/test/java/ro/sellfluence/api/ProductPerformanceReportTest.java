@@ -3,6 +3,8 @@ package ro.sellfluence.api;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import ro.sellfluence.api.ProductPerformanceData.LifetimeReviews;
+import ro.sellfluence.api.ProductPerformanceData.Row;
 import ro.sellfluence.db.AdsCampaignTable.AdsAdsetKey;
 import ro.sellfluence.db.OffersTable.DailyProductOffer;
 import ro.sellfluence.db.OffersTable.ProductHotness;
@@ -588,6 +590,53 @@ class ProductPerformanceReportTest {
     }
 
     @Test
+    void fortnightlyLifetimeRatingWeightsAllReviewsThroughEachPeriodEnd() throws Exception {
+        var source = sourceWithoutPreviewMetrics();
+        source.first = date("2026-11-02");
+        source.reviews = new ReviewHistory(Instant.parse("2026-12-14T08:00:00Z"), Map.of(
+                date("2026-11-15"), new ReviewDay(100, 480, 100),
+                date("2026-11-16"), new ReviewDay(20, 90, 20)));
+        var clock = Clock.fixed(Instant.parse("2026-12-14T10:00:00Z"), ZoneOffset.UTC);
+
+        var report = API.buildProductPerformance(source, PRODUCT, VENDOR, "CODE", FOURTEEN_DAYS, clock);
+
+        assertEquals(List.of(date("2026-11-15"), date("2026-11-29"), date("2026-12-13")),
+                report.rows().stream().map(row -> row.period().endDate()).toList());
+        assertEquals(List.of(100L, 20L, 0L),
+                report.rows().stream().map(row -> row.values().get("reviews")).toList());
+        assertEquals(new BigDecimal("4.5"), report.rows().get(1).values().get("rating"));
+        assertNull(report.rows().get(2).values().get("rating"));
+        assertLifetimeReviews(report.rows().get(0), 100, "4.80");
+        assertLifetimeReviews(report.rows().get(1), 120, "4.75");
+        assertLifetimeReviews(report.rows().get(2), 120, "4.75");
+    }
+
+    @Test
+    void monthlyLifetimeReviewsSpanOverlappingWindowsAndCalendarGaps() throws Exception {
+        var source = sourceWithoutPreviewMetrics();
+        source.first = date("2026-01-02");
+        source.reviews = new ReviewHistory(Instant.parse("2026-04-02T08:00:00Z"), Map.of(
+                date("2026-01-30"), new ReviewDay(2, 9, 2),
+                date("2026-02-05"), new ReviewDay(1, 3, 1),
+                date("2026-03-01"), new ReviewDay(1, 1, 1),
+                date("2026-03-10"), new ReviewDay(1, 4, 1)));
+        var clock = Clock.fixed(Instant.parse("2026-04-02T10:00:00Z"), ZoneOffset.UTC);
+
+        var report = API.buildProductPerformance(source, PRODUCT, VENDOR, "CODE", THIRTY_DAYS, clock);
+        var january = report.rows().get(0);
+        var february = report.rows().get(1);
+        var march = report.rows().get(2);
+
+        assertEquals(date("2026-01-30"), february.period().startDate());
+        assertEquals(date("2026-03-02"), march.period().startDate());
+        assertEquals(List.of(2L, 3L, 1L),
+                report.rows().stream().map(row -> row.values().get("reviews")).toList());
+        assertLifetimeReviews(january, 2, "4.5");
+        assertLifetimeReviews(february, 3, "4");
+        assertLifetimeReviews(march, 5, "3.4");
+    }
+
+    @Test
     void closedReviewsNeedACollectionAfterTheEndOfTheRomanianDay() throws Exception {
         var source = sourceWithoutPreviewMetrics();
         source.first = date("2026-11-02");
@@ -596,11 +645,13 @@ class ProductPerformanceReportTest {
         var stale = novemberReport(source, FOURTEEN_DAYS).rows().getFirst();
         assertNull(stale.values().get("reviews"));
         assertNull(stale.values().get("rating"));
+        assertNull(stale.values().get("lifetimeReviews"));
 
         source.reviews = new ReviewHistory(Instant.parse("2026-11-15T22:00:00Z"), days);
         var covered = novemberReport(source, FOURTEEN_DAYS).rows().getFirst();
         assertEquals(1L, covered.values().get("reviews"));
         assertEquals(new BigDecimal("4"), covered.values().get("rating"));
+        assertLifetimeReviews(covered, 1, "4");
     }
 
     @ParameterizedTest
@@ -618,20 +669,37 @@ class ProductPerformanceReportTest {
         assertEquals(0L, confirmedZero.values().get("reviews"));
         assertNull(confirmedZero.values().get("rating"));
         assertEquals(fetchedAt, confirmedZero.reviewFetchedAt());
+        assertLifetimeReviews(confirmedZero, 0, null);
 
         source.reviews = new ReviewHistory(Instant.parse("2026-11-25T18:00:00Z"), Map.of());
         var stale = novemberReport(source, mode).rows().getLast();
         assertNull(stale.values().get("reviews"));
         assertNull(stale.values().get("rating"));
+        assertNull(stale.values().get("lifetimeReviews"));
         assertNull(stale.reviewFetchedAt());
 
         source.offers = List.of();
+        source.reviews = new ReviewHistory(fetchedAt, Map.of(date("2026-10-30"), new ReviewDay(1, 3, 1)));
+        assertTrue(novemberReport(source, mode).rows().stream().noneMatch(row -> row.period().provisional()));
+
         source.reviews = new ReviewHistory(fetchedAt, Map.of(today, new ReviewDay(1, 0, 0)));
         var current = novemberReport(source, mode).rows().getLast();
         assertTrue(current.period().provisional());
         assertEquals(1L, current.values().get("reviews"));
         assertNull(current.values().get("rating"));
         assertEquals(fetchedAt, current.reviewFetchedAt());
+        assertLifetimeReviews(current, 1, null);
+    }
+
+    private static void assertLifetimeReviews(Row row, long count, String averageRating) {
+        var lifetime = assertInstanceOf(LifetimeReviews.class, row.values().get("lifetimeReviews"));
+        assertEquals(count, lifetime.count());
+        if (averageRating == null) {
+            assertNull(lifetime.averageRating());
+        } else {
+            assertNotNull(lifetime.averageRating());
+            assertEquals(0, new BigDecimal(averageRating).compareTo(lifetime.averageRating()));
+        }
     }
 
     private static final class Source implements ProductPerformanceSource {
