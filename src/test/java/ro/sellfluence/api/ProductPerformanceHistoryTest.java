@@ -9,14 +9,15 @@ import ro.sellfluence.db.OffersTable.DailyProductOffer;
 import ro.sellfluence.db.OffersTable.ProductHotness;
 import ro.sellfluence.db.OffersTable.ProductVisits;
 import ro.sellfluence.db.ProductPerformanceHistoryTable.Observation;
+import ro.sellfluence.db.ProductPerformanceSource.ReviewDay;
+import ro.sellfluence.db.ProductPerformanceSource.ReviewHistory;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
 import ro.sellfluence.db.ProductPerformanceTable.Primitives;
-import ro.sellfluence.db.ReviewsTable.PublishedReview;
-import ro.sellfluence.db.ReviewsTable.ReviewHistory;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
@@ -113,15 +114,13 @@ class ProductPerformanceHistoryTest {
     }
 
     @Test
-    void newestExplicitlyEmptyRatingAndReviewsSuppressOlderObservationsWithinTheSevenDayWindow() {
+    void familySheetCountsAndRatingsCannotPopulatePeriodReviewMetricsEvenOnTheClosingDate() {
         for (int days : List.of(14, 30)) {
             var row = apply(nativeReport(period(days), List.of()), List.of(
-                    observation("rating", "2026-05-10", Map.of("rating", bd("4.98"))),
-                    observation("reviews", "2026-05-10", Map.of("reviews", 200)),
-                    observation("rating", "2026-05-15", blankValues("rating")),
-                    observation("reviews", "2026-05-15", blankValues("reviews"))), Set.of());
+                    observation("rating", "2026-05-17", Map.of("rating", bd("4.98"))),
+                    observation("reviews", "2026-05-17", Map.of("reviews", 200))), Set.of());
             for (String key : List.of("rating", "reviews")) {
-                assertNull(row.values().get(key), "A withdrawn observation must stay unknown: " + key);
+                assertNull(row.values().get(key), key);
                 assertFalse(row.cellProvenance().containsKey(key), key);
             }
         }
@@ -199,10 +198,8 @@ class ProductPerformanceHistoryTest {
             var row = apply(report, List.of(
                     observation("organic", "2026-05-15", Map.of("stock", 0, "clicks", 0,
                             "salesPrice", BigDecimal.ZERO)),
-                    observation("ads", "2026-05-15", adsValues()),
-                    observation("rating", "2026-05-15", Map.of("rating", BigDecimal.ZERO)),
-                    observation("reviews", "2026-05-15", Map.of("reviews", 0))), Set.of(period.endDate()));
-            for (String key : List.of("stock", "clicks", "salesPrice", "rating", "reviews", "auto_clicks", "total_spend", "total_sales")) {
+                    observation("ads", "2026-05-15", adsValues())), Set.of(period.endDate()));
+            for (String key : List.of("stock", "clicks", "salesPrice", "auto_clicks", "total_spend", "total_sales")) {
                 assertNumber(row.values(), key, BigDecimal.ZERO);
                 assertEquals("estimated", row.cellProvenance().get(key).quality(), key);
             }
@@ -223,16 +220,17 @@ class ProductPerformanceHistoryTest {
                 Map.of(period.startDate(), BigDecimal.ZERO), Map.of(period.startDate(), 0L),
                 Map.of(period.endDate(), visits), Map.of(period.startDate(), BigDecimal.ZERO),
                 Map.of(period.endDate(), hotness));
-        report = withValues(report, Map.of("reviews", 0, "rating", BigDecimal.ZERO));
+        report = withValues(report, Map.of("reviews", 0));
         var row = apply(report, List.of(
                 observation("organic", "2026-05-15", Map.of("stock", 99, "clicks", 999,
                         "salesPrice", bd("199.99"), "performance", "SUPER HOT")),
                 observation("reviews", "2026-05-15", Map.of("reviews", 1000)),
                 observation("rating", "2026-05-15", Map.of("rating", bd("4.99")))), Set.of());
-        for (String key : List.of("stock", "orders", "gmv", "totalSales", "clicks", "salesPrice", "reviews", "rating")) {
+        for (String key : List.of("stock", "orders", "gmv", "totalSales", "clicks", "salesPrice", "reviews")) {
             assertNumber(row.values(), key, BigDecimal.ZERO);
             assertFalse(row.cellProvenance().containsKey(key));
         }
+        assertNull(row.values().get("rating"));
         assertEquals("Super Cold", row.values().get("performance"));
         assertEquals("available", row.performanceStatus());
         assertEquals("super_cold", row.performanceType());
@@ -304,6 +302,32 @@ class ProductPerformanceHistoryTest {
     }
 
     @Test
+    void adsClickShareLabelsBothHistoricalAdsClicksAndNextDayEmagVisits() {
+        var period = new ReportPeriod(date("2026-11-02"), date("2026-11-15"), 14, false);
+        var nextDay = date("2026-11-16");
+        var visits = new ProductVisits("available", 70L, 160L, nextDay,
+                OffsetDateTime.parse("2026-11-16T09:00:00+02:00"), false);
+        var report = ProductPerformanceData.createNativeReport(PRODUCT, List.of(period), List.of(), List.of(),
+                Map.of(), Map.of(), Map.of(nextDay, visits), Map.of(), Map.of(), Set.of(nextDay), ReviewHistory.empty());
+        var ads = adsValues();
+        ads.put("auto_clicks", 30);
+        var row = apply(report, List.of(observation("ads", "2026-11-13", ads)), Set.of());
+
+        assertNumber(row.values(), "total_clicks", bd("14"));
+        assertNumber(row.values(), "clicks", bd("70"));
+        assertNumber(row.values(), "total_clicks_share", bd("0.2"));
+        var share = row.cellProvenance().get("total_clicks_share");
+        assertEquals("estimated", share.quality());
+        assertEquals("eMAG offers snapshot", share.source());
+        assertEquals(nextDay, share.sourceDate());
+        assertTrue(share.method().contains("one day after the missed close"));
+        assertTrue(share.method().contains("total_clicks (2026-11-13)"));
+        assertTrue(share.method().contains("Google Sheets: ads"));
+        assertTrue(share.method().contains("clicks (2026-11-16)"));
+        assertTrue(share.method().contains("eMAG offers snapshot"));
+    }
+
+    @Test
     void flagsPartialNativeAdsWithoutEligibleHistoryAndPropagatesMixedQualityIntoRatios() {
         var period = period(14);
         var report = nativeReport(period, List.of(ad(period.endDate(), "auto", List.of(), metrics())));
@@ -348,7 +372,7 @@ class ProductPerformanceHistoryTest {
     }
 
     @Test
-    void stateValuesAndFamilyReviewsStayUnscaledAndHistoricalGmvNeverBecomesOrdersOrNetRevenue() {
+    void stockAndPriceStayUnscaledAndHistoricalGmvNeverBecomesOrdersOrNetRevenue() {
         for (int days : List.of(14, 30)) {
             var period = period(days);
             var nativeValues = new LinkedHashMap<String, Object>();
@@ -359,20 +383,14 @@ class ProductPerformanceHistoryTest {
             var row = apply(report, List.of(
                     observation("organic", "2026-05-15", Map.of("stock", 5, "salesPrice", bd("199.99"),
                             "clicks", 300, "performance", "UNRECOGNIZED HOTNESS", "gmv", bd("9000"),
-                            "orders", 999, "totalSales", bd("8000"), "conversion", bd("0.75"))),
-                    observation("reviews", "2026-05-14", Map.of("reviews", 1000)),
-                    observation("rating", "2026-05-13", Map.of("rating", bd("4.97")))), Set.of());
+                            "orders", 999, "totalSales", bd("8000"), "conversion", bd("0.75")))), Set.of());
             assertNumber(row.values(), "stock", bd("5"));
             assertNumber(row.values(), "salesPrice", bd("199.99"));
-            assertNumber(row.values(), "reviews", bd("1000"));
-            assertNumber(row.values(), "rating", bd("4.97"));
             assertEquals("UNRECOGNIZED HOTNESS", row.values().get("performance"));
             assertEquals("estimated", row.performanceStatus());
             assertEquals(date("2026-05-15"), row.performanceSnapshotDate());
-            assertEquals(date("2026-05-14"), row.cellProvenance().get("reviews").sourceDate());
             assertNull(row.cellProvenance().get("stock").sourceWindowDays());
             assertNull(row.cellProvenance().get("salesPrice").sourceWindowDays());
-            assertNull(row.cellProvenance().get("reviews").sourceWindowDays());
             assertEquals(30, row.cellProvenance().get("performance").sourceWindowDays());
             for (String key : List.of("orders", "totalSales", "gmv", "conversion")) {
                 assertNull(row.values().get(key), key);
@@ -407,77 +425,36 @@ class ProductPerformanceHistoryTest {
     }
 
     @Test
-    void nativeReviewValuesOverrideHistoryAndMissingCellsFallBackIndependently() {
+    void nativeReviewValuesAndMissingRatingsSurviveHistoryOverlay() {
         for (int days : List.of(14, 30)) {
             var period = period(days);
             var historical = List.of(
                     observation("reviews", "2026-05-15", Map.of("reviews", 120)),
                     observation("rating", "2026-05-15", Map.of("rating", bd("4.6"))));
-            var nativeReviews = new ReviewHistory(true, List.of(
-                    new PublishedReview(1, "2026-05-10T12:00:00Z", 5),
-                    new PublishedReview(2, "2026-05-15T12:00:00Z", 1)));
-            var nativeRow = apply(nativeReviewsReport(period, nativeReviews), historical, Set.of());
-            assertEquals(2L, nativeRow.values().get("reviews"));
-            assertNumber(nativeRow.values(), "rating", bd("3"));
-            assertFalse(nativeRow.cellProvenance().containsKey("reviews"));
-            assertFalse(nativeRow.cellProvenance().containsKey("rating"));
+            var fetchTime = Instant.parse("2026-05-18T08:00:00Z");
+            var rated = new ReviewHistory(fetchTime, Map.of(date("2026-05-15"), new ReviewDay(2, 6, 2)));
+            var ratedRow = apply(nativeReviewsReport(period, rated), historical, Set.of());
+            assertEquals(2L, ratedRow.values().get("reviews"));
+            assertNumber(ratedRow.values(), "rating", bd("3"));
 
-            for (var reviews : List.of(new ReviewHistory(true, List.of()),
-                    new ReviewHistory(true, List.of(new PublishedReview(3, "2026-05-15T12:00:00Z", null))))) {
-                var row = apply(nativeReviewsReport(period, reviews), historical, Set.of());
-                assertEquals((long) reviews.reviews().size(), row.values().get("reviews"));
-                assertNumber(row.values(), "rating", bd("4.6"));
-                assertFalse(row.cellProvenance().containsKey("reviews"), "Native count, including zero, remains unmarked");
-                var provenance = row.cellProvenance().get("rating");
-                assertEquals("estimated", provenance.quality());
-                assertEquals(date("2026-05-15"), provenance.sourceDate());
-                assertTrue(provenance.method().contains("product-family rating"));
-                assertTrue(provenance.sourceUrl().contains("/source-book/edit#gid=123&range=G4%3AL4"));
-                var json = new ObjectMapper().valueToTree(row);
-                assertFalse(json.get("cellProvenance").has("reviews"));
-                assertEquals("estimated", json.get("cellProvenance").get("rating").get("quality").asString());
+            var unrated = new ReviewHistory(fetchTime, Map.of(date("2026-05-15"), new ReviewDay(1, 0, 0)));
+            var unratedRow = apply(nativeReviewsReport(period, unrated), historical, Set.of());
+            assertEquals(1L, unratedRow.values().get("reviews"));
+            assertNull(unratedRow.values().get("rating"));
+
+            var empty = apply(nativeReviewsReport(period, new ReviewHistory(fetchTime, Map.of())), historical, Set.of());
+            assertEquals(0L, empty.values().get("reviews"));
+            assertNull(empty.values().get("rating"));
+            for (var row : List.of(ratedRow, unratedRow, empty)) {
+                assertFalse(row.cellProvenance().containsKey("reviews"));
+                assertFalse(row.cellProvenance().containsKey("rating"));
             }
-
-            var unfetched = apply(nativeReviewsReport(period, ReviewHistory.unavailable()), historical, Set.of());
-            assertNumber(unfetched.values(), "reviews", bd("120"));
-            assertNumber(unfetched.values(), "rating", bd("4.6"));
-            assertEquals("estimated", unfetched.cellProvenance().get("reviews").quality());
-            assertEquals("estimated", unfetched.cellProvenance().get("rating").quality());
-        }
-    }
-
-    @Test
-    void reviewFallbackKeepsSevenDayCutoffAndExplicitBlanksWithoutInventingValues() {
-        var period = period(14);
-        var unavailable = nativeReviewsReport(period, ReviewHistory.unavailable());
-        var oldestEligible = apply(unavailable, List.of(
-                observation("reviews", "2026-05-10", Map.of("reviews", 120)),
-                observation("rating", "2026-05-10", Map.of("rating", bd("4.6")))), Set.of());
-        assertNumber(oldestEligible.values(), "reviews", bd("120"));
-        assertNumber(oldestEligible.values(), "rating", bd("4.6"));
-        for (var history : List.of(List.<Observation>of(),
-                List.of(observation("reviews", "2026-05-09", Map.of("reviews", 120)),
-                        observation("rating", "2026-05-18", Map.of("rating", bd("4.6")))),
-                List.of(observation("reviews", "2026-05-10", Map.of("reviews", 120)),
-                        observation("rating", "2026-05-10", Map.of("rating", bd("4.6"))),
-                        observation("reviews", "2026-05-15", blankValues("reviews")),
-                        observation("rating", "2026-05-15", blankValues("rating"))))) {
-            var row = apply(unavailable, history, Set.of());
-            assertNull(row.values().get("reviews"));
-            assertNull(row.values().get("rating"));
-            assertFalse(row.cellProvenance().containsKey("reviews"));
-            assertFalse(row.cellProvenance().containsKey("rating"));
-            var emptyFetch = apply(nativeReviewsReport(period, new ReviewHistory(true, List.of())), history, Set.of());
-            assertEquals(0L, emptyFetch.values().get("reviews"));
-            assertNull(emptyFetch.values().get("rating"));
-            assertFalse(emptyFetch.cellProvenance().containsKey("reviews"));
-            assertFalse(emptyFetch.cellProvenance().containsKey("rating"));
         }
     }
 
     private static Response nativeReviewsReport(ReportPeriod period, ReviewHistory reviews) {
-        return ProductPerformanceData.create(PRODUCT, List.of(period), List.of(), List.of(),
-                Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), reviews);
+        return ProductPerformanceData.createNativeReport(PRODUCT, List.of(period), List.of(), List.of(),
+                Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), reviews);
     }
 
     private static ReportPeriod period(int days) {
@@ -497,7 +474,7 @@ class ProductPerformanceHistoryTest {
         values.putAll(replacements);
         var replacement = new Row(row.period(), values, row.visitsSnapshotDate(), row.visitsCapturedAt(),
                 row.visitsStatus(), row.visitsReason(), row.performanceSnapshotDate(), row.performanceStatus(),
-                row.performanceReason(), row.performanceType(), row.cellProvenance());
+                row.performanceReason(), row.performanceType(), row.cellProvenance(), row.reviewFetchedAt());
         return new Response(report.mock(), report.product(), report.groups(), List.of(replacement), report.errors());
     }
 

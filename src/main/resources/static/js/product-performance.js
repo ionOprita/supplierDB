@@ -13,6 +13,9 @@ const dateFormat = new Intl.DateTimeFormat('en-GB', {
 const periodDateFormat = new Intl.DateTimeFormat('en-GB', {
   day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC'
 });
+const captureDayFormat = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric', month: 'short', timeZone: 'UTC'
+});
 const captureFormat = new Intl.DateTimeFormat('en-GB', {
   day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   timeZone: 'Europe/Bucharest', hour12: false
@@ -35,6 +38,13 @@ export function formatPerformanceValue(value, type) {
     return date ? dateFormat.formatToParts(date)
         .map(part => part.type === 'month' ? part.value.slice(0, 3) : part.value).join('') : '—';
   }
+  if (type === 'reviewSummary') {
+    const {count, averageRating} = value;
+    if (!Number.isSafeInteger(count) || count < 0) return '—';
+    const reviews = count === 1 ? 'review' : 'reviews';
+    const rating = Number.isFinite(averageRating) ? `${numberFormats.decimal.format(averageRating)} ★` : '—';
+    return `${numberFormats.integer.format(count)} ${reviews} · ${rating}`;
+  }
   const formatter = numberFormats[type];
   if (formatter) return typeof value === 'number' && Number.isFinite(value) ? formatter.format(value) : '—';
   return String(value);
@@ -44,25 +54,50 @@ export function formatPerformancePeriod(period) {
   const start = parsePerformanceDate(period?.startDate);
   const end = parsePerformanceDate(period?.endDate);
   if (!start || !end || start > end) return '—';
-  return `${periodDateFormat.format(start)} - ${periodDateFormat.format(end)}${period.provisional ? ' (provisional)' : ''}`;
+  return `${periodDateFormat.format(start)} - ${periodDateFormat.format(end)}${period.provisional ? ' (in progress)' : ''}`;
+}
+
+function validReportPeriod(period, mode) {
+  const start = parsePerformanceDate(period?.startDate);
+  const end = parsePerformanceDate(period?.endDate);
+  if (!start || !end || typeof period.provisional !== 'boolean') return false;
+  const days = 1 + (end - start) / 86400000;
+  if (days < 1 || days !== period.windowDays) return false;
+  const fortnight = mode === '14days';
+  return period.provisional ? days <= (fortnight ? 14 : 31) : days === (fortnight ? 14 : 30);
+}
+
+function lateCaptureLabel(provenance) {
+  if (provenance?.quality !== 'estimated' || provenance.source !== 'eMAG offers snapshot') return '';
+  const date = parsePerformanceDate(provenance.sourceDate);
+  return date ? `Estimated · captured ${captureDayFormat.format(date)}` : '';
+}
+
+function formatCaptureTime(value) {
+  if (typeof value !== 'string' || !/(?:Z|[+-]\d{2}:\d{2})$/.test(value) || Number.isNaN(Date.parse(value))) return null;
+  return `${captureFormat.format(new Date(value))} (Romania)`;
 }
 
 function visitsDescription(row) {
-  if (row.visitsStatus === 'estimated' || row.cellProvenance?.clicks?.quality === 'estimated') {
+  if (row.period.provisional) {
+    return `${formatPerformancePeriod(row.period)}. ${row.visitsReason || 'eMAG provides rolling 14-day and 30-day visits counters. Period-to-date product Clicks are unavailable.'}`;
+  }
+  const provenance = row.cellProvenance?.clicks;
+  const lateCapture = lateCaptureLabel(provenance);
+  if (!lateCapture && (row.visitsStatus === 'estimated' || provenance?.quality === 'estimated')) {
     return 'Estimated total eMAG visits, including paid and organic traffic. The historical source window may differ from the displayed report window; see the source and calculation below.';
   }
-  const captured = typeof row.visitsCapturedAt === 'string'
-    && /(?:Z|[+-]\d{2}:\d{2})$/.test(row.visitsCapturedAt)
-    && !Number.isNaN(Date.parse(row.visitsCapturedAt))
-    ? `${captureFormat.format(new Date(row.visitsCapturedAt))} (Romania)` : 'unavailable';
+  const captured = formatCaptureTime(row.visitsCapturedAt) || 'unavailable';
   const availability = row.visitsStatus === 'ambiguous'
     ? 'Multiple matching offers: visits cannot be attributed to one offer.'
     : row.visitsStatus === 'missing' || row.values?.clicks == null
       ? 'Visits are unavailable. — means unknown, not zero.' : 'Total eMAG visits, including paid and organic traffic.';
-  return `${availability} ${row.visitsReason || ''} Rolling ${row.period.windowDays}-day counter; the displayed window is approximate because eMAG does not expose its exact cutoff. Snapshot: ${row.visitsSnapshotDate || 'unavailable'}. Captured: ${captured}.`.replace(/ {2,}/g, ' ');
+  const reason = lateCapture ? '' : row.visitsReason || '';
+  return `${availability} ${reason} Rolling ${row.period.windowDays}-day counter; the displayed window is approximate because eMAG does not expose its exact cutoff. Snapshot: ${row.visitsSnapshotDate || 'unavailable'}. Captured: ${captured}.`.replace(/ {2,}/g, ' ');
 }
 
 function conversionDescription(row, column) {
+  if (row.period.provisional) return `Product conversion requires period-to-date product Clicks. ${visitsDescription(row)}`;
   const formula = column.description || 'Units from Orders / Clicks × 100, for the selected account and period. Returns are not subtracted from Orders.';
   let availability = '';
   if (row.values?.conversion == null) {
@@ -76,7 +111,14 @@ function conversionDescription(row, column) {
 }
 
 function performanceDescription(row) {
-  if (row.performanceStatus === 'estimated' || row.cellProvenance?.performance?.quality === 'estimated') {
+  if (row.period.provisional) {
+    return `${formatPerformancePeriod(row.period)}. ${row.performanceReason || 'eMAG reports a trailing 30-day classification. A period-to-date classification is unavailable.'}`;
+  }
+  const provenance = row.cellProvenance?.performance;
+  if (lateCaptureLabel(provenance)) {
+    return `eMAG 30-day classification observed on ${provenance.sourceDate}.${row.performanceType ? ` Type: ${row.performanceType}.` : ''}`;
+  }
+  if (row.performanceStatus === 'estimated' || provenance?.quality === 'estimated') {
     return `Historical eMAG 30-day classification. It was observed on ${row.performanceSnapshotDate || row.cellProvenance?.performance?.sourceDate || 'an unavailable date'}, which may differ from this period end date; it is not a separate 14-day classification.`;
   }
   const availability = row.performanceStatus === 'ambiguous'
@@ -88,12 +130,12 @@ function performanceDescription(row) {
 }
 
 function provenanceDescription(provenance) {
-  const quality = provenance.quality === 'estimated' ? 'Estimated history.' : 'Partial data; this value does not cover the complete report window.';
+  const quality = provenance.quality === 'estimated' ? `${lateCaptureLabel(provenance) || 'Estimated history'}.` : 'Partial data; this value does not cover the complete report window.';
   return [quality,
     provenance.source && `Source: ${provenance.source}.`,
     provenance.sourceDate && `Source date: ${provenance.sourceDate}.`,
     provenance.sourceWindowDays != null && `Source window: ${provenance.sourceWindowDays} days.`,
-    provenance.method && `Method: ${provenance.method}.`,
+    provenance.method && `Method: ${provenance.method.replace(/\.$/, '')}.`,
     provenance.details,
     provenance.sourceUrl && `Source URL: ${provenance.sourceUrl}`
   ].filter(Boolean).join(' ');
@@ -103,9 +145,11 @@ function describeProvenance(cell, row, column) {
   const provenance = row.cellProvenance?.[column.key];
   if (!provenance || !['estimated', 'partial'].includes(provenance.quality)) return;
   cell.classList.add(provenance.quality === 'estimated' ? 'pp-estimated' : 'pp-partial');
+  const label = lateCaptureLabel(provenance);
+  if (label) cell.dataset.captureLabel = label;
   cell.title = [cell.title, provenanceDescription(provenance)].filter(Boolean).join(' ');
   // A derived conversion must retain the specific source of its estimated Clicks input.
-  if (column.key === 'conversion' && row.cellProvenance?.clicks?.quality === 'estimated') {
+  if (column.key === 'conversion' && !label && row.cellProvenance?.clicks?.quality === 'estimated') {
     cell.title += ` Clicks input: ${provenanceDescription(row.cellProvenance.clicks)}`;
   }
   cell.setAttribute('aria-label', `${cell.textContent}. ${column.label}. ${cell.title}`);
@@ -138,12 +182,14 @@ export function initProductPerformance() {
   const errorList = byId('ErrorList');
   const help = createInfoTooltip({document, prefix: 'productPerformance',
     label: 'About report periods and data quality', sections: [
+      {title: 'Product reviews',
+        text: 'Reviews received counts reviews published for the selected product variant during the dates shown, using Romanian time. Each star rating from those reviews has equal weight in Average rating. Lifetime reviews includes all reviews published through the end of the row, using the latest stored rating for each review. A count of 0 means no reviews were found for the covered dates. The average stays blank when there are no star ratings. Review fields stay blank when collection has yet to cover the period. For an in-progress row, the cell details and CSV show when reviews were last collected.'},
       {title: 'Estimated history — yellow cells',
-        text: 'Historical observations fill gaps in native data. Rolling 30-day totals are scaled by 14/30 for 14-day rows, assuming uniform activity, and used unchanged for 30-day rows. Source dates can differ from the row end. Stock, price, classification, rating and review observations are not scaled. Cell details and CSV retain the source date and calculation.'},
+        text: 'If the closing-day snapshot is missing, Clicks and Perform. can use the following day’s capture. The cell shows its capture date. The rolling window shifts by one day, and ratios using those Clicks are estimates too. For Google Sheets history, rolling 30-day totals are scaled by 14/30 for 14-day rows, assuming uniform activity, and used unchanged for 30-day rows. Stock, price and classification observations keep their source values. Cell details and CSV retain the source date and calculation.'},
       {title: 'Partial data — ◐',
         text: 'Only part of the reporting window has native data. The value covers the available observations; it is not a complete-period total. Missing values (—) are different from known zeroes.'},
-      {title: 'Provisional period',
-        text: 'A full rolling 14- or 30-day preview ending on the latest completed observation before the next scheduled report close. It can overlap earlier rows; do not add it to closed rows. Provisional describes the reporting date, not whether clicks are estimated. Yellow cells independently identify estimates. A 30-day window is not necessarily a calendar month.'}
+      {title: 'In-progress period',
+        text: 'The last row runs from the day after the last close through today in Romania. It appears when the product has recorded data for that interval. Orders, sales and Ads can change as more data arrives. Stock is the latest recorded quantity, and Sales Price averages the available daily prices. Product Clicks and the ratios that need them stay blank because eMAG provides only rolling counters. Perform. is a trailing 30-day classification. In monthly mode, the open row starts on the first of the month, and the closed row covers the 30 days ending at month-end.'}
     ]});
   byId('InfoHost').appendChild(help.wrap);
   let vendors = [];
@@ -296,7 +342,7 @@ export function initProductPerformance() {
         header.scope = 'col';
         header.textContent = column.label;
         if (column.key === 'clicks') {
-          header.title = 'Total eMAG visits for this rolling window, including paid and organic traffic. Hover over a value for its capture time and availability.';
+          header.title = 'Total eMAG visits, including paid and organic traffic, for a closed rolling window. Hover over a cell for its capture time or the reason it is blank.';
         }
         describeColumn(header, column);
         header.dataset.group = group.key;
@@ -343,6 +389,7 @@ export function initProductPerformance() {
     const fragment = document.createDocumentFragment();
     for (const row of visiblePerformanceRows(rows, showEverything)) {
       const tr = document.createElement('tr');
+      const reviewsAsOf = formatCaptureTime(row.reviewFetchedAt);
       for (const column of columns) {
         const isPeriod = column.key === 'period';
         const cell = document.createElement(isPeriod ? 'th' : 'td');
@@ -359,6 +406,10 @@ export function initProductPerformance() {
         }
         cell.dataset.type = column.type;
         describeColumn(cell, column, true);
+        if (reviewsAsOf && ['reviews', 'rating', 'lifetimeReviews'].includes(column.key)) {
+          cell.title = [cell.title, `Review data as of ${reviewsAsOf}.`].filter(Boolean).join(' ');
+          cell.setAttribute('aria-label', `${cell.textContent}. ${column.label}. ${cell.title}`);
+        }
         if (['stock', 'salesPrice'].includes(column.key) && row.values?.[column.key] === '???') {
           cell.title = column.key === 'salesPrice'
             ? 'Multiple matching offers in a daily snapshot for this period'
@@ -374,6 +425,15 @@ export function initProductPerformance() {
         if (column.key === 'conversion') {
           cell.title = conversionDescription(row, column);
           cell.setAttribute('aria-label', `${cell.textContent}. Conv. ${cell.title}`);
+        }
+        if (column.key === 'total_clicks_share' && row.period.provisional) {
+          cell.title = `Ads click share requires period-to-date product Clicks. ${visitsDescription(row)}`;
+          cell.setAttribute('aria-label', `${cell.textContent}. ${column.label}. ${cell.title}`);
+        }
+        if (row.period.provisional && row.values?.[column.key] == null
+            && (column.key.endsWith('_tacos') || column.key === 'total_sales_share')) {
+          cell.title = 'This ratio requires recorded Ads inputs, saved Ads reports for every date in the in-progress period, and positive Total Sales excluding VAT.';
+          cell.setAttribute('aria-label', `${cell.textContent}. ${column.label}. ${cell.title}`);
         }
         if (column.key === 'performance') {
           if (row.performanceStatus === 'ambiguous') cell.textContent = '???';
@@ -398,9 +458,14 @@ export function initProductPerformance() {
       return;
     }
     const first = formatPerformancePeriod(visibleRows[0].period);
-    const last = formatPerformancePeriod(visibleRows[visibleRows.length - 1].period);
+    const lastRow = visibleRows[visibleRows.length - 1];
+    const last = formatPerformancePeriod(lastRow.period);
     const noun = 'period';
-    status.textContent = `${visibleRows.length} ${visibleRows.length === 1 ? noun : `${noun}s`} · ${first} – ${last}. Scroll horizontally for all advertising groups.`;
+    const coverage = lastRow.period.provisional && Object.values(lastRow.cellProvenance || {})
+      .find(source => source.quality === 'partial' && source.source === 'Native eMAG daily reports');
+    const latestAdDate = parsePerformanceDate(coverage?.sourceDate);
+    const coverageText = latestAdDate ? ` Latest saved Ads report for the in-progress period was ${periodDateFormat.format(latestAdDate)}.` : '';
+    status.textContent = `${visibleRows.length} ${visibleRows.length === 1 ? noun : `${noun}s`} · ${first} – ${last}.${coverageText} Scroll horizontally for all advertising groups.`;
   }
 
   function fillSelect(select, items, emptyLabel, key, label) {
@@ -519,9 +584,7 @@ export function initProductPerformance() {
       if (!Array.isArray(data.groups) || !data.groups.length || !Array.isArray(data.rows)) {
         throw new Error('Invalid product performance response');
       }
-      if (data.rows.some(row => formatPerformancePeriod(row.period) === '—'
-          || ![14, 30].includes(row.period.windowDays)
-          || typeof row.period.provisional !== 'boolean'
+      if (data.rows.some(row => !validReportPeriod(row.period, periodMode)
           || !['available', 'missing', 'ambiguous', 'estimated'].includes(row.visitsStatus))) {
         throw new Error('Invalid product performance period');
       }
@@ -567,11 +630,12 @@ export function initProductPerformance() {
       ['Visits snapshot date', row => row.visitsSnapshotDate],
       ['Visits captured at', row => row.visitsCapturedAt],
       ['Visits status', row => row.visitsStatus],
-      ['Visits reason', row => row.visitsReason],
+      ['Visits reason', row => [lateCaptureLabel(row.cellProvenance?.clicks), row.visitsReason].filter(Boolean).join('. ')],
       ['Performance snapshot date', row => row.performanceSnapshotDate],
       ['Performance status', row => row.performanceStatus],
-      ['Performance reason', row => row.performanceReason],
+      ['Performance reason', row => [lateCaptureLabel(row.cellProvenance?.performance), row.performanceReason].filter(Boolean).join('. ')],
       ['Performance type', row => row.performanceType],
+      ['Reviews fetched at', row => row.reviewFetchedAt],
       ['Cell provenance', row => JSON.stringify(row.cellProvenance || {})]
     ];
     for (const [label] of metadata) {

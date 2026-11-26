@@ -1,5 +1,7 @@
 package ro.sellfluence.db;
 
+import ro.sellfluence.db.ProductPerformanceSource.ProductOrders;
+
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -10,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /** Shared Orders-table quantity selection. Period filtering deliberately precedes snapshot selection. */
 final class OrderQuantityTable {
@@ -95,6 +98,20 @@ final class OrderQuantityTable {
     private static Map<LocalDate, Long> countProductPeriods(
             Connection db, UUID vendorId, String pnk, Map<LocalDate, LocalDate> inclusivePeriodEnds)
             throws SQLException {
+        return readProductOrders(db, vendorId, pnk, inclusivePeriodEnds).entrySet().stream()
+                .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> entry.getValue().units()));
+    }
+
+    static Map<LocalDate, ProductOrders> readProductOrdersForPeriods(
+            Connection db, UUID vendorId, String pnk, Map<LocalDate, LocalDate> inclusivePeriodEnds)
+            throws SQLException {
+        Objects.requireNonNull(vendorId, "vendorId");
+        return readProductOrders(db, vendorId, pnk, inclusivePeriodEnds);
+    }
+
+    private static Map<LocalDate, ProductOrders> readProductOrders(
+            Connection db, UUID vendorId, String pnk, Map<LocalDate, LocalDate> inclusivePeriodEnds)
+            throws SQLException {
         validatePeriods(pnk, inclusivePeriodEnds);
         if (inclusivePeriodEnds.isEmpty()) return Map.of();
         Objects.requireNonNull(db, "db");
@@ -102,13 +119,13 @@ final class OrderQuantityTable {
         var requestedPeriods = "WITH requested_periods(period_start, end_exclusive) AS (VALUES "
                 + String.join(", ", Collections.nCopies(periods.size(), "(?::timestamp, ?::timestamp)")) + "),\n";
         var sql = requestedPeriods + pickedCte(true, vendorId != null) + """
-                SELECT r.period_start::date AS period_start, COALESCE(SUM(p.picked_qty), 0)::bigint AS quantity
+                SELECT r.period_start::date AS period_start, SUM(p.picked_qty)::bigint AS quantity
                 FROM requested_periods r
                 LEFT JOIN picked_order_quantities p USING (period_start)
                 GROUP BY r.period_start
                 ORDER BY r.period_start
                 """;
-        var result = new HashMap<LocalDate, Long>();
+        var result = new HashMap<LocalDate, ProductOrders>();
         try (var statement = db.prepareStatement(sql)) {
             var parameter = 1;
             for (var period : periods.entrySet()) {
@@ -119,7 +136,9 @@ final class OrderQuantityTable {
             if (vendorId != null) statement.setObject(parameter, vendorId);
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
-                    result.put(rows.getDate("period_start").toLocalDate(), rows.getLong("quantity"));
+                    var start = rows.getDate("period_start").toLocalDate();
+                    long units = rows.getLong("quantity");
+                    result.put(start, new ProductOrders(units, !rows.wasNull()));
                 }
             }
         }

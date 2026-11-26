@@ -52,7 +52,11 @@ never replaced by the import date. Organic and Ads records retain `sourceStartDa
 `sourceEndDate`, and `sourceWindowDays`. The dates are inclusive and end on the source observation
 date. Future headers are ignored. For an identified product and dated source column, explicitly
 blank metrics are retained as nulls, including when every metric in that domain is blank.
-Review/rating observations are point-in-time family measurements, including older history.
+The family review sheets record weekly snapshots. Each review count covers the preceding
+30 days through its observation date. The importer preserves the accompanying family rating
+with its own source date. These aggregate observations remain available for audit.
+Product Performance calculates its period review counts and average ratings from individually
+dated public reviews of the selected PNK.
 
 `salesPrice` in the Organic source already includes VAT. The source `gmv` and `sourceConversion`
 are archived for audit, not used to infer a tax basis or replace native order totals. Orders and
@@ -154,8 +158,9 @@ in a later batch rolls back the earlier batches and the raw archive record as we
 
 Parser `product-performance-history-v2` also records explicitly empty dated snapshots. Clearing
 a rating cell, an individual Organic/Ads metric, or every metric in an identified snapshot and
-reimporting replaces those historical values with nulls. Empty snapshots do not create report
-periods or provisional preview dates, and do not override native data. Ads blanks are still restored
+reimporting replaces those historical values with nulls. Only Organic or Ads observations with
+metric values can extend closed report history through this import. The current period through today uses native observations
+from within its dates. Imported snapshots supply neither its dates nor its values. Ads blanks are still restored
 to zero only when the raw source proves zero as described above. Deleting a source row or date
 header does **not** withdraw its saved history; unresolved identities likewise emit no withdrawal.
 Only the selected reports and dates through `--through` are considered.
@@ -220,5 +225,5 @@ Read-only checks through the actual Product Performance API verified a product i
 `judios`, `koppelfbe`, `sellfusion`, `zoopieconcept`, and `zoopiesolutions`, in both 14-day and
 30-day modes. Every checked report returned historical Clicks with `estimated` provenance,
 which the existing interface renders as yellow cells. Production live visits captures were also
-confirmed for Sellfusion and Zoopie Solutions on 6 November; the current day's captures become
-eligible for provisional previews the following day.
+confirmed for Sellfusion and Zoopie Solutions on 6 November. The current reporting rules for
+stored visits and closing-day estimates are documented in [Product performance calculations](ProductPerformance.md).

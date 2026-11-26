@@ -81,11 +81,11 @@ offerStock {
 
 Live responses included `super_hot` / `Super Hot`, `regular` / `Regular`, `cold` / `Cold`
 and `super_cold` / `Super Cold`. The legacy offers page labels this classification as
-30-day performance. The report displays the stored classification observed on the exact
-closing date of each interval, including 14-day rows; it does not calculate a new 14-day
-hotness or assign current classifications to historical rows. Values are already persisted
-in `offers_stock.hotness_type` and `hotness_name`, so no migration or new collection is
-needed. Older hotness observations do not require the newer visits capture timestamp.
+30-day performance. Even on a 14-day row, the report displays eMAG's 30-day classification
+observed on the closing date. If the account missed that day's snapshot, the following calendar
+day's observation is eligible once that day ends in Romania. The report labels the estimate
+with its actual capture date. The collector stores these values in `offers_stock.hotness_type`
+and `hotness_name`. Older hotness observations do not require the newer visits capture timestamp.
 
 ## Collection and validation
 

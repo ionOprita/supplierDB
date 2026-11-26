@@ -36,6 +36,10 @@ final class ProductPerformanceHistory {
             var values = new LinkedHashMap<>(row.values());
             var provenance = new LinkedHashMap<>(row.cellProvenance());
             var period = row.period();
+            if (period.provisional()) {
+                rows.add(applyOpenPeriodCoverage(row, values, provenance, adsKeys, adsReportDates));
+                continue;
+            }
             var organic = select(history, "organic", period.endDate());
             fill(values, provenance, "stock", organic, false, period,
                     "Stock observed on the source date; not a period average.");
@@ -50,11 +54,6 @@ final class ProductPerformanceHistory {
                 estimatedPerformance = fill(values, provenance, "performance", organic, false, period,
                         "eMAG 30-day classification observed on the source date, including for 14-day rows.");
             }
-            fill(values, provenance, "reviews", select(history, "reviews", period.endDate()), false, period,
-                    "Historical product-family review count observed on the source date; never summed across products.");
-            fill(values, provenance, "rating", select(history, "rating", period.endDate()), false, period,
-                    "Historical product-family rating observed on the source date; not an average across dates.");
-
             long observedDays = period.startDate().datesUntil(period.endDate().plusDays(1))
                     .filter(adsReportDates::contains).count();
             boolean attributionError = nativeReport.errors().stream().anyMatch(error ->
@@ -77,11 +76,8 @@ final class ProductPerformanceHistory {
 
             // Orders and net revenue always remain the native Order Table calculations.
             derive(values, provenance, "conversion", "orders", "clicks", true);
-            for (var group : List.of("total", "auto", "broad", "exact", "product")) {
-                derive(values, provenance, group + "_tacos", group + "_spend", "totalSales", true);
-            }
+            deriveAdsSalesRatios(values, provenance);
             derive(values, provenance, "total_clicks_share", "total_clicks", "clicks", true);
-            derive(values, provenance, "total_sales_share", "total_sales", "totalSales", true);
 
             rows.add(new Row(period, Collections.unmodifiableMap(values),
                     estimatedClicks ? organic.observationDate() : row.visitsSnapshotDate(),
@@ -91,10 +87,36 @@ final class ProductPerformanceHistory {
                     estimatedPerformance ? organic.observationDate() : row.performanceSnapshotDate(),
                     estimatedPerformance ? "estimated" : row.performanceStatus(),
                     estimatedPerformance ? provenance.get("performance").method() : row.performanceReason(),
-                    estimatedPerformance ? null : row.performanceType(), provenance));
+                    estimatedPerformance ? null : row.performanceType(), provenance, row.reviewFetchedAt()));
         }
         return new Response(nativeReport.mock(), nativeReport.product(), nativeReport.groups(), List.copyOf(rows),
                 nativeReport.errors());
+    }
+
+    private static Row applyOpenPeriodCoverage(Row row, Map<String, Object> values,
+            Map<String, CellProvenance> provenance, List<String> adsKeys, Set<LocalDate> adsReportDates) {
+        var period = row.period();
+        var savedDates = period.startDate().datesUntil(period.endDate().plusDays(1))
+                .filter(adsReportDates::contains).toList();
+        if (savedDates.size() == period.windowDays()) {
+            deriveAdsSalesRatios(values, provenance);
+        } else {
+            var latest = savedDates.isEmpty() ? null : savedDates.getLast();
+            var coverage = new CellProvenance("partial", "Native eMAG daily reports", latest, period.windowDays(),
+                    "Saved daily Ads report dates: " + savedDates.size() + "/" + period.windowDays()
+                            + ". Values cover available observations only.", null);
+            for (var key : adsKeys) if (values.get(key) != null) provenance.put(key, coverage);
+        }
+        return new Row(period, Collections.unmodifiableMap(values), row.visitsSnapshotDate(), row.visitsCapturedAt(),
+                row.visitsStatus(), row.visitsReason(), row.performanceSnapshotDate(), row.performanceStatus(),
+                row.performanceReason(), row.performanceType(), provenance, row.reviewFetchedAt());
+    }
+
+    private static void deriveAdsSalesRatios(Map<String, Object> values, Map<String, CellProvenance> provenance) {
+        for (var group : List.of("total", "auto", "broad", "exact", "product")) {
+            derive(values, provenance, group + "_tacos", group + "_spend", "totalSales", true);
+        }
+        derive(values, provenance, "total_sales_share", "total_sales", "totalSales", true);
     }
 
     private static Observation select(List<Observation> history, String domain, LocalDate end) {
@@ -200,12 +222,13 @@ final class ProductPerformanceHistory {
         var a = provenance.get(numeratorKey);
         var b = provenance.get(denominatorKey);
         var primary = a != null && "estimated".equals(a.quality()) ? a : b != null ? b : a;
+        if (b != null && ProductPerformanceData.OFFERS_SNAPSHOT_SOURCE.equals(b.source())) primary = b;
         if (primary == null) return;
         var details = "Recalculated as " + numeratorKey + " / " + denominatorKey + ". "
                 + primary.method();
         if (a != null && b != null && !a.equals(b)) {
-            details += " Both inputs have provenance; see " + numeratorKey + " (" + a.sourceDate() + ") and "
-                    + denominatorKey + " (" + b.sourceDate() + ").";
+            details += " Both inputs have provenance. " + numeratorKey + " (" + a.sourceDate() + ") comes from "
+                    + a.source() + " and " + denominatorKey + " (" + b.sourceDate() + ") comes from " + b.source() + ".";
         }
         provenance.put(key, new CellProvenance(primary.quality(), primary.source(), primary.sourceDate(),
                 primary.sourceWindowDays(), details, primary.sourceUrl()));

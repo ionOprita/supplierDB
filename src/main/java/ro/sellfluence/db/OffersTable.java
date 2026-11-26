@@ -22,7 +22,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -192,25 +191,6 @@ public class OffersTable {
             sqlDates.free();
         }
         return Map.copyOf(result);
-    }
-
-    /** Today's replaceable snapshot is excluded from the rolling preview's completed observation day. */
-    static Optional<LocalDate> getLatestCompletedProductVisitsSnapshotDate(
-            Connection db, UUID vendorId, LocalDate today) throws SQLException {
-        Objects.requireNonNull(db, "db");
-        Objects.requireNonNull(vendorId, "vendorId");
-        Objects.requireNonNull(today, "today");
-        try (var statement = db.prepareStatement("""
-                SELECT MAX(fetch_date) FROM offers_snapshot
-                WHERE vendor_id = ? AND visits_fetched_at IS NOT NULL AND fetch_date < ?
-                """)) {
-            statement.setObject(1, vendorId);
-            statement.setObject(2, today);
-            try (var rows = statement.executeQuery()) {
-                rows.next();
-                return Optional.ofNullable(rows.getObject(1, LocalDate.class));
-            }
-        }
     }
 
     private static ProductVisits readProductVisits(ResultSet rows, boolean stale) throws SQLException {

@@ -20,6 +20,13 @@ an occupied lane or paused task can delay the next attempt. The existing adminis
 Run action requests collection now, subject to the lane being available. It collects the
 current rolling counters, not missing historical data.
 
+**Pause for 1 hour** suspends automatic scheduling for the selected task. **Renew for 1 hour**
+sets the deadline to one hour from the latest press. The status shows the deadline in Bucharest
+time. **Pause all for 1 hour** applies the same rule across every lane. **Resume now** and
+**Resume all now** end pauses early. The server enforces the deadlines even when the browser
+is closed. Restarting the server clears its pauses. Once eligible, each task runs according
+to its normal schedule and lane availability.
+
 ## Daily offers coverage
 
 Coverage is tracked per configured offers task/vendor from its registration date in

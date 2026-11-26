@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.logging.Logger;
@@ -66,9 +67,23 @@ public class GMV {
      */
     static BigDecimal computeGMVForPeriod(Map<String, List<POInfo>> ordersWithProduct,
                                          LocalDate startDate, LocalDate endDate) {
+        return observedGMVForPeriod(ordersWithProduct, startDate, endDate).orElse(BigDecimal.ZERO.setScale(2));
+    }
+
+    /** Keep an entry for every period with a contributing line, even when its adjusted total is zero. */
+    static Map<LocalDate, BigDecimal> computeObservedGMVForPeriods(Map<String, List<POInfo>> ordersWithProduct,
+                                                                  Map<LocalDate, LocalDate> periodEnds) {
+        var observed = new HashMap<LocalDate, BigDecimal>();
+        periodEnds.forEach((start, end) -> observedGMVForPeriod(ordersWithProduct, start, end)
+                .ifPresent(amount -> observed.put(start, amount)));
+        return Map.copyOf(observed);
+    }
+
+    private static Optional<BigDecimal> observedGMVForPeriod(Map<String, List<POInfo>> ordersWithProduct,
+                                                            LocalDate startDate, LocalDate endDate) {
         validatePeriod(startDate, endDate);
         var gmv = computeGMVByBucket(ordersWithProduct, bucketForPeriod(startDate, endDate));
-        return gmv.getOrDefault(Boolean.TRUE, BigDecimal.ZERO).setScale(2, HALF_EVEN);
+        return Optional.ofNullable(gmv.get(Boolean.TRUE)).map(amount -> amount.setScale(2, HALF_EVEN));
     }
 
     /** Return the exact contributing snapshots, including zero-valued lines, for an inclusive period. */

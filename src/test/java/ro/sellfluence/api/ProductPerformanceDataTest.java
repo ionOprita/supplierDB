@@ -5,8 +5,8 @@ import ro.sellfluence.db.AdsCampaignTable.AdsAdsetKey;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
 import ro.sellfluence.db.ProductPerformanceTable.Primitives;
 import ro.sellfluence.db.OffersTable.DailyProductOffer;
-import ro.sellfluence.db.ReviewsTable.PublishedReview;
-import ro.sellfluence.db.ReviewsTable.ReviewHistory;
+import ro.sellfluence.db.ProductPerformanceSource.ReviewDay;
+import ro.sellfluence.db.ProductPerformanceSource.ReviewHistory;
 import ro.sellfluence.db.OffersTable.ProductHotness;
 import ro.sellfluence.db.OffersTable.ProductVisits;
 import ro.sellfluence.api.ProductPerformanceData.ReportPeriod;
@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -42,12 +43,13 @@ class ProductPerformanceDataTest {
         assertFalse(response.mock());
         assertEquals(List.of("overview", "total", "auto", "broad", "exact", "product"),
                 response.groups().stream().map(ProductPerformanceData.ColumnGroup::key).toList());
-        assertEquals(List.of(10, 13, 15, 15, 15, 15),
+        assertEquals(List.of(11, 13, 15, 15, 15, 15),
                 response.groups().stream().map(group -> group.columns().size()).toList());
         assertEquals(List.of("Period", "Stock", "Orders", "Total Sales (excl. VAT)", "Clicks", "Sales Price (incl. VAT)", "Conv.",
-                        "Perform.", "# rev.", "rating"),
+                        "Perform.", "Reviews received", "Average rating", "Lifetime reviews"),
                 response.groups().getFirst().columns().stream().map(ProductPerformanceData.Column::label).toList());
-        assertEquals(List.of("date", "integer", "integer", "integer", "integer", "decimal", "percent", "text", "integer", "decimal"),
+        assertEquals(List.of("date", "integer", "integer", "integer", "integer", "decimal", "percent", "text",
+                        "integer", "decimal", "reviewSummary"),
                 response.groups().getFirst().columns().stream().map(ProductPerformanceData.Column::type).toList());
         var commonAdsLabels = List.of("Imp.", "Clicks", "Spend (excl. VAT)", "Sales (excl. VAT)", "Total Units Sold",
                 "CTR", "Conv.", "CPC (excl. VAT)", "ROAS", "ACOS", "TACOS");
@@ -71,8 +73,8 @@ class ProductPerformanceDataTest {
         }
         var keys = response.groups().stream().flatMap(group -> group.columns().stream())
                 .map(ProductPerformanceData.Column::key).toList();
-        assertEquals(83, keys.size());
-        assertEquals(83, new HashSet<>(keys).size());
+        assertEquals(84, keys.size());
+        assertEquals(84, new HashSet<>(keys).size());
         assertFalse(keys.contains("averagePrice"));
         var values = response.rows().getFirst().values();
         var apiKeys = new HashSet<>(keys);
@@ -124,6 +126,7 @@ class ProductPerformanceDataTest {
         assertTrue(jsonValues.get("auto_ctr").isNumber());
         assertEquals("2026-09-07", jsonValues.get("period").asString());
         assertTrue(jsonValues.get("rating").isNull());
+        assertTrue(jsonValues.get("lifetimeReviews").isNull());
     }
 
     @Test
@@ -419,7 +422,7 @@ class ProductPerformanceDataTest {
 
     @Test
     void explicitRowsShowOrganicVisitsAndIndependentMetricsWithoutAdvertisingObservations() {
-        var period = window("2026-11-05", 14, true);
+        var period = window("2026-11-05", 14, false);
         var response = ProductPerformanceData.create(PRODUCT, List.of(period), List.of(),
                 List.of(offer("2026-11-04", 1, 8, "199.99")),
                 Map.of(period.startDate(), new BigDecimal("0.00")), Map.of(period.startDate(), 0L),
@@ -441,8 +444,8 @@ class ProductPerformanceDataTest {
 
     @Test
     void eachWindowUsesItsOwnRawClicksAndNetRevenueForProductRelativeRatios() {
-        var fortnight = window("2026-11-05", 14, true);
-        var month = window("2026-11-05", 30, true);
+        var fortnight = window("2026-11-05", 14, false);
+        var month = window("2026-11-05", 30, false);
         var response = ProductPerformanceData.create(PRODUCT, List.of(fortnight, month),
                 List.of(snapshot("2026-11-05", "auto", List.of(), metrics(1000, 10, "5", "100", 4, 2))),
                 List.of(), Map.of(fortnight.startDate(), new BigDecimal("200"), month.startDate(), new BigDecimal("300")),
@@ -653,7 +656,7 @@ class ProductPerformanceDataTest {
 
     @Test
     void ambiguousPriceDayInvalidatesMeanButNotLatestStockAndMissingPricesStayUnavailable() {
-        var period = window("2026-11-05", 14, true);
+        var period = window("2026-11-05", 14, false);
         var response = ProductPerformanceData.create(PRODUCT, List.of(period), List.of(),
                 List.of(offer("2026-11-03", 2, 90, null), offer("2026-11-05", 1, 8, "199.99")),
                 Map.of(), Map.of(), Map.of(), Map.of());
@@ -693,7 +696,7 @@ class ProductPerformanceDataTest {
     @Test
     void productConversionUsesUnitsAndRollingClicksWithoutAdsForBothWindows() {
         for (var days : List.of(14, 30)) {
-            var period = window("2026-11-05", days, true);
+            var period = window("2026-11-05", days, false);
             var row = productOverview(period, 25L, visits("available", "2026-11-05", 1000L, 1000L), null);
             assertNumber(row.values(), "conversion", ".025");
             assertNull(row.values().get("total_conversion"));
@@ -751,7 +754,7 @@ class ProductPerformanceDataTest {
 
     @Test
     void hotnessPreservesUnknownLabelsAndFallsBackToKnownOrRawTypes() {
-        var period = window("2026-11-05", 14, true);
+        var period = window("2026-11-05", 14, false);
         var labels = Map.of("super_hot", "Super Hot", "hot", "Hot", "regular", "Regular",
                 "cold", "Cold", "super_cold", "Super Cold", "new_classification", "new_classification");
         labels.forEach((type, label) -> {
@@ -796,7 +799,7 @@ class ProductPerformanceDataTest {
 
     @Test
     void serializesExactDatesAndCaptureTimestampAndPreservesNumericValues() {
-        var period = window("2026-11-05", 30, true);
+        var period = window("2026-11-05", 30, false);
         var response = ProductPerformanceData.create(PRODUCT, List.of(period), List.of(), List.of(),
                 Map.of(period.startDate(), new BigDecimal("1234.56")), Map.of(period.startDate(), 5L),
                 Map.of(period.endDate(), visits("available", "2026-11-05", 10L, 20L)),
@@ -805,7 +808,7 @@ class ProductPerformanceDataTest {
         assertEquals("2026-10-07", json.get("period").get("startDate").asString());
         assertEquals("2026-11-05", json.get("period").get("endDate").asString());
         assertEquals(30, json.get("period").get("windowDays").asInt());
-        assertTrue(json.get("period").get("provisional").asBoolean());
+        assertFalse(json.get("period").get("provisional").asBoolean());
         assertEquals("2026-11-05", json.get("visitsSnapshotDate").asString());
         assertEquals("2026-11-05T21:00:00Z", json.get("visitsCapturedAt").asString());
         assertEquals("2026-10-07", json.get("values").get("period").asString());
@@ -837,14 +840,14 @@ class ProductPerformanceDataTest {
     }
 
     @Test
-    void reviewWindowsIncludeBothBoundariesUsingPublicationLocalDatesAndSerializeNumbers() {
+    void reviewWindowsIncludeBothBoundariesAndSerializeNumbers() {
         for (var days : List.of(14, 30)) {
             var period = window("2026-11-15", days, false);
-            var history = new ReviewHistory(true, List.of(
-                    new PublishedReview(1, period.startDate() + "T00:00:00+14:00", 5),
-                    new PublishedReview(2, period.endDate() + "T23:59:59.999999-12:00", 1),
-                    new PublishedReview(3, period.startDate().minusDays(1) + "T23:59:59-12:00", 2),
-                    new PublishedReview(4, period.endDate().plusDays(1) + "T00:00:00+14:00", 2)));
+            var history = new ReviewHistory(Instant.parse("2026-11-17T08:00:00Z"), Map.of(
+                    period.startDate(), new ReviewDay(1, 5, 1),
+                    period.endDate(), new ReviewDay(1, 1, 1),
+                    period.startDate().minusDays(1), new ReviewDay(1, 2, 1),
+                    period.endDate().plusDays(1), new ReviewDay(1, 2, 1)));
             var response = reviewReport(List.of(period), List.of(), history);
             var values = response.rows().getFirst().values();
             assertEquals(2L, values.get("reviews"));
@@ -855,53 +858,21 @@ class ProductPerformanceDataTest {
             assertEquals(2L, json.get("reviews").asLong());
             assertTrue(json.get("rating").isNumber());
             assertEquals(0, BigDecimal.valueOf(3).compareTo(json.get("rating").decimalValue()));
+            assertEquals(3L, json.get("lifetimeReviews").get("count").asLong());
         }
     }
 
     @Test
-    void reviewsContributeToEachOverlappingMonthEndAndProvisionalWindowIndependently() {
-        var january = window("2026-01-31", 30, false);
-        var february = window("2026-02-28", 30, false);
-        var preview = window("2026-02-05", 30, true);
-        var history = new ReviewHistory(true, List.of(
-                new PublishedReview(1, "2026-01-02T12:00:00Z", 5),
-                new PublishedReview(2, "2026-01-30T12:00:00Z", 1),
-                new PublishedReview(3, "2026-02-05T12:00:00Z", 3),
-                new PublishedReview(4, "2026-02-28T12:00:00Z", 5)));
-        var rows = reviewReport(List.of(january, february, preview), List.of(), history).rows();
-        assertEquals(List.of(january, february, preview), rows.stream().map(ProductPerformanceData.Row::period).toList());
-        assertEquals(List.of(2L, 3L, 2L), rows.stream().map(row -> row.values().get("reviews")).toList());
-        assertNumber(rows.get(0).values(), "rating", "3");
-        assertNumber(rows.get(1).values(), "rating", "3");
-        assertNumber(rows.get(2).values(), "rating", "2");
-    }
-
-    @Test
-    void thirtyDayReviewMeanWeightsIndividualReviewsRatherThanFortnightAverages() {
-        var history = new ReviewHistory(true, List.of(
-                new PublishedReview(1, "2026-11-02T12:00:00+03:00", 5),
-                new PublishedReview(2, "2026-11-16T12:00:00+03:00", 1),
-                new PublishedReview(3, "2026-11-17T12:00:00+03:00", 1),
-                new PublishedReview(4, "2026-11-18T12:00:00+03:00", 1)));
-        var rows = reviewReport(List.of(window("2026-11-15", 14, false),
-                window("2026-11-29", 14, false), window("2026-11-30", 30, false)), List.of(), history).rows();
-        assertNumber(rows.get(0).values(), "rating", "5");
-        assertNumber(rows.get(1).values(), "rating", "1");
-        assertEquals(4L, rows.get(2).values().get("reviews"));
-        assertNumber(rows.get(2).values(), "rating", "2");
-    }
-
-    @Test
     void reviewWindowsRespectYearAndLeapDayBoundaries() {
-        var history = new ReviewHistory(true, List.of(
-                new PublishedReview(1, "2023-12-31T23:59:59-12:00", 1),
-                new PublishedReview(2, "2024-01-01T00:00:00+14:00", 2),
-                new PublishedReview(3, "2024-02-29T23:59:59-12:00", 3),
-                new PublishedReview(4, "2024-03-01T00:00:00+14:00", 4)));
+        var history = new ReviewHistory(Instant.parse("2024-03-02T08:00:00Z"), Map.of(
+                LocalDate.parse("2023-12-31"), new ReviewDay(1, 1, 1),
+                LocalDate.parse("2024-01-01"), new ReviewDay(1, 2, 1),
+                LocalDate.parse("2024-02-29"), new ReviewDay(1, 3, 1),
+                LocalDate.parse("2024-03-01"), new ReviewDay(1, 4, 1)));
         for (var days : List.of(14, 30)) {
             var rows = reviewReport(List.of(window("2023-12-31", days, false),
-                    window("2024-01-01", days, true), window("2024-02-29", days, false),
-                    window("2024-03-01", days, true)), List.of(), history).rows();
+                    window("2024-01-01", days, false), window("2024-02-29", days, false),
+                    window("2024-03-01", days, false)), List.of(), history).rows();
             assertEquals(List.of(1L, 2L, 1L, 2L), rows.stream().map(row -> row.values().get("reviews")).toList());
             assertNumber(rows.get(0).values(), "rating", "1");
             assertNumber(rows.get(1).values(), "rating", "1.5");
@@ -911,14 +882,12 @@ class ProductPerformanceDataTest {
     }
 
     @Test
-    void countsUnratedReviewsButExcludesMissingPublicationDatesAndPreservesAveragePrecision() {
-        var history = new ReviewHistory(true, List.of(
-                new PublishedReview(1, "2026-11-08T12:00:00Z", 4),
-                new PublishedReview(2, "2026-11-09T12:00:00Z", 5),
-                new PublishedReview(3, "2026-11-10T12:00:00Z", 5),
-                new PublishedReview(4, "2026-11-11T12:00:00Z", null),
-                new PublishedReview(5, null, 1),
-                new PublishedReview(6, " \t", 1)));
+    void countsUnratedReviewsAndPreservesAveragePrecision() {
+        var history = new ReviewHistory(Instant.parse("2026-11-16T08:00:00Z"), Map.of(
+                LocalDate.parse("2026-11-08"), new ReviewDay(1, 4, 1),
+                LocalDate.parse("2026-11-09"), new ReviewDay(1, 5, 1),
+                LocalDate.parse("2026-11-10"), new ReviewDay(1, 5, 1),
+                LocalDate.parse("2026-11-11"), new ReviewDay(1, 0, 0)));
         var values = reviewReport(List.of(window("2026-11-15", 14, false)), List.of(), history)
                 .rows().getFirst().values();
         assertEquals(4L, values.get("reviews"));
@@ -926,29 +895,10 @@ class ProductPerformanceDataTest {
     }
 
     @Test
-    void distinguishesUnfetchedHistoryEmptyPeriodsAndPeriodsWithOnlyUnratedReviews() {
-        var periods = List.of(window("2026-11-15", 14, false), window("2026-11-29", 14, false));
-        for (var row : reviewReport(periods, List.of(), ReviewHistory.unavailable()).rows()) {
-            assertNull(row.values().get("reviews"));
-            assertNull(row.values().get("rating"));
-        }
-        for (var row : reviewReport(periods, List.of(), new ReviewHistory(true, List.of())).rows()) {
-            assertEquals(0L, row.values().get("reviews"));
-            assertNull(row.values().get("rating"));
-        }
-        var unrated = reviewReport(periods, List.of(), new ReviewHistory(true,
-                List.of(new PublishedReview(1, "2026-11-08T12:00:00Z", null))));
-        assertEquals(1L, unrated.rows().getFirst().values().get("reviews"));
-        assertNull(unrated.rows().getFirst().values().get("rating"));
-        assertEquals(0L, unrated.rows().getLast().values().get("reviews"));
-        assertNull(unrated.rows().getLast().values().get("rating"));
-    }
-
-    @Test
-    void reviewsRemainAvailableWithAdvertisingErrorsAndDoNotCreateAdditionalPeriods() {
-        var history = new ReviewHistory(true, List.of(
-                new PublishedReview(1, "2026-11-08T12:00:00Z", 5),
-                new PublishedReview(2, "2026-12-08T12:00:00Z", 1)));
+    void reviewsRemainAvailableWithAdvertisingErrorsAndDoNotChangeExplicitPeriods() {
+        var history = new ReviewHistory(Instant.parse("2026-12-09T08:00:00Z"), Map.of(
+                LocalDate.parse("2026-11-08"), new ReviewDay(1, 5, 1),
+                LocalDate.parse("2026-12-08"), new ReviewDay(1, 1, 1)));
         for (var days : List.of(14, 30)) {
             var ads = List.of(snapshot("2026-11-08", "unsupported", List.of(), metrics(1, 1, "1", "1", 1, 1)));
             var response = reviewReport(List.of(window("2026-11-15", days, false)), ads, history);
@@ -962,21 +912,10 @@ class ProductPerformanceDataTest {
         }
     }
 
-    @Test
-    void rejectsMalformedNonemptyPublicationTimestampsWithTheReviewId() {
-        var periods = List.of(window("2026-11-15", 14, false));
-        for (var value : List.of("not-a-date", "2026-02-30T12:00:00Z", "2026-11-08T12:00:00")) {
-            var history = new ReviewHistory(true, List.of(new PublishedReview(42, value, 5)));
-            var error = assertThrows(IllegalArgumentException.class,
-                    () -> reviewReport(periods, List.of(), history));
-            assertEquals("Invalid published timestamp for review 42: " + value, error.getMessage());
-        }
-    }
-
     private static ProductPerformanceData.Response reviewReport(List<ReportPeriod> periods,
             List<DailyAdset> ads, ReviewHistory history) {
-        return ProductPerformanceData.create(PRODUCT, periods, ads, List.of(), Map.of(), Map.of(), Map.of(),
-                Map.of(), Map.of(), history);
+        return ProductPerformanceData.createNativeReport(PRODUCT, periods, ads, List.of(), Map.of(), Map.of(),
+                Map.of(), Map.of(), Map.of(), Set.of(), history);
     }
 
     /** Explicit interval fixture for the unchanged advertising formula/classification tests above. */

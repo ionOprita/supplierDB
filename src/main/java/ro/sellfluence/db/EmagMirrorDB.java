@@ -182,6 +182,11 @@ public class EmagMirrorDB implements ProductPerformanceSource {
         return database.readTX(db -> ProductPerformanceHistoryTable.getProductPerformanceHistory(db, vendorId, productCode));
     }
 
+    @Override
+    public ReviewHistory getProductPerformanceReviews(String pnk, LocalDate from, LocalDate to) throws SQLException {
+        return database.readTX(db -> ReviewsTable.readPublishedReviewDays(db, pnk, from, to));
+    }
+
     public Set<LocalDate> getProductPerformanceAdsReportDates(UUID vendorId, LocalDate start, LocalDate end)
             throws SQLException {
         return database.readTX(db -> ProductPerformanceHistoryTable.getProductPerformanceAdsReportDates(db, vendorId, start, end));
@@ -234,11 +239,6 @@ public class EmagMirrorDB implements ProductPerformanceSource {
     public Map<LocalDate, OffersTable.ProductHotness> getProductHotnessForDates(
             UUID vendorId, String pnk, Collection<LocalDate> dates) throws SQLException {
         return database.readTX(db -> OffersTable.getProductHotnessForDates(db, vendorId, pnk, dates));
-    }
-
-    public Optional<LocalDate> getLatestCompletedProductVisitsSnapshotDate(UUID vendorId, LocalDate today)
-            throws SQLException {
-        return database.readTX(db -> OffersTable.getLatestCompletedProductVisitsSnapshotDate(db, vendorId, today));
     }
 
     /**
@@ -297,12 +297,6 @@ public class EmagMirrorDB implements ProductPerformanceSource {
     /** Reads all retained and current reviews as a consistent snapshot for the review sheet. */
     public List<ReviewsTable.ExportReview> readReviewExportRows() throws SQLException {
         return database.readTX(ReviewsTable::readReviewExportRows);
-    }
-
-    /** Reads one product's publication history and distinguishes unfetched from known empty history. */
-    @Override
-    public ReviewsTable.ReviewHistory readProductReviews(String pnk) throws SQLException {
-        return database.readTX(db -> ReviewsTable.readProductReviews(db, pnk));
     }
 
     public int addOrUpdateAdsAndCampaigns(UUID vendorId, List<AdsCampaignSnapshot> campaigns) throws SQLException {
@@ -962,7 +956,6 @@ public class EmagMirrorDB implements ProductPerformanceSource {
     }
 
     /** VAT-inclusive product sales restricted to the exact selected selling-account vendor. */
-    @Override
     public Map<LocalDate, BigDecimal> computeGMVForProductPeriods(
             UUID vendorId, String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
         Objects.requireNonNull(vendorId, "vendorId");
@@ -997,7 +990,6 @@ public class EmagMirrorDB implements ProductPerformanceSource {
     }
 
     /** Net product sales restricted to the exact selected selling-account vendor. */
-    @Override
     public Map<LocalDate, BigDecimal> computeNetSalesForProductPeriods(
             UUID vendorId, String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
         Objects.requireNonNull(vendorId, "vendorId");
@@ -1012,6 +1004,28 @@ public class EmagMirrorDB implements ProductPerformanceSource {
         return computeProductSalesForPeriods(db, productCode, periodEnds, SalesTaxBasis.EXCLUDING_VAT, vendorId);
     }
 
+    @Override
+    public Map<LocalDate, BigDecimal> getObservedGMVForProductPeriods(
+            UUID vendorId, String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
+        return getObservedProductSalesForPeriods(vendorId, productCode, periodEnds, SalesTaxBasis.INCLUDING_VAT);
+    }
+
+    @Override
+    public Map<LocalDate, BigDecimal> getObservedNetSalesForProductPeriods(
+            UUID vendorId, String productCode, Map<LocalDate, LocalDate> periodEnds) throws SQLException {
+        return getObservedProductSalesForPeriods(vendorId, productCode, periodEnds, SalesTaxBasis.EXCLUDING_VAT);
+    }
+
+    private Map<LocalDate, BigDecimal> getObservedProductSalesForPeriods(
+            UUID vendorId, String productCode, Map<LocalDate, LocalDate> periodEnds, SalesTaxBasis taxBasis)
+            throws SQLException {
+        Objects.requireNonNull(vendorId, "vendorId");
+        validateGMVPeriods(productCode, periodEnds);
+        if (periodEnds.isEmpty()) return Map.of();
+        return database.readTX(db -> GMV.computeObservedGMVForPeriods(
+                getOrderDataByProduct(db, productCode, taxBasis, vendorId), periodEnds));
+    }
+
     private static Map<LocalDate, BigDecimal> computeProductSalesForPeriods(
             Connection db, String productCode, Map<LocalDate, LocalDate> periodEnds, SalesTaxBasis taxBasis,
             UUID vendorId)
@@ -1019,8 +1033,8 @@ public class EmagMirrorDB implements ProductPerformanceSource {
         validateGMVPeriods(productCode, periodEnds);
         if (periodEnds.isEmpty()) return Map.of();
         var orders = getOrderDataByProduct(db, productCode, taxBasis, vendorId);
-        var result = new HashMap<LocalDate, BigDecimal>();
-        periodEnds.forEach((start, end) -> result.put(start, GMV.computeGMVForPeriod(orders, start, end)));
+        var result = new HashMap<>(GMV.computeObservedGMVForPeriods(orders, periodEnds));
+        periodEnds.keySet().forEach(start -> result.putIfAbsent(start, BigDecimal.ZERO.setScale(2)));
         return Map.copyOf(result);
     }
 
@@ -1778,13 +1792,22 @@ public class EmagMirrorDB implements ProductPerformanceSource {
     }
 
     /** Ordered units for one selling account, preserving the Orders table's snapshot and quantity rules. */
-    @Override
     public Map<LocalDate, Long> countOrdersForProductPeriods(
             UUID vendorId, String pnk, Map<LocalDate, LocalDate> inclusivePeriodEnds) throws SQLException {
         Objects.requireNonNull(vendorId, "vendorId");
         OrderQuantityTable.validatePeriods(pnk, inclusivePeriodEnds);
         if (inclusivePeriodEnds.isEmpty()) return Map.of();
         return database.readTX(db -> OrderQuantityTable.countForProductPeriods(db, vendorId, pnk, inclusivePeriodEnds));
+    }
+
+    @Override
+    public Map<LocalDate, ProductOrders> getProductPerformanceOrders(
+            UUID vendorId, String pnk, Map<LocalDate, LocalDate> inclusivePeriodEnds) throws SQLException {
+        Objects.requireNonNull(vendorId, "vendorId");
+        OrderQuantityTable.validatePeriods(pnk, inclusivePeriodEnds);
+        if (inclusivePeriodEnds.isEmpty()) return Map.of();
+        return database.readTX(db -> OrderQuantityTable.readProductOrdersForPeriods(
+                db, vendorId, pnk, inclusivePeriodEnds));
     }
 
     /**

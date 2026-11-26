@@ -6,6 +6,7 @@ import ro.sellfluence.emagdashboard.AdsPartialFailureException;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.InstantSource;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -207,22 +208,58 @@ class BackgroundJobTest {
     }
 
     @Test
-    void pauseAllCoversEveryConfiguredTaskAndIsIdempotent() {
+    void pauseAllRenewsTheDeadlineAcrossLanesAndAllowsIndividualResume() {
         var executor = new HoldingExecutor();
-        var job = new BackgroundJob(new FakeTaskStore(), executor, clockAt(NOW), List.of(
+        var start = clockAt(NOW).instant();
+        var now = new AtomicReference<>(start);
+        InstantSource time = now::get;
+        var job = new BackgroundJob(new FakeTaskStore(), executor, time.withZone(BUCHAREST), List.of(
                 task("orders", "emag", () -> {}),
                 task("more-orders", "emag", () -> {}),
                 task("sheets", "google", () -> {})
         ));
-        job.setTaskPaused("orders", true);
+        job.pauseAllTasks();
+        now.set(start.plus(Duration.ofMinutes(40)));
+        job.pauseAllTasks();
+        var until = now.get().plus(Duration.ofHours(1));
+        assertEquals(Map.of("orders", until, "more-orders", until, "sheets", until), job.pausedTaskDeadlines());
 
-        job.pauseAllTasks();
-        job.pauseAllTasks();
+        now.set(start.plus(Duration.ofHours(1)));
         job.performWork();
-
-        assertEquals(Set.of("orders", "more-orders", "sheets"), job.pausedTaskNames());
         assertEquals(0, executor.queuedCount());
-        assertTrue(activeTasks(job).isEmpty());
+        job.setTaskPaused("sheets", false);
+        job.performWork();
+        assertEquals(Map.of("google", "sheets"), activeTasks(job));
+
+        now.set(until);
+        assertTrue(job.pausedTaskDeadlines().isEmpty());
+        job.performWork();
+        assertEquals(Map.of("emag", "orders", "google", "sheets"), activeTasks(job));
+    }
+
+    @Test
+    void pressingPauseAgainStartsOneHourFromTheLatestRequest() {
+        var start = clockAt(NOW).instant();
+        var now = new AtomicReference<>(start);
+        InstantSource time = now::get;
+        var executor = new HoldingExecutor();
+        var job = new BackgroundJob(new FakeTaskStore(), executor, time.withZone(BUCHAREST),
+                List.of(task("offers", "dashboard", () -> {})));
+
+        job.setTaskPaused("offers", true);
+        assertEquals(Map.of("offers", start.plus(Duration.ofHours(1))), job.pausedTaskDeadlines());
+        now.set(start.plus(Duration.ofMinutes(40)));
+        job.setTaskPaused("offers", true);
+        var until = start.plus(Duration.ofMinutes(100));
+        assertEquals(Map.of("offers", until), job.pausedTaskDeadlines());
+
+        now.set(until.minusMillis(1));
+        job.performWork();
+        assertEquals(0, executor.queuedCount());
+        now.set(until);
+        job.performWork();
+        assertEquals(Map.of("dashboard", "offers"), activeTasks(job));
+        assertTrue(job.pausedTaskNames().isEmpty());
     }
 
     @Test

@@ -121,8 +121,8 @@ class JteTemplateEngineTest {
                 assertTrue(buttonIndex > html.indexOf("id=\"taskLaneFilter\""));
                 assertTrue(resumeButtonIndex > buttonIndex);
                 assertTrue(resumeButtonIndex < html.indexOf("id=\"refreshBtn\""));
-                assertTrue(html.contains(">Pause All</button>"));
-                assertTrue(html.contains(">Resume all</button>"));
+                assertTrue(html.contains(">Pause all for 1 hour</button>"));
+                assertTrue(html.contains(">Resume all now</button>"));
             } else {
                 assertFalse(html.contains("id=\"pauseAllBtn\""));
                 assertFalse(html.contains("id=\"resumeAllBtn\""));

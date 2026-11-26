@@ -1392,6 +1392,19 @@ code {
   color: var(--estimated-text);
 }
 
+.pp-table tbody [data-capture-label]::after {
+  content: attr(data-capture-label);
+  display: block;
+  max-width: 16ch;
+  white-space: normal;
+  font-size: .75rem;
+  line-height: 1.2;
+}
+
+.pp-table tbody .numeric[data-capture-label]::after {
+  margin-inline-start: auto;
+}
+
 .pp-table tbody .pp-partial::after {
   content: " ◐";
   color: var(--muted);

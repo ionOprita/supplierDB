@@ -21,6 +21,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -88,6 +89,58 @@ class ReviewsTableIntegrationTest {
                 if (schema != null) execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
             }
         }
+    }
+
+    @Test
+    void reviewDaysUsePublicationInRomaniaAndCountRetainedVariantReviewsOnce() throws Exception {
+        var day = LocalDate.of(2026, 9, 20);
+        var first = publishedReview(1, PNK, "2026-09-19T21:00:00Z", 4);
+        var last = copyRecord(publishedReview(2, PNK, "2026-09-21T00:30:00+14:00", 5),
+                Map.of("isActive", false, "deleted", "2026-09-24T11:00:00+03:00"));
+        var nextDay = publishedReview(3, PNK, "2026-09-20T21:00:00Z", 1);
+        var invalidDate = publishedReview(4, PNK, "2026-09-20T25:00:00Z", 2);
+        var missingStars = publishedReview(5, PNK, "2026-09-20T12:00:00+03:00", null);
+        var invalidStars = publishedReview(6, PNK, "2026-09-20T12:00:00+03:00", 6);
+        var noPublication = publishedReview(7, PNK, null, 3);
+        var future = publishedReview(8, PNK, "2026-09-28T16:17:00+03:00", 2);
+        var otherVariant = publishedReview(9, "OTHER", "2026-09-20T19:00:00Z", 5);
+        ReviewsTable.storeReviews(db, PNK, FIRST_FETCH,
+                response(first, last, nextDay, invalidDate, missingStars, invalidStars, noPublication, future, otherVariant));
+        ReviewsTable.storeReviews(db, "OTHER", FIRST_FETCH, response(otherVariant));
+        // A repeated fetch updates one review. Others are retained, including their original publication dates.
+        var updated = copyRecord(first, Map.of("rating", 3));
+        ReviewsTable.storeReviews(db, PNK, SECOND_FETCH, response(updated));
+        assertTrue(count("SELECT count(*) FROM review_user") > count("SELECT count(*) FROM review"));
+        var expected = new ProductPerformanceSource.ReviewDay(4, 8, 2);
+        var bounded = ReviewsTable.readPublishedReviewDays(db, " " + PNK + " ", day, day);
+        assertEquals(SECOND_FETCH, bounded.lastSuccessfulFetchAt());
+        assertEquals(Map.of(day, expected), bounded.days());
+        var all = ReviewsTable.readPublishedReviewDays(db, PNK, null, day.plusDays(20));
+        assertEquals(Map.of(day, expected, day.plusDays(1), new ProductPerformanceSource.ReviewDay(1, 1, 1)), all.days());
+    }
+
+    @Test
+    void reviewDaysDistinguishACompleteEmptyFetchFromMissingCoverage() throws Exception {
+        var day = LocalDate.of(2026, 10, 25);
+        var noFetch = ReviewsTable.readPublishedReviewDays(db, PNK, null, day);
+        assertEquals(ProductPerformanceSource.ReviewHistory.empty(), noFetch);
+        assertNull(noFetch.lastSuccessfulFetchDate());
+        var evening = Instant.parse("2026-10-24T21:30:00Z");
+        ReviewsTable.storeReviews(db, PNK, evening, response());
+        var fetched = ReviewsTable.readPublishedReviewDays(db, PNK, day, day);
+        assertEquals(day, fetched.lastSuccessfulFetchDate());
+        assertEquals(Map.of(), fetched.days());
+        assertEquals(noFetch, ReviewsTable.readPublishedReviewDays(db, null, null, day));
+        assertEquals(noFetch, ReviewsTable.readPublishedReviewDays(db, " \t\n", null, day));
+        assertEquals(noFetch, ReviewsTable.readPublishedReviewDays(db, "OTHER-PNK", null, day));
+    }
+
+    private static Review publishedReview(long id, String pnk, String published, Integer rating)
+            throws ReflectiveOperationException {
+        var fields = new LinkedHashMap<String, Object>();
+        fields.put("published", published);
+        fields.put("rating", rating);
+        return copyRecord(fullReview(id, 1, pnk), fields);
     }
 
     @Test
@@ -473,50 +526,20 @@ class ReviewsTableIntegrationTest {
     }
 
     @Test
-    void productReviewHistoryDistinguishesUnfetchedProductsFromSuccessfulEmptyFetches() throws Exception {
-        assertEquals(ReviewsTable.ReviewHistory.unavailable(), ReviewsTable.readProductReviews(db, PNK));
-        assertEquals(ReviewsTable.ReviewHistory.unavailable(), ReviewsTable.readProductReviews(db, null));
-        assertEquals(ReviewsTable.ReviewHistory.unavailable(), ReviewsTable.readProductReviews(db, " \t\n"));
-
-        ReviewsTable.storeReviews(db, PNK, FIRST_FETCH, response());
-
-        assertEquals(new ReviewsTable.ReviewHistory(true, List.of()), ReviewsTable.readProductReviews(db, PNK));
-        assertEquals(ReviewsTable.ReviewHistory.unavailable(), ReviewsTable.readProductReviews(db, "OTHER-PNK"));
-    }
-
-    @Test
-    void productReviewHistoryUsesTheExactTrimmedPnkAndPreservesNullableSourceFields() throws Exception {
-        var fields = new LinkedHashMap<String, Object>();
-        fields.put("published", null);
-        fields.put("rating", null);
-        var first = copyRecord(fullReview(11, 1), fields);
-        var second = copyRecord(fullReview(11, 2, "PNK-2"),
-                Map.of("published", "2026-09-28T00:30:00+03:00", "rating", 5));
+    void reviewDaysUseTheExactTrimmedPnkEvenWhenVariantsShareAReviewId() throws Exception {
+        var day = LocalDate.of(2026, 9, 24);
+        var first = publishedReview(11, PNK, null, null);
+        var second = publishedReview(11, "PNK-2", "2026-09-24T00:30:00+03:00", 5);
         ReviewsTable.storeReviews(db, PNK, FIRST_FETCH, response(first));
         ReviewsTable.storeReviews(db, "PNK-2", FIRST_FETCH, response(second));
 
-        assertEquals(new ReviewsTable.ReviewHistory(true, List.of(new ReviewsTable.PublishedReview(11, null, null))),
-                ReviewsTable.readProductReviews(db, " \t" + PNK + "\r\n "));
-        assertEquals(new ReviewsTable.ReviewHistory(true, List.of(
-                        new ReviewsTable.PublishedReview(11, second.published(), 5))),
-                ReviewsTable.readProductReviews(db, "PNK-2"));
-        assertEquals(ReviewsTable.ReviewHistory.unavailable(), ReviewsTable.readProductReviews(db, "pnk-1"));
-    }
-
-    @Test
-    void productReviewHistoryIncludesRetainedAndInactiveRowsWithoutMultiplyingChildren() throws Exception {
-        var retained = copyRecord(fullReview(11, 1), Map.of("isActive", false,
-                "deleted", "2026-09-24T11:00:00+03:00", "rating", 2));
-        var current = copyRecord(fullReview(12, 2), Map.of("rating", 5));
-        ReviewsTable.storeReviews(db, PNK, FIRST_FETCH, response(retained, current));
-        var updated = copyRecord(current, Map.of("rating", 4));
-        ReviewsTable.storeReviews(db, PNK, SECOND_FETCH, response(updated));
-
-        assertTrue(count("SELECT count(*) FROM review_user") > count("SELECT count(*) FROM review"));
-        assertEquals(new ReviewsTable.ReviewHistory(true, List.of(
-                        new ReviewsTable.PublishedReview(11, retained.published(), 2),
-                        new ReviewsTable.PublishedReview(12, current.published(), 4))),
-                ReviewsTable.readProductReviews(db, PNK));
+        assertEquals(new ProductPerformanceSource.ReviewHistory(FIRST_FETCH, Map.of()),
+                ReviewsTable.readPublishedReviewDays(db, " \t" + PNK + "\r\n ", null, day));
+        assertEquals(new ProductPerformanceSource.ReviewHistory(FIRST_FETCH,
+                        Map.of(day, new ProductPerformanceSource.ReviewDay(1, 5, 1))),
+                ReviewsTable.readPublishedReviewDays(db, "PNK-2", null, day));
+        assertEquals(ProductPerformanceSource.ReviewHistory.empty(),
+                ReviewsTable.readPublishedReviewDays(db, "pnk-1", null, day));
     }
 
     @Test

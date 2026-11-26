@@ -13,7 +13,8 @@ The UI normalizes old bookmarks and displays the actual dates. The response cont
 definitions, rows and an `errors` list; `mock` is always false. Vendor/product membership is
 checked before querying report sources.
 
-Every source in this report uses the exact selected vendor UUID. Orders, net Total Sales,
+Public reviews belong to the selected product variant (PNK). Vendors selling the same PNK see
+the same reviews. Account-specific sources use the exact selected vendor UUID. Orders, net Total Sales,
 and the compatibility gross GMV field are filtered by the selling account before selecting
 order snapshots or pairing finalized/storno states. Main and FBE accounts are not implicitly
 combined by company name. Other pages retain their existing global Orders/GMV calculations.
@@ -64,8 +65,9 @@ product values are read, and `ads_search_phrase` is not used at all.
 ## Periods and formulas
 
 Orders, sales and advertising metrics are calculated directly for each row's explicit inclusive
-start/end dates. Clicks uses the closing-date rolling counter, and Perform. uses the
-classification observed on that date.
+start/end dates. Clicks and Perform. use the closing-date rolling counter and classification
+when available. A missed closing-day snapshot can use the following day's stored observation
+as a labelled estimate.
 `ProductPerformancePeriods` uses the Romanian business date (`Europe/Bucharest`):
 
 - **14 days:** consecutive windows anchored to 2026-11-02: Nov 2–15, Nov 16–29,
@@ -74,35 +76,56 @@ classification observed on that date.
   For example, Dec 2–31; in leap-year February, Jan 31–Feb 29. These windows can overlap
   or leave gaps and must not be summed as calendar-month totals.
 - A window becomes closed only after its closing date has elapsed in Romania.
-- A separate **provisional** rolling row ends on the latest completed live vendor snapshot or
-  imported historical observation date strictly
-  before today, with exactly 14/30 dates. It is omitted if its end is at or before the latest
-  closed boundary, if it predates the product's first activity, or if it duplicates a closed row.
-  It can overlap history; it is not a partially elapsed fixed window.
+- The **provisional** row covers the current fortnight or calendar month through today, inclusive.
+  On 26 November 2026 the bounds are 16–26 November (11 days) in 14-day mode and
+  1–26 November (26 days) in 30-day mode. It can cover 31 dates on the last day of a long month.
+  The next morning starts a new interval and the completed month uses its usual 30-day window.
 
-Rows begin at the earliest known eligible Ads, matching offer (including zero stock), or
-status 4/5 order activity in the selected account, or an imported historical observation.
-Older family review/rating history can therefore extend the report before Ads/Organic history.
+Rows begin at the earliest known eligible Ads, matching offer (including zero stock),
+status 4/5 order activity, or imported Organic/Ads observation in the selected account.
+A dated review for the selected PNK can also establish the start of the report.
 Orders from another account cannot extend
 the report history. Rows exist without Ads and without visits captures, preserving
 historical Orders/GMV. No activity means no rows. Rows are sorted oldest to newest.
 “Closed” refers to elapsed dates: later corrections/imports can still change the underlying data.
 
 Each row exposes `period: {startDate, endDate, windowDays, provisional}`, `values`,
-`visitsSnapshotDate`, `visitsCapturedAt`, `visitsStatus` (`available`, `missing`, `ambiguous`),
-and `visitsReason`. A labelled historical estimate uses `visitsStatus: "estimated"` and has no
-invented capture timestamp. Performance observation metadata is independent: `performanceSnapshotDate`,
-`performanceStatus` (`available`, `missing`, `ambiguous`), `performanceReason`, and the raw
-`performanceType`. Dates/timestamps are ISO strings. The first column key is `period`;
+`visitsSnapshotDate`, `visitsCapturedAt`, `visitsStatus` and `visitsReason`. Performance has its
+own `performanceSnapshotDate`, `performanceStatus`, `performanceReason` and raw `performanceType`.
+Both statuses can be `available`, `missing`, `ambiguous` or `estimated`. A next-day estimate
+retains the actual observation date, visits capture time and classification type where available.
+Google Sheets estimates have no visits capture timestamp. Dates/timestamps are ISO strings. The first column key is `period`;
 the UI renders explicit bounds from the row metadata, not a reconstructed week/month label.
 The UI initially shows the latest 20 rows; “Show everything” reveals all returned periods.
 Switching modes requests new aggregates rather than relabelling rows.
 
+### Available data in the provisional row
+
+The current row appears only when the selected product and account have an observed numeric
+value within its dates. A measured zero qualifies, including zero stock, a zero order quantity
+or a sale whose adjustments bring the amount to zero. A positive count of reviews published
+in the current interval can create the row. A zero review count, lifetime total, vendor-wide
+snapshot or empty sum alone leaves it hidden.
+Each metric without its own supporting data stays blank.
+
+| Metric | What the provisional row shows |
+|---|---|
+| Stock and Sales Price | Stock from the latest matching snapshot when the offer is unambiguous, and the mean of usable daily gross prices in the interval. |
+| Orders, Total Sales and legacy GMV | Each total uses its own contributing records inside the displayed dates. A recorded zero or negative amount is retained. |
+| Product Clicks, Perform. and Conv. | Blank. The rolling counters and classification cannot describe this interval. |
+| Reviews received and Average rating | Published reviews in the displayed dates through today's latest successful review fetch. Both cells stay blank until the collector fetches this PNK today. |
+| Lifetime reviews | The running count and average rating through today's latest successful review fetch. |
+| Ads primitives and ratios within Ads | Recorded product adset figures through today, with ratios calculated from the available inputs. Categories without recorded inputs stay blank. The collector normally reports through yesterday. Partial figures identify the saved report dates in the cell details and CSV. |
+| TACOS and Ads share of Total Sales | Available with valid inputs, positive Total Sales and a saved campaign report for every elapsed date. Incomplete coverage leaves these ratios blank. |
+| Ads share of product Clicks | Blank because product Clicks are unavailable for this interval. |
+
+Historical spreadsheet estimates and the next-day closing fallback apply to closed rows only.
+Current values can change as more records arrive, including later on the same Romanian date.
+
 The permanent circled **i** beside the report status explains estimated history, partial data,
-and provisional periods in English. Yellow cells identify historical estimates independently of
-the provisional flag; a provisional row is a full rolling preview, not a partially elapsed window
-or a claim that its clicks are estimates. Its dates can overlap closed rows and must not be added
-to them. The help uses the same component as Sales Dashboard and GMV Dashboard: hover or keyboard
+and provisional periods in English. Yellow cells identify estimates. The provisional label
+identifies the current interval through today. The help uses the same component as Sales
+Dashboard and GMV Dashboard. Hover or keyboard
 focus opens it, tapping toggles it, and Escape or an outside click dismisses it. It stays within
 the viewport and uses the selected light/dark theme. It remains available during loading, errors,
 empty reports and when older rows are hidden. Cell source details and CSV provenance remain intact.
@@ -113,7 +136,8 @@ The CSV has one flat header row, with advertising labels qualified by their grou
 example, “Total - Clicks”). The filename identifies the vendor, product code, report
 mode (`14days`/`30days`), and export date. It also includes period start/end, window length,
 provisional state, visits snapshot date/time, status and reason, plus performance snapshot date,
-status, reason and type. Download is disabled while loading, after a failed request, or when
+status, reason and type. When a next-day observation supplies a metric, its reason includes
+the visible capture label and the cell provenance records its source. Download is disabled while loading, after a failed request, or when
 the report has no rows; partial reports with data remain downloadable.
 
 Advertising metrics sum the available daily reports within each interval; missing dates are not
@@ -154,7 +178,7 @@ than the number of distinct orders or advertising-attributed sales. For example,
 orders containing three and two units contribute five. Returning two units does not
 reduce that Orders value; returned units are reported separately on the dashboard.
 
-For each explicit 14-day or 30-day interval, order snapshots are first
+For each displayed interval, order snapshots are first
 filtered by the exact selected account and their order date to that period. Within each order ID and product PNK,
 status 4 contributes `product_in_order.quantity`; if no status 4 snapshot exists in
 that period, status 5 contributes `initial_qty`. Other statuses do not contribute.
@@ -164,7 +188,8 @@ Another account's matching order ID cannot replace or contribute a snapshot.
 No catalog or retracted-product filter is added to the quantity query.
 Zero and signed source quantities are retained. Interval totals are calculated directly,
 not by summing other report rows, because a snapshot can be selected differently for each
-period. A displayed period with no contributing order quantities has zero Orders.
+period. A closed period with no contributing order quantities has zero Orders.
+The provisional period shows Orders only if a qualifying quantity was observed.
 Orders-only periods can create rows, and advertising errors do not hide Orders.
 
 The overview dashboard uses the same ordered-unit selection once for the selected
@@ -183,7 +208,7 @@ GMV allocation with the selected internal product code, but supplies net inputs:
 we never divide aggregate GMV by a single VAT rate. Net unit prices retain their source
 precision until the period total is rounded to two decimals with HALF_EVEN.
 
-Each row uses its explicit 14-day or 30-day interval, with both dates
+Each row uses its displayed interval, with both dates
 inclusive, even when advertising snapshots cover only part of that period. The product's
 order history for the selected account is loaded once per amount basis, retaining finalized and storno snapshots outside
 the requested periods so matching orders are calculated correctly. Both bases preserve
@@ -196,8 +221,9 @@ methods remain available to other consumers with their original scope.
 The API adds numeric `totalSales` and retains the legacy numeric `gmv` with its original
 VAT-inclusive meaning for compatibility; both now use the selected account. Only `totalSales` is included in the displayed
 columns and CSV. Both values retain two decimal places. Total Sales displays whole
-numbers using the existing integer formatter, including zero and negative values. No
-contributing orders produce zero. Qualifying order history can create rows without Ads, and advertising
+numbers using the existing integer formatter, including zero and negative values. Closed
+periods with no contributing orders produce zero. The provisional row leaves each amount
+blank when it lacks a contributing line. Qualifying order history can create rows without Ads, and advertising
 classification errors do not hide a row's Total Sales or legacy GMV.
 
 ### VAT labels and advertising source limits
@@ -249,7 +275,7 @@ values displayed by the other ads report APIs. Decimal inputs retain their preci
 division uses `BigDecimal` with `DECIMAL128`, and rounding for presentation happens in
 the browser.
 
-An empty category within an existing period has zero primitives. If any contributing
+An empty category within an observed closed period has zero primitives. If any contributing
 snapshot is missing a primitive, that category's affected primitive and its dependent
 calculations remain null, and the corresponding Total primitive also remains null.
 For TACOS and Total's product Clicks/Sales shares, missing inputs or a denominator at or
@@ -267,7 +293,7 @@ The column descriptions explain the account scope, formulas and these source lim
 
 ## Rolling product visits
 
-**Product metrics → Clicks** shows the raw Last14 or Last30 counter for the selected
+On closed rows, **Product metrics → Clicks** shows the raw Last14 or Last30 counter for the selected
 vendor/product and report mode. There is no separate top panel or independent visits request.
 The old `/app/productVisits` endpoint remains available for compatibility.
 
@@ -278,10 +304,13 @@ visits leaving the window change the total. We use one raw counter, not sums or 
 between captures. **The counter's exact source cutoff is unknown**; the table tooltip describes
 the displayed visits window as approximate. No claim of exact calendar alignment is made.
 
-For historical rows, the exact closing date's last successful live vendor snapshot supplies
-Clicks. All required dates are read together. Missing/import-only captures remain unavailable;
-we never borrow another day's counter under the original interval. For the provisional row,
-the interval is explicitly shifted to the selected completed snapshot date. PNKs are
+For closed rows, the exact closing date's last successful live vendor snapshot supplies Clicks.
+If that vendor has no snapshot on the closing date, the report also checks the next calendar day
+once that day has ended in Romania. For example, a 2–15 November row can use the 16 November
+counter and show **Estimated · captured 16 Nov**. The 14-day counter then represents approximately
+3–16 November. The row keeps its original dates for Orders, sales and advertising. The same rule
+applies to the rolling 30-day counter at month-end. A closing-day snapshot with missing or
+ambiguous product data does not trigger a next-day substitution. PNKs are
 trimmed before matching. Exactly one matching offer with `ext_stock <> 0` is preferred;
 if none have nonzero stock, exactly one matching offer of any stock is accepted.
 Multiple candidates display an ambiguity message instead of being summed or selected
@@ -301,7 +330,7 @@ missed days are documented in [Task history](TaskHistory.md).
 
 ## Product conversion and performance classification
 
-**Product metrics → Conv.** is calculated as **Orders / Clicks**, displayed as a percentage.
+On closed rows, **Product metrics → Conv.** is calculated as **Orders / Clicks**, displayed as a percentage.
 Orders means the ordered product units defined above, not distinct orders and not Ads sales
 counts. Both inputs belong to the selected account/product and the same displayed 14-day or
 30-day row. For example, 25 units divided by 1,000 Clicks is stored in the response as `0.025`
@@ -314,6 +343,7 @@ when advertising classification errors affect Ads columns. A known zero Orders v
 by positive Clicks produces 0%; missing Orders, missing/ambiguous Clicks, or Clicks at or below
 zero produce null (`—`). Values above 100% are not capped. The formula uses the existing raw
 rolling Clicks counter, so its calendar alignment shares that counter's unverified eMAG cutoff.
+Conversion and Total Ads click share carry the capture-date label when they use next-day Clicks.
 It does not claim to reproduce eMAG's native conversion or change any Ads conversion formula.
 
 **Product metrics → Perform.** uses the already-collected `offerStock.hotnessName` and
@@ -321,13 +351,14 @@ It does not claim to reproduce eMAG's native conversion or change any Ads conver
 Hot, Regular, Cold and Super Cold; no local thresholds are calculated. Classification is
 based on eMAG's 30-day performance window, including when displayed on a 14-day report row.
 
-The reader selects the exact closing-date snapshot for the selected vendor and trimmed PNK.
+The reader first selects the exact closing-date snapshot for the selected vendor and trimmed PNK.
+When that vendor missed the close, the same next-day fallback applies to classification. The
+capture-date label identifies when eMAG actually reported the classification.
 It uses the same offer selection rule as Clicks: prefer one matching offer with `ext_stock <> 0`;
 otherwise accept one matching offer regardless of stock, including zero or unknown stock.
 Multiple effective candidates are ambiguous even if their labels agree. The selected offer
-is joined to its own `offers_stock` row on vendor, snapshot date and offer ID. Labels from
-different offers are never combined, and classifications from adjacent dates are never borrowed
-or averaged. A unique out-of-stock product can therefore retain its historical classification.
+is joined to its own `offers_stock` row on vendor, snapshot date and offer ID. The report uses
+one offer's classification. A unique out-of-stock product can therefore retain its historical classification.
 
 Hotness is read independently of visits provenance: an older observation can be valid even
 without `visits_fetched_at` or any Clicks value. Missing classifications display `—`; ambiguous
@@ -339,66 +370,59 @@ actual observation date. The response and CSV preserve the separate performance 
 reason and raw type. Unknown labels remain text rather than being rejected by a fixed enum.
 Page loads use stored observations; no schema migration or new conversion collection is required.
 
-## Product reviews and ratings
+## Product reviews
 
-Native `# rev.` and `rating` use the stored reviews also exported to `Date Recenzii`,
-matched on the selected product's exact trimmed PNK. Reviews are public product data:
-vendors sharing a PNK receive the same native review metrics after the vendor/product
-membership check. Review history is read once per report request with report periods,
-without joining comments or other review child records. Retained reviews that no longer
-appear in later fetches still count, using their latest stored ratings.
+The report reads stored reviews for the exact trimmed PNK after the vendor/product membership
+check. It reads review history once per request. Retained reviews still count after they stop
+appearing in subsequent fetches. Comments and other review child records do not contribute.
 
-Each explicit 14-day or 30-day interval is calculated independently, including its first
-and last dates and any provisional interval. A review belongs to every displayed interval
-containing its **publication date**, preserving the timestamp's local calendar date without
-a timezone shift. Overlapping rows can therefore include the same review; do not add their
-counts together. Creation, modification, and first-import dates do not determine membership.
-Reviews without a publication date are excluded; malformed nonempty publication timestamps
-surface as data errors.
+For 14-day and 30-day rows, **Reviews received** counts individual public reviews of the
+selected PNK whose publication timestamp falls within the row's inclusive Romanian calendar dates.
+**Average rating** is the sum of valid individual ratings (1–5 stars) divided by the number of
+those ratings. A published review with a missing or invalid rating still counts as a review.
+Publication timestamps are converted to Romanian time. Reviews need a valid publication timestamp
+at or before the latest successful fetch. Overlapping rows can count the same publication.
 
-`# rev.` counts every dated review in the interval, including reviews without a rating.
-`rating` is the arithmetic mean of the nonnull ratings from those individual reviews,
-displayed with two decimal places. It is not calculated by averaging ratings of other rows.
-Review metrics remain available on existing rows without Ads and despite advertising
-classification errors. Native reviews do not create additional report periods or extend
-the report's date range.
+**Lifetime reviews** shows the running count and average rating together through the row's
+end date, including reviews published before the displayed period. Each review contributes
+once, including when 30-day windows overlap. The table and CSV both show the values as one
+cell, for example **120 reviews · 4.75 ★**. The API returns that cell's numeric count and
+average as `values.lifetimeReviews.count` and `values.lifetimeReviews.averageRating`.
+Historical totals use the latest stored rating of each review. An edit can change the
+reconstructed average for earlier dates.
 
-Before any successful review fetch, both native values are unavailable. After a successful
-fetch, an interval without published reviews has a native count of `0` and an unavailable
-rating. An interval containing only unrated reviews has an available count and unavailable
-rating. Availability follows the successful-fetch marker; it has no freshness cutoff, and
-known zero counts can apply to older intervals without stored published reviews.
+A completed period requires a successful review fetch for that PNK on a later Romanian date.
+For a period ending today, the report uses today's successful fetch and supplies its timestamp
+in `reviewFetchedAt`, the cell details and the CSV field **Reviews fetched at**.
+A covered period with no new reviews shows **0** for **Reviews received**. With no reviews
+published through a covered date, **Lifetime reviews** shows **0 reviews · —**. Each average
+is blank whenever it has no valid ratings. All three review cells are blank without a
+qualifying fetch.
 
-Historical fallback is independent for each cell: available native values, including zero,
-take precedence; unavailable values may use an eligible imported family observation under
-the rules below. A native count of `0` can consequently appear beside a yellow historical
-family rating. The two cells describe different populations and calculations intentionally.
-Native values keep the ordinary cell styling; historical values retain yellow highlighting,
-source date, method, and source URL; values unavailable from both sources show an ordinary
-`—`. Column descriptions distinguish native product-period calculations from historical
-family observations. CSV exports preserve the displayed values and per-cell provenance.
+The old yellow review cells copied family figures from weekly spreadsheet snapshots. Each count
+covered the 30 days ending on the sheet's observation date, which could precede the row's end by
+up to seven days. Those figures and their accompanying ratings remain in the import archive.
 
 ## Historical estimates and provenance
 
-Imported history supplements unavailable native data for the exact selected account/product.
-Each domain independently selects its **newest observation at or before the report end**, with
+Imported Organic and Ads history supplements unavailable native data on closed rolling rows for the
+exact selected account/product. Each domain independently selects its **newest observation at or before the report end**, with
 a maximum lag of seven days. It uses one coherent snapshot for that domain; an empty metric in
 the newest snapshot is not filled from an older snapshot, and future observations are never used.
 Weekly Last30 observations overlap and are never added together or differenced into daily data.
 Explicitly blank dated snapshots are retained when reimported, so clearing source metrics can
 withdraw prior historical values. Empty snapshots do not extend the report's date range or create
-provisional previews. Deleting a source row/header preserves earlier history, and unresolved
+open-period rows. Deleting a source row/header preserves earlier history, and unresolved
 identities do not withdraw verified observations. Reimport requires a newly reviewed v2 parser hash;
 existing raw batches remain immutable and the correction needs no new schema migration.
 
 The 30-day mode uses an eligible Last30 cumulative value unchanged. The 14-day mode estimates
 it as `Last30 × 14/30`, assuming uniform activity. This applies to product Clicks and the six Ads
 primitives in each category. Fractional estimates are retained internally and formatted for display.
-Stock, gross Sales Price, performance classification, family review count and rating are observed
-states: they use the source value unchanged and carry the source date. They are not scaled,
-summed across dates, or treated as exact period averages. In particular, a historical Sales Price
-is an estimate of the period price, whereas a native Sales Price is the daily gross-price mean
-described above. Historical performance remains a 30-day eMAG classification even on a 14-day row.
+Stock, gross Sales Price and performance classification use the value observed on the source
+date. A historical Sales Price estimates the period price. Native Sales Price is the daily
+gross-price mean described above. Historical performance remains a 30-day eMAG classification
+even on a 14-day row.
 
 Available native overview values take precedence. Ambiguous native Clicks/performance are not
 overwritten by a historical estimate. Orders and Total Sales always use the native Order Table
@@ -428,10 +452,9 @@ their dedicated observation metadata to `estimated` without inventing a timestam
 
 The current sources support all 73 advertising columns, plus Orders, Total Sales, Stock, Sales Price
 and raw rolling Clicks, calculated product conversion and observed performance classification
-where the required inputs exist. Native product reviews supply period review counts and ratings;
-eligible imported family observations fill each unavailable review cell independently.
-Values remain null when neither source supplies them. Other missing measurements retain their
-positions without fabricated values.
+where the required inputs exist. Dated public reviews supply period and lifetime counts and
+average ratings.
+Other missing measurements retain their positions without fabricated values.
 
 Keyword classification errors make Broad, Exact, and Total unavailable for the affected
 period, along with all category shares that depend on Total. Valid Auto and Product
@@ -446,23 +469,22 @@ an unknown product/vendor pairing returns HTTP 404, and database failures return
 ## Validation
 
 Unit tests cover weighted formulas, numeric/null serialization, classification errors,
-14/30-day boundaries and previews, daily mean gross prices, Orders/net sales/gross GMV alignment and independence from advertising errors,
+14/30-day closing boundaries and period-to-date rows, daily mean gross prices,
+Orders/net sales/gross GMV alignment and independence from advertising errors,
 product conversion without Ads, missing/zero Clicks, zero units and unclamped percentages,
-review publication dates, overlapping review intervals, individual-review averages, successful-empty
-versus unavailable review fetches, independent historical fallback and zero precedence,
-unavailable columns, and empty inputs. PostgreSQL integration tests
+review publication dates, weighted period and lifetime averages, fetch coverage, unavailable columns,
+and empty inputs. PostgreSQL integration tests
 cover joins, active filters, product attribution, vendor isolation, classification,
 Order Table quantity-rule parity, exact selected-account isolation, VAT conversion,
 same-order-ID cross-account separation, exact-day visits/ambiguity/live provenance and snapshot isolation,
 exact-day hotness with zero/unknown stock and legacy observations without visits provenance,
-and dashboard quantities without join multiplication, plus exact-PNK review reads, retained reviews,
-nullable source fields and successful empty fetches without child-record duplication.
-API orchestration tests check identical bounds for all sources, one review read per report,
-and rows without Ads. Leap-year, overlapping-window and Romanian midnight cases are covered.
+dashboard quantities without join multiplication, and exact-PNK review reads with retained reviews
+and successful empty fetches. API orchestration tests check source date bounds and rows without Ads.
+Leap-year, overlapping-window and Romanian midnight cases are covered.
 Browser-script tests cover real period requests, stale responses, error details,
 selectors, Orders/Total Sales formatting and refreshes, VAT descriptions, conversion percentages,
-performance observation tooltips and safe text rendering, review formatting and refreshes,
-mixed native/historical review styling and provenance, CSV alignment, and row visibility.
+performance observation tooltips and safe text rendering, lifetime review formatting and fetch details,
+CSV alignment, and row visibility.
 
 Run `mvn test` and `node --test src/test/js/product-performance.test.mjs`. PostgreSQL
 tests require `ADS_TEST_DB_URL` pointing to a disposable database, optionally with

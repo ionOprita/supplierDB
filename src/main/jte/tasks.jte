@@ -30,8 +30,8 @@
         </select>
       </div>
       @if(userRole.equals("admin"))
-        <button id="pauseAllBtn" type="button" title="Pause automatic scheduling for all tasks in every lane">Pause All</button>
-        <button id="resumeAllBtn" type="button" title="Resume automatic scheduling for all paused tasks in every lane">Resume all</button>
+        <button id="pauseAllBtn" type="button" title="Set every task's pause to one hour from now">Pause all for 1 hour</button>
+        <button id="resumeAllBtn" type="button" title="Resume automatic scheduling for all paused tasks in every lane">Resume all now</button>
       @endif
     </div>
     <button id="refreshBtn" type="button" title="Reload">Reload</button>

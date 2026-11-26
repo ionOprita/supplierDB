@@ -2,7 +2,9 @@ package ro.sellfluence.db;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +14,34 @@ import java.util.UUID;
 
 /** Read-only inputs for a product report; each aggregate receives the same explicit intervals. */
 public interface ProductPerformanceSource {
-    ReviewsTable.ReviewHistory readProductReviews(String pnk) throws SQLException;
+    /** Whether at least one selected order snapshot supplied a quantity, including zero. */
+    record ProductOrders(long units, boolean observed) {}
+
+    /** Each published review counts once. Only ratings from one to five contribute to the mean. */
+    record ReviewDay(long count, long starSum, long ratedCount) {
+        public ReviewDay plus(ReviewDay other) {
+            return new ReviewDay(count + other.count, starSum + other.starSum, ratedCount + other.ratedCount);
+        }
+    }
+
+    record ReviewHistory(Instant lastSuccessfulFetchAt, Map<LocalDate, ReviewDay> days) {
+        static final ZoneId REPORT_ZONE = ZoneId.of("Europe/Bucharest");
+
+        public ReviewHistory {
+            days = Map.copyOf(days);
+        }
+
+        public LocalDate lastSuccessfulFetchDate() {
+            return lastSuccessfulFetchAt == null ? null : lastSuccessfulFetchAt.atZone(REPORT_ZONE).toLocalDate();
+        }
+
+        public static ReviewHistory empty() {
+            return new ReviewHistory(null, Map.of());
+        }
+    }
+
+    /** Inclusive Romanian publication dates for the selected variant. A null start requests all earlier dates. */
+    ReviewHistory getProductPerformanceReviews(String pnk, LocalDate from, LocalDate to) throws SQLException;
 
     List<ProductPerformanceHistoryTable.Observation> getProductPerformanceHistory(UUID vendorId, String productCode)
             throws SQLException;
@@ -26,24 +55,20 @@ public interface ProductPerformanceSource {
     Optional<LocalDate> getFirstProductPerformanceActivity(UUID vendorId, String productCode, String pnk)
             throws SQLException;
 
-    Optional<LocalDate> getLatestCompletedProductVisitsSnapshotDate(UUID vendorId, LocalDate today)
-            throws SQLException;
-
     List<OffersTable.DailyProductOffer> getProductPerformanceOffers(UUID vendorId, String pnk,
                                                                   LocalDate start, LocalDate end)
             throws SQLException;
 
-    Map<LocalDate, BigDecimal> computeGMVForProductPeriods(UUID vendorId, String productCode,
-                                                        Map<LocalDate, LocalDate> periods)
-            throws SQLException;
+    /** VAT-inclusive amounts keyed by period start only when order lines contribute, including measured zero. */
+    Map<LocalDate, BigDecimal> getObservedGMVForProductPeriods(
+            UUID vendorId, String productCode, Map<LocalDate, LocalDate> periods) throws SQLException;
 
-    /** Net order-line sales, including net seller voucher and storno adjustments, for each inclusive period. */
-    Map<LocalDate, BigDecimal> computeNetSalesForProductPeriods(UUID vendorId, String productCode,
-                                                             Map<LocalDate, LocalDate> periods)
-            throws SQLException;
+    /** VAT-exclusive amounts on the same observed periods, including net seller voucher and storno adjustments. */
+    Map<LocalDate, BigDecimal> getObservedNetSalesForProductPeriods(
+            UUID vendorId, String productCode, Map<LocalDate, LocalDate> periods) throws SQLException;
 
-    Map<LocalDate, Long> countOrdersForProductPeriods(UUID vendorId, String pnk, Map<LocalDate, LocalDate> periods)
-            throws SQLException;
+    Map<LocalDate, ProductOrders> getProductPerformanceOrders(
+            UUID vendorId, String pnk, Map<LocalDate, LocalDate> periods) throws SQLException;
 
     Map<LocalDate, OffersTable.ProductVisits> getProductVisitsForDates(UUID vendorId, String pnk,
                                                                     Collection<LocalDate> dates)
