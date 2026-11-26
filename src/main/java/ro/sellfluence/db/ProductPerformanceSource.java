@@ -12,6 +12,9 @@ import java.util.UUID;
 
 /** Read-only inputs for a product report; each aggregate receives the same explicit intervals. */
 public interface ProductPerformanceSource {
+    /** Whether at least one selected order snapshot supplied a quantity, including zero. */
+    record ProductOrders(long units, boolean observed) {}
+
     List<ProductPerformanceHistoryTable.Observation> getProductPerformanceHistory(UUID vendorId, String productCode)
             throws SQLException;
 
@@ -24,24 +27,20 @@ public interface ProductPerformanceSource {
     Optional<LocalDate> getFirstProductPerformanceActivity(UUID vendorId, String productCode, String pnk)
             throws SQLException;
 
-    Optional<LocalDate> getLatestCompletedProductVisitsSnapshotDate(UUID vendorId, LocalDate today)
-            throws SQLException;
-
     List<OffersTable.DailyProductOffer> getProductPerformanceOffers(UUID vendorId, String pnk,
                                                                   LocalDate start, LocalDate end)
             throws SQLException;
 
-    Map<LocalDate, BigDecimal> computeGMVForProductPeriods(UUID vendorId, String productCode,
-                                                        Map<LocalDate, LocalDate> periods)
-            throws SQLException;
+    /** VAT-inclusive amounts keyed by period start only when order lines contribute, including measured zero. */
+    Map<LocalDate, BigDecimal> getObservedGMVForProductPeriods(
+            UUID vendorId, String productCode, Map<LocalDate, LocalDate> periods) throws SQLException;
 
-    /** Net order-line sales, including net seller voucher and storno adjustments, for each inclusive period. */
-    Map<LocalDate, BigDecimal> computeNetSalesForProductPeriods(UUID vendorId, String productCode,
-                                                             Map<LocalDate, LocalDate> periods)
-            throws SQLException;
+    /** VAT-exclusive amounts on the same observed periods, including net seller voucher and storno adjustments. */
+    Map<LocalDate, BigDecimal> getObservedNetSalesForProductPeriods(
+            UUID vendorId, String productCode, Map<LocalDate, LocalDate> periods) throws SQLException;
 
-    Map<LocalDate, Long> countOrdersForProductPeriods(UUID vendorId, String pnk, Map<LocalDate, LocalDate> periods)
-            throws SQLException;
+    Map<LocalDate, ProductOrders> getProductPerformanceOrders(
+            UUID vendorId, String pnk, Map<LocalDate, LocalDate> periods) throws SQLException;
 
     Map<LocalDate, OffersTable.ProductVisits> getProductVisitsForDates(UUID vendorId, String pnk,
                                                                     Collection<LocalDate> dates)

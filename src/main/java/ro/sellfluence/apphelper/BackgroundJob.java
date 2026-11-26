@@ -16,12 +16,12 @@ import ro.sellfluence.support.Logs;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +57,7 @@ public class BackgroundJob {
     public static final String localLane = "localLane";
 
     private static final Logger logger = Logs.getFileLogger("BackgroundJob", Level.INFO, 10, 1_000_000);
+    private static final Duration pauseDuration = Duration.ofHours(1);
     private static final Duration executeHourly = Duration.ofHours(1);
     private static final Duration executeEveryFourHours = Duration.ofHours(4);
     private static final Duration executeDaily = Duration.ofDays(1);
@@ -68,7 +69,7 @@ public class BackgroundJob {
 
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final Object taskControlLock = new Object();
-    private final Set<String> pausedTaskNames = new HashSet<>();
+    private final Map<String, Instant> pauseDeadlines = new HashMap<>();
     private final Map<String, LaneClaim> activeClaims = new HashMap<>();
     private final TaskStore taskStore;
     private final Executor executor;
@@ -497,7 +498,7 @@ public class BackgroundJob {
             if (isTaskPaused(definition.name()) || !isEligible(definition, tasksByName, now)) {
                 continue;
             }
-            var claim = tryClaim(definition, true);
+            var claim = tryClaimForAutomaticRun(definition);
             if (claim != null) {
                 submitClaimedRunner(definition, claim, false);
                 return;
@@ -559,7 +560,7 @@ public class BackgroundJob {
     }
 
     /**
-     * Pause or resume automatic scheduling. Manual runs remain available while paused.
+     * Each pause starts a new hour from the time of the request. Resume clears the deadline immediately.
      */
     public PauseResult setTaskPaused(String taskName, boolean paused) {
         if (!taskDefinitionsByName.containsKey(taskName)) {
@@ -567,21 +568,22 @@ public class BackgroundJob {
         }
         synchronized (taskControlLock) {
             if (paused) {
-                pausedTaskNames.add(taskName);
+                pauseDeadlines.put(taskName, clock.instant().plus(pauseDuration));
             } else {
-                pausedTaskNames.remove(taskName);
+                pauseDeadlines.remove(taskName);
             }
         }
         return PauseResult.UPDATED;
     }
 
     /**
-     * Pause automatic scheduling for every configured task atomically. Already claimed tasks may finish,
+     * Set the same one-hour deadline for every configured task atomically. Already claimed tasks may finish,
      * and manual runs remain available.
      */
     public void pauseAllTasks() {
         synchronized (taskControlLock) {
-            pausedTaskNames.addAll(taskDefinitionsByName.keySet());
+            var until = clock.instant().plus(pauseDuration);
+            taskDefinitionsByName.keySet().forEach(name -> pauseDeadlines.put(name, until));
         }
     }
 
@@ -590,19 +592,29 @@ public class BackgroundJob {
      */
     public void resumeAllTasks() {
         synchronized (taskControlLock) {
-            pausedTaskNames.clear();
+            pauseDeadlines.clear();
         }
     }
 
     public Set<String> pausedTaskNames() {
+        return pausedTaskDeadlines().keySet();
+    }
+
+    public Map<String, Instant> pausedTaskDeadlines() {
         synchronized (taskControlLock) {
-            return Set.copyOf(pausedTaskNames);
+            var now = clock.instant();
+            pauseDeadlines.values().removeIf(until -> !until.isAfter(now));
+            return Map.copyOf(pauseDeadlines);
         }
     }
 
     private boolean isTaskPaused(String taskName) {
         synchronized (taskControlLock) {
-            return pausedTaskNames.contains(taskName);
+            var until = pauseDeadlines.get(taskName);
+            if (until == null) return false;
+            if (until.isAfter(clock.instant())) return true;
+            pauseDeadlines.remove(taskName);
+            return false;
         }
     }
 
@@ -655,11 +667,11 @@ public class BackgroundJob {
         }
     }
 
-    private @Nullable LaneClaim tryClaim(TaskDefinition definition, boolean automatic) {
+    private @Nullable LaneClaim tryClaimForAutomaticRun(TaskDefinition definition) {
         synchronized (taskControlLock) {
             if (!running.get()
                     || activeClaims.containsKey(definition.lane())
-                    || automatic && pausedTaskNames.contains(definition.name())) {
+                    || isTaskPaused(definition.name())) {
                 return null;
             }
             var claim = new LaneClaim(definition.lane(), definition.name());

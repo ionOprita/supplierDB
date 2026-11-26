@@ -417,7 +417,7 @@ class ProductPerformanceDataTest {
 
     @Test
     void explicitRowsShowOrganicVisitsAndIndependentMetricsWithoutAdvertisingObservations() {
-        var period = window("2026-11-05", 14, true);
+        var period = window("2026-11-05", 14, false);
         var response = ProductPerformanceData.create(PRODUCT, List.of(period), List.of(),
                 List.of(offer("2026-11-04", 1, 8, "199.99")),
                 Map.of(period.startDate(), new BigDecimal("0.00")), Map.of(period.startDate(), 0L),
@@ -439,8 +439,8 @@ class ProductPerformanceDataTest {
 
     @Test
     void eachWindowUsesItsOwnRawClicksAndNetRevenueForProductRelativeRatios() {
-        var fortnight = window("2026-11-05", 14, true);
-        var month = window("2026-11-05", 30, true);
+        var fortnight = window("2026-11-05", 14, false);
+        var month = window("2026-11-05", 30, false);
         var response = ProductPerformanceData.create(PRODUCT, List.of(fortnight, month),
                 List.of(snapshot("2026-11-05", "auto", List.of(), metrics(1000, 10, "5", "100", 4, 2))),
                 List.of(), Map.of(fortnight.startDate(), new BigDecimal("200"), month.startDate(), new BigDecimal("300")),
@@ -651,7 +651,7 @@ class ProductPerformanceDataTest {
 
     @Test
     void ambiguousPriceDayInvalidatesMeanButNotLatestStockAndMissingPricesStayUnavailable() {
-        var period = window("2026-11-05", 14, true);
+        var period = window("2026-11-05", 14, false);
         var response = ProductPerformanceData.create(PRODUCT, List.of(period), List.of(),
                 List.of(offer("2026-11-03", 2, 90, null), offer("2026-11-05", 1, 8, "199.99")),
                 Map.of(), Map.of(), Map.of(), Map.of());
@@ -691,7 +691,7 @@ class ProductPerformanceDataTest {
     @Test
     void productConversionUsesUnitsAndRollingClicksWithoutAdsForBothWindows() {
         for (var days : List.of(14, 30)) {
-            var period = window("2026-11-05", days, true);
+            var period = window("2026-11-05", days, false);
             var row = productOverview(period, 25L, visits("available", "2026-11-05", 1000L, 1000L), null);
             assertNumber(row.values(), "conversion", ".025");
             assertNull(row.values().get("total_conversion"));
@@ -749,7 +749,7 @@ class ProductPerformanceDataTest {
 
     @Test
     void hotnessPreservesUnknownLabelsAndFallsBackToKnownOrRawTypes() {
-        var period = window("2026-11-05", 14, true);
+        var period = window("2026-11-05", 14, false);
         var labels = Map.of("super_hot", "Super Hot", "hot", "Hot", "regular", "Regular",
                 "cold", "Cold", "super_cold", "Super Cold", "new_classification", "new_classification");
         labels.forEach((type, label) -> {
@@ -794,7 +794,7 @@ class ProductPerformanceDataTest {
 
     @Test
     void serializesExactDatesAndCaptureTimestampAndPreservesNumericValues() {
-        var period = window("2026-11-05", 30, true);
+        var period = window("2026-11-05", 30, false);
         var response = ProductPerformanceData.create(PRODUCT, List.of(period), List.of(), List.of(),
                 Map.of(period.startDate(), new BigDecimal("1234.56")), Map.of(period.startDate(), 5L),
                 Map.of(period.endDate(), visits("available", "2026-11-05", 10L, 20L)),
@@ -803,7 +803,7 @@ class ProductPerformanceDataTest {
         assertEquals("2026-10-07", json.get("period").get("startDate").asString());
         assertEquals("2026-11-05", json.get("period").get("endDate").asString());
         assertEquals(30, json.get("period").get("windowDays").asInt());
-        assertTrue(json.get("period").get("provisional").asBoolean());
+        assertFalse(json.get("period").get("provisional").asBoolean());
         assertEquals("2026-11-05", json.get("visitsSnapshotDate").asString());
         assertEquals("2026-11-05T21:00:00Z", json.get("visitsCapturedAt").asString());
         assertEquals("2026-10-07", json.get("values").get("period").asString());

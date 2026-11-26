@@ -64,7 +64,7 @@ if (tasksTable) {
     tbodyId: 'tasksBody',
     dataUrl: '/app/tasks',
     activeDataUrl: '/app/tasks/active',
-    pausedDataUrl: '/app/tasks/paused',
+    pausedDataUrl: '/app/tasks/paused?includeExpiry=true',
     actionStatusId: 'taskActionStatus',
     schedulerStatusId: 'taskSchedulerStatus',
     nameFilterInputId: 'taskNameFilter',

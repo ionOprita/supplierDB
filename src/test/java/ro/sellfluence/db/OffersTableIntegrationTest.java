@@ -296,32 +296,6 @@ class OffersTableIntegrationTest {
     }
 
     @Test
-    void previewUsesLatestCompletedLiveVendorSnapshotEvenWhenProductIsMissing() throws SQLException {
-        var today = FIRST_DAY.plusDays(3);
-        OffersTable.storeSnapshot(db, firstVendor, FIRST_DAY,
-                snapshot(visitsOffer("one", "PNK-1", 1, 100L, 50L)),
-                FIRST_DAY.atTime(22, 15).toInstant(ZoneOffset.UTC));
-        OffersTable.storeSnapshot(db, firstVendor, SECOND_DAY, snapshot(),
-                SECOND_DAY.atTime(22, 15).toInstant(ZoneOffset.UTC));
-        OffersTable.storeSnapshot(db, firstVendor, today.minusDays(1),
-                snapshot(visitsOffer("one", "PNK-1", 1, 200L, 100L)));
-        OffersTable.storeSnapshot(db, firstVendor, today,
-                snapshot(visitsOffer("one", "PNK-1", 1, 300L, 150L)),
-                today.atTime(10, 15).toInstant(ZoneOffset.UTC));
-        OffersTable.storeSnapshot(db, firstVendor, today.plusDays(1), snapshot(),
-                today.plusDays(1).atTime(10, 15).toInstant(ZoneOffset.UTC));
-        OffersTable.storeSnapshot(db, secondVendor, today.minusDays(1), snapshot(),
-                today.minusDays(1).atTime(22, 15).toInstant(ZoneOffset.UTC));
-
-        assertEquals(SECOND_DAY,
-                OffersTable.getLatestCompletedProductVisitsSnapshotDate(db, firstVendor, today).orElseThrow());
-        assertEquals(today.minusDays(1),
-                OffersTable.getLatestCompletedProductVisitsSnapshotDate(db, secondVendor, today).orElseThrow());
-        assertTrue(OffersTable.getLatestCompletedProductVisitsSnapshotDate(db, firstVendor, FIRST_DAY).isEmpty());
-        assertTrue(OffersTable.getLatestCompletedProductVisitsSnapshotDate(db, UUID.randomUUID(), today).isEmpty());
-    }
-
-    @Test
     void firstProductActivityIncludesZeroStockOffersAndQualifyingOrdersWithoutDependingOnAds() throws SQLException {
         execute("CREATE TABLE product (product_code TEXT, emag_pnk TEXT)");
         execute("CREATE TABLE emag_order (surrogate_id INTEGER PRIMARY KEY, status INTEGER, date TIMESTAMP, "

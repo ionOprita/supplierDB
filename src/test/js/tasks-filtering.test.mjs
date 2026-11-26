@@ -52,6 +52,7 @@ const started = [2026, 10, 14, 10, 0, 0];
 const terminated = [2026, 10, 14, 10, 5, 0];
 const failedTask = name => ({ name, started, terminated, error: 'Previous failure' });
 const lane = (name, taskNames, activeTaskName = null) => ({ lane: name, taskNames, activeTaskName });
+const pausesFor = (...names) => Object.fromEntries(names.map(name => [name, '2026-11-26T13:00:00Z']));
 const jsonResponse = payload => ({ ok: true, status: 200, json: async () => payload });
 
 async function withTable(initialState, callback) {
@@ -73,7 +74,7 @@ async function withTable(initialState, callback) {
     taskActionStatus: new Element('p'),
     taskSchedulerStatus: new Element('p')
   };
-  const state = { rows: [], paused: [], lanes: [], ...initialState };
+  const state = { rows: [], paused: {}, lanes: [], ...initialState };
   const requests = [];
   let autoRefresh;
   globalThis.document = {
@@ -94,7 +95,7 @@ async function withTable(initialState, callback) {
     if (url === '/app/tasks') {
       return state.failTasks ? { ok: false, status: 503 } : jsonResponse(state.rows);
     }
-    if (url === '/app/tasks/paused') return jsonResponse(state.paused);
+    if (url === '/app/tasks/paused?includeExpiry=true') return jsonResponse(state.paused);
     if (url === '/app/tasks/active') return jsonResponse({ lanes: state.lanes });
     throw new Error(`Unexpected URL: ${url}`);
   };
@@ -114,7 +115,7 @@ async function withTable(initialState, callback) {
   try {
     initTaskTable({
       tableId: 'tasksTable', theadId: 'tasksHead', tbodyId: 'tasksBody',
-      dataUrl: '/app/tasks', pausedDataUrl: '/app/tasks/paused', activeDataUrl: '/app/tasks/active',
+      dataUrl: '/app/tasks', pausedDataUrl: '/app/tasks/paused?includeExpiry=true', activeDataUrl: '/app/tasks/active',
       actionStatusId: 'taskActionStatus', schedulerStatusId: 'taskSchedulerStatus',
       nameFilterInputId: 'taskNameFilter',
       statusFilterSelectId: 'taskStatusFilter', laneFilterSelectId: 'taskLaneFilter',
@@ -149,7 +150,7 @@ test('combines local name, status, and lane filters and clears only the name', a
   ];
   await withTable({
     rows,
-    paused: ['Fetch ads beta'],
+    paused: pausesFor('Fetch ads beta'),
     lanes: [
       lane('emagApiLane', ['Fetch reviews', 'REfetch Orders']),
       lane('emagDashboardLane:alpha', ['Fetch ads alpha']),
@@ -203,12 +204,13 @@ test('status filters follow displayed precedence for running, starting, paused, 
       { name: 'Successful', started, terminated, error: '   ' },
       { name: 'Never run' }
     ],
-    paused: ['Running with prior error', 'Starting with prior error', 'Paused with prior error'],
+    paused: pausesFor('Running with prior error', 'Starting with prior error', 'Paused with prior error'),
     lanes: [lane('emagApiLane', ['Starting with prior error'], 'Starting with prior error')]
   }, async ({ elements, names, setFilter }) => {
     setFilter('taskStatusFilter', 'RUNNING');
     assert.deepEqual(names(), ['Running with prior error']);
     assert.match(elements.tasksBody.rows[0].cells[2].textContent, /^RUNNING /);
+    assert.match(elements.tasksBody.rows[0].cells[2].textContent, /Paused until 26 Nov, 15:00 Bucharest/);
     setFilter('taskStatusFilter', 'PAUSED');
     assert.deepEqual(names(), ['Paused with prior error']);
     setFilter('taskStatusFilter', 'ERROR');
@@ -275,7 +277,7 @@ test('pending and tracked runs retain lane blocking and completion feedback whil
   const acceptance = new Promise(resolve => { acceptRun = resolve; });
   await withTable({
     rows: [failedTask('Manual task'), failedTask('Visible sibling')],
-    paused: ['Manual task'],
+    paused: pausesFor('Manual task'),
     lanes: [lane('emagApiLane', ['Manual task', 'Visible sibling'])],
     onPost: async () => acceptance
   }, async ({ elements, state, names, setFilter, buttonFor, autoRefresh }) => {
@@ -294,7 +296,7 @@ test('pending and tracked runs retain lane blocking and completion feedback whil
     assert.deepEqual(names(), ['Visible sibling'], 'Checking a run result takes precedence over its prior error');
     assert.equal(buttonFor('Visible sibling', 'task-run-button').disabled, true);
     setFilter('taskStatusFilter', '');
-    assert.equal(elements.tasksBody.rows[0].cells[2].textContent, 'CHECKING RESULT');
+    assert.match(elements.tasksBody.rows[0].cells[2].textContent, /^CHECKING RESULT · Paused until /);
     setFilter('taskNameFilter', 'visible');
     state.rows[0] = {
       name: 'Manual task', started: [2026, 10, 14, 11, 0, 0],
@@ -307,44 +309,56 @@ test('pending and tracked runs retain lane blocking and completion feedback whil
   });
 });
 
-test('pause and resume actions reapply the selected status filter after reload', async () => {
+test('renewal, early resume, and expiry update the pause deadline and preserve the status filter', async () => {
   await withTable({
     rows: [failedTask('Paused error'), { name: 'Paused success', started, terminated }, failedTask('Failed')],
-    paused: ['Paused error', 'Paused success'],
+    paused: pausesFor('Paused error', 'Paused success'),
     lanes: [lane('emagApiLane', ['Paused error', 'Paused success', 'Failed'])],
     onPost(url) {
       const taskName = decodeURIComponent(url.split('/')[3]);
-      if (url.endsWith('/resume')) this.paused = this.paused.filter(name => name !== taskName);
-      else this.paused = [...this.paused, taskName];
-      return { ok: true, status: 200 };
+      if (url.endsWith('/resume')) delete this.paused[taskName];
+      else this.paused[taskName] = '2026-11-26T13:40:00Z';
+      return { ok: true, status: 204 };
     }
-  }, async ({ elements, requests, names, setFilter, buttonFor }) => {
+  }, async ({ elements, state, requests, names, setFilter, buttonFor, autoRefresh }) => {
     setFilter('taskStatusFilter', 'PAUSED');
     assert.deepEqual(names(), ['Paused error', 'Paused success']);
+    assert.equal(elements.tasksBody.rows[0].cells[2].textContent, 'PAUSED until 26 Nov, 15:00 Bucharest');
+    assert.equal(buttonFor('Paused error', 'task-pause-button').textContent, 'Renew for 1 hour');
     await buttonFor('Paused error', 'task-pause-button').fire('click');
+    assert.equal(elements.tasksBody.rows[0].cells[2].textContent, 'PAUSED until 26 Nov, 15:40 Bucharest');
+    assert.equal(buttonFor('Paused error', 'task-resume-button').textContent, 'Resume now');
+    await buttonFor('Paused error', 'task-resume-button').fire('click');
     assert.deepEqual(names(), ['Paused success']);
     assert.equal(elements.taskStatusFilter.value, 'PAUSED');
 
     setFilter('taskStatusFilter', 'ERROR');
     assert.deepEqual(names(), ['Paused error', 'Failed']);
+    assert.equal(buttonFor('Paused error', 'task-pause-button').textContent, 'Pause for 1 hour');
+    assert.equal(buttonFor('Paused error', 'task-resume-button'), undefined);
     await buttonFor('Paused error', 'task-pause-button').fire('click');
     assert.deepEqual(names(), ['Failed']);
     assert.equal(elements.taskStatusFilter.value, 'ERROR');
     assert.deepEqual(requests.filter(request => request.method === 'POST').map(request => request.url), [
-      '/admin/tasks/Paused%20error/resume', '/admin/tasks/Paused%20error/pause'
+      '/admin/tasks/Paused%20error/pause', '/admin/tasks/Paused%20error/resume', '/admin/tasks/Paused%20error/pause'
     ]);
+    state.paused = {};
+    await autoRefresh();
+    assert.deepEqual(names(), ['Paused error', 'Failed']);
   });
 });
 
-test('Pause All sends one bulk request and preserves filters, sorting, and hidden activity', async () => {
+test('bulk pause and renewal send one request per press and preserve filters, sorting, and hidden activity', async () => {
   let acceptPause;
   const acceptance = new Promise(resolve => { acceptPause = resolve; });
+  let nextDeadline = '2026-11-26T13:00:00Z';
   await withTable({
     rows: [failedTask('Zulu'), failedTask('Alpha'), { name: 'Hidden running task', started }],
     lanes: [lane('emagApiLane', ['Zulu', 'Alpha']), lane('googleApiLane', ['Hidden running task'], 'Hidden running task')],
     async onPost() {
       await acceptance;
-      this.paused = this.lanes.flatMap(status => status.taskNames);
+      const taskNames = this.lanes.flatMap(status => status.taskNames);
+      this.paused = Object.fromEntries(taskNames.map(name => [name, nextDeadline]));
       return { ok: true, status: 204 };
     }
   }, async ({ elements, state, requests, names, setFilter, buttonFor, autoRefresh }) => {
@@ -366,21 +380,26 @@ test('Pause All sends one bulk request and preserves filters, sorting, and hidde
     assert.deepEqual(requests.filter(request => request.method === 'POST'), [
       { url: '/admin/tasks/pause-all', method: 'POST' }
     ]);
-    assert.deepEqual(state.paused, ['Zulu', 'Alpha', 'Hidden running task']);
+    assert.deepEqual(state.paused, pausesFor('Zulu', 'Alpha', 'Hidden running task'));
     assert.deepEqual(names(), [], 'Paused tasks no longer match the Error filter');
     assert.equal(elements.taskNameFilter.value, 'a');
     assert.equal(elements.taskLaneFilter.value, 'emagApiLane');
     assert.equal(elements.taskStatusFilter.value, 'ERROR');
     assert.equal(elements.pauseAllBtn.disabled, false);
-    assert.equal(elements.pauseAllBtn.textContent, 'Pause All');
-    assert.match(elements.taskActionStatus.textContent, /all tasks.*paused.*finish before stopping the server/);
+    assert.equal(elements.pauseAllBtn.textContent, 'Pause all for 1 hour');
+    assert.match(elements.taskActionStatus.textContent, /Paused.*all tasks.*one hour.*finish before stopping the server/);
     assert.match(elements.taskSchedulerStatus.textContent, /Hidden running task/);
 
     setFilter('taskNameFilter', '');
     setFilter('taskStatusFilter', 'PAUSED');
     assert.deepEqual(names(), ['Alpha', 'Zulu'], 'Name sorting is retained after the bulk reload');
-    assert.equal(buttonFor('Alpha', 'task-pause-button').textContent, 'Resume');
+    assert.equal(buttonFor('Alpha', 'task-pause-button').textContent, 'Renew for 1 hour');
+    assert.equal(buttonFor('Alpha', 'task-resume-button').textContent, 'Resume now');
     assert.equal(buttonFor('Alpha', 'task-run-button').disabled, false);
+    nextDeadline = '2026-11-26T13:40:00Z';
+    await elements.pauseAllBtn.fire('click');
+    assert.equal(requests.filter(request => request.method === 'POST' && request.url === '/admin/tasks/pause-all').length, 2);
+    assert.ok(elements.tasksBody.rows.every(row => row.cells[2].textContent === 'PAUSED until 26 Nov, 15:40 Bucharest'));
 
     state.rows[2] = { name: 'Hidden running task', started, terminated };
     state.lanes[1].activeTaskName = null;
@@ -395,11 +414,11 @@ test('Resume all resumes hidden paused tasks and preserves filters and sorting',
   const acceptance = new Promise(resolve => { acceptResume = resolve; });
   await withTable({
     rows: [failedTask('Zulu'), failedTask('Alpha'), failedTask('Hidden paused'), { name: 'Running', started }],
-    paused: ['Zulu', 'Alpha', 'Hidden paused'],
+    paused: pausesFor('Zulu', 'Alpha', 'Hidden paused'),
     lanes: [lane('emagApiLane', ['Zulu', 'Alpha']), lane('googleApiLane', ['Hidden paused', 'Running'], 'Running')],
     async onPost() {
       await acceptance;
-      this.paused = [];
+      this.paused = {};
       return { ok: true, status: 204 };
     }
   }, async ({ elements, state, requests, names, setFilter, buttonFor }) => {
@@ -420,28 +439,28 @@ test('Resume all resumes hidden paused tasks and preserves filters and sorting',
     assert.deepEqual(requests.filter(request => request.method === 'POST'), [
       { url: '/admin/tasks/resume-all', method: 'POST' }
     ]);
-    assert.deepEqual(state.paused, []);
+    assert.deepEqual(state.paused, {});
     assert.deepEqual(names(), [], 'Resumed tasks no longer match the Paused filter');
     assert.equal(elements.taskNameFilter.value, 'a');
     assert.equal(elements.taskLaneFilter.value, 'emagApiLane');
     assert.equal(elements.taskStatusFilter.value, 'PAUSED');
     assert.equal(elements.resumeAllBtn.disabled, false);
-    assert.equal(elements.resumeAllBtn.textContent, 'Resume all');
+    assert.equal(elements.resumeAllBtn.textContent, 'Resume all now');
     assert.match(elements.taskActionStatus.textContent, /all paused tasks.*resumed/);
     assert.match(elements.taskSchedulerStatus.textContent, /Running/);
 
     setFilter('taskNameFilter', '');
     setFilter('taskStatusFilter', 'ERROR');
     assert.deepEqual(names(), ['Alpha', 'Zulu']);
-    assert.equal(buttonFor('Alpha', 'task-pause-button').textContent, 'Pause');
+    assert.equal(buttonFor('Alpha', 'task-pause-button').textContent, 'Pause for 1 hour');
     setFilter('taskLaneFilter', '');
     assert.deepEqual(names(), ['Alpha', 'Hidden paused', 'Zulu']);
   });
 });
 
 for (const [buttonId, buttonText, action] of [
-  ['pauseAllBtn', 'Pause All', 'pause'],
-  ['resumeAllBtn', 'Resume all', 'resume']
+  ['pauseAllBtn', 'Pause all for 1 hour', 'pause'],
+  ['resumeAllBtn', 'Resume all now', 'resume']
 ]) {
   for (const [label, onPost, message] of [
     ['HTTP failure', () => ({ ok: false, status: 503, text: async () => '' }), /HTTP 503/],
@@ -457,7 +476,7 @@ for (const [buttonId, buttonText, action] of [
         assert.equal(elements.taskActionStatus.classes.has('is-error'), true);
         assert.equal(elements[buttonId].disabled, false);
         assert.equal(elements[buttonId].textContent, buttonText);
-        assert.deepEqual(state.paused, []);
+        assert.deepEqual(state.paused, {});
         assert.deepEqual(names(), ['Orders']);
       });
     });

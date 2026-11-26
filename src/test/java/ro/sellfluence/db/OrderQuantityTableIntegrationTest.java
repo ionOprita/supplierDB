@@ -3,6 +3,7 @@ package ro.sellfluence.db;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import ro.sellfluence.db.ProductPerformanceSource.ProductOrders;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -226,6 +227,26 @@ class OrderQuantityTableIntegrationTest {
                         day("2026-12-01"), day("2026-12-31"))));
         assertEquals(Map.of(day("2026-11-02"), 0L), OrderQuantityTable.countForProductPeriods(db,
                 "MISSING", Map.of(day("2026-11-02"), day("2026-11-08"))));
+    }
+
+    @Test
+    void distinguishesRecordedZeroFromMissingOrderQuantities() throws SQLException {
+        var measured = day("2026-11-02");
+        var offsetting = day("2026-11-03");
+        var missing = day("2026-11-04");
+        var otherAccount = day("2026-11-05");
+        snapshot("zero", FIRST_VENDOR, 4, "2026-11-02T12:00:00", PNK, 0, 4);
+        snapshot("plus", FIRST_VENDOR, 4, "2026-11-03T12:00:00", PNK, 3, 3);
+        snapshot("minus", FIRST_VENDOR, 4, "2026-11-03T12:00:00", PNK, -3, 3);
+        snapshot("missing", FIRST_VENDOR, 4, "2026-11-04T12:00:00", PNK, null, 4);
+        snapshot("missing", FIRST_VENDOR, 5, "2026-11-04T12:00:00", PNK, 3, 4);
+        snapshot("other-account", SECOND_VENDOR, 4, "2026-11-05T12:00:00", PNK, 4, 4);
+
+        assertEquals(Map.of(measured, new ProductOrders(0, true), offsetting, new ProductOrders(0, true),
+                        missing, new ProductOrders(0, false), otherAccount, new ProductOrders(0, false)),
+                OrderQuantityTable.readProductOrdersForPeriods(db, FIRST_VENDOR, PNK,
+                        Map.of(measured, measured, offsetting, offsetting, missing, missing,
+                                otherAccount, otherAccount)));
     }
 
     @Test

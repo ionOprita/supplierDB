@@ -446,9 +446,15 @@ function formatTaskRuntime(seconds) {
   return seconds === 0 ? '0 sec' : formatDuration(seconds);
 }
 
-export function toTaskRows(jsonData, pausedTaskNames = []) {
+const pauseUntilFormat = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Bucharest', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+});
+
+export function toTaskRows(jsonData, pauseExpiries = {}) {
   if (!Array.isArray(jsonData)) return [];
-  const pausedNames = new Set(Array.isArray(pausedTaskNames) ? pausedTaskNames : []);
+  const pauses = new Map(Array.isArray(pauseExpiries)
+    ? pauseExpiries.map(name => [name, null])
+    : Object.entries(pauseExpiries ?? {}));
 
   return jsonData.map((item) => {
     const {
@@ -472,7 +478,8 @@ export function toTaskRows(jsonData, pausedTaskNames = []) {
       currentRunSeconds: typeof currentRunSeconds === "number" ? currentRunSeconds : null,
       unsuccessfulRuns: typeof unsuccessfulRuns === "number" ? unsuccessfulRuns : 0,
       error: typeof error === "string" ? error : "",
-      paused: pausedNames.has(name),
+      paused: pauses.has(name),
+      pauseUntil: Date.parse(pauses.get(name)),
       // include original item if needed:
       // raw: item
     };
@@ -550,10 +557,19 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
 
       const pauseButton = document.createElement('button');
       pauseButton.type = 'button';
-      pauseButton.textContent = row.paused ? 'Resume' : 'Pause';
+      pauseButton.textContent = row.paused ? 'Renew for 1 hour' : 'Pause for 1 hour';
+      pauseButton.title = 'Pause automatic scheduling until one hour from now';
       pauseButton.classList.add('task-action-button', 'task-pause-button');
-      pauseButton.addEventListener('click', () => options.onSetPaused?.(row.name, !row.paused, pauseButton));
+      pauseButton.addEventListener('click', () => options.onSetPaused?.(row.name, true, pauseButton));
       tdAction.appendChild(pauseButton);
+      if (row.paused) {
+        const resumeButton = document.createElement('button');
+        resumeButton.type = 'button';
+        resumeButton.textContent = 'Resume now';
+        resumeButton.classList.add('task-action-button', 'task-resume-button');
+        resumeButton.addEventListener('click', () => options.onSetPaused?.(row.name, false, resumeButton));
+        tdAction.appendChild(resumeButton);
+      }
     } else {
       tdAction.textContent = '-';
     }
@@ -569,6 +585,10 @@ export function renderTasksBody(tbodyEl, rows, options = {}) {
       tdStatus.textContent = 'STARTING (waiting for the background worker)';
     } else {
       tdStatus.textContent = status;
+    }
+    if (row.paused && Number.isFinite(row.pauseUntil)) {
+      const deadline = pauseUntilFormat.format(row.pauseUntil);
+      tdStatus.textContent += `${status === 'PAUSED' ? ' until' : ' · Paused until'} ${deadline} Bucharest`;
     }
     tr.appendChild(tdStatus);
     const tdLastRun = document.createElement('td');
@@ -672,7 +692,7 @@ export function sortTaskTableBody(tbody, columnIndex, direction) {
  * @param {string} cfg.tbodyId - DOM id of <tbody>
  * @param {string} cfg.dataUrl - endpoint to load the matrix JSON from
  * @param {string} [cfg.activeDataUrl] - endpoint returning scheduler lanes and their active tasks
- * @param {string} [cfg.pausedDataUrl] - endpoint returning the names of paused tasks
+ * @param {string} [cfg.pausedDataUrl] - endpoint mapping paused task names to their UTC expiry timestamps
  * @param {string} [cfg.actionStatusId] - DOM id used for run-request feedback
  * @param {string} [cfg.schedulerStatusId] - DOM id used for current worker feedback
  * @param {string} [cfg.nameFilterInputId] - DOM id of the task name filter input
@@ -985,7 +1005,8 @@ export function initTaskTable(cfg) {
         const detail = await response.text();
         throw new Error(detail || `Could not ${paused ? 'pause' : 'resume'} task (HTTP ${response.status}).`);
       }
-      setActionStatus(`Automatic scheduling for ${taskName} is now ${paused ? 'paused' : 'resumed'}.`);
+      setActionStatus(paused ? `Paused automatic scheduling for ${taskName} for one hour.`
+        : `Resumed automatic scheduling for ${taskName}.`);
     } catch (error) {
       setActionStatus(error instanceof Error ? error.message : String(error), true);
     } finally {
@@ -1013,28 +1034,28 @@ export function initTaskTable(cfg) {
         throw new Error(detail || `Could not ${action} all tasks (HTTP ${response.status}).`);
       }
       setActionStatus(paused
-        ? 'Automatic scheduling for all tasks is now paused. Wait for running or starting tasks to finish before stopping the server.'
+        ? 'Paused automatic scheduling for all tasks for one hour. Wait for running or starting tasks to finish before stopping the server.'
         : 'Automatic scheduling for all paused tasks is now resumed.');
     } catch (error) {
       setActionStatus(error instanceof Error ? error.message : String(error), true);
     } finally {
       await loadTasks();
       button.disabled = false;
-      button.textContent = paused ? 'Pause All' : 'Resume all';
+      button.textContent = paused ? 'Pause all for 1 hour' : 'Resume all now';
     }
   }
 
   async function loadTasks() {
     const loadRequest = ++latestLoadRequest;
     try {
-      const [data, pausedTaskNames, activeTaskStatus] = await Promise.all([
+      const [data, pauseExpiries, activeTaskStatus] = await Promise.all([
         fetchJSON(cfg.dataUrl),
-        cfg.pausedDataUrl ? fetchJSON(cfg.pausedDataUrl) : Promise.resolve([]),
+        cfg.pausedDataUrl ? fetchJSON(cfg.pausedDataUrl) : Promise.resolve({}),
         cfg.activeDataUrl ? fetchJSON(cfg.activeDataUrl) : Promise.resolve({ lanes: [] })
       ]);
       if (loadRequest !== latestLoadRequest) return;
 
-      const rows = toTaskRows(data, pausedTaskNames);
+      const rows = toTaskRows(data, pauseExpiries);
       latestTaskRows = rows;
       hasLoadedTasks = true;
       currentDatabaseRunningTaskNames = new Set(rows

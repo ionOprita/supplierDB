@@ -1413,7 +1413,13 @@ public class Server {
         });
         app.get("/app/tasks/paused", ctx -> {
             ctx.header("Cache-Control", "no-store");
-            ctx.json(backgroundJob.pausedTaskNames());
+            if (Boolean.parseBoolean(ctx.queryParam("includeExpiry"))) {
+                var deadlines = new HashMap<String, String>();
+                backgroundJob.pausedTaskDeadlines().forEach((name, until) -> deadlines.put(name, until.toString()));
+                ctx.json(deadlines);
+            } else {
+                ctx.json(backgroundJob.pausedTaskNames());
+            }
         });
     }
 

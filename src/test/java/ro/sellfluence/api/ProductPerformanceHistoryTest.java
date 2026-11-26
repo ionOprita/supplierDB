@@ -302,6 +302,32 @@ class ProductPerformanceHistoryTest {
     }
 
     @Test
+    void adsClickShareLabelsBothHistoricalAdsClicksAndNextDayEmagVisits() {
+        var period = new ReportPeriod(date("2026-11-02"), date("2026-11-15"), 14, false);
+        var nextDay = date("2026-11-16");
+        var visits = new ProductVisits("available", 70L, 160L, nextDay,
+                OffsetDateTime.parse("2026-11-16T09:00:00+02:00"), false);
+        var report = ProductPerformanceData.createNativeReport(PRODUCT, List.of(period), List.of(), List.of(),
+                Map.of(), Map.of(), Map.of(nextDay, visits), Map.of(), Map.of(), Set.of(nextDay));
+        var ads = adsValues();
+        ads.put("auto_clicks", 30);
+        var row = apply(report, List.of(observation("ads", "2026-11-13", ads)), Set.of());
+
+        assertNumber(row.values(), "total_clicks", bd("14"));
+        assertNumber(row.values(), "clicks", bd("70"));
+        assertNumber(row.values(), "total_clicks_share", bd("0.2"));
+        var share = row.cellProvenance().get("total_clicks_share");
+        assertEquals("estimated", share.quality());
+        assertEquals("eMAG offers snapshot", share.source());
+        assertEquals(nextDay, share.sourceDate());
+        assertTrue(share.method().contains("one day after the missed close"));
+        assertTrue(share.method().contains("total_clicks (2026-11-13)"));
+        assertTrue(share.method().contains("Google Sheets: ads"));
+        assertTrue(share.method().contains("clicks (2026-11-16)"));
+        assertTrue(share.method().contains("eMAG offers snapshot"));
+    }
+
+    @Test
     void flagsPartialNativeAdsWithoutEligibleHistoryAndPropagatesMixedQualityIntoRatios() {
         var period = period(14);
         var report = nativeReport(period, List.of(ad(period.endDate(), "auto", List.of(), metrics())));

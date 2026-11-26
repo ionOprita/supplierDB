@@ -21,6 +21,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import static java.math.RoundingMode.HALF_EVEN;
@@ -35,6 +36,7 @@ import static java.math.RoundingMode.HALF_EVEN;
  * for the complete data selection and calculation rules.</p>
  */
 public final class ProductPerformanceData {
+    static final String OFFERS_SNAPSHOT_SOURCE = "eMAG offers snapshot";
     private static final Primitives ZERO = new Primitives(0L, 0L, BigDecimal.ZERO, BigDecimal.ZERO, 0L, 0L);
 
     private static final List<ColumnGroup> GROUPS = List.of(
@@ -56,8 +58,8 @@ public final class ProductPerformanceData {
                                     + "Includes organic and Ads traffic; returns are not subtracted from Orders. "
                                     + "The window is approximate because eMAG does not expose the clicks counter's exact cutoff time."),
                     column("performance", "Perform.", "text",
-                            "The eMAG 30-day classification observed on the displayed period's final day, "
-                                    + "including for 14-day rows. Historical estimates identify their original observation date."),
+                            "The eMAG 30-day classification, including for 14-day rows. The report looks for the "
+                                    + "period's closing-day snapshot first. Estimates identify their actual observation date."),
                     column("reviews", "# rev.", "integer"),
                     column("rating", "rating", "decimal")
             )),
@@ -127,7 +129,9 @@ public final class ProductPerformanceData {
         public ReportPeriod {
             Objects.requireNonNull(startDate, "startDate");
             Objects.requireNonNull(endDate, "endDate");
-            if (windowDays != 14 && windowDays != 30) throw new IllegalArgumentException("windowDays must be 14 or 30");
+            if (provisional ? windowDays < 1 || windowDays > 31 : windowDays != 14 && windowDays != 30) {
+                throw new IllegalArgumentException("Invalid windowDays for the report period");
+            }
             if (ChronoUnit.DAYS.between(startDate, endDate) != windowDays - 1L) {
                 throw new IllegalArgumentException("report period must contain exactly " + windowDays + " days");
             }
@@ -190,6 +194,17 @@ public final class ProductPerformanceData {
                                   Map<LocalDate, Long> ordersByPeriod, Map<LocalDate, ProductVisits> visitsByEndDate,
                                   Map<LocalDate, BigDecimal> totalSalesByPeriod,
                                   Map<LocalDate, ProductHotness> hotnessByEndDate) {
+        return createNativeReport(product, periods, snapshots, offers, gmvByPeriod, ordersByPeriod, visitsByEndDate,
+                totalSalesByPeriod, hotnessByEndDate, Set.of());
+    }
+
+    static Response createNativeReport(Product product, List<ReportPeriod> periods, List<DailyAdset> snapshots,
+                                           List<DailyProductOffer> offers, Map<LocalDate, BigDecimal> gmvByPeriod,
+                                           Map<LocalDate, Long> ordersByPeriod,
+                                           Map<LocalDate, ProductVisits> visitsByDate,
+                                           Map<LocalDate, BigDecimal> totalSalesByPeriod,
+                                           Map<LocalDate, ProductHotness> hotnessByDate,
+                                           Set<LocalDate> missedCloseFallbackDates) {
         var errors = new ArrayList<DataError>();
         var rows = new ArrayList<Row>();
         for (var period : periods) {
@@ -205,11 +220,30 @@ public final class ProductPerformanceData {
             for (var offer : offers) {
                 if (period.contains(offer.fetchDate())) offerTotals.add(offer);
             }
-            rows.add(totals.row(period, offerTotals, hasAds, gmvByPeriod.get(period.startDate()),
-                    ordersByPeriod.get(period.startDate()), visitsByEndDate.get(period.endDate()),
-                    totalSalesByPeriod.get(period.startDate()), hotnessByEndDate.get(period.endDate())));
+            var closing = closingMetrics(period, visitsByDate, hotnessByDate, missedCloseFallbackDates);
+            var row = totals.row(period, offerTotals, hasAds, gmvByPeriod.get(period.startDate()),
+                    ordersByPeriod.get(period.startDate()), totalSalesByPeriod.get(period.startDate()), closing);
+            rows.add(row);
         }
         return new Response(false, product, GROUPS, List.copyOf(rows), List.copyOf(new LinkedHashSet<>(errors)));
+    }
+
+    static Response omitEmptyPreview(Response report) {
+        if (report.rows().isEmpty()) return report;
+        var preview = report.rows().getLast();
+        if (!preview.period().provisional() || hasObservedMetrics(preview)) {
+            return report;
+        }
+        var closedRows = List.copyOf(report.rows().subList(0, report.rows().size() - 1));
+        var errors = report.errors().stream()
+                .filter(error -> closedRows.stream().anyMatch(row -> row.period().contains(error.reportDate())))
+                .toList();
+        return new Response(report.mock(), report.product(), report.groups(), closedRows, errors);
+    }
+
+    private static boolean hasObservedMetrics(Row row) {
+        return GROUPS.stream().flatMap(group -> group.columns().stream())
+                .anyMatch(column -> row.values().get(column.key()) instanceof Number);
     }
 
     /** Stock uses the latest eligible day; both windows give each available daily gross price one weight. */
@@ -229,8 +263,8 @@ public final class ProductPerformanceData {
             }
         }
 
-        private Object salesPrice() {
-            if (ambiguousPrice) return "???";
+        private Object salesPrice(boolean provisional) {
+            if (ambiguousPrice && !provisional) return "???";
             return priceDays == 0 ? null : priceSum.divide(BigDecimal.valueOf(priceDays), 2, HALF_EVEN);
         }
     }
@@ -302,6 +336,7 @@ public final class ProductPerformanceData {
     private static final class PeriodTotals {
         private final EnumMap<Category, Accumulator> categories = new EnumMap<>(Category.class);
         private final EnumSet<Category> invalid = EnumSet.noneOf(Category.class);
+        private boolean observedUnclassifiedZero;
 
         private PeriodTotals() {
             for (var category : Category.values()) categories.put(category, new Accumulator());
@@ -324,7 +359,10 @@ public final class ProductPerformanceData {
             if ("keywords".equals(snapshot.targeting())) {
                 var types = matchTypes(snapshot);
                 // A known zero contribution needs no category and cannot affect totals or shares.
-                if (types.isEmpty() && allZero(snapshot.metrics())) return null;
+                if (types.isEmpty() && allZero(snapshot.metrics())) {
+                    if (snapshot.matchedPnks().size() == 1) observedUnclassifiedZero = true;
+                    return null;
+                }
                 if (types.size() == 1) {
                     if ("broad".equals(types.getFirst())) return Category.BROAD;
                     if ("exact".equals(types.getFirst())) return Category.EXACT;
@@ -343,7 +381,7 @@ public final class ProductPerformanceData {
         }
 
         private Row row(ReportPeriod period, OfferTotals offers, boolean hasAds, BigDecimal gmv, Long orders,
-                        ProductVisits visits, BigDecimal totalSales, ProductHotness hotness) {
+                        BigDecimal totalSales, ClosingMetrics closing) {
             var values = new LinkedHashMap<String, Object>();
             // Unsupported overview columns and metrics with unavailable inputs remain null.
             for (var group : GROUPS) {
@@ -355,50 +393,98 @@ public final class ProductPerformanceData {
             // Keep the legacy gross amount available to API consumers, outside the displayed columns.
             values.put("gmv", gmv);
             if (offers.latest != null) {
-                values.put("salesPrice", offers.salesPrice());
+                values.put("salesPrice", offers.salesPrice(period.provisional()));
                 var offer = offers.latest;
                 if (offer.matchingOffers() == 1) {
                     values.put("stock", offer.stock());
-                } else if (offer.matchingOffers() > 1) {
+                } else if (offer.matchingOffers() > 1 && !period.provisional()) {
                     values.put("stock", "???");
                 }
             }
-            var visitValue = visitsFor(period, visits);
+            var visitValue = closing.visits();
             values.put("clicks", visitValue.clicks());
             values.put("conversion", productRatio(decimal(orders), decimal(visitValue.clicks())));
-            var performance = hotnessFor(period, hotness);
+            var performance = closing.performance();
             values.put("performance", performance.label());
             var total = new Accumulator();
             for (var category : Category.values()) {
                 if (hasAds && !invalid.contains(category)) {
-                    var primitives = categories.get(category).value;
-                    writeMetrics(values, category.key, primitives);
-                    values.put(category.key + "_tacos", productRatio(primitives.spend(), totalSales));
-                    total.add(primitives);
+                    var categoryTotals = categories.get(category);
+                    if (!period.provisional() || categoryTotals.hasObservations) {
+                        writeMetrics(values, category.key, categoryTotals.value);
+                        if (!period.provisional()) {
+                            values.put(category.key + "_tacos", productRatio(categoryTotals.value.spend(), totalSales));
+                        }
+                        total.add(categoryTotals.value);
+                    }
                 }
             }
-            if (hasAds && invalid.isEmpty()) {
+            if (hasAds && invalid.isEmpty() && (!period.provisional() || total.hasObservations || observedUnclassifiedZero)) {
                 writeMetrics(values, "total", total.value);
-                values.put("total_tacos", productRatio(total.value.spend(), totalSales));
-                values.put("total_clicks_share", productRatio(decimal(total.value.clicks()), decimal(visitValue.clicks())));
-                values.put("total_sales_share", productRatio(total.value.sales(), totalSales));
+                if (!period.provisional()) {
+                    values.put("total_tacos", productRatio(total.value.spend(), totalSales));
+                    values.put("total_clicks_share", productRatio(decimal(total.value.clicks()), decimal(visitValue.clicks())));
+                    values.put("total_sales_share", productRatio(total.value.sales(), totalSales));
+                }
                 for (var category : Category.values()) {
-                    writeShares(values, category.key, categories.get(category).value, total.value);
+                    var categoryTotals = categories.get(category);
+                    if (!period.provisional() || categoryTotals.hasObservations) {
+                        writeShares(values, category.key, categoryTotals.value, total.value);
+                    }
                 }
             }
             // Map.copyOf rejects nulls, which intentionally represent unavailable cells here.
             return new Row(period, Collections.unmodifiableMap(values), visitValue.snapshotDate(),
                     visitValue.capturedAt(), visitValue.status(), visitValue.reason(),
-                    performance.snapshotDate(), performance.status(), performance.reason(), performance.type());
+                    performance.snapshotDate(), performance.status(), performance.reason(), performance.type(),
+                    closing.provenance());
         }
     }
 
     private record HotnessValue(String label, LocalDate snapshotDate, String status, String reason, String type) {
     }
 
-    /** Hotness is an observation, never an average or a substitute from a neighbouring snapshot. */
-    private static HotnessValue hotnessFor(ReportPeriod period, ProductHotness hotness) {
-        if (hotness == null || !period.endDate().equals(hotness.snapshotDate())) {
+    private record ClosingMetrics(VisitsValue visits, HotnessValue performance, Map<String, CellProvenance> provenance) {}
+
+    private static ClosingMetrics closingMetrics(ReportPeriod period, Map<LocalDate, ProductVisits> visitsByDate,
+            Map<LocalDate, ProductHotness> hotnessByDate, Set<LocalDate> missedCloseFallbackDates) {
+        if (period.provisional()) {
+            return new ClosingMetrics(
+                    new VisitsValue(null, null, null, "missing",
+                            "eMAG supplies rolling 14- and 30-day visits only. This row shows the current period through today."),
+                    new HotnessValue(null, null, "missing",
+                            "eMAG reports a rolling 30-day classification.", null), Map.of());
+        }
+        var end = period.endDate();
+        var visits = visitsFor(end, period.windowDays(), visitsByDate.get(end));
+        var performance = hotnessFor(end, hotnessByDate.get(end));
+        var nextDay = end.plusDays(1);
+        // The database readers retain the snapshot date even when this product was missing or ambiguous.
+        if (!missedCloseFallbackDates.contains(nextDay)
+                || visits.snapshotDate() != null || performance.snapshotDate() != null) {
+            return new ClosingMetrics(visits, performance, Map.of());
+        }
+        var provenance = new LinkedHashMap<String, CellProvenance>();
+        var laterVisits = visitsFor(nextDay, period.windowDays(), visitsByDate.get(nextDay));
+        if (laterVisits.clicks() != null) {
+            String reason = "The rolling " + period.windowDays()
+                    + "-day visits counter was captured one day after the missed close.";
+            visits = new VisitsValue(laterVisits.clicks(), nextDay, laterVisits.capturedAt(), "estimated", reason);
+            provenance.put("clicks", new CellProvenance("estimated", OFFERS_SNAPSHOT_SOURCE, nextDay,
+                    period.windowDays(), reason, null));
+        }
+        var laterPerformance = hotnessFor(nextDay, hotnessByDate.get(nextDay));
+        if ("available".equals(laterPerformance.status())) {
+            String reason = "The 30-day performance classification was captured one day after the missed close.";
+            performance = new HotnessValue(laterPerformance.label(), nextDay, "estimated", reason, laterPerformance.type());
+            provenance.put("performance", new CellProvenance("estimated", OFFERS_SNAPSHOT_SOURCE, nextDay,
+                    30, reason, null));
+        }
+        return new ClosingMetrics(visits, performance, provenance);
+    }
+
+    private static HotnessValue hotnessFor(LocalDate date, ProductHotness hotness) {
+        if (hotness == null || !date.equals(hotness.snapshotDate())) {
             return new HotnessValue(null, hotness == null ? null : hotness.snapshotDate(), "missing",
                     "No hotness snapshot matches this period end date.", null);
         }
@@ -430,12 +516,11 @@ public final class ProductPerformanceData {
     private record VisitsValue(Long clicks, LocalDate snapshotDate, Instant capturedAt, String status, String reason) {
     }
 
-    /** Never shift a report window by silently substituting an earlier or later rolling snapshot. */
-    private static VisitsValue visitsFor(ReportPeriod period, ProductVisits visits) {
+    private static VisitsValue visitsFor(LocalDate date, int windowDays, ProductVisits visits) {
         if (visits == null) return new VisitsValue(null, null, null, "missing",
                 "No visits snapshot was captured for this period end date.");
         var capturedAt = visits.fetchedAt() == null ? null : visits.fetchedAt().toInstant();
-        if (!period.endDate().equals(visits.snapshotDate()) || capturedAt == null) {
+        if (!date.equals(visits.snapshotDate()) || capturedAt == null) {
             return new VisitsValue(null, visits.snapshotDate(), capturedAt, "missing",
                     "No live visits snapshot matches this period end date.");
         }
@@ -443,10 +528,10 @@ public final class ProductPerformanceData {
             return new VisitsValue(null, visits.snapshotDate(), capturedAt, "ambiguous",
                     "Multiple matching offers prevent a reliable visits value.");
         }
-        Long clicks = period.windowDays() == 14 ? visits.visits14() : visits.visits30();
+        Long clicks = windowDays == 14 ? visits.visits14() : visits.visits30();
         if (!"available".equals(visits.status()) || clicks == null) {
             return new VisitsValue(null, visits.snapshotDate(), capturedAt, "missing",
-                    "The snapshot has no visits counter for the last " + period.windowDays() + " days.");
+                    "The snapshot has no visits counter for the last " + windowDays + " days.");
         }
         return new VisitsValue(clicks, visits.snapshotDate(), capturedAt, "available", null);
     }
@@ -479,8 +564,10 @@ public final class ProductPerformanceData {
      */
     private static final class Accumulator {
         private Primitives value = ZERO;
+        private boolean hasObservations;
 
         private void add(Primitives next) {
+            hasObservations = true;
             value = new Primitives(sum(value.impressions(), next.impressions()), sum(value.clicks(), next.clicks()),
                     sum(value.spend(), next.spend()), sum(value.sales(), next.sales()),
                     sum(value.units(), next.units()), sum(value.salesCount(), next.salesCount()));

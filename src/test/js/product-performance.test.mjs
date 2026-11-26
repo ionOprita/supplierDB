@@ -61,8 +61,8 @@ test('period-average Sales Price ambiguity can describe an earlier daily snapsho
   data.groups[0].columns.push({key: 'stock', label: 'Stock', type: 'integer'},
     {key: 'salesPrice', label: 'Sales Price (incl. VAT)', type: 'decimal'});
   data.rows = [
-    performanceRow('2026-09-01', {stock: 7, salesPrice: '???', auto_clicks: 5, total_clicks: 5}),
-    performanceRow('2026-10-01', {stock: '???', salesPrice: '???', auto_clicks: 5, total_clicks: 5})
+    performanceRow('2026-09-01', {stock: 7, salesPrice: '???', auto_clicks: 5, total_clicks: 5}, {}, 30),
+    performanceRow('2026-10-02', {stock: '???', salesPrice: '???', auto_clicks: 5, total_clicks: 5}, {}, 30)
   ];
   await page.respond(0, data);
   const rows = page.byId('Body').children;
@@ -76,8 +76,8 @@ test('period-average Sales Price ambiguity can describe an earlier daily snapsho
 
 test('VAT-inclusive Sales Price and its period mean render and export without Average price or shifted frozen cells', async t => {
   const page = await openPage(t);
-  const pricedReport = (date, salesPrice) => {
-    const data = report(5, date);
+  const pricedReport = (date, salesPrice, windowDays = 14) => {
+    const data = report(5, date, [], windowDays);
     data.groups[0].columns.push(
       {key: 'stock', label: 'Stock', type: 'integer'},
       {key: 'orders', label: 'Orders', type: 'integer'},
@@ -117,10 +117,10 @@ test('VAT-inclusive Sales Price and its period mean render and export without Av
   page.periodSelect().value = '30days';
   page.periodSelect().dispatch('change');
   assert.equal(page.requests[1].url.searchParams.get('period'), '30days');
-  await page.respond(1, pricedReport('2026-09-01', 193.32));
+  await page.respond(1, pricedReport('2026-09-01', 193.32, 30));
   assert.equal(page.byId('Body').children[0].cells[5].textContent, '193.32');
   page.byId('DownloadCsv').click();
-  assert.equal(withoutMetadata(await page.csv()), `\uFEFFPeriod,${header}\r\n01 Sept 2026 - 14 Sept 2026,7,3,600,20,193.32,25.00%,HOT,4,4.50,5,5`);
+  assert.equal(withoutMetadata(await page.csv()), `\uFEFFPeriod,${header}\r\n01 Sept 2026 - 30 Sept 2026,7,3,600,20,193.32,25.00%,HOT,4,4.50,5,5`);
 });
 
 test('financial columns expose tax explanations accessibly and export unchanged source amounts with VAT labels', async t => {
@@ -228,12 +228,12 @@ test('renders and exports all TACOS groups and product shares without clamping o
 
 test('renders net Total Sales as whole numbers and refreshes it for the selected period and product', async t => {
   const page = await openPage(t);
-  const withNetSales = (amounts, dates, errors = []) => {
+  const withNetSales = (amounts, dates, errors = [], windowDays = 14) => {
     const data = report(5, dates[0], errors);
     data.groups[0].columns.push({key: 'totalSales', label: 'Total Sales (excl. VAT)', type: 'integer'});
     data.rows = amounts.map((totalSales, index) => performanceRow(dates[index], {
       totalSales, auto_clicks: 5, total_clicks: errors.length ? null : 5
-    }));
+    }, {}, windowDays));
     return data;
   };
   const netSalesCells = () => page.byId('Body').children.map(row => row.children[1].textContent);
@@ -246,7 +246,7 @@ test('renders net Total Sales as whole numbers and refreshes it for the selected
   page.periodSelect().dispatch('change');
   assert.equal(page.requests[1].url.searchParams.get('period'), '30days');
   assert.equal(page.byId('Body').textContent, '');
-  await page.respond(1, withNetSales([9876.54], ['2026-09-01']));
+  await page.respond(1, withNetSales([9876.54], ['2026-09-01'], [], 30));
   assert.deepEqual(netSalesCells(), ['9,877']);
 
   page.byId('ProductSelect').value = 'OTHER';
@@ -254,7 +254,7 @@ test('renders net Total Sales as whole numbers and refreshes it for the selected
   assert.equal(page.requests[2].url.searchParams.get('productCode'), 'OTHER');
   assert.equal(page.requests[2].url.searchParams.get('period'), '30days');
   assert.equal(page.byId('Body').textContent, '');
-  await page.respond(2, withNetSales([0], ['2026-09-01']));
+  await page.respond(2, withNetSales([0], ['2026-09-01'], [], 30));
   assert.deepEqual(netSalesCells(), ['0']);
 });
 
@@ -298,7 +298,7 @@ test('formats explicit date ranges across months, years and leap days with provi
   assert.equal(formatPeriod({startDate: '2026-12-25', endDate: '2027-01-07', provisional: false}),
     '25 Dec 2026 - 07 Jan 2027');
   assert.equal(formatPeriod({startDate: '2024-02-16', endDate: '2024-02-29', provisional: true}),
-    '16 Feb 2024 - 29 Feb 2024 (provisional)');
+    '16 Feb 2024 - 29 Feb 2024 (in progress)');
   assert.equal(formatPeriod({startDate: '2026-02-30', endDate: '2026-03-14'}), '—');
   assert.equal(formatPeriod({startDate: '2026-03-14', endDate: '2026-03-01'}), '—');
   assert.equal(formatPeriod(null), '—');
@@ -423,11 +423,11 @@ const classificationError = {
   message: 'Expected one broad or exact match type.'
 };
 
-function performanceRow(startDate, values, overrides = {}) {
+function performanceRow(startDate, values, overrides = {}, windowDays = 14) {
   const end = new Date(`${startDate}T00:00:00Z`);
-  end.setUTCDate(end.getUTCDate() + 13);
+  end.setUTCDate(end.getUTCDate() + windowDays - 1);
   return {
-    period: {startDate, endDate: end.toISOString().slice(0, 10), windowDays: 14, provisional: false},
+    period: {startDate, endDate: end.toISOString().slice(0, 10), windowDays, provisional: false},
     values, visitsSnapshotDate: null, visitsCapturedAt: null, visitsStatus: 'missing', visitsReason: '',
     ...overrides
   };
@@ -473,7 +473,7 @@ function parseCsv(csv) {
   return rows;
 }
 
-function report(clicks, date = '2026-09-07', errors = []) {
+function report(clicks, date = '2026-09-07', errors = [], windowDays = 14) {
   return {
     mock: false,
     product: {name: 'Example product', pnk: 'EXAMPLE-PNK', url: 'https://emag.ro/product'},
@@ -482,7 +482,7 @@ function report(clicks, date = '2026-09-07', errors = []) {
       {key: 'auto', label: 'Auto', columns: [{key: 'auto_clicks', label: 'Clicks', type: 'integer'}]},
       {key: 'total', label: 'Total', columns: [{key: 'total_clicks', label: 'Clicks', type: 'integer'}]}
     ],
-    rows: [performanceRow(date, {auto_clicks: clicks, total_clicks: errors.length ? null : clicks})],
+    rows: [performanceRow(date, {auto_clicks: clicks, total_clicks: errors.length ? null : clicks}, {}, windowDays)],
     errors
   };
 }
@@ -649,21 +649,44 @@ test('missing and ambiguous capture periods remain visible without borrowing vis
   assert.match(rows[2].cells[2].title, /Multiple matching offers/);
 });
 
-test('30-day provisional dates and source metadata are preserved in CSV', async t => {
-  const page = await openPage(t, '30days');
-  const row = performanceRow('2026-10-07', {orders: 7, clicks: 1234}, {
-    period: {startDate: '2026-10-07', endDate: '2026-11-05', windowDays: 30, provisional: true},
-    visitsStatus: 'available', visitsSnapshotDate: '2026-11-06',
-    visitsCapturedAt: '2026-11-06T00:30:00+02:00', visitsReason: 'Provisional, captured before the scheduled close.'
+test('in-progress dates, measured zeroes, unavailable metrics and partial Ads coverage survive CSV export', async t => {
+  const page = await openPage(t);
+  const visitsReason = 'eMAG supplies rolling 14- and 30-day visits only. This row shows the current period through today.';
+  const performanceReason = 'eMAG supplies a rolling 30-day classification.';
+  const coverage = {quality: 'partial', source: 'Native eMAG daily reports', sourceDate: '2026-11-25',
+    sourceWindowDays: 11, method: 'Saved daily Ads report dates: 10/11.'};
+  const row = performanceRow('2026-11-16', {orders: 7, auto_clicks: 0}, {
+    period: {startDate: '2026-11-16', endDate: '2026-11-26', windowDays: 11, provisional: true},
+    visitsReason, performanceStatus: 'missing', performanceReason, cellProvenance: {auto_clicks: coverage}
   });
-  await page.respond(0, visitReport([row]));
+  const data = visitReport([row]);
+  data.groups[0].columns.push(
+    {key: 'conversion', label: 'Conv.', type: 'percent'}, {key: 'performance', label: 'Perform.', type: 'text'},
+    {key: 'reviews', label: '# rev.', type: 'integer'}, {key: 'rating', label: 'Rating', type: 'decimal'});
+  data.groups.push({key: 'total', label: 'Total', columns: [
+    {key: 'total_clicks_share', label: 'Ads click share', type: 'percent'},
+    {key: 'total_sales_share', label: 'Ads sales share', type: 'percent'},
+    {key: 'total_tacos', label: 'TACOS', type: 'percent'}
+  ]}, {key: 'auto', label: 'Auto', columns: [{key: 'auto_clicks', label: 'Clicks', type: 'integer'}]});
+  await page.respond(0, data);
   const cells = page.byId('Body').children[0].cells;
-  assert.equal(cells[0].textContent, '07 Oct 2026 - 05 Nov 2026 (provisional)');
-  assert.match(cells[2].title, /Rolling 30-day counter/);
-  assert.match(cells[2].title, /06 Nov 2026, 00:30 \(Romania\)/);
+  const periodLabel = '16 Nov 2026 - 26 Nov 2026 (in progress)';
+  assert.deepEqual(cells.map(cell => cell.textContent), [periodLabel, '7', '—', '—', '—', '—', '—', '—', '—', '—', '0']);
+  for (const index of [2, 3, 7]) {
+    assert.ok(cells[index].title.includes(periodLabel));
+    assert.ok(cells[index].getAttribute('aria-label').includes(visitsReason));
+    assert.doesNotMatch(cells[index].title, /rolling 11-day|Captured:/i);
+  }
+  assert.ok(cells[4].getAttribute('aria-label').includes(performanceReason));
+  for (const index of [8, 9]) assert.match(cells[index].title, /reports for every date/);
+  assert.match(cells[10].getAttribute('aria-label'), /Saved daily Ads report dates: 10\/11/);
+  assert.match(page.byId('Status').textContent, /latest saved Ads report .*25 Nov 2026/i);
   page.byId('DownloadCsv').click();
-  assert.equal(await page.csv(), '\uFEFFPeriod,Orders,Clicks,Period start,Period end,Window days,Provisional,Visits snapshot date,Visits captured at,Visits status,Visits reason,Performance snapshot date,Performance status,Performance reason,Performance type,Cell provenance\r\n'
-    + '07 Oct 2026 - 05 Nov 2026 (provisional),7,"1,234",2026-10-07,2026-11-05,30,true,2026-11-06,2026-11-06T00:30:00+02:00,available,"Provisional, captured before the scheduled close.",,,,,{}');
+  const [headers, fields] = parseCsv(await page.csv());
+  assert.deepEqual(fields.slice(0, cells.length), cells.map(cell => cell.textContent));
+  assert.deepEqual(fields.slice(cells.length, -1), ['2026-11-16', '2026-11-26', '11', 'true',
+    '', '', 'missing', visitsReason, '', 'missing', performanceReason, '']);
+  assert.deepEqual(JSON.parse(fields[headers.indexOf('Cell provenance')]), {auto_clicks: coverage});
 });
 
 test('product conversion and historical hotness render independently and export for both report windows', async t => {
@@ -821,10 +844,58 @@ test('mixed provenance colors only estimated cells and keeps full source evidenc
   page.periodSelect().dispatch('change');
   assert.equal(page.byId('InfoText').hidden, true, 'Open help dismisses while another report loads');
   assert.equal(page.byId('Info').disabled, false);
-  const nativeOnly = report(0);
+  const nativeOnly = report(0, '2026-09-01', [], 30);
   await page.respond(1, nativeOnly);
   assert.equal(page.byId('InfoText').hidden, true);
   assert.equal(page.byId('Info').disabled, false);
+});
+
+test('next-day observations show their capture date on direct and derived values and keep CSV metrics numeric', async t => {
+  const page = await openPage(t);
+  const snapshot = {
+    quality: 'estimated', source: 'eMAG offers snapshot', sourceDate: '2026-11-16', sourceWindowDays: 14,
+    method: 'Rolling visits observed one day after the scheduled close.'
+  };
+  const cellProvenance = {
+    clicks: snapshot,
+    performance: {...snapshot, sourceWindowDays: 30, method: '30-day classification observed one day after close.'},
+    conversion: {...snapshot, method: 'Period Orders divided by next-day Clicks.'},
+    total_clicks_share: {...snapshot, method: 'Estimated Ads clicks divided by next-day Clicks.',
+      details: 'Ads clicks came from Google Sheets on 2026-11-13.'}
+  };
+  const data = visitReport([performanceRow('2026-11-02',
+    {orders: 3, clicks: 100, conversion: 0.03, performance: 'Hot', total_clicks_share: 0.42},
+    {visitsStatus: 'estimated', visitsSnapshotDate: snapshot.sourceDate, visitsCapturedAt: '2026-11-16T13:05:00Z',
+      visitsReason: 'Closing-day snapshot missing.', performanceStatus: 'estimated',
+      performanceSnapshotDate: snapshot.sourceDate, performanceType: 'hot', cellProvenance})]);
+  data.groups[0].columns.push(
+    {key: 'conversion', label: 'Conv.', type: 'percent'},
+    {key: 'performance', label: 'Perform.', type: 'text'});
+  data.groups.push({key: 'total', label: 'Total', columns: [
+    {key: 'total_clicks_share', label: 'Ads click share', type: 'percent'}
+  ]});
+  await page.respond(0, data);
+  const [period, orders, clicks, conversion, performance, share] = page.byId('Body').children[0].cells;
+  const label = 'Estimated · captured 16 Nov';
+  assert.equal(period.textContent, '02 Nov 2026 - 15 Nov 2026');
+  assert.equal(orders.dataset.captureLabel, undefined);
+  for (const cell of [clicks, conversion, performance, share]) {
+    assert.equal(cell.dataset.captureLabel, label);
+    assert.ok(cell.getAttribute('aria-label').includes(label));
+  }
+  assert.match(clicks.title, /16 Nov 2026, 15:05 \(Romania\)/);
+  assert.match(performance.title, /30-day classification observed on 2026-11-16/);
+  assert.match(performance.title, /Type: hot/);
+  assert.match(share.title, /Google Sheets on 2026-11-13/);
+
+  page.byId('DownloadCsv').click();
+  const [headers, values] = parseCsv(await page.csv());
+  assert.deepEqual(values.slice(1, 6), ['3', '100', '3.00%', 'Hot', '42.00%']);
+  assert.equal(values[headers.indexOf('Visits reason')], label + '. Closing-day snapshot missing.');
+  assert.equal(values[headers.indexOf('Performance reason')], label);
+  assert.equal(values[headers.indexOf('Visits captured at')], '2026-11-16T13:05:00Z');
+  assert.equal(values[headers.indexOf('Performance snapshot date')], '2026-11-16');
+  assert.deepEqual(JSON.parse(values.at(-1)), cellProvenance);
 });
 
 test('report help remains discoverable when older estimated rows are initially hidden', async t => {
@@ -857,8 +928,8 @@ test('permanent English report help explains estimates and provisional timing in
   assert.equal(button.disabled, false);
   assert.equal(tooltip.hidden, true);
   for (const explanation of ['Estimated history — yellow cells', '14/30', 'not scaled', 'Partial data — ◐',
-    'Missing values (—)', 'Provisional period', 'full rolling 14- or 30-day preview', 'overlap earlier rows',
-    'do not add it to closed rows', 'not whether clicks are estimated', 'not necessarily a calendar month']) {
+    'Missing values (—)', 'In-progress period', 'day after the last close through today in Romania',
+    'recorded data', 'rolling counters', 'the closed row covers the 30 days ending at month-end']) {
     assert.ok(tooltip.textContent.includes(explanation), explanation);
   }
   assert.doesNotMatch(tooltip.textContent, /Istoric|parțiale|TVA|celulele/);
@@ -896,6 +967,7 @@ test('estimated backgrounds override row hover without weakening sticky position
   for (const declaration of ['--estimated-bg: #fff6cc', '--estimated-text: #483b13',
     '--estimated-bg: #3b321e', '--estimated-text: #f7df98']) assert.ok(css.includes(declaration), declaration);
   assert.match(css, /\.pp-table \.pp-frozen\s*\{[^}]*position: sticky;/);
+  assert.match(css, /\[data-capture-label\]::after\s*\{[^}]*content: attr\(data-capture-label\)/);
   const partialRule = css.match(/\.pp-table tbody \.pp-partial::after\s*\{([^}]*)\}/)?.[1];
   assert.match(partialRule, /content: " ◐"/);
   assert.doesNotMatch(partialRule, /background/);
@@ -912,6 +984,26 @@ test('malformed period metadata fails safely without enabling export', async t =
   assert.equal(page.byId('Body').children.length, 0);
 });
 
+test('validates elapsed calendar days separately from closed 14-day and 30-day windows', async t => {
+  for (const [mode, startDate, endDate, windowDays, provisional, valid] of [
+    ['14days', '2026-11-16', '2026-11-16', 1, true, true],
+    ['14days', '2026-11-16', '2026-11-30', 15, true, false],
+    ['14days', '2026-11-16', '2026-11-26', 14, true, false],
+    ['14days', '2026-11-16', '2026-11-26', 11, false, false],
+    ['30days', '2026-10-01', '2026-10-31', 31, true, true],
+    ['30days', '2026-10-01', '2026-10-31', 31, false, false],
+    ['30days', '2026-10-01', '2026-11-01', 32, true, false]
+  ]) {
+    await t.test(`${mode} ${startDate} to ${endDate} (${windowDays} days, provisional=${provisional})`, async child => {
+      const page = await openPage(child, mode);
+      const row = performanceRow(startDate, {orders: 1}, {period: {startDate, endDate, windowDays, provisional}});
+      await page.respond(0, visitReport([row]));
+      assert.equal(page.byId('Body').children.length, valid ? 1 : 0);
+      assert.equal(page.byId('DownloadCsv').disabled, !valid);
+    });
+  }
+});
+
 test('wide overview columns release their horizontal freeze to leave room for advertising metrics', async t => {
   const page = await openPage(t);
   page.byId('Wrap').clientWidth = 450;
@@ -925,6 +1017,7 @@ test('wide overview columns release their horizontal freeze to leave room for ad
   page.byId('Wrap').clientWidth = 1440;
   page.periodSelect().value = '30days';
   page.periodSelect().dispatch('change');
+  data.rows = [performanceRow('2026-09-01', data.rows[0].values, {}, 30)];
   await page.respond(1, data);
   assert.equal(page.byId('Table').dataset.compactOverview, 'false');
 });
@@ -962,14 +1055,14 @@ test('CSV filenames and period headers follow the selected product and mode', as
     `product-performance-${vendorId}-SKU_Ș-blue-14days-${exportDate}.csv`);
   page.periodSelect().value = '30days';
   page.periodSelect().dispatch('change');
-  await page.respond(1, report(300, '2026-09-01'));
+  await page.respond(1, report(300, '2026-09-01', [], 30));
   page.byId('ProductSelect').value = 'OTHER';
   page.byId('ProductSelect').dispatch('change');
-  await page.respond(2, report(42, '2026-10-01'));
+  await page.respond(2, report(42, '2026-10-02', [], 30));
   page.byId('DownloadCsv').click();
   assert.equal(page.downloads[1].fileName,
     `product-performance-${vendorId}-OTHER-30days-${exportDate}.csv`);
-  assert.equal(withoutMetadata(await page.csv()), '\uFEFFPeriod,Auto - Clicks,Total - Clicks\r\n01 Oct 2026 - 14 Oct 2026,42,42');
+  assert.equal(withoutMetadata(await page.csv()), '\uFEFFPeriod,Auto - Clicks,Total - Clicks\r\n02 Oct 2026 - 31 Oct 2026,42,42');
 });
 
 test('CSV download stays disabled during loading, failure, empty results, and stale success', async t => {
@@ -1019,8 +1112,8 @@ test('period selection requests server aggregates and preserves vendor/product s
     assert.equal(params.get('vendorId'), vendorId);
     assert.equal(params.get('productCode'), productCode);
   }
-  await page.respond(1, report(300, '2026-09-01'));
-  assert.equal(page.byId('Body').children[0].children[0].textContent, '01 Sept 2026 - 14 Sept 2026');
+  await page.respond(1, report(300, '2026-09-01', [], 30));
+  assert.equal(page.byId('Body').children[0].children[0].textContent, '01 Sept 2026 - 30 Sept 2026');
   assert.equal(page.byId('Body').children[0].children[1].textContent, '300');
   assert.equal(page.periodSelect().value, '30days');
   assert.match(page.byId('Table').getAttribute('aria-label'), /^30-day/);
@@ -1035,7 +1128,7 @@ test('canonical and legacy links normalize periods and invalid periods default t
       const page = await openPage(child, requested);
       assert.equal(page.requests[0].url.searchParams.get('period'), expected);
       assert.equal(window.location.searchParams.get('period'), expected);
-      await page.respond(0, report(1));
+      await page.respond(0, expected === '30days' ? report(1, '2026-09-01', [], 30) : report(1));
       assert.equal(page.periodSelect().value, expected);
     });
   }

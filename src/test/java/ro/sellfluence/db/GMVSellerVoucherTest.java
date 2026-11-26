@@ -46,6 +46,20 @@ class GMVSellerVoucherTest {
     }
 
     @Test
+    void observedPeriodsKeepFullyReversedSalesAndOmitPeriodsWithoutLines() {
+        var orders = Map.of("order", List.of(line(4, JAN, 4, 0, "100.00", "-40.00"),
+                line(5, FEB, 0, 4, "100.00", "0.00")));
+        var bothSnapshots = JAN.minusDays(1);
+        var emptyDay = FEB.plusDays(1);
+        var periods = Map.of(bothSnapshots, FEB, JAN, JAN, FEB, FEB, emptyDay, emptyDay);
+
+        assertEquals(Map.of(bothSnapshots, new BigDecimal("0.00"),
+                        JAN, new BigDecimal("360.00"), FEB, new BigDecimal("-360.00")),
+                GMV.computeObservedGMVForPeriods(orders, periods));
+        assertEquals(Map.of(), GMV.computeObservedGMVForPeriods(Map.of(), periods));
+    }
+
+    @Test
     void fullyReturnedLinesRemainZeroEvenWhenTheirVoucherWasNotCleared() {
         var finalized = line(4, JAN, 4, 0, "100.00", "-40.00");
         var storno = line(5, FEB, 0, 4, "100.00", "-40.00");
