@@ -10,6 +10,8 @@ import ro.sellfluence.db.ProductPerformanceHistoryTable.Observation;
 import ro.sellfluence.db.OffersTable.ProductVisits;
 import ro.sellfluence.db.ProductPerformanceSource;
 import ro.sellfluence.db.ProductPerformanceSource.ProductOrders;
+import ro.sellfluence.db.ProductPerformanceSource.ReviewDay;
+import ro.sellfluence.db.ProductPerformanceSource.ReviewHistory;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
 import ro.sellfluence.db.ProductPerformanceTable.Primitives;
 
@@ -558,6 +560,80 @@ class ProductPerformanceReportTest {
         assertEquals(new BigDecimal("102.02"), response.rows().getFirst().values().get("totalSales"));
     }
 
+    @Test
+    void reviewsStartHistoryAtPublicationAndWeightEachRatingInTheDisplayedDates() throws Exception {
+        var source = sourceWithoutPreviewMetrics();
+        source.first = null;
+        source.history = List.of(new Observation(VENDOR, "CODE", "PNK", date("2023-12-29"), "reviews",
+                Map.of("reviews", 96), "sheet", 2, "Family reviews", "F4"));
+        source.reviews = new ReviewHistory(Instant.parse("2026-12-01T08:00:00Z"), Map.of(
+                date("2026-11-02"), new ReviewDay(1, 5, 1),
+                date("2026-11-15"), new ReviewDay(4, 9, 3),
+                date("2026-11-16"), new ReviewDay(1, 1, 1)));
+        var clock = Clock.fixed(Instant.parse("2026-12-01T10:00:00Z"), ZoneOffset.UTC);
+
+        var fortnight = API.buildProductPerformance(source, PRODUCT, VENDOR, "CODE", FOURTEEN_DAYS, clock);
+        var first = fortnight.rows().getFirst();
+        assertEquals(date("2026-11-02"), first.period().startDate());
+        assertEquals(date("2026-11-15"), first.period().endDate());
+        assertEquals(5L, first.values().get("reviews"));
+        assertEquals(new BigDecimal("3.5"), first.values().get("rating"));
+        assertEquals(1L, fortnight.rows().get(1).values().get("reviews"));
+        assertNull(first.reviewFetchedAt());
+
+        var month = API.buildProductPerformance(source, PRODUCT, VENDOR, "CODE", THIRTY_DAYS, clock);
+        assertEquals(1, month.rows().size());
+        assertEquals(6L, month.rows().getFirst().values().get("reviews"));
+        assertEquals(new BigDecimal("3"), month.rows().getFirst().values().get("rating"));
+    }
+
+    @Test
+    void closedReviewsNeedACollectionAfterTheEndOfTheRomanianDay() throws Exception {
+        var source = sourceWithoutPreviewMetrics();
+        source.first = date("2026-11-02");
+        var days = Map.of(date("2026-11-15"), new ReviewDay(1, 4, 1));
+        source.reviews = new ReviewHistory(Instant.parse("2026-11-15T21:59:59Z"), days);
+        var stale = novemberReport(source, FOURTEEN_DAYS).rows().getFirst();
+        assertNull(stale.values().get("reviews"));
+        assertNull(stale.values().get("rating"));
+
+        source.reviews = new ReviewHistory(Instant.parse("2026-11-15T22:00:00Z"), days);
+        var covered = novemberReport(source, FOURTEEN_DAYS).rows().getFirst();
+        assertEquals(1L, covered.values().get("reviews"));
+        assertEquals(new BigDecimal("4"), covered.values().get("rating"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(ProductPerformanceData.Period.class)
+    void aFreshPositiveReviewCountCanCreateTheCurrentRowEvenWithoutStars(ProductPerformanceData.Period mode)
+            throws Exception {
+        var source = sourceWithoutPreviewMetrics();
+        var today = date("2026-11-26");
+        var fetchedAt = Instant.parse("2026-11-26T07:42:00Z");
+        source.reviews = new ReviewHistory(fetchedAt, Map.of());
+        assertTrue(novemberReport(source, mode).rows().stream().noneMatch(row -> row.period().provisional()));
+
+        source.offers = List.of(offer(today.toString(), "12.00"));
+        var confirmedZero = novemberReport(source, mode).rows().getLast();
+        assertEquals(0L, confirmedZero.values().get("reviews"));
+        assertNull(confirmedZero.values().get("rating"));
+        assertEquals(fetchedAt, confirmedZero.reviewFetchedAt());
+
+        source.reviews = new ReviewHistory(Instant.parse("2026-11-25T18:00:00Z"), Map.of());
+        var stale = novemberReport(source, mode).rows().getLast();
+        assertNull(stale.values().get("reviews"));
+        assertNull(stale.values().get("rating"));
+        assertNull(stale.reviewFetchedAt());
+
+        source.offers = List.of();
+        source.reviews = new ReviewHistory(fetchedAt, Map.of(today, new ReviewDay(1, 0, 0)));
+        var current = novemberReport(source, mode).rows().getLast();
+        assertTrue(current.period().provisional());
+        assertEquals(1L, current.values().get("reviews"));
+        assertNull(current.values().get("rating"));
+        assertEquals(fetchedAt, current.reviewFetchedAt());
+    }
+
     private static final class Source implements ProductPerformanceSource {
         String expectedPnk = "PNK";
         LocalDate first, latest;
@@ -572,9 +648,19 @@ class ProductPerformanceReportTest {
         LocalDate singleSalesPeriodStart;
         Set<LocalDate> savedAdsDates;
         List<LocalDate> offerBounds;
+        ReviewHistory reviews = ReviewHistory.empty();
         Map<LocalDate, LocalDate> gmvPeriods, netSalesPeriods, orderPeriods;
         Collection<LocalDate> visitsDates, hotnessDates;
         int visitsReads, hotnessReads, gmvReads, netSalesReads;
+
+        public ReviewHistory getProductPerformanceReviews(String pnk, LocalDate from, LocalDate to) {
+            assertEquals("PNK", pnk);
+            var selected = reviews.days().entrySet().stream()
+                    .filter(entry -> from == null || !entry.getKey().isBefore(from))
+                    .filter(entry -> !entry.getKey().isAfter(to))
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+            return new ReviewHistory(reviews.lastSuccessfulFetchAt(), selected);
+        }
 
         public List<DailyAdset> getProductPerformanceAdsets(UUID vendor, String pnk) {
             assertEquals(VENDOR, vendor);

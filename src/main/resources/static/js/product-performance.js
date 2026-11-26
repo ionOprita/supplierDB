@@ -66,6 +66,11 @@ function lateCaptureLabel(provenance) {
   return date ? `Estimated · captured ${captureDayFormat.format(date)}` : '';
 }
 
+function formatCaptureTime(value) {
+  if (typeof value !== 'string' || !/(?:Z|[+-]\d{2}:\d{2})$/.test(value) || Number.isNaN(Date.parse(value))) return null;
+  return `${captureFormat.format(new Date(value))} (Romania)`;
+}
+
 function visitsDescription(row) {
   if (row.period.provisional) {
     return `${formatPerformancePeriod(row.period)}. ${row.visitsReason || 'eMAG provides rolling 14-day and 30-day visits counters. Period-to-date product Clicks are unavailable.'}`;
@@ -75,10 +80,7 @@ function visitsDescription(row) {
   if (!lateCapture && (row.visitsStatus === 'estimated' || provenance?.quality === 'estimated')) {
     return 'Estimated total eMAG visits, including paid and organic traffic. The historical source window may differ from the displayed report window; see the source and calculation below.';
   }
-  const captured = typeof row.visitsCapturedAt === 'string'
-    && /(?:Z|[+-]\d{2}:\d{2})$/.test(row.visitsCapturedAt)
-    && !Number.isNaN(Date.parse(row.visitsCapturedAt))
-    ? `${captureFormat.format(new Date(row.visitsCapturedAt))} (Romania)` : 'unavailable';
+  const captured = formatCaptureTime(row.visitsCapturedAt) || 'unavailable';
   const availability = row.visitsStatus === 'ambiguous'
     ? 'Multiple matching offers: visits cannot be attributed to one offer.'
     : row.visitsStatus === 'missing' || row.values?.clicks == null
@@ -173,12 +175,14 @@ export function initProductPerformance() {
   const errorList = byId('ErrorList');
   const help = createInfoTooltip({document, prefix: 'productPerformance',
     label: 'About report periods and data quality', sections: [
+      {title: 'Product reviews',
+        text: 'Reviews received counts reviews published for the selected product variant during the dates shown, using Romanian time. Each star rating from those reviews has equal weight in Average rating. A count of 0 means the review collection covered the period and found no reviews. The average stays blank when there are no star ratings. Both values stay blank when review coverage is missing. For an in-progress row, the cell details and CSV show when reviews were last collected.'},
       {title: 'Estimated history — yellow cells',
-        text: 'If the closing-day snapshot is missing, Clicks and Perform. can use the following day’s capture. The cell shows its capture date. The rolling window shifts by one day, and ratios using those Clicks are estimates too. For Google Sheets history, rolling 30-day totals are scaled by 14/30 for 14-day rows, assuming uniform activity, and used unchanged for 30-day rows. Stock, price, classification, rating and review observations are not scaled. Cell details and CSV retain the source date and calculation.'},
+        text: 'If the closing-day snapshot is missing, Clicks and Perform. can use the following day’s capture. The cell shows its capture date. The rolling window shifts by one day, and ratios using those Clicks are estimates too. For Google Sheets history, rolling 30-day totals are scaled by 14/30 for 14-day rows, assuming uniform activity, and used unchanged for 30-day rows. Stock, price and classification observations keep their source values. Cell details and CSV retain the source date and calculation.'},
       {title: 'Partial data — ◐',
         text: 'Only part of the reporting window has native data. The value covers the available observations; it is not a complete-period total. Missing values (—) are different from known zeroes.'},
       {title: 'In-progress period',
-        text: 'The last row runs from the day after the last close through today in Romania. It appears when the product has recorded data for that interval. Orders, sales and Ads can change as more data arrives. Stock is the latest recorded quantity, and Sales Price averages the available daily prices. Product Clicks and the ratios that need them stay blank because eMAG provides only rolling counters. Perform. is a trailing 30-day classification. Reviews and rating have no native period-to-date figures. In monthly mode, the open row starts on the first of the month, and the closed row covers the 30 days ending at month-end.'}
+        text: 'The last row runs from the day after the last close through today in Romania. It appears when the product has recorded data for that interval. Orders, sales and Ads can change as more data arrives. Stock is the latest recorded quantity, and Sales Price averages the available daily prices. Product Clicks and the ratios that need them stay blank because eMAG provides only rolling counters. Perform. is a trailing 30-day classification. In monthly mode, the open row starts on the first of the month, and the closed row covers the 30 days ending at month-end.'}
     ]});
   byId('InfoHost').appendChild(help.wrap);
   let vendors = [];
@@ -378,6 +382,7 @@ export function initProductPerformance() {
     const fragment = document.createDocumentFragment();
     for (const row of visiblePerformanceRows(rows, showEverything)) {
       const tr = document.createElement('tr');
+      const reviewsAsOf = formatCaptureTime(row.reviewFetchedAt);
       for (const column of columns) {
         const isPeriod = column.key === 'period';
         const cell = document.createElement(isPeriod ? 'th' : 'td');
@@ -394,6 +399,10 @@ export function initProductPerformance() {
         }
         cell.dataset.type = column.type;
         describeColumn(cell, column, true);
+        if (reviewsAsOf && (column.key === 'reviews' || column.key === 'rating')) {
+          cell.title = [cell.title, `Review data as of ${reviewsAsOf}.`].filter(Boolean).join(' ');
+          cell.setAttribute('aria-label', `${cell.textContent}. ${column.label}. ${cell.title}`);
+        }
         if (['stock', 'salesPrice'].includes(column.key) && row.values?.[column.key] === '???') {
           cell.title = column.key === 'salesPrice'
             ? 'Multiple matching offers in a daily snapshot for this period'
@@ -619,6 +628,7 @@ export function initProductPerformance() {
       ['Performance status', row => row.performanceStatus],
       ['Performance reason', row => [lateCaptureLabel(row.cellProvenance?.performance), row.performanceReason].filter(Boolean).join('. ')],
       ['Performance type', row => row.performanceType],
+      ['Reviews fetched at', row => row.reviewFetchedAt],
       ['Cell provenance', row => JSON.stringify(row.cellProvenance || {})]
     ];
     for (const [label] of metadata) {

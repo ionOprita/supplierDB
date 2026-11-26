@@ -182,6 +182,11 @@ public class EmagMirrorDB implements ProductPerformanceSource {
         return database.readTX(db -> ProductPerformanceHistoryTable.getProductPerformanceHistory(db, vendorId, productCode));
     }
 
+    @Override
+    public ReviewHistory getProductPerformanceReviews(String pnk, LocalDate from, LocalDate to) throws SQLException {
+        return database.readTX(db -> ReviewsTable.readPublishedReviewDays(db, pnk, from, to));
+    }
+
     public Set<LocalDate> getProductPerformanceAdsReportDates(UUID vendorId, LocalDate start, LocalDate end)
             throws SQLException {
         return database.readTX(db -> ProductPerformanceHistoryTable.getProductPerformanceAdsReportDates(db, vendorId, start, end));

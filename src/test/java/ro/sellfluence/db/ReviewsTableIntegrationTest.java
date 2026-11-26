@@ -21,6 +21,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -88,6 +89,53 @@ class ReviewsTableIntegrationTest {
                 if (schema != null) execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
             }
         }
+    }
+
+    @Test
+    void reviewDaysUsePublicationInRomaniaAndCountRetainedVariantReviewsOnce() throws Exception {
+        var day = LocalDate.of(2026, 9, 20);
+        var first = publishedReview(1, PNK, "2026-09-19T21:00:00Z", 4);
+        var last = publishedReview(2, PNK, "2026-09-21T00:30:00+14:00", 5);
+        var nextDay = publishedReview(3, PNK, "2026-09-20T21:00:00Z", 1);
+        var invalidDate = publishedReview(4, PNK, "2026-09-20T25:00:00Z", 2);
+        var missingStars = publishedReview(5, PNK, "2026-09-20T12:00:00+03:00", null);
+        var invalidStars = publishedReview(6, PNK, "2026-09-20T12:00:00+03:00", 6);
+        var noPublication = publishedReview(7, PNK, null, 3);
+        var future = publishedReview(8, PNK, "2026-09-28T16:17:00+03:00", 2);
+        var otherVariant = publishedReview(9, "OTHER", "2026-09-20T19:00:00Z", 5);
+        ReviewsTable.storeReviews(db, PNK, FIRST_FETCH,
+                response(first, last, nextDay, invalidDate, missingStars, invalidStars, noPublication, future, otherVariant));
+        ReviewsTable.storeReviews(db, "OTHER", FIRST_FETCH, response(otherVariant));
+        // A repeated fetch updates one review. Others are retained, including their original publication dates.
+        ReviewsTable.storeReviews(db, PNK, SECOND_FETCH, response(first));
+        var expected = new ProductPerformanceSource.ReviewDay(4, 9, 2);
+        var bounded = ReviewsTable.readPublishedReviewDays(db, " " + PNK + " ", day, day);
+        assertEquals(SECOND_FETCH, bounded.lastSuccessfulFetchAt());
+        assertEquals(Map.of(day, expected), bounded.days());
+        var all = ReviewsTable.readPublishedReviewDays(db, PNK, null, day.plusDays(20));
+        assertEquals(Map.of(day, expected, day.plusDays(1), new ProductPerformanceSource.ReviewDay(1, 1, 1)), all.days());
+    }
+
+    @Test
+    void reviewDaysDistinguishACompleteEmptyFetchFromMissingCoverage() throws Exception {
+        var day = LocalDate.of(2026, 10, 25);
+        var noFetch = ReviewsTable.readPublishedReviewDays(db, PNK, null, day);
+        assertEquals(ProductPerformanceSource.ReviewHistory.empty(), noFetch);
+        assertNull(noFetch.lastSuccessfulFetchDate());
+        var evening = Instant.parse("2026-10-24T21:30:00Z");
+        ReviewsTable.storeReviews(db, PNK, evening, response());
+        var fetched = ReviewsTable.readPublishedReviewDays(db, PNK, day, day);
+        assertEquals(day, fetched.lastSuccessfulFetchDate());
+        assertEquals(Map.of(), fetched.days());
+        assertEquals(noFetch, ReviewsTable.readPublishedReviewDays(db, null, null, day));
+    }
+
+    private static Review publishedReview(long id, String pnk, String published, Integer rating)
+            throws ReflectiveOperationException {
+        var fields = new LinkedHashMap<String, Object>();
+        fields.put("published", published);
+        fields.put("rating", rating);
+        return copyRecord(fullReview(id, 1, pnk), fields);
     }
 
     @Test

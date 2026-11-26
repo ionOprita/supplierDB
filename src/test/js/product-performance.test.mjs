@@ -86,8 +86,8 @@ test('VAT-inclusive Sales Price and its period mean render and export without Av
       {key: 'salesPrice', label: 'Sales Price (incl. VAT)', type: 'decimal'},
       {key: 'conversion', label: 'Conv.', type: 'percent'},
       {key: 'performance', label: 'Perform.', type: 'text'},
-      {key: 'reviews', label: '# rev.', type: 'integer'},
-      {key: 'rating', label: 'rating', type: 'decimal'});
+      {key: 'reviews', label: 'Reviews received', type: 'integer'},
+      {key: 'rating', label: 'Average rating', type: 'decimal'});
     data.rows[0].visitsStatus = 'available';
     Object.assign(data.rows[0].values, {stock: 7, orders: 3, totalSales: 600, gmv: 726, clicks: 20,
       salesPrice, conversion: 0.25, performance: 'HOT', reviews: 4, rating: 4.5,
@@ -97,7 +97,7 @@ test('VAT-inclusive Sales Price and its period mean render and export without Av
   await page.respond(0, pricedReport('2026-09-07', 199.99));
   const headers = page.byId('Head').children[1].children;
   assert.deepEqual(headers.slice(0, 9).map(cell => cell.textContent),
-    ['Stock', 'Orders', 'Total Sales (excl. VAT)', 'Clicks', 'Sales Price (incl. VAT)', 'Conv.', 'Perform.', '# rev.', 'rating']);
+    ['Stock', 'Orders', 'Total Sales (excl. VAT)', 'Clicks', 'Sales Price (incl. VAT)', 'Conv.', 'Perform.', 'Reviews received', 'Average rating']);
   assert.equal(page.byId('Head').children[0].children[1].colSpan, 9);
   assert.equal(page.byId('Table').querySelectorAll('colgroup')[0].span, 10);
   assert.equal(headers[7].dataset.frozenIndex, 8);
@@ -111,7 +111,7 @@ test('VAT-inclusive Sales Price and its period mean render and export without Av
   assert.doesNotMatch(row.textContent, /7,777/);
   assert.doesNotMatch(row.textContent, /726/, 'Legacy gross GMV must not replace the net total');
   page.byId('DownloadCsv').click();
-  const header = 'Stock,Orders,Total Sales (excl. VAT),Clicks,Sales Price (incl. VAT),Conv.,Perform.,# rev.,rating,Auto - Clicks,Total - Clicks';
+  const header = 'Stock,Orders,Total Sales (excl. VAT),Clicks,Sales Price (incl. VAT),Conv.,Perform.,Reviews received,Average rating,Auto - Clicks,Total - Clicks';
   assert.equal(withoutMetadata(await page.csv()), `\uFEFFPeriod,${header}\r\n07 Sept 2026 - 20 Sept 2026,7,3,600,20,199.99,25.00%,HOT,4,4.50,5,5`);
 
   page.periodSelect().value = '30days';
@@ -186,8 +186,8 @@ test('financial columns expose tax explanations accessibly and export unchanged 
   assert.equal(csvRow, '07 Sept 2026 - 20 Sept 2026,190,199.99,'
     + Array(5).fill('21,121,1.25,17.36%,5.76').join(','));
   assert.doesNotMatch(csv, /GMV|229\.9/, 'Legacy gross GMV remains out of the displayed and exported columns');
-  assert.equal(csv.split('\r\n')[0].split(',').length, cells.length + 13,
-    'Descriptions must not add columns beyond the visits and performance metadata');
+  assert.equal(csv.split('\r\n')[0].split(',').length, cells.length + 14,
+    'CSV includes fourteen report metadata fields');
 });
 
 test('renders and exports all TACOS groups and product shares without clamping or replacing unknown with zero', async t => {
@@ -447,7 +447,7 @@ function visitReport(rows) {
 // Metadata is verified separately; these assertions retain the existing formatted-metric checks.
 function withoutMetadata(csv) {
   const escape = value => /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
-  return parseCsv(csv).map(row => row.slice(0, -13).map(escape).join(',')).join('\r\n');
+  return parseCsv(csv).map(row => row.slice(0, -14).map(escape).join(',')).join('\r\n');
 }
 
 function parseCsv(csv) {
@@ -597,7 +597,7 @@ test('CSV downloads align flat grouped headers with the displayed formatted cell
     {key: 'totalSales', label: 'Total Sales (excl. VAT)', type: 'integer'},
     {key: 'conversion', label: 'Conv.', type: 'percent'},
     {key: 'performance', label: 'Perform.', type: 'text'},
-    {key: 'rating', label: 'rating', type: 'decimal'});
+    {key: 'rating', label: 'Average rating', type: 'decimal'});
   Object.assign(data.rows[0].values, {
     stock: '???', totalSales: 1234.56, conversion: 0.0267, performance: 'Șură, "SUPER HOT"', rating: null
   });
@@ -605,7 +605,7 @@ test('CSV downloads align flat grouped headers with the displayed formatted cell
   assert.equal(page.byId('DownloadCsv').disabled, false, 'Partial reports remain exportable');
   page.byId('DownloadCsv').click();
   assert.equal(page.downloads.length, 1);
-  assert.equal(withoutMetadata(await page.csv()), '\uFEFFPeriod,Stock,Total Sales (excl. VAT),Conv.,Perform.,rating,Auto - Clicks,Total - Clicks\r\n'
+  assert.equal(withoutMetadata(await page.csv()), '\uFEFFPeriod,Stock,Total Sales (excl. VAT),Conv.,Perform.,Average rating,Auto - Clicks,Total - Clicks\r\n'
     + '07 Sept 2026 - 20 Sept 2026,???,"1,235",2.67%,"Șură, ""SUPER HOT""",—,25,—');
   assert.equal(page.downloads[0].blob.type, 'text/csv;charset=utf-8;');
   assert.deepEqual(page.revokedUrls, [page.downloads[0].url]);
@@ -655,14 +655,15 @@ test('in-progress dates, measured zeroes, unavailable metrics and partial Ads co
   const performanceReason = 'eMAG supplies a rolling 30-day classification.';
   const coverage = {quality: 'partial', source: 'Native eMAG daily reports', sourceDate: '2026-11-25',
     sourceWindowDays: 11, method: 'Saved daily Ads report dates: 10/11.'};
-  const row = performanceRow('2026-11-16', {orders: 7, auto_clicks: 0}, {
+  const reviewFetchedAt = '2026-11-26T18:30:00Z';
+  const row = performanceRow('2026-11-16', {orders: 7, reviews: 2, rating: 4.5, auto_clicks: 0}, {
     period: {startDate: '2026-11-16', endDate: '2026-11-26', windowDays: 11, provisional: true},
-    visitsReason, performanceStatus: 'missing', performanceReason, cellProvenance: {auto_clicks: coverage}
+    visitsReason, performanceStatus: 'missing', performanceReason, reviewFetchedAt, cellProvenance: {auto_clicks: coverage}
   });
   const data = visitReport([row]);
   data.groups[0].columns.push(
     {key: 'conversion', label: 'Conv.', type: 'percent'}, {key: 'performance', label: 'Perform.', type: 'text'},
-    {key: 'reviews', label: '# rev.', type: 'integer'}, {key: 'rating', label: 'Rating', type: 'decimal'});
+    {key: 'reviews', label: 'Reviews received', type: 'integer'}, {key: 'rating', label: 'Average rating', type: 'decimal'});
   data.groups.push({key: 'total', label: 'Total', columns: [
     {key: 'total_clicks_share', label: 'Ads click share', type: 'percent'},
     {key: 'total_sales_share', label: 'Ads sales share', type: 'percent'},
@@ -671,7 +672,11 @@ test('in-progress dates, measured zeroes, unavailable metrics and partial Ads co
   await page.respond(0, data);
   const cells = page.byId('Body').children[0].cells;
   const periodLabel = '16 Nov 2026 - 26 Nov 2026 (in progress)';
-  assert.deepEqual(cells.map(cell => cell.textContent), [periodLabel, '7', '—', '—', '—', '—', '—', '—', '—', '—', '0']);
+  assert.deepEqual(cells.map(cell => cell.textContent), [periodLabel, '7', '—', '—', '—', '2', '4.50', '—', '—', '—', '0']);
+  for (const index of [5, 6]) {
+    assert.match(cells[index].title, /Review data as of 26 Nov 2026,? 20:30 \(Romania\)/);
+    assert.ok(cells[index].getAttribute('aria-label').includes(cells[index].title));
+  }
   for (const index of [2, 3, 7]) {
     assert.ok(cells[index].title.includes(periodLabel));
     assert.ok(cells[index].getAttribute('aria-label').includes(visitsReason));
@@ -685,7 +690,7 @@ test('in-progress dates, measured zeroes, unavailable metrics and partial Ads co
   const [headers, fields] = parseCsv(await page.csv());
   assert.deepEqual(fields.slice(0, cells.length), cells.map(cell => cell.textContent));
   assert.deepEqual(fields.slice(cells.length, -1), ['2026-11-16', '2026-11-26', '11', 'true',
-    '', '', 'missing', visitsReason, '', 'missing', performanceReason, '']);
+    '', '', 'missing', visitsReason, '', 'missing', performanceReason, '', reviewFetchedAt]);
   assert.deepEqual(JSON.parse(fields[headers.indexOf('Cell provenance')]), {auto_clicks: coverage});
 });
 
@@ -756,15 +761,15 @@ test('product conversion and historical hotness render independently and export 
       page.byId('DownloadCsv').click();
       const csv = await page.csv();
       const lines = csv.split('\r\n');
-      assert.equal(lines[0], '\uFEFFPeriod,Orders,Clicks,Conv.,Perform.,Period start,Period end,Window days,Provisional,Visits snapshot date,Visits captured at,Visits status,Visits reason,Performance snapshot date,Performance status,Performance reason,Performance type,Cell provenance');
+      assert.equal(lines[0], '\uFEFFPeriod,Orders,Clicks,Conv.,Perform.,Period start,Period end,Window days,Provisional,Visits snapshot date,Visits captured at,Visits status,Visits reason,Performance snapshot date,Performance status,Performance reason,Performance type,Reviews fetched at,Cell provenance');
       assert.match(lines[1], /,25,"1,000",2\.50%,Super Hot,/);
-      assert.match(lines[1], new RegExp(`,${endDate},available,,super_hot,\\{\\}$`));
+      assert.match(lines[1], new RegExp(`,${endDate},available,,super_hot,,\\{\\}$`));
       assert.match(lines[2], /,0,100,0\.00%,—,/);
       assert.match(lines[3], /,3,0,—,\?\?\?,/);
-      assert.match(lines[3], /,ambiguous,"Multiple offers, no unique candidate\.",,\{\}$/);
+      assert.match(lines[3], /,ambiguous,"Multiple offers, no unique candidate\.",,,\{\}$/);
       assert.match(lines[4], /,3,2,150\.00%,"<img src=x onerror=alert\(1\)>, ""New hotness""",/);
       assert.match(lines[5], /,3,—,—,Super Cold,/);
-      assert.match(lines[5], new RegExp(`,${endDate},available,,super_cold,\\{\\}$`));
+      assert.match(lines[5], new RegExp(`,${endDate},available,,super_cold,,\\{\\}$`));
     });
   }
 });
@@ -832,7 +837,7 @@ test('mixed provenance colors only estimated cells and keeps full source evidenc
   page.byId('DownloadCsv').click();
   const csv = parseCsv(await page.csv());
   assert.equal(csv[0].at(-1), 'Cell provenance');
-  assert.equal(csv[0].length, estimated.cells.length + 13);
+  assert.equal(csv[0].length, estimated.cells.length + 14);
   assert.deepEqual(JSON.parse(csv[1].at(-1)), cellProvenance);
   assert.deepEqual(JSON.parse(csv[2].at(-1)), {});
   assert.equal(csv[1][6], '5');
@@ -927,7 +932,8 @@ test('permanent English report help explains estimates and provisional timing in
   assert.equal(page.byId('Table').descendants().includes(wrap), false, 'Help stays outside scrolling cells and CSV');
   assert.equal(button.disabled, false);
   assert.equal(tooltip.hidden, true);
-  for (const explanation of ['Estimated history — yellow cells', '14/30', 'not scaled', 'Partial data — ◐',
+  for (const explanation of ['Product reviews', 'published for the selected product variant',
+    'Each star rating', 'Estimated history — yellow cells', '14/30', 'keep their source values', 'Partial data — ◐',
     'Missing values (—)', 'In-progress period', 'day after the last close through today in Romania',
     'recorded data', 'rolling counters', 'the closed row covers the 30 days ending at month-end']) {
     assert.ok(tooltip.textContent.includes(explanation), explanation);
@@ -1035,14 +1041,14 @@ test('CSV exports only the latest 20 displayed rows until Show everything is sel
   assert.equal(visible.length, 21);
   assert.equal(visible[1], '09 Feb 2026 - 22 Feb 2026,5,5');
   assert.equal(visible.at(-1), '22 Jun 2026 - 05 Jul 2026,24,24');
-  assert.match((await page.csv()).split('\r\n')[1], /,2026-02-09,2026-02-22,14,false,,,missing,,,,,,\{\}$/);
+  assert.deepEqual(parseCsv(await page.csv())[1].slice(3, 7), ['2026-02-09', '2026-02-22', '14', 'false']);
   page.showEverything().checked = true;
   page.showEverything().dispatch('change');
   page.byId('DownloadCsv').click();
   const all = (withoutMetadata(await page.csv())).split('\r\n');
   assert.equal(all.length, 26);
   assert.equal(all[1], '05 Jan 2026 - 18 Jan 2026,0,0');
-  assert.match((await page.csv()).split('\r\n')[1], /,2026-01-05,2026-01-18,14,false,,,missing,,,,,,\{\}$/);
+  assert.deepEqual(parseCsv(await page.csv())[1].slice(3, 7), ['2026-01-05', '2026-01-18', '14', 'false']);
   assert.deepEqual(all.slice(6), visible.slice(1));
 });
 

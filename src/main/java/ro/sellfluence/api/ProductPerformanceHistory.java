@@ -54,11 +54,6 @@ final class ProductPerformanceHistory {
                 estimatedPerformance = fill(values, provenance, "performance", organic, false, period,
                         "eMAG 30-day classification observed on the source date, including for 14-day rows.");
             }
-            fill(values, provenance, "reviews", select(history, "reviews", period.endDate()), false, period,
-                    "Historical product-family review count observed on the source date; never summed across products.");
-            fill(values, provenance, "rating", select(history, "rating", period.endDate()), false, period,
-                    "Historical product-family rating observed on the source date; not an average across dates.");
-
             long observedDays = period.startDate().datesUntil(period.endDate().plusDays(1))
                     .filter(adsReportDates::contains).count();
             boolean attributionError = nativeReport.errors().stream().anyMatch(error ->
@@ -92,7 +87,7 @@ final class ProductPerformanceHistory {
                     estimatedPerformance ? organic.observationDate() : row.performanceSnapshotDate(),
                     estimatedPerformance ? "estimated" : row.performanceStatus(),
                     estimatedPerformance ? provenance.get("performance").method() : row.performanceReason(),
-                    estimatedPerformance ? null : row.performanceType(), provenance));
+                    estimatedPerformance ? null : row.performanceType(), provenance, row.reviewFetchedAt()));
         }
         return new Response(nativeReport.mock(), nativeReport.product(), nativeReport.groups(), List.copyOf(rows),
                 nativeReport.errors());
@@ -114,7 +109,7 @@ final class ProductPerformanceHistory {
         }
         return new Row(period, Collections.unmodifiableMap(values), row.visitsSnapshotDate(), row.visitsCapturedAt(),
                 row.visitsStatus(), row.visitsReason(), row.performanceSnapshotDate(), row.performanceStatus(),
-                row.performanceReason(), row.performanceType(), provenance);
+                row.performanceReason(), row.performanceType(), provenance, row.reviewFetchedAt());
     }
 
     private static void deriveAdsSalesRatios(Map<String, Object> values, Map<String, CellProvenance> provenance) {

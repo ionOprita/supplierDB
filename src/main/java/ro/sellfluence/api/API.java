@@ -20,6 +20,7 @@ import ro.sellfluence.db.ProductTable.ProductWithVendor;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
 import ro.sellfluence.db.ProductPerformanceSource;
 import ro.sellfluence.db.ProductPerformanceSource.ProductOrders;
+import ro.sellfluence.db.ProductPerformanceSource.ReviewHistory;
 import ro.sellfluence.db.ProductPerformanceHistoryTable.Observation;
 import ro.sellfluence.db.Task;
 import ro.sellfluence.db.TaskHistory;
@@ -47,6 +48,7 @@ import java.util.Map;
 import java.util.logging.Logger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static java.math.RoundingMode.HALF_EVEN;
 import static java.util.logging.Level.SEVERE;
@@ -203,19 +205,18 @@ public class API {
         var today = overviewDate(clock);
         var snapshots = metadata.pnk() == null ? List.<DailyAdset>of()
                 : source.getProductPerformanceAdsets(vendorId, metadata.pnk());
-        var history = source.getProductPerformanceHistory(vendorId, productCode);
-        var firstActivity = source.getFirstProductPerformanceActivity(vendorId, productCode, metadata.pnk());
-        var firstAd = snapshots.stream().map(it -> it.key().reportDate()).min(LocalDate::compareTo);
-        if (firstAd.isPresent() && (firstActivity.isEmpty() || firstAd.get().isBefore(firstActivity.get()))) {
-            firstActivity = firstAd;
-        }
-        // Explicit blanks supersede old source values but do not establish product activity.
-        // Keep them in history for report selection; only exclude them from period boundaries.
-        var firstHistorical = history.stream().filter(Observation::hasMetricValues)
-                .map(Observation::observationDate).min(LocalDate::compareTo);
-        if (firstHistorical.isPresent() && (firstActivity.isEmpty() || firstHistorical.get().isBefore(firstActivity.get()))) {
-            firstActivity = firstHistorical;
-        }
+        var history = source.getProductPerformanceHistory(vendorId, productCode).stream()
+                .filter(observation -> "organic".equals(observation.domain()) || "ads".equals(observation.domain()))
+                .toList();
+        var reviews = metadata.pnk() == null ? ReviewHistory.empty()
+                : source.getProductPerformanceReviews(metadata.pnk(), null, today);
+        // Imported blank corrections supersede earlier values but do not establish activity.
+        var firstActivity = Stream.of(
+                        source.getFirstProductPerformanceActivity(vendorId, productCode, metadata.pnk()).stream(),
+                        snapshots.stream().map(snapshot -> snapshot.key().reportDate()),
+                        history.stream().filter(Observation::hasMetricValues).map(Observation::observationDate),
+                        reviews.days().keySet().stream())
+                .flatMap(Function.identity()).min(LocalDate::compareTo);
         var periods = ProductPerformancePeriods.create(period, firstActivity.orElse(null), today);
         var periodEnds = new TreeMap<LocalDate, LocalDate>();
         var snapshotDates = new HashSet<LocalDate>();
@@ -233,7 +234,7 @@ public class API {
         }
         if (periods.isEmpty()) {
             return ProductPerformanceData.createNativeReport(metadata, periods, List.of(), List.of(), Map.of(),
-                    Map.of(), Map.of(), Map.of(), Map.of(), missedCloseFallbackDates);
+                    Map.of(), Map.of(), Map.of(), Map.of(), missedCloseFallbackDates, reviews);
         }
         var firstDay = periodEnds.firstKey();
         var adsReportDates = source.getProductPerformanceAdsReportDates(vendorId, firstDay, today);
@@ -260,7 +261,7 @@ public class API {
         Map<LocalDate, ProductHotness> hotnessByDate = snapshotDates.isEmpty() ? Map.of()
                 : source.getProductHotnessForDates(vendorId, metadata.pnk(), snapshotDates);
         var nativeReport = ProductPerformanceData.createNativeReport(metadata, periods, snapshots, offers, gmvByPeriod,
-                ordersByPeriod, visitsByDate, totalSalesByPeriod, hotnessByDate, missedCloseFallbackDates);
+                ordersByPeriod, visitsByDate, totalSalesByPeriod, hotnessByDate, missedCloseFallbackDates, reviews);
         return ProductPerformanceHistory.apply(ProductPerformanceData.omitEmptyPreview(nativeReport), history, adsReportDates);
     }
 

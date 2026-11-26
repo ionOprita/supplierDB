@@ -2,7 +2,9 @@ package ro.sellfluence.db;
 
 import java.math.BigDecimal;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +16,32 @@ import java.util.UUID;
 public interface ProductPerformanceSource {
     /** Whether at least one selected order snapshot supplied a quantity, including zero. */
     record ProductOrders(long units, boolean observed) {}
+
+    /** Each published review counts once. Only ratings from one to five contribute to the mean. */
+    record ReviewDay(long count, long starSum, long ratedCount) {
+        public ReviewDay plus(ReviewDay other) {
+            return new ReviewDay(count + other.count, starSum + other.starSum, ratedCount + other.ratedCount);
+        }
+    }
+
+    record ReviewHistory(Instant lastSuccessfulFetchAt, Map<LocalDate, ReviewDay> days) {
+        static final ZoneId REPORT_ZONE = ZoneId.of("Europe/Bucharest");
+
+        public ReviewHistory {
+            days = Map.copyOf(days);
+        }
+
+        public LocalDate lastSuccessfulFetchDate() {
+            return lastSuccessfulFetchAt == null ? null : lastSuccessfulFetchAt.atZone(REPORT_ZONE).toLocalDate();
+        }
+
+        public static ReviewHistory empty() {
+            return new ReviewHistory(null, Map.of());
+        }
+    }
+
+    /** Inclusive Romanian publication dates for the selected variant. A null start requests all earlier dates. */
+    ReviewHistory getProductPerformanceReviews(String pnk, LocalDate from, LocalDate to) throws SQLException;
 
     List<ProductPerformanceHistoryTable.Observation> getProductPerformanceHistory(UUID vendorId, String productCode)
             throws SQLException;

@@ -1,6 +1,9 @@
 package ro.sellfluence.api;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import ro.sellfluence.db.ProductPerformanceSource.ReviewDay;
+import ro.sellfluence.db.ProductPerformanceSource.ReviewHistory;
 import ro.sellfluence.db.ProductPerformanceTable.DailyAdset;
 import ro.sellfluence.db.ProductPerformanceTable.Primitives;
 import ro.sellfluence.db.OffersTable.DailyProductOffer;
@@ -60,8 +63,12 @@ public final class ProductPerformanceData {
                     column("performance", "Perform.", "text",
                             "The eMAG 30-day classification, including for 14-day rows. The report looks for the "
                                     + "period's closing-day snapshot first. Estimates identify their actual observation date."),
-                    column("reviews", "# rev.", "integer"),
-                    column("rating", "rating", "decimal")
+                    column("reviews", "Reviews received", "integer",
+                            "Number of reviews eMAG published for this product variant during the displayed dates in Romania. "
+                                    + "These reviews are shared by sellers of the same variant."),
+                    column("rating", "Average rating", "decimal",
+                            "Average of the individual 1–5 star ratings on reviews published for this variant "
+                                    + "during the displayed dates. A dash means no rated reviews or unavailable data.")
             )),
             new ColumnGroup("total", "Total", adsColumns("total", null)),
             new ColumnGroup("auto", "Auto", adsColumns("auto", "Auto")),
@@ -148,9 +155,19 @@ public final class ProductPerformanceData {
                       String visitsStatus, String visitsReason,
                       @JsonFormat(shape = JsonFormat.Shape.STRING) LocalDate performanceSnapshotDate,
                       String performanceStatus, String performanceReason, String performanceType,
-                      Map<String, CellProvenance> cellProvenance) {
+                      Map<String, CellProvenance> cellProvenance,
+                      @JsonInclude(JsonInclude.Include.NON_NULL)
+                      @JsonFormat(shape = JsonFormat.Shape.STRING) Instant reviewFetchedAt) {
         public Row {
             cellProvenance = Map.copyOf(cellProvenance);
+        }
+
+        public Row(ReportPeriod period, Map<String, Object> values, LocalDate visitsSnapshotDate,
+                   Instant visitsCapturedAt, String visitsStatus, String visitsReason,
+                   LocalDate performanceSnapshotDate, String performanceStatus, String performanceReason,
+                   String performanceType, Map<String, CellProvenance> cellProvenance) {
+            this(period, values, visitsSnapshotDate, visitsCapturedAt, visitsStatus, visitsReason,
+                    performanceSnapshotDate, performanceStatus, performanceReason, performanceType, cellProvenance, null);
         }
 
         public Row(ReportPeriod period, Map<String, Object> values, LocalDate visitsSnapshotDate,
@@ -195,7 +212,7 @@ public final class ProductPerformanceData {
                                   Map<LocalDate, BigDecimal> totalSalesByPeriod,
                                   Map<LocalDate, ProductHotness> hotnessByEndDate) {
         return createNativeReport(product, periods, snapshots, offers, gmvByPeriod, ordersByPeriod, visitsByEndDate,
-                totalSalesByPeriod, hotnessByEndDate, Set.of());
+                totalSalesByPeriod, hotnessByEndDate, Set.of(), ReviewHistory.empty());
     }
 
     static Response createNativeReport(Product product, List<ReportPeriod> periods, List<DailyAdset> snapshots,
@@ -204,7 +221,7 @@ public final class ProductPerformanceData {
                                            Map<LocalDate, ProductVisits> visitsByDate,
                                            Map<LocalDate, BigDecimal> totalSalesByPeriod,
                                            Map<LocalDate, ProductHotness> hotnessByDate,
-                                           Set<LocalDate> missedCloseFallbackDates) {
+                                           Set<LocalDate> missedCloseFallbackDates, ReviewHistory reviews) {
         var errors = new ArrayList<DataError>();
         var rows = new ArrayList<Row>();
         for (var period : periods) {
@@ -222,7 +239,7 @@ public final class ProductPerformanceData {
             }
             var closing = closingMetrics(period, visitsByDate, hotnessByDate, missedCloseFallbackDates);
             var row = totals.row(period, offerTotals, hasAds, gmvByPeriod.get(period.startDate()),
-                    ordersByPeriod.get(period.startDate()), totalSalesByPeriod.get(period.startDate()), closing);
+                    ordersByPeriod.get(period.startDate()), totalSalesByPeriod.get(period.startDate()), closing, reviews);
             rows.add(row);
         }
         return new Response(false, product, GROUPS, List.copyOf(rows), List.copyOf(new LinkedHashSet<>(errors)));
@@ -243,7 +260,8 @@ public final class ProductPerformanceData {
 
     private static boolean hasObservedMetrics(Row row) {
         return GROUPS.stream().flatMap(group -> group.columns().stream())
-                .anyMatch(column -> row.values().get(column.key()) instanceof Number);
+                .anyMatch(column -> row.values().get(column.key()) instanceof Number number
+                        && (!"reviews".equals(column.key()) || number.longValue() > 0));
     }
 
     /** Stock uses the latest eligible day; both windows give each available daily gross price one weight. */
@@ -381,7 +399,7 @@ public final class ProductPerformanceData {
         }
 
         private Row row(ReportPeriod period, OfferTotals offers, boolean hasAds, BigDecimal gmv, Long orders,
-                        BigDecimal totalSales, ClosingMetrics closing) {
+                        BigDecimal totalSales, ClosingMetrics closing, ReviewHistory reviews) {
             var values = new LinkedHashMap<String, Object>();
             // Unsupported overview columns and metrics with unavailable inputs remain null.
             for (var group : GROUPS) {
@@ -433,12 +451,32 @@ public final class ProductPerformanceData {
                     }
                 }
             }
+            var reviewFetchedAt = writeReviews(values, period, reviews);
             // Map.copyOf rejects nulls, which intentionally represent unavailable cells here.
             return new Row(period, Collections.unmodifiableMap(values), visitValue.snapshotDate(),
                     visitValue.capturedAt(), visitValue.status(), visitValue.reason(),
                     performance.snapshotDate(), performance.status(), performance.reason(), performance.type(),
-                    closing.provenance());
+                    closing.provenance(), reviewFetchedAt);
         }
+    }
+
+    /** A closed date needs a later collection. Today's values cover only the time up to today's fetch. */
+    private static Instant writeReviews(Map<String, Object> values, ReportPeriod period, ReviewHistory reviews) {
+        var fetchedOn = reviews.lastSuccessfulFetchDate();
+        if (fetchedOn == null || (period.provisional()
+                ? !fetchedOn.equals(period.endDate()) : !fetchedOn.isAfter(period.endDate()))) return null;
+
+        var total = new ReviewDay(0, 0, 0);
+        for (var date = period.startDate(); !date.isAfter(period.endDate()); date = date.plusDays(1)) {
+            var day = reviews.days().get(date);
+            if (day != null) total = total.plus(day);
+        }
+        values.put("reviews", total.count());
+        if (total.ratedCount() > 0) {
+            values.put("rating", BigDecimal.valueOf(total.starSum())
+                    .divide(BigDecimal.valueOf(total.ratedCount()), MathContext.DECIMAL128));
+        }
+        return period.provisional() ? reviews.lastSuccessfulFetchAt() : null;
     }
 
     private record HotnessValue(String label, LocalDate snapshotDate, String status, String reason, String type) {

@@ -13,7 +13,8 @@ The UI normalizes old bookmarks and displays the actual dates. The response cont
 definitions, rows and an `errors` list; `mock` is always false. Vendor/product membership is
 checked before querying report sources.
 
-Every source in this report uses the exact selected vendor UUID. Orders, net Total Sales,
+Public reviews belong to the selected product variant (PNK). Vendors selling the same PNK see
+the same reviews. Account-specific sources use the exact selected vendor UUID. Orders, net Total Sales,
 and the compatibility gross GMV field are filtered by the selling account before selecting
 order snapshots or pairing finalized/storno states. Main and FBE accounts are not implicitly
 combined by company name. Other pages retain their existing global Orders/GMV calculations.
@@ -80,9 +81,9 @@ as a labelled estimate.
   1–26 November (26 days) in 30-day mode. It can cover 31 dates on the last day of a long month.
   The next morning starts a new interval and the completed month uses its usual 30-day window.
 
-Rows begin at the earliest known eligible Ads, matching offer (including zero stock), or
-status 4/5 order activity in the selected account, or an imported historical observation.
-Older family review/rating history can therefore extend the report before Ads/Organic history.
+Rows begin at the earliest known eligible Ads, matching offer (including zero stock),
+status 4/5 order activity, or imported Organic/Ads observation in the selected account.
+A dated review for the selected PNK can also establish the start of the report.
 Orders from another account cannot extend
 the report history. Rows exist without Ads and without visits captures, preserving
 historical Orders/GMV. No activity means no rows. Rows are sorted oldest to newest.
@@ -102,14 +103,16 @@ Switching modes requests new aggregates rather than relabelling rows.
 
 The current row appears only when the selected product and account have an observed numeric
 value within its dates. A measured zero qualifies, including zero stock, a zero order quantity
-or a sale whose adjustments bring the amount to zero. A vendor-wide snapshot or an empty
-sum cannot create the row. Each metric without its own supporting data stays blank.
+or a sale whose adjustments bring the amount to zero. A positive review count can create the
+row. A zero review count, vendor-wide snapshot or empty sum alone cannot create it.
+Each metric without its own supporting data stays blank.
 
 | Metric | What the provisional row shows |
 |---|---|
 | Stock and Sales Price | Stock from the latest matching snapshot when the offer is unambiguous, and the mean of usable daily gross prices in the interval. |
 | Orders, Total Sales and legacy GMV | Each total uses its own contributing records inside the displayed dates. A recorded zero or negative amount is retained. |
-| Product Clicks, Perform., Conv., Reviews and Rating | Blank. The rolling counters, classification and imported family observations cannot describe this interval. |
+| Product Clicks, Perform. and Conv. | Blank. The rolling counters and classification cannot describe this interval. |
+| Reviews received and Average rating | Published reviews in the displayed dates through today's latest successful review fetch. Both cells stay blank until the collector fetches this PNK today. |
 | Ads primitives and ratios within Ads | Recorded product adset figures through today, with ratios calculated from the available inputs. Categories without recorded inputs stay blank. The collector normally reports through yesterday. Partial figures identify the saved report dates in the cell details and CSV. |
 | TACOS and Ads share of Total Sales | Available with valid inputs, positive Total Sales and a saved campaign report for every elapsed date. Incomplete coverage leaves these ratios blank. |
 | Ads share of product Clicks | Blank because product Clicks are unavailable for this interval. |
@@ -365,10 +368,27 @@ actual observation date. The response and CSV preserve the separate performance 
 reason and raw type. Unknown labels remain text rather than being rejected by a fixed enum.
 Page loads use stored observations; no schema migration or new conversion collection is required.
 
+## Reviews received and average rating
+
+For 14-day and 30-day rows, **Reviews received** counts individual public reviews of the
+selected PNK whose publication timestamp falls within the row's inclusive Romanian calendar dates.
+**Average rating** is the sum of valid individual ratings (1–5 stars) divided by the number of
+those ratings. A published review with a missing or invalid rating still counts as a review.
+
+A completed period requires a successful review fetch for that PNK on a later Romanian date.
+For a period ending today, the report uses today's successful fetch and supplies its timestamp
+in `reviewFetchedAt`, the cell details and the CSV field **Reviews fetched at**.
+A covered period with no reviews shows **0** reviews. Average rating is
+blank whenever there are no valid ratings. Both cells are blank without a qualifying fetch.
+
+The old yellow review cells copied family figures from weekly spreadsheet snapshots. Each count
+covered the 30 days ending on the sheet's observation date, which could precede the row's end by
+up to seven days. Those figures and their accompanying ratings remain in the import archive.
+
 ## Historical estimates and provenance
 
-Imported history supplements unavailable native data on closed rows for the exact selected account/product.
-Each domain independently selects its **newest observation at or before the report end**, with
+Imported Organic and Ads history supplements unavailable native data on closed rolling rows for the
+exact selected account/product. Each domain independently selects its **newest observation at or before the report end**, with
 a maximum lag of seven days. It uses one coherent snapshot for that domain; an empty metric in
 the newest snapshot is not filled from an older snapshot, and future observations are never used.
 Weekly Last30 observations overlap and are never added together or differenced into daily data.
@@ -381,11 +401,10 @@ existing raw batches remain immutable and the correction needs no new schema mig
 The 30-day mode uses an eligible Last30 cumulative value unchanged. The 14-day mode estimates
 it as `Last30 × 14/30`, assuming uniform activity. This applies to product Clicks and the six Ads
 primitives in each category. Fractional estimates are retained internally and formatted for display.
-Stock, gross Sales Price, performance classification, family review count and rating are observed
-states: they use the source value unchanged and carry the source date. They are not scaled,
-summed across dates, or treated as exact period averages. In particular, a historical Sales Price
-is an estimate of the period price, whereas a native Sales Price is the daily gross-price mean
-described above. Historical performance remains a 30-day eMAG classification even on a 14-day row.
+Stock, gross Sales Price and performance classification use the value observed on the source
+date. A historical Sales Price estimates the period price. Native Sales Price is the daily
+gross-price mean described above. Historical performance remains a 30-day eMAG classification
+even on a 14-day row.
 
 Available native overview values take precedence. Ambiguous native Clicks/performance are not
 overwritten by a historical estimate. Orders and Total Sales always use the native Order Table
@@ -415,9 +434,8 @@ their dedicated observation metadata to `estimated` without inventing a timestam
 
 The current sources support all 73 advertising columns, plus Orders, Total Sales, Stock, Sales Price
 and raw rolling Clicks, calculated product conversion and observed performance classification
-where the required inputs exist. Imported family observations can supply review count and rating;
-they remain null when no eligible observation exists. Other missing measurements retain their
-positions without fabricated values.
+where the required inputs exist. Dated public reviews supply the period count and average rating.
+Other missing measurements retain their positions without fabricated values.
 
 Keyword classification errors make Broad, Exact, and Total unavailable for the affected
 period, along with all category shares that depend on Total. Valid Auto and Product

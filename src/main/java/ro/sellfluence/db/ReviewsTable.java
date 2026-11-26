@@ -1,5 +1,7 @@
 package ro.sellfluence.db;
 
+import ro.sellfluence.db.ProductPerformanceSource.ReviewDay;
+import ro.sellfluence.db.ProductPerformanceSource.ReviewHistory;
 import ro.sellfluence.emagsiteapi.EmagUrl;
 import ro.sellfluence.emagsiteapi.Review;
 import ro.sellfluence.emagsiteapi.ReviewComment;
@@ -19,8 +21,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -54,6 +58,48 @@ public final class ReviewsTable {
 
     /** Counts refer to reviews; retained comments do not contribute to these totals. */
     public record StoreResult(int inserted, int changed, int unchanged, int notReturned) {
+    }
+
+    static ReviewHistory readPublishedReviewDays(Connection db, String pnk, LocalDate from, LocalDate to)
+            throws SQLException {
+        Objects.requireNonNull(to, "to");
+        if (from != null && from.isAfter(to)) throw new IllegalArgumentException("Review date range is reversed");
+        if (pnk == null || pnk.isBlank()) return ReviewHistory.empty();
+        // Publication is ISO text with an offset. Allow an extra date at each edge before converting to Romanian time.
+        try (var query = db.prepareStatement("""
+                SELECT f.last_successful_fetch_at, r.published, r.rating
+                FROM review_fetch f
+                LEFT JOIN review r ON r.pnk = f.pnk AND left(r.published, 10) BETWEEN ? AND ?
+                WHERE f.pnk = ?
+                """)) {
+            query.setString(1, from == null ? "" : from.minusDays(1).toString());
+            query.setString(2, to.plusDays(1).toString());
+            query.setString(3, pnk.strip());
+            try (var rows = query.executeQuery()) {
+                if (!rows.next()) return ReviewHistory.empty();
+                var fetchedAt = rows.getObject("last_successful_fetch_at", OffsetDateTime.class).toInstant();
+                var days = new HashMap<LocalDate, ReviewDay>();
+                do {
+                    var date = publicationDate(rows.getString("published"), fetchedAt);
+                    if (date == null || date.isAfter(to) || from != null && date.isBefore(from)) continue;
+                    var rating = rows.getInt("rating"); // JDBC returns 0 for a missing rating.
+                    var value = rating >= 1 && rating <= 5 ? new ReviewDay(1, rating, 1) : new ReviewDay(1, 0, 0);
+                    days.merge(date, value, ReviewDay::plus);
+                } while (rows.next());
+                return new ReviewHistory(fetchedAt, days);
+            }
+        }
+    }
+
+    private static LocalDate publicationDate(String published, Instant fetchedAt) {
+        if (published == null || published.isBlank()) return null;
+        try {
+            var instant = OffsetDateTime.parse(published).toInstant();
+            return instant.isAfter(fetchedAt) ? null : instant.atZone(ReviewHistory.REPORT_ZONE).toLocalDate();
+        } catch (DateTimeParseException ignored) {
+            // A missing or invalid publication date cannot place this review in a reporting period.
+            return null;
+        }
     }
 
     /** One stored review and its review-level user/product values for the sheet export. */
