@@ -1,14 +1,9 @@
 package ro.sellfluence.googleapi;
 
-import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
-import com.google.api.client.json.gson.GsonFactory;
-import com.google.api.services.sheets.v4.Sheets;
-import com.google.api.services.sheets.v4.SheetsScopes;
-import com.google.api.services.sheets.v4.model.SheetProperties;
-import com.google.auth.http.HttpCredentialsAdapter;
+import org.jspecify.annotations.Nullable;
+import ro.sellfluence.googleapi.SheetsAPI.SheetGrid;
 
 import java.io.IOException;
-import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -16,34 +11,42 @@ import java.util.Map;
 
 import static ro.sellfluence.apphelper.Defaults.defaultGoogleApp;
 
-/** A service-account client with only the spreadsheets.readonly OAuth scope. */
+/** Reads the Importuri register and its lookup tabs from the named workbook. */
 public final class StockImportSheetReader {
     public record Range(int firstColumn, List<List<Object>> rows) {}
     public record Snapshot(List<Range> imports, List<List<Object>> products, List<List<Object>> cartons,
                            List<List<Object>> transit, List<List<Object>> vat) {}
+    public record ResolvedSnapshot(String spreadsheetId, int tabId, Snapshot snapshot) {}
 
-    private final Sheets sheets;
-
-    public StockImportSheetReader() throws IOException, GeneralSecurityException {
-        var credentials = Credentials.scopedCredentials(List.of(SheetsScopes.SPREADSHEETS_READONLY));
-        var adapter = new HttpCredentialsAdapter(credentials);
-        sheets = new Sheets.Builder(GoogleNetHttpTransport.newTrustedTransport(), GsonFactory.getDefaultInstance(),
-                request -> {
-                    adapter.initialize(request);
-                    request.setConnectTimeout(10_000);
-                    request.setReadTimeout(100_000);
-                }).setApplicationName(defaultGoogleApp).build();
+    @FunctionalInterface
+    interface WorkbookLookup {
+        @Nullable SheetsAPI open(String name) throws IOException;
     }
 
-    public Snapshot read(String bookId, int tabId) throws IOException {
-        var api = sheets.spreadsheets();
-        var metadata = api.get(bookId).setFields("sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))")
-                .execute();
-        Map<String,SheetProperties> tabs = new HashMap<>();
-        for (var tab : metadata.getSheets()) tabs.put(tab.getProperties().getTitle(), tab.getProperties());
+    private final WorkbookLookup workbooks;
+
+    public StockImportSheetReader() {
+        this(name -> SheetsAPI.getReadOnlySpreadSheetByName(defaultGoogleApp, name));
+    }
+
+    StockImportSheetReader(WorkbookLookup workbooks) {
+        this.workbooks = workbooks;
+    }
+
+    public ResolvedSnapshot read(String spreadsheetName) throws IOException {
+        if (spreadsheetName == null || spreadsheetName.isBlank()) {
+            throw new IllegalArgumentException("A workbook name is required.");
+        }
+        var workbook = workbooks.open(spreadsheetName);
+        if (workbook == null) {
+            throw new IllegalArgumentException("No visible workbook has the exact name: " + spreadsheetName
+                    + ". Check the name and verify the service account has at least Viewer access.");
+        }
+        Map<String, SheetGrid> tabs = new HashMap<>();
+        for (var tab : workbook.readSheetGrids()) {
+            tabs.put(tab.title(), tab);
+        }
         var imports = required(tabs, "Importuri", 88, 17);
-        if (imports.getSheetId() != tabId)
-            throw new IllegalArgumentException("The selected gid does not identify the Importuri tab.");
         var products = required(tabs, "Date Prod.", 4, 13);
         var cartons = required(tabs, "Tabel Meas. CTN.", 5, 30);
         required(tabs, "Setari", 27, 3);
@@ -54,32 +57,28 @@ public final class StockImportSheetReader {
         var starts = new ArrayList<Integer>();
         ranges.add("'Importuri'!A1:F88");
         starts.add(1);
-        int lastColumn = imports.getGridProperties().getColumnCount();
+        int lastColumn = imports.columns();
         for (int first = 7; first <= lastColumn; first += 440) {
             starts.add(first);
-            ranges.add("'Importuri'!" + columnName(first) + "1:" + columnName(Math.min(first+439,lastColumn)) + "88");
+            ranges.add("'Importuri'!" + columnName(first) + "1:" + columnName(Math.min(first + 439, lastColumn)) + "88");
         }
-        ranges.add("'Date Prod.'!A1:M" + products.getGridProperties().getRowCount());
-        ranges.add("'Tabel Meas. CTN.'!A1:AD" + cartons.getGridProperties().getRowCount());
+        ranges.add("'Date Prod.'!A1:M" + products.rows());
+        ranges.add("'Tabel Meas. CTN.'!A1:AD" + cartons.rows());
         ranges.add("'Setari'!B23:C27");
         ranges.add("'Cons. Date Secundare'!E2:E3");
-        var response = api.values().batchGet(bookId).setRanges(ranges).setMajorDimension("ROWS")
-                .setValueRenderOption("UNFORMATTED_VALUE").setDateTimeRenderOption("SERIAL_NUMBER").execute();
-        var values = response.getValueRanges();
-        if (values == null || values.size() != ranges.size()) throw new IOException("Incomplete sheet response.");
-        List<List<List<Object>>> grids = values.stream()
-                .map(value -> value.getValues() == null ? List.<List<Object>>of() : value.getValues()).toList();
+        var grids = workbook.getRawValueRanges(ranges);
         var blocks = new ArrayList<Range>();
         for (int i = 0; i < starts.size(); i++) blocks.add(new Range(starts.get(i), grids.get(i)));
         int i = blocks.size();
-        return new Snapshot(blocks, grids.get(i), grids.get(i+1), grids.get(i+2), grids.get(i+3));
+        var snapshot = new Snapshot(blocks, grids.get(i), grids.get(i + 1), grids.get(i + 2), grids.get(i + 3));
+        return new ResolvedSnapshot(workbook.getSpreadSheetId(), imports.sheetId(), snapshot);
     }
 
-    private static SheetProperties required(Map<String,SheetProperties> tabs, String title, int rows, int cols) {
+    private static SheetGrid required(Map<String, SheetGrid> tabs, String title, int rows, int cols) {
         var tab = tabs.get(title);
-        if (tab == null || tab.getGridProperties() == null || tab.getGridProperties().getRowCount() < rows
-                || tab.getGridProperties().getColumnCount() < cols)
+        if (tab == null || tab.rows() < rows || tab.columns() < cols) {
             throw new IllegalArgumentException("Missing or incomplete source tab: " + title);
+        }
         return tab;
     }
 

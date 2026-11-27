@@ -3,11 +3,14 @@ package ro.sellfluence.googleapi;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import com.google.api.client.http.HttpRequestInitializer;
+import com.google.api.client.http.HttpTransport;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.Sleeper;
+import com.google.api.services.drive.DriveScopes;
 import com.google.api.services.sheets.v4.Sheets;
+import com.google.api.services.sheets.v4.SheetsScopes;
 import com.google.api.services.sheets.v4.model.AddSheetRequest;
 import com.google.api.services.sheets.v4.model.BatchGetValuesResponse;
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest;
@@ -59,6 +62,7 @@ import static java.util.Objects.requireNonNull;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
+import static ro.sellfluence.support.UsefulMethods.toColumnName;
 
 /**
  * This class represents a spreadsheet in Google-Drive.
@@ -76,7 +80,7 @@ public class SheetsAPI {
     private final String appName;
     private final String spreadSheetId;
     private final String spreadSheetName;
-    private final Sheets serviceOverride;
+    private final Sheets service;
     private final Sleeper sleeper;
 
     private List<SheetMetaData> sheetMetaData = null;
@@ -91,12 +95,12 @@ public class SheetsAPI {
         this(appName, spreadSheetId, spreadSheetName, null, Sleeper.DEFAULT);
     }
 
-    /** Allows offline tests to exercise the API workflow and retries without credentials or delays. */
+    /** A supplied client retains its own credential scopes and request configuration. */
     SheetsAPI(String appName, String spreadSheetId, String spreadSheetName, Sheets service, Sleeper sleeper) {
         this.appName = appName;
         this.spreadSheetId = spreadSheetId;
         this.spreadSheetName = spreadSheetName;
-        this.serviceOverride = service;
+        this.service = service;
         this.sleeper = requireNonNull(sleeper);
     }
 
@@ -162,6 +166,28 @@ public class SheetsAPI {
         return spreadSheets.computeIfAbsent(key, _ -> new SheetsAPI(appName, id, spreadSheetName));
     }
 
+    /** Opens a workbook with read-only service-account credentials and resolves its current Drive ID. */
+    public static @Nullable SheetsAPI getReadOnlySpreadSheetByName(String appName, String name) throws IOException {
+        final NetHttpTransport transport;
+        try {
+            transport = GoogleNetHttpTransport.newTrustedTransport();
+        } catch (GeneralSecurityException e) {
+            throw new IOException("Could not initialize the Google API transport.", e);
+        }
+        var credentials = Credentials.scopedCredentials(List.of(DriveScopes.DRIVE_METADATA_READONLY,
+                SheetsScopes.SPREADSHEETS_READONLY));
+        var initializer = setHttpTimeout(new HttpCredentialsAdapter(credentials));
+        return getReadOnlySpreadSheetByName(appName, name, transport, initializer);
+    }
+
+    static @Nullable SheetsAPI getReadOnlySpreadSheetByName(String appName, String name, HttpTransport transport,
+                                                           HttpRequestInitializer initializer) throws IOException {
+        var id = new DriveAPI(appName, transport, initializer).lookupFileId(name);
+        if (id == null) return null;
+        // Bind reads to these credentials for the lifetime of the workbook.
+        return new SheetsAPI(appName, id, name, sheetsService(appName, transport, initializer), Sleeper.DEFAULT);
+    }
+
     public String getSpreadSheetName() {
         return spreadSheetName;
     }
@@ -198,15 +224,47 @@ public class SheetsAPI {
     }
 
     public List<SheetGrid> getSheetGrids() {
-        var request = repeatCellRequest(4, "history grid metadata", () -> getSheetsService()
-                .spreadsheets().get(spreadSheetId)
-                .setFields("sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))"));
+        var request = repeatCellRequest(4, "history grid metadata", this::gridMetadataRequest);
         var response = repeatCellRequest(5, "history grid metadata", request::execute);
-        return response.getSheets().stream().map(sheet -> {
+        return sheetGrids(response);
+    }
+
+    /** A fresh metadata read that preserves Google's HTTP status and checked I/O errors. */
+    public List<SheetGrid> readSheetGrids() throws IOException {
+        return sheetGrids(gridMetadataRequest().execute());
+    }
+
+    private Sheets.Spreadsheets.Get gridMetadataRequest() throws IOException {
+        return getSheetsService().spreadsheets().get(spreadSheetId)
+                .setFields("sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))");
+    }
+
+    private static List<SheetGrid> sheetGrids(Spreadsheet response) {
+        var result = new ArrayList<SheetGrid>();
+        if (response.getSheets() == null) return List.of();
+        for (var sheet : response.getSheets()) {
+            if (sheet == null) continue;
             var p = sheet.getProperties();
-            return new SheetGrid(p.getSheetId(), p.getTitle(), p.getGridProperties().getRowCount(),
-                    p.getGridProperties().getColumnCount());
-        }).toList();
+            if (p == null || p.getSheetId() == null || p.getTitle() == null) continue;
+            var grid = p.getGridProperties();
+            if (grid != null && grid.getRowCount() != null && grid.getColumnCount() != null) {
+                result.add(new SheetGrid(p.getSheetId(), p.getTitle(), grid.getRowCount(), grid.getColumnCount()));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    /** Reads ordered A1 ranges in one batch, retaining typed cell values and serial-number dates. */
+    public List<List<List<Object>>> getRawValueRanges(List<String> ranges) throws IOException {
+        if (ranges.isEmpty()) return List.of();
+        var response = getSheetsService().spreadsheets().values().batchGet(spreadSheetId)
+                .setRanges(ranges).setMajorDimension(ROWS).setValueRenderOption(UNFORMATTED_VALUE)
+                .setDateTimeRenderOption("SERIAL_NUMBER").execute();
+        var values = response.getValueRanges();
+        if (values == null || values.size() != ranges.size() || values.stream().anyMatch(Objects::isNull)) {
+            throw new IOException("Incomplete sheet response.");
+        }
+        return values.stream().map(SheetsAPI::rawRows).toList();
     }
 
     /**
@@ -221,21 +279,19 @@ public class SheetsAPI {
             throw new IllegalArgumentException("A positive rectangle of at most 50,000 cells is required");
         }
         String range = "'" + sheetName.replace("'", "''") + "'!"
-                + historyColumn(firstColumn) + firstRow + ":" + historyColumn(lastColumn) + lastRow;
+                + toColumnName(firstColumn) + firstRow + ":" + toColumnName(lastColumn) + lastRow;
         var request = repeatCellRequest(4, "bounded history read " + range,
                 () -> getSheetsService().spreadsheets().values().get(spreadSheetId, range)
                         .setMajorDimension(ROWS).setValueRenderOption(formulas ? "FORMULA" : UNFORMATTED_VALUE)
                         .setDateTimeRenderOption("SERIAL_NUMBER"));
         var response = repeatCellRequest(5, "bounded history read " + range, request::execute);
-        if (response.getValues() == null) return List.of();
-        return response.getValues().stream()
-                .map(row -> Collections.unmodifiableList(new ArrayList<>(row))).toList();
+        return rawRows(response);
     }
 
-    private static String historyColumn(int index) {
-        var result = new StringBuilder();
-        for (int i = index; i > 0; i = (i - 1) / 26) result.append((char) ('A' + (i - 1) % 26));
-        return result.reverse().toString();
+    private static List<List<Object>> rawRows(ValueRange range) {
+        if (range.getValues() == null) return List.of();
+        return range.getValues().stream()
+                .map(row -> Collections.unmodifiableList(new ArrayList<>(row))).toList();
     }
 
     public List<SheetMetaData> getSheetProperties() {
@@ -1118,27 +1174,20 @@ public class SheetsAPI {
     }
 
     private Sheets getSheetsService() {
-        if (serviceOverride != null) {
-            return serviceOverride;
+        if (service != null) {
+            return service;
         }
-        Sheets sheetService;
         try {
             final NetHttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
-            HttpRequestInitializer requestInitializer =
-                    new HttpCredentialsAdapter(getCredentials(httpTransport));
-            Sheets.Builder builder = new Sheets.Builder(
-                    httpTransport,
-                    jsonFactory,
-                    requestInitializer
-            );
-            builder.setHttpRequestInitializer(setHttpTimeout(builder.getHttpRequestInitializer()));
-            sheetService = builder
-                    .setApplicationName(appName)
-                    .build();
+            var initializer = setHttpTimeout(new HttpCredentialsAdapter(getCredentials(httpTransport)));
+            return sheetsService(appName, httpTransport, initializer);
         } catch (GeneralSecurityException | IOException e) {
             throw new RuntimeException("Couldn't set up sheets service", e);
         }
-        return sheetService;
+    }
+
+    private static Sheets sheetsService(String appName, HttpTransport transport, HttpRequestInitializer initializer) {
+        return new Sheets.Builder(transport, jsonFactory, initializer).setApplicationName(appName).build();
     }
 
     private static HttpRequestInitializer setHttpTimeout(final HttpRequestInitializer requestInitializer) {

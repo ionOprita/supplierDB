@@ -16,16 +16,15 @@ import static ro.sellfluence.googleapi.StockImportSheetReader.columnName;
 
 /** Manual cutover tool. Run against a database with the Stocuri migration already installed. */
 public final class ImportStocuriFromSheets {
-    static final String DEFAULT_BOOK = "1fNOYIx057225mG-jo71a7U1CD95b7cqDVPScvsHT0ng";
-    static final int DEFAULT_GID = 26177680;
+    private static final String DEFAULT_SPREADSHEET_NAME = "S. Stocuri";
     public static final String USAGE = """
-            ImportStocuriFromSheets [--db=emagLocal] [--group=S] [--spreadsheet-id=ID --gid=GID] [--dry-run | --apply]
-            Default is a read-only preview of the S register. For another register, supply its group, spreadsheet ID and Importuri gid.
+            ImportStocuriFromSheets [--db=emagLocal] [--group=S] [--spreadsheet-name="S. Stocuri"] [--dry-run | --apply]
+            Defaults to the Importuri tab in "S. Stocuri". For another register, supply its group and exact workbook name.
             --apply copies all validated changes into the selected DB in one transaction. The source sheet wins for previously copied imports.
             """;
     private ImportStocuriFromSheets() {}
 
-    record Options(String database, String group, String spreadsheet, int gid, boolean apply) {}
+    record Options(String database, String group, String spreadsheetName, boolean apply) {}
 
     static Options options(String[] args) {
         var values = new HashMap<String,String>();
@@ -34,47 +33,51 @@ public final class ImportStocuriFromSheets {
             if ("--apply".equals(arg)) { apply=true; continue; }
             if ("--dry-run".equals(arg)) { dryRun=true; continue; }
             String[] parts = arg.split("=",2);
-            if (parts.length!=2 || !Set.of("--db","--group","--spreadsheet-id","--gid").contains(parts[0])
-                    || parts[1].isBlank() || values.put(parts[0],parts[1].strip())!=null)
+            if (parts.length != 2 || !Set.of("--db", "--group", "--spreadsheet-name").contains(parts[0])
+                    || parts[1].isBlank() || values.put(parts[0], parts[1]) != null)
                 throw new IllegalArgumentException("Invalid or duplicate option: " + arg + "\n" + USAGE);
         }
         if (apply && dryRun) throw new IllegalArgumentException("Choose either --dry-run or --apply.");
-        String group=values.getOrDefault("--group","S").toUpperCase(Locale.ROOT);
-        String book=values.getOrDefault("--spreadsheet-id",DEFAULT_BOOK);
-        int gid=Integer.parseInt(values.getOrDefault("--gid",Integer.toString(DEFAULT_GID)));
-        if (!book.matches("[A-Za-z0-9_-]+") || gid<0) throw new IllegalArgumentException("Invalid spreadsheet ID or gid.");
-        if ((!DEFAULT_BOOK.equals(book) || DEFAULT_GID!=gid || !"S".equals(group))
-                && !(values.containsKey("--group") && values.containsKey("--spreadsheet-id") && values.containsKey("--gid")))
-            throw new IllegalArgumentException("An alternate source requires explicit --group, --spreadsheet-id and --gid.");
-        if (DEFAULT_BOOK.equals(book) && !"S".equals(group))
-            throw new IllegalArgumentException("The supplied S workbook belongs to vendor group S.");
-        return new Options(values.getOrDefault("--db",defaultDatabase),group,book,gid,apply);
+        String group = values.getOrDefault("--group", "S").strip().toUpperCase(Locale.ROOT);
+        String name = values.getOrDefault("--spreadsheet-name", DEFAULT_SPREADSHEET_NAME);
+        if (DEFAULT_SPREADSHEET_NAME.equals(name)) {
+            if (!"S".equals(group))
+                throw new IllegalArgumentException("Supply --spreadsheet-name for group " + group
+                        + ". The default workbook belongs to group S.");
+        } else if (!values.containsKey("--group")) {
+            throw new IllegalArgumentException("Supply --group with an alternate --spreadsheet-name.");
+        }
+        return new Options(values.getOrDefault("--db", defaultDatabase).strip(), group, name, apply);
     }
 
     public static void main(String[] args) throws Exception {
         if (args.length==1 && "--help".equals(args[0])) { System.out.print(USAGE); return; }
         var options=options(args);
-        StockImportSheetReader.Snapshot snapshot;
+        StockImportSheetReader.ResolvedSnapshot source;
         try {
-            snapshot = new StockImportSheetReader().read(options.spreadsheet(),options.gid());
+            source = new StockImportSheetReader().read(options.spreadsheetName());
         } catch (GoogleJsonResponseException e) {
             if (e.getStatusCode()==403)
-                throw new IllegalStateException("Google Sheets denied read access. Verify that the workbook is shared as Viewer "
-                        + "with the client_email in ~/Secrets/googleServiceAccount.json and that the Sheets API is enabled.", e);
+                throw new IllegalStateException("Google denied read access to \"" + options.spreadsheetName()
+                        + "\". Verify that the workbook grants at least Viewer access to the client_email in "
+                        + "~/Secrets/googleServiceAccount.json and that the Drive and Sheets APIs are enabled.", e);
             throw e;
         }
-        var parsed=StockImportSheetParser.parse(snapshot);
+        System.out.printf("Workbook: %s / Importuri — https://docs.google.com/spreadsheets/d/%s/edit#gid=%d%n",
+                options.spreadsheetName(), source.spreadsheetId(), source.tabId());
+        var parsed = StockImportSheetParser.parse(source.snapshot());
         long lines=parsed.records().stream().mapToLong(s -> s.document().lines().size()).sum();
         System.out.printf("Source: %d imports, %d product lines. Target: %s / %s. Mode: %s.%n",
-                parsed.records().size(),lines,options.database(),options.group(),options.apply()?"apply":"dry-run");
+                parsed.records().size(), lines, options.database(), options.group(),
+                options.apply() ? "apply" : "dry-run");
         parsed.warnings().forEach(w -> System.out.println("Warning: " + w));
         var db=DBPass.findDB(options.database());
         try (var connection=DriverManager.getConnection(db.connect(),db.user(),db.pw())) {
             connection.setReadOnly(!options.apply());
             connection.setAutoCommit(false);
             try {
-                var result=StockImportTable.reconcile(connection,options.group(),options.spreadsheet(),options.gid(),
-                        parsed.records(),options.apply());
+                var result = StockImportTable.reconcile(connection, options.group(), source.spreadsheetId(),
+                        source.tabId(), parsed.records(), options.apply());
                 System.out.printf("Insert: %d. Update: %d. Unchanged: %d.%n",
                         result.inserted(),result.updated(),result.unchanged());
                 for (var change : result.changes()) {

@@ -2,6 +2,7 @@ package ro.sellfluence.googleapi;
 
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.http.HttpRequestInitializer;
+import com.google.api.client.http.HttpTransport;
 import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.gson.GsonFactory;
@@ -9,12 +10,12 @@ import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.model.File;
 import com.google.api.services.drive.model.FileList;
 import com.google.auth.http.HttpCredentialsAdapter;
+import org.jspecify.annotations.Nullable;
 import ro.sellfluence.support.Logs;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.security.GeneralSecurityException;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -26,7 +27,6 @@ import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 import static java.util.logging.Level.INFO;
-import static java.util.logging.Level.WARNING;
 import static ro.sellfluence.googleapi.Credentials.getCredentials;
 
 public class DriveAPI {
@@ -36,13 +36,9 @@ public class DriveAPI {
     private static final Map<String, DriveAPI> nameToAPI = new HashMap<>();
 
     private final String appName;
+    private final @Nullable Drive service;
 
     private final Map<String, String> nameForId = new HashMap<>();
-
-    private record CachedFile(LocalDateTime lastUpdated, String fileId) {
-    }
-
-    private final Map<String, CachedFile> driveCache = new HashMap<>();
 
     /**
      * Initialize the drive API.
@@ -52,6 +48,12 @@ public class DriveAPI {
      */
     private DriveAPI(String appName) {
         this.appName = appName;
+        this.service = null;
+    }
+
+    DriveAPI(String appName, HttpTransport transport, HttpRequestInitializer initializer) {
+        this.appName = appName;
+        this.service = driveService(appName, transport, initializer);
     }
 
 
@@ -92,54 +94,57 @@ public class DriveAPI {
     }
 
     /**
-     * Find the d of a file given its name.
+     * Looks up an exact file name across the currently visible, non-trashed Drive files.
      *
      * @param name of the file.
-     * @return the ID of the file.
-     * @throws RuntimeException if something goes wrong.
+     * @return the unique file ID, or null if no visible file has that name.
+     * @throws IllegalArgumentException if multiple files match or Drive's search is incomplete.
      */
-    public String getFileId(String name) {
-        Objects.requireNonNull(name);
-        var cached = driveCache.get(name);
-        if (cached != null && cached.lastUpdated.plusMinutes(10).isAfter(LocalDateTime.now())) {
-            return cached.fileId;
-        }
+    public @Nullable String getFileId(String name) {
         try {
-            var matchingFiles = new HashSet<File>();
-            String pageToken = null;
-            do {
-                FileList fileList = setupDriveService().files().list().setQ("name='%s'".formatted(name)).setFields("*").setPageToken(pageToken).execute();
-                pageToken = fileList.getNextPageToken();
-                var files = fileList.getFiles();
-                files.stream()
-                        .filter(f -> name.equals(f.getName()) && !f.getTrashed())
-                        .forEach(matchingFiles::add);
-            } while (pageToken != null);
-            if (matchingFiles.isEmpty()) {
-                logger.log(INFO, "Found no file with the name %s.".formatted(name));
-                return null;
-            } else if (matchingFiles.size() == 1) {
-                String fileId = matchingFiles.iterator().next().getId();
-                updateCaches(name, fileId);
-                logger.log(INFO, "Found file %s with the ID %s.".formatted(name, fileId));
-                return fileId;
-            } else {
-                var myFiles = matchingFiles.stream().filter(File::getOwnedByMe).toList();
-                if (myFiles.size() == 1) {
-                    var fileId = myFiles.getFirst().getId();
-                    logger.log(WARNING, "Found more than one file with the name %s, using the single one owned by me with the ID %s.".formatted(name, fileId));
-                    updateCaches(name, fileId);
-                    return fileId;
-                } else {
-                    throw new RuntimeException(
-                            "%d files which match the name %s, %d files are owned by me."
-                                    .formatted(matchingFiles.size(), name, myFiles.size())
-                    );
+            return lookupFileId(name);
+        } catch (IOException e) {
+            throw new RuntimeException("Couldn't look up Drive file: " + name, e);
+        }
+    }
+
+    /** Checked lookup for callers that handle Google's HTTP errors directly. */
+    @Nullable String lookupFileId(String name) throws IOException {
+        Objects.requireNonNull(name);
+        var drive = setupDriveService();
+        String escaped = name.replace("\\", "\\\\").replace("'", "\\'");
+        String query = "trashed = false and name = '" + escaped + "'";
+        var matches = new HashSet<String>();
+        String pageToken = null;
+        do {
+            var page = drive.files().list().setQ(query).setCorpora("allDrives")
+                    .setIncludeItemsFromAllDrives(true).setSupportsAllDrives(true)
+                    .setFields("nextPageToken,incompleteSearch,files(id,name,trashed)")
+                    .setPageToken(pageToken).execute();
+            if (Boolean.TRUE.equals(page.getIncompleteSearch())) {
+                throw new IllegalArgumentException("Google Drive returned an incomplete search for file: " + name);
+            }
+            if (page.getFiles() != null) {
+                for (var file : page.getFiles()) {
+                    if (name.equals(file.getName()) && !Boolean.TRUE.equals(file.getTrashed())) {
+                        if (file.getId() == null) throw new IOException("Missing ID for Drive file: " + name);
+                        matches.add(file.getId());
+                    }
                 }
             }
-        } catch (IOException e) {
-            throw new RuntimeException("Couldn't retrieve the list of files.", e);
+            pageToken = page.getNextPageToken();
+        } while (pageToken != null);
+        if (matches.size() > 1) {
+            throw new IllegalArgumentException("%d visible files have the exact name: %s".formatted(matches.size(), name));
         }
+        if (matches.isEmpty()) {
+            logger.log(INFO, "Found no file with the name %s.".formatted(name));
+            return null;
+        }
+        var id = matches.iterator().next();
+        nameForId.put(id, name);
+        logger.log(INFO, "Found file %s with the ID %s.".formatted(name, id));
+        return id;
     }
 
     public record FileResult(String name, String fileId) {
@@ -321,11 +326,6 @@ public class DriveAPI {
         }
     }
 
-    private void updateCaches(String name, String fileId) {
-        nameForId.put(fileId, name);
-        driveCache.put(name, new CachedFile(LocalDateTime.now(), fileId));
-    }
-
     /**
      * Return the name for a file ID. This works only if the file was already searched for
      * using this API.
@@ -338,19 +338,18 @@ public class DriveAPI {
     }
 
     private Drive setupDriveService() {
+        if (service != null) return service;
         try {
             NetHttpTransport httpTransport = GoogleNetHttpTransport.newTrustedTransport();
             HttpRequestInitializer requestInitializer =
                     new HttpCredentialsAdapter(getCredentials(httpTransport));
-            return new Drive.Builder(
-                    httpTransport,
-                    jsonFactory,
-                    requestInitializer
-            )
-                    .setApplicationName(appName)
-                    .build();
+            return driveService(appName, httpTransport, requestInitializer);
         } catch (GeneralSecurityException | IOException e) {
-            throw new RuntimeException("Couldn't set up driver service", e);
+            throw new RuntimeException("Couldn't set up Drive service", e);
         }
+    }
+
+    private static Drive driveService(String appName, HttpTransport transport, HttpRequestInitializer initializer) {
+        return new Drive.Builder(transport, jsonFactory, initializer).setApplicationName(appName).build();
     }
 }

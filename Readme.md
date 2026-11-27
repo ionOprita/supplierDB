@@ -141,7 +141,9 @@ for product matching, sources, formulas, unavailable columns, and partial-report
 
 Employees can open **Stocuri → Importuri** to select a vendor group, create a shipment, or update its products, payments and receiving details. Each register can contain several selling companies. The editor calculates costs using the shipment's own packing measurements, transfer amounts and rates.
 
-The standalone **ImportStocuriFromSheets** IntelliJ run configuration previews the linked S register against `emagLocal`. The target database needs schema version 55 or later. Give the service account configured in `~/Secrets/googleServiceAccount.json` Viewer access to the source workbook. The importer requests the Google Sheets read-only scope.
+The standalone **ImportStocuriFromSheets** IntelliJ run configuration previews the `Importuri` tab of `S. Stocuri` against `emagLocal`. On each run it looks up the exact workbook name in Google Drive and the tab name in Google Sheets. The workbook must be the only non-trashed Drive file with that exact name visible to the configured service account. Production and testing can use the same name because the production account sees the original workbook and the testing account sees the developer’s copy.
+
+The importer requests read-only access to Drive metadata and spreadsheet contents. The service account in `~/Secrets/googleServiceAccount.json` needs at least Viewer access to the workbook, with the Drive and Sheets APIs enabled. The target database needs schema version 55 or later.
 
 ```sh
 mvn compile exec:java -Dexec.mainClass=ro.sellfluence.app.ImportStocuriFromSheets -Dexec.args="--db=emagLocal --dry-run"
@@ -149,7 +151,7 @@ mvn compile exec:java -Dexec.mainClass=ro.sellfluence.app.ImportStocuriFromSheet
 
 Review the counts, warnings and any reference collisions. At cutover, run the same command with `--apply` in place of `--dry-run`. Each run reads the current sheet. **Applying a copy replaces employee edits on previously copied imports.** App-created imports and previously copied records that disappeared from the sheet are retained. A reference collision prevents the entire batch from being applied.
 
-For another workbook with the same layout, supply `--group`, `--spreadsheet-id` and `--gid` together. The server and its scheduler never start the copy.
+For another workbook with the same layout, supply `--group` and `--spreadsheet-name` together. Quote workbook names containing spaces, for example `--group=Z --spreadsheet-name="Z. Stocuri"`. The copy runs manually.
 
 ### Ads, offers, and reviews database tests
 
