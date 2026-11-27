@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="ImportStocuriFromSheets" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="ro.sellfluence.app.ImportStocuriFromSheets" />
+    <module name="emagDB" />
+    <option name="PROGRAM_PARAMETERS" value="--db=emagLocal --group=S --dry-run" />
+    <method v="2"><option name="Make" enabled="true" /></method>
+  </configuration>
+</component>

@@ -103,6 +103,10 @@ public class EmagMirrorDB implements ProductPerformanceSource {
 
     private final DB database;
 
+    public StockImportTable stockImports() {
+        return new StockImportTable(database);
+    }
+
     public record ProductWrite(ProductInfo productInfo, boolean insert) {
     }
 

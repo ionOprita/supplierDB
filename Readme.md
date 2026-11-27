@@ -137,6 +137,20 @@ The original Ads values are retained without additional VAT conversion. Existing
 retain VAT-inclusive amounts. See [Product performance calculations](doc/ProductPerformance.md)
 for product matching, sources, formulas, unavailable columns, and partial-report errors.
 
+### Stock imports
+
+Employees can open **Stocuri → Importuri** to select a vendor group, create a shipment, or update its products, payments and receiving details. Each register can contain several selling companies. The editor calculates costs using the shipment's own packing measurements, transfer amounts and rates.
+
+The standalone **ImportStocuriFromSheets** IntelliJ run configuration previews the linked S register against `emagLocal`. The target database needs schema version 55 or later. Give the service account configured in `~/Secrets/googleServiceAccount.json` Viewer access to the source workbook. The importer requests the Google Sheets read-only scope.
+
+```sh
+mvn compile exec:java -Dexec.mainClass=ro.sellfluence.app.ImportStocuriFromSheets -Dexec.args="--db=emagLocal --dry-run"
+```
+
+Review the counts, warnings and any reference collisions. At cutover, run the same command with `--apply` in place of `--dry-run`. Each run reads the current sheet. **Applying a copy replaces employee edits on previously copied imports.** App-created imports and previously copied records that disappeared from the sheet are retained. A reference collision prevents the entire batch from being applied.
+
+For another workbook with the same layout, supply `--group`, `--spreadsheet-id` and `--gid` together. The server and its scheduler never start the copy.
+
 ### Ads, offers, and reviews database tests
 
 The PostgreSQL migration and storage tests require `ADS_TEST_DB_URL` pointing to a disposable PostgreSQL database,

@@ -46,6 +46,8 @@ class JteTemplateEngineTest {
             org.junit.jupiter.api.Assertions.assertEquals(authorized,
                     html.contains("class=\"app-nav-link\" href=\"/private/overview\">Sales Dashboard</a>"));
             org.junit.jupiter.api.Assertions.assertEquals(authorized, html.contains("id=\"appSidebar\""));
+            org.junit.jupiter.api.Assertions.assertEquals(authorized,
+                    html.contains("href=\"/private/importuri\">Importuri</a>"));
             org.junit.jupiter.api.Assertions.assertEquals(authorized, html.contains("id=\"appNavToggle\""));
             org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("href=\"/admin/users\""));
             org.junit.jupiter.api.Assertions.assertEquals("admin".equals(role), html.contains("href=\"/admin/thread-dump\""));
@@ -84,6 +86,21 @@ class JteTemplateEngineTest {
                         "The native confirmation must remain outside the mobile drawer's inert main region");
             }
         }
+    }
+
+    @Test
+    void stockRegisterUsesTheSharedShellAndExposesACompanyScopedEditor() {
+        var output = new StringOutput();
+        Server.createJteEngine().render("importuri.jte", Map.of(
+                "userName", "ion", "userRole", "user", "pageTitle", Server.toPageTitle("importuri")
+        ), output);
+        var html = output.toString();
+        assertTrue(html.contains("href=\"/importuri.css\""));
+        assertTrue(html.contains("class=\"app-nav-heading\">Stocuri</h2>"));
+        assertTrue(html.contains("id=\"importGroup\""));
+        assertTrue(html.contains("id=\"importsRegister\""));
+        assertTrue(html.contains("id=\"importEditor\""));
+        assertTrue(html.contains("src=\"/js/importuri.js\""));
     }
 
     @Test

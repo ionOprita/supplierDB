@@ -365,6 +365,7 @@ public class Server {
         }
 
         configureAPI(app, api, backgroundJob);
+        StockImportRoutes.register(app, mirrorDB.stockImports());
         configurePasskey(app, mirrorDB, rp);
 
         app.before("/private/*", ctx -> checkRole(ctx, user));

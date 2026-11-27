@@ -16,6 +16,9 @@
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/info-tooltip.css">
     <link rel="stylesheet" href="/auth.css">
+    @if("Importuri".equals(pageTitle))
+        <link rel="stylesheet" href="/importuri.css">
+    @endif
 </head>
 
 <body class="${userRole != null && !userRole.equals("nobody") ? "app-shell app-shell--with-nav" : "app-shell"}">
@@ -83,6 +86,12 @@
                     <li><a class="app-nav-link" href="/private/profit-by-category">By Category</a></li>
                     <li><a class="app-nav-link" href="/private/profit-fbe-tariffs">FBE Tariffs</a></li>
                     <li><a class="app-nav-link" href="/private/profit-date-calcul">Date Calcul</a></li>
+                </ul>
+            </section>
+            <section class="app-nav-group">
+                <h2 class="app-nav-heading">Stocuri</h2>
+                <ul class="app-nav-list">
+                    <li><a class="app-nav-link" href="/private/importuri">Importuri</a></li>
                 </ul>
             </section>
             <details class="app-nav-group" data-nav-group="advertising">

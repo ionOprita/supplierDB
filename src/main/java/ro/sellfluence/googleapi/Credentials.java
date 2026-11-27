@@ -63,12 +63,12 @@ public class Credentials {
      */
     public static GoogleCredentials getCredentials(final NetHttpTransport httpTransport)
             throws IOException {
-        GoogleCredentials credentials;
+        return scopedCredentials(List.of(SPREADSHEETS, DRIVE_READONLY));
+    }
+
+    static GoogleCredentials scopedCredentials(List<String> scopes) throws IOException {
         try (InputStream in = new FileInputStream(creddentialsPath.toFile())) {
-            credentials = GoogleCredentials
-                    .fromStream(in)
-                    .createScoped(List.of(SPREADSHEETS, DRIVE_READONLY));
-            return credentials;
+            return GoogleCredentials.fromStream(in).createScoped(scopes);
         } catch (FileNotFoundException e) {
             logger.log(SEVERE, "Credentials file %s not found".formatted(creddentialsPath), e);
             throw e;
